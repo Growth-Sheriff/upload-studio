@@ -20,40 +20,49 @@
 {% endcomment %}
 
 {% comment %}
-  Hide the theme's step-card wrapper AND our content to prevent whitespace.
-  The theme wraps app blocks in div.step-card.pm-app-block with padding/margin.
-  We hide both the Shopify wrapper and the theme wrapper via CSS + JS fallback.
+  Hide ONLY our block wrapper to prevent whitespace.
+  DO NOT hide the parent .pm-app-block — it may contain other blocks too.
+  Instead, collapse our specific wrapper and use JS to clean up the parent
+  only if our block is the sole child.
 {% endcomment %}
 <style>
-  /* Hide the Shopify block wrapper */
+  /* Collapse only our specific Shopify block wrapper */
   #shopify-block-{{ block.id }} {
-    display: none !important;
-    padding: 0 !important;
-    margin: 0 !important;
-  }
-  /* Hide the theme's step-card wrapper that contains our block */
-  .step-card.pm-app-block:has(#shopify-block-{{ block.id }}) {
     display: none !important;
     padding: 0 !important;
     margin: 0 !important;
   }
 </style>
 <script>
-  /* JS fallback: hide theme wrapper for browsers without :has() support */
+  /* If our block is the ONLY app block in the parent wrapper, hide the parent too */
   (function(){
     var bid = 'shopify-block-{{ block.id }}';
-    function hideWrapper() {
+    function collapseWrapper() {
       var el = document.getElementById(bid);
       if (!el) return;
       var parent = el.parentElement;
       if (parent && parent.classList && parent.classList.contains('pm-app-block')) {
-        parent.style.cssText = 'display:none!important;padding:0!important;margin:0!important';
+        // Check if parent has other visible children besides our hidden block
+        var siblings = parent.children;
+        var hasOtherContent = false;
+        for (var i = 0; i < siblings.length; i++) {
+          if (siblings[i] !== el && siblings[i].tagName !== 'STYLE' && siblings[i].tagName !== 'SCRIPT') {
+            var rect = siblings[i].getBoundingClientRect();
+            if (rect.height > 0) {
+              hasOtherContent = true;
+              break;
+            }
+          }
+        }
+        if (!hasOtherContent) {
+          parent.style.cssText = 'display:none!important;padding:0!important;margin:0!important';
+        }
       }
     }
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', hideWrapper);
+      document.addEventListener('DOMContentLoaded', collapseWrapper);
     } else {
-      hideWrapper();
+      setTimeout(collapseWrapper, 100);
     }
   })();
 </script>
