@@ -21,8 +21,16 @@
 
 {% comment %}
   Load CSS - Soft, elegant, light-colored modal styles
+  Hide the Shopify app block wrapper so it doesn't create empty whitespace
 {% endcomment %}
 {{ 'ul-auto-sheet.css' | asset_url | stylesheet_tag }}
+<style>
+  #shopify-block-{{ block.id }} {
+    display: contents !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+</style>
 
 {% comment %}
   Load JS modules in dependency order
