@@ -21,38 +21,9 @@
 
 {% comment %}
   Load CSS - Soft, elegant, light-colored modal styles
-  Hide the Shopify app block wrapper so it doesn't create empty whitespace
+  App embed (target: body) does not create visible wrappers
 {% endcomment %}
 {{ 'ul-auto-sheet.css' | asset_url | stylesheet_tag }}
-<style>
-  /* Method 1: Target by exact block ID */
-  #shopify-block-{{ block.id }} {
-    display: contents !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    border: none !important;
-    min-height: 0 !important;
-    height: 0 !important;
-    overflow: hidden !important;
-  }
-  /* Method 2: Target any shopify-app-block wrapper that contains our marker */
-  .shopify-app-block:has(> [data-ul-sheet-block]) {
-    display: contents !important;
-  }
-</style>
-<div data-ul-sheet-block style="display:none!important"></div>
-<script>
-  /* Immediately hide parent wrapper via JS as fallback */
-  (function(){
-    var s = document.currentScript;
-    if (s && s.parentElement) {
-      var p = s.parentElement;
-      if (p !== document.body && p !== document.documentElement) {
-        p.style.cssText = 'display:contents!important;margin:0!important;padding:0!important;border:none!important;min-height:0!important';
-      }
-    }
-  })();
-</script>
 
 {% comment %}
   Load JS modules in dependency order
@@ -392,8 +363,7 @@
 {% schema %}
 {
   "name": "Auto Sheet Calculator",
-  "target": "section",
-  "templates": ["product"],
+  "target": "body",
   "settings": [
     {
       "type": "paragraph",
