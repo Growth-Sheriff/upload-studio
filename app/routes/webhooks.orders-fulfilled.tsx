@@ -52,8 +52,8 @@ export async function action({ request }: ActionFunctionArgs) {
     // Update upload statuses to shipped
     for (const link of orderLinks) {
       if (link.upload && link.upload.status === "printed") {
-        await prisma.upload.update({
-          where: { id: link.uploadId },
+        await prisma.upload.updateMany({
+          where: { id: link.uploadId, shopId: shop.id },
           data: { status: "shipped" },
         });
 

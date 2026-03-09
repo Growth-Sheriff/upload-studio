@@ -43,7 +43,27 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     });
 
-    console.log(`[GDPR] Found ${uploads.length} uploads for customer ${customer.id}`);
+    // Also include visitor records linked to this customer
+    const visitors = await prisma.visitor.findMany({
+      where: {
+        shopId: shopRecord.id,
+        shopifyCustomerId: `gid://shopify/Customer/${customer.id}`,
+      },
+      select: {
+        id: true,
+        customerEmail: true,
+        deviceType: true,
+        browser: true,
+        os: true,
+        country: true,
+        city: true,
+        firstSeenAt: true,
+        lastSeenAt: true,
+        totalSessions: true,
+      },
+    });
+
+    console.log(`[GDPR] Found ${uploads.length} uploads and ${visitors.length} visitors for customer ${customer.id}`);
 
     return json({
       ok: true,
@@ -54,6 +74,18 @@ export async function action({ request }: ActionFunctionArgs) {
         status: u.status,
         email: u.customerEmail,
         createdAt: u.createdAt.toISOString(),
+      })),
+      visitors: visitors.map(v => ({
+        visitorId: v.id,
+        email: v.customerEmail,
+        deviceType: v.deviceType,
+        browser: v.browser,
+        os: v.os,
+        country: v.country,
+        city: v.city,
+        firstSeen: v.firstSeenAt.toISOString(),
+        lastSeen: v.lastSeenAt.toISOString(),
+        totalSessions: v.totalSessions,
       })),
     });
   } catch (error) {

@@ -3,7 +3,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import crypto from 'crypto'
 import { existsSync } from 'fs'
 import { mkdir, readFile, unlink, writeFile } from 'fs/promises'
-import { dirname, join } from 'path'
+import { dirname, join, resolve, sep } from 'path'
 
 /**
  * MULTI-STORAGE SYSTEM v3.0 - BULLETPROOF EDITION
@@ -593,8 +593,17 @@ export function getThumbnailUrl(
 // LOCAL FILE OPERATIONS
 // ============================================================
 
+function safePath(key: string): string {
+  const base = resolve(LOCAL_STORAGE_BASE)
+  const filePath = resolve(base, key)
+  if (!filePath.startsWith(base + sep)) {
+    throw new Error('Invalid file path: directory traversal detected')
+  }
+  return filePath
+}
+
 export async function saveLocalFile(key: string, data: Buffer): Promise<string> {
-  const filePath = join(LOCAL_STORAGE_BASE, key)
+  const filePath = safePath(key)
   const dir = dirname(filePath)
 
   if (!existsSync(dir)) {
@@ -606,12 +615,12 @@ export async function saveLocalFile(key: string, data: Buffer): Promise<string> 
 }
 
 export async function readLocalFile(key: string): Promise<Buffer> {
-  const filePath = join(LOCAL_STORAGE_BASE, key)
+  const filePath = safePath(key)
   return readFile(filePath)
 }
 
 export async function deleteLocalFile(key: string): Promise<void> {
-  const filePath = join(LOCAL_STORAGE_BASE, key)
+  const filePath = safePath(key)
   try {
     await unlink(filePath)
   } catch (e) {

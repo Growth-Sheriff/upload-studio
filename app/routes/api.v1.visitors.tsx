@@ -10,6 +10,7 @@
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from '@remix-run/node'
 import { json } from '@remix-run/node'
+import { authenticateApiRequest } from '~/lib/api.server'
 import { prisma } from '~/lib/prisma.server'
 import {
   getVisitorStats,
@@ -35,22 +36,13 @@ interface VisitorUpsertRequest {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  // Authenticate via API key (Enterprise plan required)
+  const authResult = await authenticateApiRequest(request)
+  if (authResult instanceof Response) return authResult
+
+  const { shopId } = authResult
+
   const url = new URL(request.url)
-  const shopDomain = url.searchParams.get('shop')
-
-  if (!shopDomain) {
-    return json({ error: 'Missing shop parameter' }, { status: 400 })
-  }
-
-  // Find shop
-  const shop = await prisma.shop.findUnique({
-    where: { shopDomain },
-    select: { id: true },
-  })
-
-  if (!shop) {
-    return json({ error: 'Shop not found' }, { status: 404 })
-  }
 
   // Parse date range if provided
   const startDate = url.searchParams.get('start')
@@ -60,7 +52,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     startDate && endDate ? { start: new Date(startDate), end: new Date(endDate) } : undefined
 
   try {
-    const stats = await getVisitorStats(shop.id, dateRange)
+    const stats = await getVisitorStats(shopId, dateRange)
 
     return json({
       success: true,

@@ -82,8 +82,8 @@ async function sendFlowTrigger(trigger: FlowTriggerRecord): Promise<boolean> {
     }
 
     // Mark as sent
-    await prisma.flowTrigger.update({
-      where: { id: trigger.id },
+    await prisma.flowTrigger.updateMany({
+      where: { id: trigger.id, shopId: trigger.shopId },
       data: {
         status: "sent",
         sentAt: new Date(),
@@ -98,8 +98,8 @@ async function sendFlowTrigger(trigger: FlowTriggerRecord): Promise<boolean> {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const attempts = trigger.attempts + 1;
 
-    await prisma.flowTrigger.update({
-      where: { id: trigger.id },
+    await prisma.flowTrigger.updateMany({
+      where: { id: trigger.id, shopId: trigger.shopId },
       data: {
         status: attempts >= MAX_RETRIES ? "failed" : "pending",
         attempts,

@@ -104,8 +104,8 @@ export async function action({ request }: ActionFunctionArgs) {
           })
 
           // Update upload with order info and status
-          await prisma.upload.update({
-            where: { id: uploadLiftId },
+          await prisma.upload.updateMany({
+            where: { id: uploadLiftId, shopId: shop.id },
             data: {
               orderId: String(order.id),
               status: upload.status === 'blocked' ? 'blocked' : 'needs_review',

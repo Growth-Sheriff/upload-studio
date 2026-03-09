@@ -36,7 +36,19 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       });
 
-      console.log(`[GDPR] Redacted ${result.count} uploads for customer ${customer.id} in shop ${shop}`);
+      // Anonymize customer data in visitor records
+      const visitorResult = await prisma.visitor.updateMany({
+        where: {
+          shopId: shopRecord.id,
+          shopifyCustomerId: `gid://shopify/Customer/${customer.id}`,
+        },
+        data: {
+          shopifyCustomerId: null,
+          customerEmail: null,
+        },
+      });
+
+      console.log(`[GDPR] Redacted ${result.count} uploads and ${visitorResult.count} visitors for customer ${customer.id} in shop ${shop}`);
       
       // Create audit log
       await prisma.auditLog.create({
@@ -45,7 +57,7 @@ export async function action({ request }: ActionFunctionArgs) {
           action: "gdpr_customer_redact",
           entityType: "customer",
           entityId: String(customer.id),
-          changes: { redactedUploads: result.count },
+          changes: { redactedUploads: result.count, redactedVisitors: visitorResult.count },
         },
       });
     } else {

@@ -86,7 +86,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const printLocations = JSON.parse(locationsJson);
 
       await prisma.assetSet.update({
-        where: { id: assetSetId },
+        where: { id: assetSetId, shopId: shop.id },
         data: {
           schema: {
             ...currentSchema,
@@ -131,7 +131,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
 
     await prisma.assetSet.update({
-      where: { id: assetSetId },
+      where: { id: assetSetId, shopId: shop.id },
       data: {
         schema: {
           ...currentSchema,
@@ -151,7 +151,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     );
 
     await prisma.assetSet.update({
-      where: { id: assetSetId },
+      where: { id: assetSetId, shopId: shop.id },
       data: {
         schema: {
           ...currentSchema,

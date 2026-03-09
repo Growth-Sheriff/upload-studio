@@ -27,10 +27,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const status = url.searchParams.get("status") || "all";
   const category = url.searchParams.get("category") || "all";
 
-  // Build where clause
-  const where: any = {};
+  // Build where clause - scoped to this shop's tickets only
+  const where: any = { shopDomain: session.shop };
   if (status !== "all") where.status = status;
   if (category !== "all") where.category = category;
+
+  const shopScope = { shopDomain: session.shop };
 
   const [tickets, openCount, inProgressCount, resolvedCount, totalCount] = await Promise.all([
     prisma.supportTicket.findMany({
@@ -44,10 +46,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
         },
       },
     }),
-    prisma.supportTicket.count({ where: { status: "open" } }),
-    prisma.supportTicket.count({ where: { status: "in_progress" } }),
-    prisma.supportTicket.count({ where: { status: "resolved" } }),
-    prisma.supportTicket.count(),
+    prisma.supportTicket.count({ where: { ...shopScope, status: "open" } }),
+    prisma.supportTicket.count({ where: { ...shopScope, status: "in_progress" } }),
+    prisma.supportTicket.count({ where: { ...shopScope, status: "resolved" } }),
+    prisma.supportTicket.count({ where: shopScope }),
   ]);
 
   return json({
@@ -77,7 +79,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
   
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
@@ -87,8 +89,8 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ success: false, error: "Ticket ID required" });
   }
 
-  const ticket = await prisma.supportTicket.findUnique({
-    where: { id: ticketId },
+  const ticket = await prisma.supportTicket.findFirst({
+    where: { id: ticketId, shopDomain: session.shop },
   });
 
   if (!ticket) {
@@ -99,8 +101,8 @@ export async function action({ request }: ActionFunctionArgs) {
     const newStatus = formData.get("status") as string;
     const note = formData.get("note") as string;
 
-    await prisma.supportTicket.update({
-      where: { id: ticketId },
+    await prisma.supportTicket.updateMany({
+      where: { id: ticketId, shopDomain: session.shop },
       data: {
         status: newStatus,
         resolvedAt: newStatus === "resolved" ? new Date() : undefined,
@@ -143,8 +145,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Update ticket status if it was open
     if (ticket.status === "open") {
-      await prisma.supportTicket.update({
-        where: { id: ticketId },
+      await prisma.supportTicket.updateMany({
+        where: { id: ticketId, shopDomain: session.shop },
         data: {
           status: "in_progress",
           firstReplyAt: ticket.firstReplyAt || new Date(),

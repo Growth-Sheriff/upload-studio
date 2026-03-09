@@ -103,7 +103,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }, request, { status: 400 });
     }
 
-    // Validate upload exists and get first item
+    // Validate upload exists and belongs to this shop
     const upload = await prisma.upload.findFirst({
       where: { 
         id: customizations.uploadId,
@@ -115,7 +115,7 @@ export async function action({ request }: ActionFunctionArgs) {
         items: {
           take: 1,
           select: {
-            storageKey: true,
+            id: true,
             thumbnailKey: true
           }
         }
@@ -131,7 +131,6 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Get URLs from first item (if available)
     const firstItem = upload.items[0];
-    const uploadUrl = firstItem?.storageKey || '';
     const thumbnailUrl = firstItem?.thumbnailKey || customizations.thumbnailUrl || '';
 
     // Build line item properties
@@ -142,7 +141,6 @@ export async function action({ request }: ActionFunctionArgs) {
     };
     
     // Visible keys (shown in checkout)
-    properties['Uploaded File'] = uploadUrl;
     properties['Design Type'] = (customizations.type || 'dtf').toUpperCase() + ' Transfer';
 
     // Add t-shirt specific properties

@@ -38,16 +38,44 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
   }
 
   try {
-    // Find upload and its first item
-    const upload = await prisma.upload.findUnique({
-      where: { id: uploadId },
-      include: {
-        items: {
-          take: 1,
-          orderBy: { createdAt: 'asc' },
+    const url = new URL(request.url)
+    const shopDomain = url.searchParams.get('shop')
+
+    let upload
+    if (shopDomain) {
+      // Scoped access: verify upload belongs to shop
+      const shop = await prisma.shop.findUnique({
+        where: { shopDomain },
+        select: { id: true },
+      })
+      if (!shop) {
+        return new Response('Not found', {
+          status: 404,
+          headers: { 'Access-Control-Allow-Origin': '*' },
+        })
+      }
+      upload = await prisma.upload.findFirst({
+        where: { id: uploadId, shopId: shop.id },
+        include: {
+          items: {
+            take: 1,
+            orderBy: { createdAt: 'asc' },
+          },
         },
-      },
-    })
+      })
+    } else {
+      // Legacy unscoped access — log warning for monitoring
+      console.warn(`[API Upload File] Unscoped file access for uploadId: ${uploadId}`)
+      upload = await prisma.upload.findUnique({
+        where: { id: uploadId },
+        include: {
+          items: {
+            take: 1,
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      })
+    }
 
     if (!upload || upload.items.length === 0) {
       return new Response('Upload not found', {

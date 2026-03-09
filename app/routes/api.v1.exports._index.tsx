@@ -141,12 +141,23 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: "uploadIds array is required." }, { status: 400 });
   }
 
+  // Verify all uploadIds belong to this shop
+  const validUploads = await prisma.upload.findMany({
+    where: { id: { in: uploadIds }, shopId: shop.id },
+    select: { id: true },
+  });
+  const validIds = validUploads.map(u => u.id);
+
+  if (validIds.length === 0) {
+    return json({ error: "No valid uploads found for this shop." }, { status: 400 });
+  }
+
   // Create export record
   const exportRecord = await prisma.exportJob.create({
     data: {
       shopId: shop.id,
       status: "pending",
-      uploadIds,
+      uploadIds: validIds,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
     },
   });
@@ -157,7 +168,7 @@ export async function action({ request }: ActionFunctionArgs) {
     await queue.add("process-export", {
       exportId: exportRecord.id,
       shopId: shop.id,
-      uploadIds,
+      uploadIds: validIds,
     });
     await queue.close();
   } catch (error) {

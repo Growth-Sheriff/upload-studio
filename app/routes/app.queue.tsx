@@ -295,11 +295,22 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: 'No uploads selected for export' })
     }
 
+    // Verify all uploadIds belong to this shop
+    const validUploads = await prisma.upload.findMany({
+      where: { id: { in: uploadIds }, shopId: shop.id },
+      select: { id: true },
+    })
+    const validIds = validUploads.map(u => u.id)
+
+    if (validIds.length === 0) {
+      return json({ error: 'No valid uploads found for this shop' })
+    }
+
     // Create export job
     const exportJob = await prisma.exportJob.create({
       data: {
         shopId: shop.id,
-        uploadIds,
+        uploadIds: validIds,
         status: 'pending',
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
       },
@@ -316,7 +327,7 @@ export async function action({ request }: ActionFunctionArgs) {
       await queue.add('process-export', {
         exportId: exportJob.id,
         shopId: shop.id,
-        uploadIds,
+        uploadIds: validIds,
       })
       await queue.close()
       console.log(`[Queue] Export job ${exportJob.id} queued successfully`)

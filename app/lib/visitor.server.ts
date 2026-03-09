@@ -236,41 +236,48 @@ async function findVisitor(shopId: string, identity: VisitorIdentity) {
  * Called when an upload is created
  */
 export async function linkUploadToVisitor(
+  shopId: string,
   uploadId: string,
   visitorId: string,
   sessionId: string
 ): Promise<void> {
-  await prisma.$transaction([
-    // Update upload with visitor info
-    prisma.upload.update({
-      where: { id: uploadId },
+  const results = await prisma.$transaction([
+    // Update upload with visitor info (scoped to shop)
+    prisma.upload.updateMany({
+      where: { id: uploadId, shopId },
       data: { visitorId, sessionId },
     }),
 
-    // Increment visitor upload count
-    prisma.visitor.update({
-      where: { id: visitorId },
+    // Increment visitor upload count (scoped to shop)
+    prisma.visitor.updateMany({
+      where: { id: visitorId, shopId },
       data: {
         totalUploads: { increment: 1 },
       },
     }),
 
-    // Increment session upload count
-    prisma.visitorSession.update({
-      where: { id: sessionId },
+    // Increment session upload count (scoped to shop)
+    prisma.visitorSession.updateMany({
+      where: { id: sessionId, shopId },
       data: {
         uploadsInSession: { increment: 1 },
       },
     }),
   ])
+
+  if (results.some((r) => r.count === 0)) {
+    console.warn(
+      `[Tenant Guard] linkUploadToVisitor: some records not found for shop ${shopId}`
+    )
+  }
 }
 
 /**
  * Record add to cart event
  */
-export async function recordAddToCart(sessionId: string): Promise<void> {
-  await prisma.visitorSession.update({
-    where: { id: sessionId },
+export async function recordAddToCart(shopId: string, sessionId: string): Promise<void> {
+  await prisma.visitorSession.updateMany({
+    where: { id: sessionId, shopId },
     data: {
       addToCartCount: { increment: 1 },
     },
@@ -280,9 +287,9 @@ export async function recordAddToCart(sessionId: string): Promise<void> {
 /**
  * Record order completion (called from webhook, OPTIONAL enhancement)
  */
-export async function recordOrderForVisitor(visitorId: string, orderTotal: number): Promise<void> {
-  await prisma.visitor.update({
-    where: { id: visitorId },
+export async function recordOrderForVisitor(shopId: string, visitorId: string, orderTotal: number): Promise<void> {
+  await prisma.visitor.updateMany({
+    where: { id: visitorId, shopId },
     data: {
       totalOrders: { increment: 1 },
       totalRevenue: { increment: orderTotal },
@@ -400,11 +407,12 @@ export async function getVisitorStats(shopId: string, dateRange?: { start: Date;
  * Update visitor consent status
  */
 export async function updateVisitorConsent(
+  shopId: string,
   visitorId: string,
   consentGiven: boolean
 ): Promise<void> {
-  await prisma.visitor.update({
-    where: { id: visitorId },
+  await prisma.visitor.updateMany({
+    where: { id: visitorId, shopId },
     data: {
       consentGiven,
       consentTimestamp: consentGiven ? new Date() : null,
@@ -417,12 +425,13 @@ export async function updateVisitorConsent(
  * Link Shopify customer to visitor (when they log in)
  */
 export async function linkCustomerToVisitor(
+  shopId: string,
   visitorId: string,
   shopifyCustomerId: string,
   customerEmail: string
 ): Promise<void> {
-  await prisma.visitor.update({
-    where: { id: visitorId },
+  await prisma.visitor.updateMany({
+    where: { id: visitorId, shopId },
     data: {
       shopifyCustomerId,
       customerEmail,

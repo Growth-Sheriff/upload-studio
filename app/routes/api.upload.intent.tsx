@@ -267,6 +267,34 @@ export async function action({ request }: ActionFunctionArgs) {
   )
 
   try {
+    // Validate visitor/session belong to shop if provided
+    // Invalid IDs are silently ignored to avoid blocking the upload flow
+    let validVisitorId = visitorId || null
+    let validSessionId = sessionId || null
+
+    if (visitorId) {
+      const visitorExists = await prisma.visitor.findFirst({
+        where: { id: visitorId, shopId: shop.id },
+        select: { id: true },
+      })
+      if (!visitorExists) {
+        console.warn(`[Upload Intent] visitorId ${visitorId} not found for shop ${shop.id} - ignoring`)
+        validVisitorId = null
+        validSessionId = null
+      }
+    }
+
+    if (validVisitorId && sessionId) {
+      const sessionExists = await prisma.visitorSession.findFirst({
+        where: { id: sessionId, shopId: shop.id },
+        select: { id: true },
+      })
+      if (!sessionExists) {
+        console.warn(`[Upload Intent] sessionId ${sessionId} not found for shop ${shop.id} - ignoring`)
+        validSessionId = null
+      }
+    }
+
     // Create upload record with visitor tracking
     const upload = await prisma.upload.create({
       data: {
@@ -278,15 +306,15 @@ export async function action({ request }: ActionFunctionArgs) {
         status: 'draft',
         customerId: customerId || null,
         customerEmail: customerEmail || null,
-        visitorId: visitorId || null,
-        sessionId: sessionId || null,
+        visitorId: validVisitorId,
+        sessionId: validSessionId,
       },
     })
 
     // Log visitor tracking if present
-    if (visitorId) {
+    if (validVisitorId) {
       console.log(
-        `[Upload Intent] Upload ${uploadId} linked to visitor ${visitorId}, session ${sessionId || 'N/A'}`
+        `[Upload Intent] Upload ${uploadId} linked to visitor ${validVisitorId}, session ${validSessionId || 'N/A'}`
       )
     }
 

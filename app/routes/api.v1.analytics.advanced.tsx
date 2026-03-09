@@ -231,8 +231,8 @@ export async function action({ request }: ActionFunctionArgs) {
         }
 
         // Mark upload as added to cart
-        await prisma.upload.update({
-          where: { id: uploadId },
+        await prisma.upload.updateMany({
+          where: { id: uploadId, shopId: shop.id },
           data: { addedToCartAt: new Date() },
         })
 

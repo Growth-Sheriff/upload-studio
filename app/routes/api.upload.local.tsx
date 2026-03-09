@@ -24,6 +24,12 @@ export async function action({ request }: ActionFunctionArgs) {
       return corsJson({ error: "Missing file or key" }, request, { status: 400 });
     }
 
+    // Validate storage key format to prevent path traversal
+    // Expected format: shopDomain/uploadId/itemId/filename
+    if (key.includes('..') || key.startsWith('/') || key.startsWith('\\')) {
+      return corsJson({ error: "Invalid storage key" }, request, { status: 400 });
+    }
+
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);

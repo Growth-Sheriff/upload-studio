@@ -57,19 +57,9 @@ async function checkDatabase() {
     await prisma.$queryRaw`SELECT 1`;
     const latency = Date.now() - start;
 
-    // Get some stats
-    const [shopCount, uploadCount] = await Promise.all([
-      prisma.shop.count(),
-      prisma.upload.count(),
-    ]);
-
     return {
       status: "ok",
       latencyMs: latency,
-      stats: {
-        shops: shopCount,
-        uploads: uploadCount,
-      },
     };
   } catch (error) {
     return {

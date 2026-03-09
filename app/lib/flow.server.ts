@@ -92,9 +92,13 @@ export async function queueFlowTrigger(
  * Send Flow trigger to Shopify
  * Called by a worker or cron job
  */
-export async function sendFlowTrigger(triggerId: string): Promise<boolean> {
-  const trigger = await prisma.flowTrigger.findUnique({
-    where: { id: triggerId },
+export async function sendFlowTrigger(triggerId: string, shopId?: string): Promise<boolean> {
+  const whereClause = shopId
+    ? { id: triggerId, shopId }
+    : { id: triggerId };
+
+  const trigger = await prisma.flowTrigger.findFirst({
+    where: whereClause,
     include: {
       shop: {
         select: { shopDomain: true, accessToken: true },
@@ -147,8 +151,8 @@ export async function sendFlowTrigger(triggerId: string): Promise<boolean> {
     }
 
     // Mark as sent
-    await prisma.flowTrigger.update({
-      where: { id: triggerId },
+    await prisma.flowTrigger.updateMany({
+      where: { id: triggerId, shopId: trigger.shopId },
       data: {
         status: "sent",
         sentAt: new Date(),
@@ -162,8 +166,8 @@ export async function sendFlowTrigger(triggerId: string): Promise<boolean> {
     const attempts = trigger.attempts + 1;
     const maxAttempts = 3;
 
-    await prisma.flowTrigger.update({
-      where: { id: triggerId },
+    await prisma.flowTrigger.updateMany({
+      where: { id: triggerId, shopId: trigger.shopId },
       data: {
         status: attempts >= maxAttempts ? "failed" : "pending",
         attempts,

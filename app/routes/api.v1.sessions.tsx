@@ -99,7 +99,7 @@ export async function action({ request }: ActionFunctionArgs) {
         break
 
       case 'add_to_cart':
-        await recordAddToCart(actualSessionId)
+        await recordAddToCart(shop.id, actualSessionId)
         break
 
       case 'link_upload':
@@ -107,8 +107,19 @@ export async function action({ request }: ActionFunctionArgs) {
           return json({ error: 'uploadId required for link_upload action' }, { status: 400 })
         }
 
-        const effectiveVisitorId = visitorId || session.visitorId
-        await linkUploadToVisitor(uploadId, effectiveVisitorId, actualSessionId)
+        // Use session's visitorId by default; if client provides visitorId, verify it belongs to this shop
+        let effectiveVisitorId = session.visitorId
+        if (visitorId && visitorId !== session.visitorId) {
+          const visitorBelongsToShop = await prisma.visitor.findFirst({
+            where: { id: visitorId, shopId: shop.id },
+            select: { id: true },
+          })
+          if (!visitorBelongsToShop) {
+            return json({ error: 'Visitor not found' }, { status: 404 })
+          }
+          effectiveVisitorId = visitorId
+        }
+        await linkUploadToVisitor(shop.id, uploadId, effectiveVisitorId, actualSessionId)
         break
 
       default:

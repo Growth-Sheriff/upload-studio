@@ -39,6 +39,9 @@ function createPrismaClient() {
       "ApiKey",
       "WhiteLabelConfig",
       "FlowTrigger",
+      "Visitor",
+      "VisitorSession",
+      "Commission",
     ];
 
     // Models that can be scoped through relation (e.g., UploadItem via upload.shopId)
@@ -66,6 +69,36 @@ function createPrismaClient() {
           
           // Strict mode: throw error instead of just warning
           // This provides hard enforcement in production
+          if (STRICT_MODE) {
+            throw new TenantIsolationError(params.model ?? "Unknown", params.action);
+          }
+        }
+      }
+
+      // For batch write operations, ensure shop_id is in where clause
+      if (["updateMany", "deleteMany"].includes(params.action)) {
+        const where = params.args?.where;
+        const hasShopScope = where?.shopId || where?.shop_id;
+        
+        if (!hasShopScope) {
+          const message = `[TENANT GUARD] Batch write to ${params.model} without shopId scope - action: ${params.action}`;
+          console.warn(message);
+          
+          if (STRICT_MODE) {
+            throw new TenantIsolationError(params.model ?? "Unknown", params.action);
+          }
+        }
+      }
+
+      // For create operations, ensure data includes shopId
+      if (params.action === "create") {
+        const data = params.args?.data;
+        const hasShopScope = data?.shopId || data?.shop_id;
+        
+        if (!hasShopScope) {
+          const message = `[TENANT GUARD] Create on ${params.model} without shopId - action: ${params.action}`;
+          console.warn(message);
+          
           if (STRICT_MODE) {
             throw new TenantIsolationError(params.model ?? "Unknown", params.action);
           }

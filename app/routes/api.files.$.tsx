@@ -39,6 +39,19 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
   const decodedKey = decodeURIComponent(key)
 
   try {
+    // WI-004: Token validation applies to ALL storage types
+    const url = new URL(request.url)
+    const token = url.searchParams.get('token')
+
+    if (!token || !validateLocalFileToken(decodedKey, token)) {
+      return new Response('Unauthorized - invalid or expired token', {
+        status: 401,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+        },
+      })
+    }
+
     // Debug logging for R2 issues
     if (decodedKey.startsWith('r2:')) {
       console.log('[FileServe] R2 Request:', { key, decodedKey });
@@ -75,19 +88,6 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
       }
 
       return Response.redirect(redirectUrl, 302)
-    }
-
-    // WI-004: Validate signed URL token (ONLY for local files)
-    const url = new URL(request.url)
-    const token = url.searchParams.get('token')
-
-    if (!token || !validateLocalFileToken(decodedKey, token)) {
-      return new Response('Unauthorized - invalid or expired token', {
-        status: 401,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-        },
-      })
     }
 
     // Otherwise serve from local storage

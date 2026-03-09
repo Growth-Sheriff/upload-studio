@@ -230,8 +230,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       if (resolvedUrl) {
         downloadUrl = resolvedUrl
         // Update storageKey with resolved URL for future requests (cache)
-        await prisma.uploadItem.update({
-          where: { id: firstItem.id },
+        await prisma.uploadItem.updateMany({
+          where: { id: firstItem.id, uploadId: upload.id },
           data: { storageKey: resolvedUrl },
         })
         console.log(`[Upload Status] Resolved Shopify fileId to URL: ${resolvedUrl}`)

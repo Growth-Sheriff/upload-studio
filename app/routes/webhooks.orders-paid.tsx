@@ -120,8 +120,8 @@ export async function action({ request }: ActionFunctionArgs) {
           const orderTotal = parseFloat(order.total_price) || 0
           const orderCurrency = order.currency || 'USD'
 
-          await prisma.upload.update({
-            where: { id: upload.id },
+          await prisma.upload.updateMany({
+            where: { id: upload.id, shopId: shop.id },
             data: {
               status: 'approved',
               orderId: String(order.id),
@@ -152,7 +152,7 @@ export async function action({ request }: ActionFunctionArgs) {
           if (upload.visitorId) {
             try {
               const orderTotal = parseFloat(order.total_price) || 0
-              await recordOrderForVisitor(upload.visitorId, orderTotal)
+              await recordOrderForVisitor(shop.id, upload.visitorId, orderTotal)
               console.log(
                 `[Webhook] Revenue recorded for visitor ${upload.visitorId}: $${orderTotal}`
               )

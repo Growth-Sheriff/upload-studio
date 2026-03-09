@@ -23,8 +23,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   // Get asset set (public for storefront)
+  // Require shop param to prevent cross-tenant asset set retrieval
+  const url = new URL(request.url)
+  const shopDomain = url.searchParams.get('shop')
+
+  if (!shopDomain) {
+    return corsJson({ error: 'Missing shop parameter' }, request, { status: 400 })
+  }
+
   const assetSet = await prisma.assetSet.findFirst({
-    where: { id: assetSetId, status: 'active' },
+    where: { id: assetSetId, status: 'active', shop: { shopDomain } },
     include: {
       shop: {
         select: {

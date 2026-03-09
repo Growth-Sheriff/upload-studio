@@ -15,14 +15,19 @@ import prisma from '~/lib/prisma.server';
 
 const COMMISSION_PER_ORDER = 0.1;
 const AUTO_CHARGE_THRESHOLD = 49.99;
-const CRON_SECRET = process.env.CRON_SECRET || 'upload-lift-cron-2026';
+const CRON_SECRET = process.env.CRON_SECRET;
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
     return json({ error: 'Method not allowed' }, { status: 405 });
   }
 
-  // Auth: either internal cron secret or admin auth
+  // Auth: require CRON_SECRET env var — no fallback
+  if (!CRON_SECRET) {
+    console.error('[PayPal Auto-Charge] CRON_SECRET env variable is not set');
+    return json({ error: 'Server misconfiguration' }, { status: 500 });
+  }
+
   const authHeader = request.headers.get('x-cron-secret');
   if (authHeader !== CRON_SECRET) {
     return json({ error: 'Unauthorized' }, { status: 401 });

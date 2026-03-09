@@ -1,6 +1,7 @@
 import type { LoaderFunctionArgs } from '@remix-run/node'
 import { isBunnyUrl, readLocalFile } from '~/lib/storage.server'
 import { authenticate } from '~/shopify.server'
+import prisma from '~/lib/prisma.server'
 
 /**
  * GET /api/storage/preview/:key
@@ -17,11 +18,21 @@ import { authenticate } from '~/shopify.server'
 export async function loader({ params, request }: LoaderFunctionArgs) {
   try {
     // Require admin authentication for storage preview
+    let session: { shop: string }
     try {
-      await authenticate.admin(request)
+      const auth = await authenticate.admin(request)
+      session = auth.session
     } catch (authError) {
       console.error('[Storage Preview] Auth failed:', authError)
       return new Response('Unauthorized', { status: 401 })
+    }
+
+    const shop = await prisma.shop.findUnique({
+      where: { shopDomain: session.shop },
+      select: { id: true },
+    })
+    if (!shop) {
+      return new Response('Shop not found', { status: 404 })
     }
 
     // Get the full key from params - Remix handles the splat
@@ -31,6 +42,23 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 
     if (!key) {
       return new Response('Missing key', { status: 400 })
+    }
+
+    // Verify the storage key belongs to this shop
+    const ownsKey = await prisma.upload.findFirst({
+      where: {
+        shopId: shop.id,
+        OR: [
+          { storageKey: key },
+          { thumbnailKey: key },
+          { items: { some: { storageKey: key } } },
+        ],
+      },
+      select: { id: true },
+    })
+
+    if (!ownsKey) {
+      return new Response('Forbidden', { status: 403 })
     }
 
     // If key is a Bunny URL or bunny: prefixed, redirect to CDN

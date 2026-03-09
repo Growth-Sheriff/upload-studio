@@ -52,11 +52,10 @@ export async function action({ request }: ActionFunctionArgs) {
     // Update upload statuses to archived or a cancelled state
     for (const link of orderLinks) {
       if (link.upload && !["archived", "shipped"].includes(link.upload.status)) {
-        await prisma.upload.update({
-          where: { id: link.uploadId },
+        await prisma.upload.updateMany({
+          where: { id: link.uploadId, shopId: shop.id },
           data: {
             status: "archived",
-            // Could add a cancellation reason in metadata if needed
           },
         });
 

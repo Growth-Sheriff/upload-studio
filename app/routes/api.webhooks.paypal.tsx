@@ -105,16 +105,30 @@ async function handleCaptureCompleted(event: PayPalWebhookEvent): Promise<void> 
   // Try to find the PayPal order from audit logs to get the order IDs
   // The capture-order endpoint should have already handled this,
   // but this is a safety net
+  // Scope by resourceId (captureId) to avoid cross-tenant audit log leakage
   const auditLog = await prisma.auditLog.findFirst({
     where: {
-      action: 'paypal_order_created',
+      action: { in: ['paypal_order_created', 'paypal_payment_captured'] },
+      metadata: {
+        path: ['captureId'],
+        equals: captureId,
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  })
+
+  // If no captureId match, try by recent order for this specific capture
+  const resolvedAuditLog = auditLog || await prisma.auditLog.findFirst({
+    where: {
+      action: 'paypal_payment_captured',
+      resourceId: captureId,
     },
     orderBy: { createdAt: 'desc' },
   });
 
   // Log the webhook event for manual review if needed
-  const shopForAudit = auditLog
-    ? await prisma.shop.findUnique({ where: { id: auditLog.shopId } })
+  const shopForAudit = resolvedAuditLog
+    ? await prisma.shop.findUnique({ where: { id: resolvedAuditLog.shopId } })
     : null;
 
   if (shopForAudit) {
@@ -148,10 +162,11 @@ async function handleCaptureDenied(event: PayPalWebhookEvent): Promise<void> {
   const captureId = event.resource?.id;
   console.error(`[PayPal Webhook] Payment DENIED: ${captureId}`);
 
-  // Find related shop from audit logs
+  // Find related shop from audit logs scoped to this capture
   const auditLog = await prisma.auditLog.findFirst({
     where: {
       action: { in: ['paypal_order_created', 'paypal_payment_captured'] },
+      resourceId: captureId || undefined,
     },
     orderBy: { createdAt: 'desc' },
   });
@@ -183,6 +198,13 @@ async function handleCaptureRefunded(event: PayPalWebhookEvent): Promise<void> {
 
   if (!captureId) return;
 
+  // Find commissions BEFORE reverting to capture shopId for audit log
+  const commissionsToRevert = await prisma.commission.findMany({
+    where: { paymentRef: captureId },
+    select: { shopId: true },
+    take: 1,
+  })
+
   // Find commissions paid with this capture ID and revert to pending
   const affected = await prisma.commission.updateMany({
     where: { paymentRef: captureId },
@@ -197,27 +219,20 @@ async function handleCaptureRefunded(event: PayPalWebhookEvent): Promise<void> {
     `[PayPal Webhook] Reverted ${affected.count} commissions from capture ${captureId} to pending`
   );
 
-  // Audit log
-  if (affected.count > 0) {
-    const firstCommission = await prisma.commission.findFirst({
-      where: { paymentRef: null },
-      select: { shopId: true },
-    });
-
-    if (firstCommission) {
-      await prisma.auditLog.create({
-        data: {
-          shopId: firstCommission.shopId,
-          action: 'paypal_webhook_capture_refunded',
-          resourceType: 'paypal_webhook',
-          resourceId: captureId,
-          metadata: {
-            eventId: event.id,
-            captureId,
-            revertedCount: affected.count,
-          },
+  // Audit log using shopId from the commissions found before revert
+  if (affected.count > 0 && commissionsToRevert.length > 0) {
+    await prisma.auditLog.create({
+      data: {
+        shopId: commissionsToRevert[0].shopId,
+        action: 'paypal_webhook_capture_refunded',
+        resourceType: 'paypal_webhook',
+        resourceId: captureId,
+        metadata: {
+          eventId: event.id,
+          captureId,
+          revertedCount: affected.count,
         },
-      });
-    }
+      },
+    });
   }
 }

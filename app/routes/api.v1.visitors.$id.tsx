@@ -9,35 +9,24 @@
 
 import type { LoaderFunctionArgs } from '@remix-run/node'
 import { json } from '@remix-run/node'
-import { prisma } from '~/lib/prisma.server'
+import { authenticateApiRequest } from '~/lib/api.server'
 import { getVisitorWithSessions } from '~/lib/visitor.server'
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
+  // Authenticate via API key (Enterprise plan required)
+  const authResult = await authenticateApiRequest(request)
+  if (authResult instanceof Response) return authResult
+
+  const { shopId } = authResult
+
   const visitorId = params.id
 
   if (!visitorId) {
     return json({ error: 'Missing visitor ID' }, { status: 400 })
   }
 
-  const url = new URL(request.url)
-  const shopDomain = url.searchParams.get('shop')
-
-  if (!shopDomain) {
-    return json({ error: 'Missing shop parameter' }, { status: 400 })
-  }
-
-  // Find shop
-  const shop = await prisma.shop.findUnique({
-    where: { shopDomain },
-    select: { id: true },
-  })
-
-  if (!shop) {
-    return json({ error: 'Shop not found' }, { status: 404 })
-  }
-
   try {
-    const visitor = await getVisitorWithSessions(shop.id, visitorId)
+    const visitor = await getVisitorWithSessions(shopId, visitorId)
 
     if (!visitor) {
       return json({ error: 'Visitor not found' }, { status: 404 })

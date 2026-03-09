@@ -212,8 +212,8 @@ async function processExportJob(job: Job<ExportJobData>) {
     }
 
     // Update status to processing
-    await prisma.exportJob.update({
-      where: { id: jobId },
+    await prisma.exportJob.updateMany({
+      where: { id: jobId, shopId },
       data: { status: 'processing' },
     })
 
@@ -374,8 +374,8 @@ async function processExportJob(job: Job<ExportJobData>) {
     const downloadUrl = await getSignedDownloadUrl(zipStorageKey, 24 * 60 * 60)
 
     // Update export job
-    await prisma.exportJob.update({
-      where: { id: jobId },
+    await prisma.exportJob.updateMany({
+      where: { id: jobId, shopId },
       data: {
         status: 'completed',
         downloadUrl,
@@ -397,8 +397,8 @@ async function processExportJob(job: Job<ExportJobData>) {
     console.error(`[Export Worker] Job ${jobId} failed:`, error)
 
     // Update job status to failed
-    await prisma.exportJob.update({
-      where: { id: jobId },
+    await prisma.exportJob.updateMany({
+      where: { id: jobId, shopId },
       data: { status: 'failed' },
     })
 

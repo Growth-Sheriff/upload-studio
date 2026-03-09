@@ -150,7 +150,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     await prisma.apiKey.update({
-      where: { id: keyId },
+      where: { id: keyId, shopId: shop.id },
       data: { status: "revoked" },
     });
 

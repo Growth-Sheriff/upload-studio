@@ -428,6 +428,13 @@ const preflightWorker = new Worker<PreflightJobData>(
         throw new Error(`Upload item not found: ${itemId}`)
       }
 
+      // Verify item belongs to the expected upload (tenant isolation)
+      if (item.uploadId !== uploadId) {
+        throw new Error(
+          `Upload item ${itemId} does not belong to upload ${uploadId} (actual: ${item.uploadId})`
+        )
+      }
+
       await job.updateProgress(10)
       console.log(`[Preflight] Downloading ${storageKey} from ${storageProvider} storage`)
 
@@ -714,8 +721,8 @@ const preflightWorker = new Worker<PreflightJobData>(
           uploadStatus = 'needs_review'
         }
 
-        await prisma.upload.update({
-          where: { id: uploadId },
+        await prisma.upload.updateMany({
+          where: { id: uploadId, shopId },
           data: {
             status: uploadStatus,
             preflightSummary: {

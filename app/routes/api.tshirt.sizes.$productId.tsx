@@ -108,6 +108,19 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       ? productId
       : `gid://shopify/Product/${productId}`;
 
+    // Verify product is configured for customization in this shop
+    const productConfig = await prisma.productConfig.findFirst({
+      where: { shopId: shop.id, productId: productGid },
+      select: { id: true },
+    });
+
+    if (!productConfig) {
+      return cachedCorsJson({
+        sizes: DEFAULT_SIZES,
+        source: "default",
+      }, request);
+    }
+
     // Fetch product variants from Shopify
     const response = await fetch(
       `https://${shopDomain}/admin/api/2025-10/graphql.json`,

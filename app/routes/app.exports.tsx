@@ -67,8 +67,16 @@ export async function action({ request }: ActionFunctionArgs) {
   if (action === "retry") {
     const jobId = formData.get("jobId") as string;
 
-    const exportJob = await prisma.exportJob.update({
-      where: { id: jobId },
+    const exportJob = await prisma.exportJob.findFirst({
+      where: { id: jobId, shopId: shop.id },
+    });
+
+    if (!exportJob) {
+      return json({ error: "Export job not found" }, { status: 404 });
+    }
+
+    await prisma.exportJob.updateMany({
+      where: { id: jobId, shopId: shop.id },
       data: {
         status: "pending",
         downloadUrl: null,
@@ -101,8 +109,17 @@ export async function action({ request }: ActionFunctionArgs) {
   if (action === "delete") {
     const jobId = formData.get("jobId") as string;
 
-    await prisma.exportJob.delete({
-      where: { id: jobId },
+    // Verify job belongs to this shop before deleting
+    const jobToDelete = await prisma.exportJob.findFirst({
+      where: { id: jobId, shopId: shop.id },
+    });
+
+    if (!jobToDelete) {
+      return json({ error: "Export job not found" }, { status: 404 });
+    }
+
+    await prisma.exportJob.deleteMany({
+      where: { id: jobId, shopId: shop.id },
     });
 
     return json({ success: true, message: "Export job deleted" });

@@ -172,8 +172,8 @@ export async function action({ request }: ActionFunctionArgs) {
         // 
         // FALLBACK HANDLING: If client used a different provider than intent (fallback scenario),
         // we MUST update the storageKey to reflect the ACTUAL storage location
-        const existingItem = await prisma.uploadItem.findUnique({
-          where: { id: item.itemId },
+        const existingItem = await prisma.uploadItem.findFirst({
+          where: { id: item.itemId, uploadId },
           select: { storageKey: true },
         })
         
@@ -212,8 +212,8 @@ export async function action({ request }: ActionFunctionArgs) {
           console.log(`[Upload Complete] storageKey OK, provider matches: ${currentStorageKey.substring(0, 60)}`)
         }
 
-        await prisma.uploadItem.update({
-          where: { id: item.itemId },
+        await prisma.uploadItem.updateMany({
+          where: { id: item.itemId, uploadId },
           data: updateData,
         })
       }
@@ -263,19 +263,19 @@ export async function action({ request }: ActionFunctionArgs) {
     // 📊 Update visitor and session metrics if linked
     if (upload.visitorId) {
       try {
-        // Increment visitor's total uploads
-        await prisma.visitor.update({
-          where: { id: upload.visitorId },
+        // Increment visitor's total uploads (scoped to shop)
+        await prisma.visitor.updateMany({
+          where: { id: upload.visitorId, shopId: shop.id },
           data: {
             totalUploads: { increment: 1 },
             lastSeenAt: new Date(),
           },
         })
 
-        // Increment session's uploads count if session exists
+        // Increment session's uploads count if session exists (scoped to shop)
         if (upload.sessionId) {
-          await prisma.visitorSession.update({
-            where: { id: upload.sessionId },
+          await prisma.visitorSession.updateMany({
+            where: { id: upload.sessionId, shopId: shop.id },
             data: {
               uploadsInSession: { increment: 1 },
               lastActivityAt: new Date(),
