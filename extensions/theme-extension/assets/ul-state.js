@@ -588,7 +588,7 @@
         return config;
         
       } catch (e) {
-        console.error('[ULState] Config load error:', e);
+        console.error('[ULState] Config load error:', e?.message || e?.status || JSON.stringify(e) || 'Unknown error');
         return null;
       }
     },

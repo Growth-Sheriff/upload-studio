@@ -670,7 +670,11 @@ export function buildStorageKey(
 ): string {
   const env = process.env.NODE_ENV === 'production' ? 'prod' : 'dev'
   const safeShop = shopDomain.replace(/[^a-zA-Z0-9-]/g, '_')
-  return `${safeShop}/${env}/${uploadId}/${itemId}/${filename}`
+  const safeFilename = filename
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/_+/g, '_')
+  return `${safeShop}/${env}/${uploadId}/${itemId}/${safeFilename}`
 }
 
 /**

@@ -319,9 +319,48 @@
               state.form.selectedVariantId = variantId
               state.form.selectedVariantTitle = 'Default'
               console.log('[UL] Variant from data attribute:', variantId)
-            } else {
-              console.warn('[UL] Could not determine variant ID - add to cart may fail')
             }
+          }
+
+          // Universal fallbacks if still no variant ID
+          if (!state.form.selectedVariantId) {
+            // Try Shopify product JSON script tag (works on most themes)
+            const productJsonEl = document.querySelector('[data-product-json], script[type="application/json"][data-product-json], #ProductJson-product-template, .product-json')
+            if (productJsonEl) {
+              try {
+                const productData = JSON.parse(productJsonEl.textContent)
+                const variants = productData?.variants || productData?.product?.variants
+                if (variants?.[0]) {
+                  state.form.selectedVariantId = String(variants[0].id)
+                  state.form.selectedVariantTitle = variants[0].title || 'Default'
+                  console.log('[UL] Variant from product JSON:', state.form.selectedVariantId)
+                }
+              } catch (e) { /* invalid JSON, skip */ }
+            }
+          }
+
+          if (!state.form.selectedVariantId) {
+            // Try URL ?variant= parameter
+            const urlVariant = new URL(window.location.href).searchParams.get('variant')
+            if (urlVariant) {
+              state.form.selectedVariantId = urlVariant
+              state.form.selectedVariantTitle = 'Default'
+              console.log('[UL] Variant from URL parameter:', urlVariant)
+            }
+          }
+
+          if (!state.form.selectedVariantId) {
+            // Try any input with variant in the name within product form
+            const anyVariantInput = document.querySelector('select[name="id"], input[name="id"][type="hidden"], input[name="variant_id"]')
+            if (anyVariantInput?.value) {
+              state.form.selectedVariantId = anyVariantInput.value
+              state.form.selectedVariantTitle = 'Default'
+              console.log('[UL] Variant from generic input:', anyVariantInput.value)
+            }
+          }
+
+          if (!state.form.selectedVariantId) {
+            console.warn('[UL] Could not determine variant ID - add to cart may fail')
           }
         }
 
@@ -332,7 +371,7 @@
         elements.loading.classList.remove('active')
         elements.content.style.display = 'block'
       } catch (error) {
-        console.error('[UL] Config load error:', error)
+        console.error('[UL] Config load error:', error?.message || error?.status || JSON.stringify(error) || 'Unknown error')
         elements.loading.innerHTML = '<div>Failed to load. Please refresh the page.</div>'
       }
     },
