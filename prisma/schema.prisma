@@ -58,6 +58,13 @@ model Shop {
   paypalAutoCharge  Boolean   @default(false) @map("paypal_auto_charge") // Auto-charge enabled
   paypalVaultedAt   DateTime? @map("paypal_vaulted_at")    // When payment method was saved
 
+  // Stripe (automatic payments)
+  stripeCustomerId      String?   @map("stripe_customer_id")       // Stripe Customer ID
+  stripePaymentMethodId String?   @map("stripe_payment_method_id") // Stripe saved payment method
+  stripeAutoCharge      Boolean   @default(false) @map("stripe_auto_charge")
+  stripeEmail           String?   @map("stripe_email")             // Stripe billing email
+  stripeSetupAt         DateTime? @map("stripe_setup_at")          // When Stripe was set up
+
   installedAt DateTime @default(now()) @map("installed_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
@@ -592,9 +599,10 @@ model Commission {
   commissionAmount Decimal @map("commission_amount") @db.Decimal(10, 2)
 
   // Payment status
-  status        String   @default("pending") // pending, paid, waived
-  paidAt        DateTime? @map("paid_at")
-  paymentRef    String?  @map("payment_ref") // PayPal transaction ID
+  status          String   @default("pending") // pending, paid, waived
+  paidAt          DateTime? @map("paid_at")
+  paymentRef      String?  @map("payment_ref")      // PayPal/Stripe transaction ID
+  paymentProvider String?  @map("payment_provider") // paypal, stripe
 
   // Metadata
   createdAt     DateTime @default(now()) @map("created_at")

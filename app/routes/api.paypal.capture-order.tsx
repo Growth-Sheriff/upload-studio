@@ -138,11 +138,13 @@ export async function action({ request }: ActionFunctionArgs) {
           status: 'paid',
           paidAt: new Date(),
           paymentRef: captureId,
+          paymentProvider: 'paypal',
         },
         update: {
           status: 'paid',
           paidAt: new Date(),
           paymentRef: captureId,
+          paymentProvider: 'paypal',
         },
       });
       markedCount++;

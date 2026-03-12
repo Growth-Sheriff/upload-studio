@@ -22,6 +22,7 @@ import {
 import { useCallback, useEffect, useState } from 'react'
 import prisma from '~/lib/prisma.server'
 import { isPayPalConfigured } from '~/lib/paypal.server'
+import { isStripeConfigured } from '~/lib/stripe.server'
 import { authenticate } from '~/shopify.server'
 
 // Fixed commission per order: $0.10
@@ -180,6 +181,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     paypalVaulted: Boolean(shop.paypalVaultId),
     paypalPayerEmail: shop.paypalPayerEmail || null,
     autoChargeThreshold: 49.99,
+    stripeEnabled: isStripeConfigured(),
+    stripeAutoCharge: shop.stripeAutoCharge,
+    stripeSaved: Boolean(shop.stripePaymentMethodId),
+    stripeEmail: shop.stripeEmail || null,
   })
 }
 
@@ -201,19 +206,35 @@ export async function action({ request }: ActionFunctionArgs) {
   // Toggle auto-charge on/off
   if (actionType === 'toggle_auto_charge') {
     const enabled = formData.get('enabled') === 'true'
+    const provider = formData.get('provider') as string || 'paypal'
 
-    // Can only enable if vault exists
-    if (enabled && !shop.paypalVaultId) {
-      return json(
-        { error: 'No saved payment method. Complete a PayPal payment first.' },
-        { status: 400 }
-      )
+    if (provider === 'stripe') {
+      // Stripe auto-charge toggle
+      if (enabled && !shop.stripePaymentMethodId) {
+        return json(
+          { error: 'No saved Stripe payment method. Complete a Stripe payment first.' },
+          { status: 400 }
+        )
+      }
+
+      await prisma.shop.update({
+        where: { id: shop.id },
+        data: { stripeAutoCharge: enabled },
+      })
+    } else {
+      // PayPal auto-charge toggle
+      if (enabled && !shop.paypalVaultId) {
+        return json(
+          { error: 'No saved payment method. Complete a PayPal payment first.' },
+          { status: 400 }
+        )
+      }
+
+      await prisma.shop.update({
+        where: { id: shop.id },
+        data: { paypalAutoCharge: enabled },
+      })
     }
-
-    await prisma.shop.update({
-      where: { id: shop.id },
-      data: { paypalAutoCharge: enabled },
-    })
 
     await prisma.auditLog.create({
       data: {
@@ -304,6 +325,10 @@ export default function BillingPage() {
     paypalVaulted,
     paypalPayerEmail,
     autoChargeThreshold,
+    stripeEnabled,
+    stripeAutoCharge,
+    stripeSaved,
+    stripeEmail,
   } = useLoaderData<typeof loader>()
   const navigation = useNavigation()
   const isSubmitting = navigation.state === 'submitting'
@@ -318,6 +343,11 @@ export default function BillingPage() {
   const [paypalSuccess, setPaypalSuccess] = useState(false)
   const [paypalCaptureId, setPaypalCaptureId] = useState<string | null>(null)
 
+  // Stripe state
+  const [stripeLoading, setStripeLoading] = useState(false)
+  const [stripeError, setStripeError] = useState<string | null>(null)
+  const [stripeSuccess, setStripeSuccess] = useState(false)
+
   const handlePaymentModalOpen = useCallback(() => setPaymentModalOpen(true), [])
   const handlePaymentModalClose = useCallback(() => {
     setPaymentModalOpen(false)
@@ -330,6 +360,36 @@ export default function BillingPage() {
     const paypalStatus = urlParams.get('paypal')
     if (paypalStatus === 'cancelled') {
       setPaypalError('Payment was cancelled. You can try again.')
+    }
+
+    // Check for Stripe return
+    const stripeStatus = urlParams.get('stripe')
+    const stripeSessionId = urlParams.get('session_id')
+    if (stripeStatus === 'success' && stripeSessionId) {
+      // Confirm Stripe payment
+      setStripeLoading(true)
+      fetch('/api/stripe/confirm-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: stripeSessionId }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success) {
+            setStripeSuccess(true)
+            setTimeout(() => {
+              window.location.href = '/app/billing'
+            }, 2000)
+          } else {
+            setStripeError(data.error || 'Payment confirmation failed')
+          }
+        })
+        .catch((err) => {
+          setStripeError(err.message || 'Payment confirmation failed')
+        })
+        .finally(() => setStripeLoading(false))
+    } else if (stripeStatus === 'cancelled') {
+      setStripeError('Payment was cancelled. You can try again.')
     }
   }, [])
 
@@ -403,6 +463,32 @@ export default function BillingPage() {
     }
   }, [paypalCaptureId])
 
+  // Stripe checkout flow
+  const handlePayWithStripe = useCallback(async () => {
+    setStripeLoading(true)
+    setStripeError(null)
+
+    try {
+      const response = await fetch('/api/stripe/create-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to create Stripe checkout')
+      }
+
+      // Redirect to Stripe Checkout
+      window.location.href = data.checkoutUrl
+    } catch (error) {
+      console.error('Stripe error:', error)
+      setStripeError(error instanceof Error ? error.message : 'Stripe payment failed')
+      setStripeLoading(false)
+    }
+  }, [])
+
   // Format date for display
   const formatDate = (iso: string) => {
     return new Date(iso).toLocaleDateString('en-US', {
@@ -437,7 +523,7 @@ export default function BillingPage() {
           <Banner tone="info">
             <p>
               <strong>Commission:</strong> ${commissionPerOrder.toFixed(3)} per order with Upload
-              Lift items (fixed fee). Payments are collected manually via PayPal.
+              Lift items (fixed fee). Payments are collected via Stripe (card) or PayPal.
             </p>
           </Banner>
         </Layout.Section>
@@ -539,6 +625,23 @@ export default function BillingPage() {
                   </Banner>
                 )}
 
+                {/* Stripe Success Banner */}
+                {stripeSuccess && (
+                  <Banner tone="success" onDismiss={() => setStripeSuccess(false)}>
+                    <p>
+                      Stripe payment successful! Your commissions have been marked as paid. Page
+                      will refresh shortly.
+                    </p>
+                  </Banner>
+                )}
+
+                {/* Stripe Error Banner */}
+                {stripeError && (
+                  <Banner tone="critical" onDismiss={() => setStripeError(null)}>
+                    <p>{stripeError}</p>
+                  </Banner>
+                )}
+
                 <InlineStack align="space-between">
                   <BlockStack gap="100">
                     <Text as="h2" variant="headingMd">
@@ -550,13 +653,24 @@ export default function BillingPage() {
                     </Text>
                   </BlockStack>
                   <InlineStack gap="200">
+                    {/* Stripe Checkout Button */}
+                    {stripeEnabled && (
+                      <Button
+                        variant="primary"
+                        onClick={handlePayWithStripe}
+                        loading={stripeLoading}
+                        disabled={stripeLoading || paypalLoading}
+                      >
+                        💳 Pay with Card (Stripe)
+                      </Button>
+                    )}
                     {/* PayPal Checkout Button */}
                     {paypalEnabled && !paypalCaptureId && (
                       <Button
                         variant="primary"
                         onClick={handlePayWithPayPal}
                         loading={paypalLoading}
-                        disabled={paypalLoading}
+                        disabled={paypalLoading || stripeLoading}
                       >
                         💳 Pay with PayPal
                       </Button>
@@ -642,7 +756,7 @@ export default function BillingPage() {
                 </Box>
 
                 <Text as="p" variant="bodySm" tone="subdued">
-                  You can pay via PayPal checkout button or send payment manually to the email
+                  You can pay via Stripe (card), PayPal, or send payment manually to the email
                   above.
                 </Text>
               </BlockStack>
@@ -660,47 +774,81 @@ export default function BillingPage() {
                     <Text as="h2" variant="headingMd">
                       ⚡ Automatic Payments
                     </Text>
-                    {autoChargeEnabled ? (
+                    {(autoChargeEnabled || stripeAutoCharge) ? (
                       <Badge tone="success">Active</Badge>
-                    ) : paypalVaulted ? (
+                    ) : (paypalVaulted || stripeSaved) ? (
                       <Badge tone="attention">Paused</Badge>
                     ) : (
                       <Badge>Not Set Up</Badge>
                     )}
                   </InlineStack>
                   <Text as="p" variant="bodySm" tone="subdued">
-                    When enabled, we'll automatically charge your PayPal when pending commissions
-                    reach ${autoChargeThreshold.toFixed(2)}.
+                    When enabled, we'll automatically charge your saved payment method when
+                    pending commissions reach ${autoChargeThreshold.toFixed(2)}.
                   </Text>
                 </BlockStack>
-
-                {paypalVaulted && (
-                  <Form method="post">
-                    <input type="hidden" name="_action" value="toggle_auto_charge" />
-                    <input
-                      type="hidden"
-                      name="enabled"
-                      value={autoChargeEnabled ? 'false' : 'true'}
-                    />
-                    <Button
-                      submit
-                      variant={autoChargeEnabled ? 'plain' : 'primary'}
-                      tone={autoChargeEnabled ? 'critical' : undefined}
-                    >
-                      {autoChargeEnabled ? 'Disable Auto-Pay' : 'Enable Auto-Pay'}
-                    </Button>
-                  </Form>
-                )}
               </InlineStack>
 
+              {/* Stripe Auto-Pay Controls */}
+              {stripeSaved && stripeEmail && (
+                <>
+                  <Divider />
+                  <Box background="bg-surface-secondary" padding="300" borderRadius="200">
+                    <InlineStack gap="400" blockAlign="center">
+                      <BlockStack gap="100">
+                        <Text as="p" variant="bodySm" tone="subdued">
+                          Stripe Card
+                        </Text>
+                        <Text as="p" variant="bodyMd">
+                          Card ({stripeEmail})
+                        </Text>
+                      </BlockStack>
+                      <BlockStack gap="100">
+                        <Text as="p" variant="bodySm" tone="subdued">
+                          Threshold
+                        </Text>
+                        <Text as="p" variant="bodyMd">
+                          ${autoChargeThreshold.toFixed(2)}
+                        </Text>
+                      </BlockStack>
+                      <BlockStack gap="100">
+                        <Text as="p" variant="bodySm" tone="subdued">
+                          Status
+                        </Text>
+                        <Text as="p" variant="bodyMd">
+                          {stripeAutoCharge ? '✅ Auto-charging' : '⏸️ Paused'}
+                        </Text>
+                      </BlockStack>
+                      <Form method="post">
+                        <input type="hidden" name="_action" value="toggle_auto_charge" />
+                        <input type="hidden" name="provider" value="stripe" />
+                        <input
+                          type="hidden"
+                          name="enabled"
+                          value={stripeAutoCharge ? 'false' : 'true'}
+                        />
+                        <Button
+                          submit
+                          variant={stripeAutoCharge ? 'plain' : 'primary'}
+                          tone={stripeAutoCharge ? 'critical' : undefined}
+                        >
+                          {stripeAutoCharge ? 'Disable' : 'Enable'}
+                        </Button>
+                      </Form>
+                    </InlineStack>
+                  </Box>
+                </>
+              )}
+
+              {/* PayPal Auto-Pay Controls */}
               {paypalVaulted && paypalPayerEmail && (
                 <>
                   <Divider />
                   <Box background="bg-surface-secondary" padding="300" borderRadius="200">
-                    <InlineStack gap="400">
+                    <InlineStack gap="400" blockAlign="center">
                       <BlockStack gap="100">
                         <Text as="p" variant="bodySm" tone="subdued">
-                          Payment Method
+                          PayPal
                         </Text>
                         <Text as="p" variant="bodyMd">
                           PayPal ({paypalPayerEmail})
@@ -722,16 +870,32 @@ export default function BillingPage() {
                           {autoChargeEnabled ? '✅ Auto-charging' : '⏸️ Paused'}
                         </Text>
                       </BlockStack>
+                      <Form method="post">
+                        <input type="hidden" name="_action" value="toggle_auto_charge" />
+                        <input type="hidden" name="provider" value="paypal" />
+                        <input
+                          type="hidden"
+                          name="enabled"
+                          value={autoChargeEnabled ? 'false' : 'true'}
+                        />
+                        <Button
+                          submit
+                          variant={autoChargeEnabled ? 'plain' : 'primary'}
+                          tone={autoChargeEnabled ? 'critical' : undefined}
+                        >
+                          {autoChargeEnabled ? 'Disable' : 'Enable'}
+                        </Button>
+                      </Form>
                     </InlineStack>
                   </Box>
                 </>
               )}
 
-              {!paypalVaulted && (
+              {!paypalVaulted && !stripeSaved && (
                 <Banner tone="info">
                   <p>
-                    Complete your first PayPal payment above to enable automatic payments. Your
-                    payment method will be securely saved for future charges.
+                    Complete your first payment above (Stripe or PayPal) to enable automatic
+                    payments. Your payment method will be securely saved for future charges.
                   </p>
                 </Banner>
               )}
@@ -783,8 +947,8 @@ export default function BillingPage() {
                   {commissionPerOrder.toFixed(3)} per order
                 </Text>
                 <Text as="p" variant="bodyMd">
-                  3. <strong>Pay with PayPal</strong> - Click the PayPal button to pay all pending
-                  commissions securely
+                  3. <strong>Pay with Stripe or PayPal</strong> - Click the payment button to pay
+                  all pending commissions securely
                 </Text>
                 <Text as="p" variant="bodyMd">
                   4. <strong>Automatic Payments</strong> - After your first payment, auto-pay kicks

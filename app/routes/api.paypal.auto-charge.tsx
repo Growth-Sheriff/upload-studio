@@ -1,7 +1,7 @@
 /**
- * PayPal Auto-Charge API
+ * Auto-Charge API (PayPal + Stripe)
  *
- * Checks all shops with vaulted payment methods.
+ * Checks all shops with saved payment methods (PayPal vault OR Stripe).
  * If pending commission >= $49.99 threshold, charges automatically.
  *
  * Called by:
@@ -11,6 +11,7 @@
 import type { ActionFunctionArgs } from '@remix-run/node';
 import { json } from '@remix-run/node';
 import { chargeWithVault, isPayPalConfigured } from '~/lib/paypal.server';
+import { chargeWithSavedMethod, isStripeConfigured } from '~/lib/stripe.server';
 import prisma from '~/lib/prisma.server';
 
 const COMMISSION_PER_ORDER = 0.1;
@@ -33,15 +34,17 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  if (!isPayPalConfigured()) {
-    return json({ error: 'PayPal not configured' }, { status: 500 });
+  if (!isPayPalConfigured() && !isStripeConfigured()) {
+    return json({ error: 'No payment provider configured' }, { status: 500 });
   }
 
-  // Find all shops with vault enabled and auto-charge on
+  // Find all shops with auto-charge enabled (PayPal vault OR Stripe saved method)
   const vaultedShops = await prisma.shop.findMany({
     where: {
-      paypalVaultId: { not: null },
-      paypalAutoCharge: true,
+      OR: [
+        { paypalVaultId: { not: null }, paypalAutoCharge: true },
+        { stripePaymentMethodId: { not: null }, stripeAutoCharge: true },
+      ],
     },
     select: {
       id: true,
@@ -49,6 +52,9 @@ export async function action({ request }: ActionFunctionArgs) {
       paypalVaultId: true,
       paypalPayerId: true,
       paypalPayerEmail: true,
+      stripeCustomerId: true,
+      stripePaymentMethodId: true,
+      stripeEmail: true,
     },
   });
 
@@ -101,14 +107,15 @@ export async function action({ request }: ActionFunctionArgs) {
       const auditEntry = await prisma.auditLog.create({
         data: {
           shopId: shop.id,
-          action: 'paypal_auto_charge_initiated',
-          resourceType: 'paypal_auto_charge',
+          action: 'auto_charge_initiated',
+          resourceType: 'auto_charge',
           resourceId: 'pending',
           metadata: {
             orderIds: pendingOrderIds,
             amount: pendingAmount.toFixed(2),
             orderCount: pendingOrderIds.length,
             vaultId: shop.paypalVaultId,
+            stripeCustomerId: shop.stripeCustomerId,
             threshold: AUTO_CHARGE_THRESHOLD,
           },
         },
@@ -117,22 +124,41 @@ export async function action({ request }: ActionFunctionArgs) {
       const totalAmount = pendingAmount.toFixed(2);
       const description = `Upload Lift auto-charge: ${pendingOrderIds.length} orders @ $${COMMISSION_PER_ORDER}/order`;
 
-      // Charge via vault
-      const capture = await chargeWithVault(
-        shop.paypalVaultId!,
-        shop.paypalPayerId || '',
-        totalAmount,
-        shop.shopDomain,
-        description,
-        auditEntry.id
-      );
+      let captureId: string;
+      let provider: 'paypal' | 'stripe';
 
-      if (capture.status !== 'COMPLETED') {
-        throw new Error(`Capture status: ${capture.status}`);
+      // Prefer Stripe if configured, fall back to PayPal
+      if (shop.stripeCustomerId && shop.stripePaymentMethodId && isStripeConfigured()) {
+        // Charge via Stripe saved payment method
+        const result = await chargeWithSavedMethod(
+          shop.stripeCustomerId,
+          shop.stripePaymentMethodId,
+          totalAmount,
+          shop.shopDomain,
+          description
+        );
+        captureId = result.paymentIntentId;
+        provider = 'stripe';
+      } else if (shop.paypalVaultId && isPayPalConfigured()) {
+        // Charge via PayPal vault
+        const capture = await chargeWithVault(
+          shop.paypalVaultId,
+          shop.paypalPayerId || '',
+          totalAmount,
+          shop.shopDomain,
+          description,
+          auditEntry.id
+        );
+
+        if (capture.status !== 'COMPLETED') {
+          throw new Error(`Capture status: ${capture.status}`);
+        }
+
+        captureId = capture.purchase_units?.[0]?.payments?.captures?.[0]?.id || capture.id;
+        provider = 'paypal';
+      } else {
+        throw new Error('No valid payment method available');
       }
-
-      const captureId =
-        capture.purchase_units?.[0]?.payments?.captures?.[0]?.id || capture.id;
 
       // Mark all pending commissions as paid
       for (const orderId of pendingOrderIds) {
@@ -154,11 +180,13 @@ export async function action({ request }: ActionFunctionArgs) {
             status: 'paid',
             paidAt: new Date(),
             paymentRef: captureId,
+            paymentProvider: provider,
           },
           update: {
             status: 'paid',
             paidAt: new Date(),
             paymentRef: captureId,
+            paymentProvider: provider,
           },
         });
       }
@@ -167,14 +195,14 @@ export async function action({ request }: ActionFunctionArgs) {
       await prisma.auditLog.update({
         where: { id: auditEntry.id },
         data: {
-          action: 'paypal_auto_charge_completed',
+          action: 'auto_charge_completed',
           resourceId: captureId,
           metadata: {
             captureId,
             amount: totalAmount,
             orderCount: pendingOrderIds.length,
-            payerEmail: shop.paypalPayerEmail,
-            vaultId: shop.paypalVaultId,
+            provider,
+            payerEmail: provider === 'stripe' ? shop.stripeEmail : shop.paypalPayerEmail,
           },
         },
       });
@@ -196,8 +224,8 @@ export async function action({ request }: ActionFunctionArgs) {
       await prisma.auditLog.create({
         data: {
           shopId: shop.id,
-          action: 'paypal_auto_charge_failed',
-          resourceType: 'paypal_auto_charge',
+          action: 'auto_charge_failed',
+          resourceType: 'auto_charge',
           resourceId: 'error',
           metadata: {
             error: errMsg,
@@ -206,7 +234,7 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       });
 
-      // If vault is invalid/expired, disable auto-charge
+      // If PayPal vault is invalid/expired, disable auto-charge
       if (
         errMsg.includes('INVALID_VAULT_ID') ||
         errMsg.includes('VAULT_NOT_FOUND') ||
@@ -220,6 +248,22 @@ export async function action({ request }: ActionFunctionArgs) {
           },
         });
         console.log(`[AutoCharge] Vault disabled for ${shop.shopDomain} (invalid/expired)`);
+      }
+
+      // If Stripe payment method is invalid, disable Stripe auto-charge
+      if (
+        errMsg.includes('payment_method_not_available') ||
+        errMsg.includes('card_declined') ||
+        errMsg.includes('No such PaymentMethod')
+      ) {
+        await prisma.shop.update({
+          where: { id: shop.id },
+          data: {
+            stripeAutoCharge: false,
+            stripePaymentMethodId: null,
+          },
+        });
+        console.log(`[AutoCharge] Stripe disabled for ${shop.shopDomain} (invalid card)`);
       }
 
       results.push({
