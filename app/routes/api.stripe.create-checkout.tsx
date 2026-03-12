@@ -83,9 +83,10 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const totalAmount = (pendingOrderIds.length * COMMISSION_PER_ORDER).toFixed(2);
+  const appName = process.env.APP_NAME || 'Upload Studio';
   const description = monthKey
-    ? `Upload Lift commission (${monthKey}): ${pendingOrderIds.length} orders @ $${COMMISSION_PER_ORDER}/order`
-    : `Upload Lift commission: ${pendingOrderIds.length} orders @ $${COMMISSION_PER_ORDER}/order`;
+    ? `${appName} commission (${monthKey}): ${pendingOrderIds.length} orders @ $${COMMISSION_PER_ORDER}/order`
+    : `${appName} commission: ${pendingOrderIds.length} orders @ $${COMMISSION_PER_ORDER}/order`;
 
   try {
     // Create audit entry for reference

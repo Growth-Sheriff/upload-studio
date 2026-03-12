@@ -1128,7 +1128,7 @@ console.log('[ULTShirtModal] Script loading...')
     },
 
     async performUpload(file, progressCallback) {
-      // API base from customizerapp.dev
+      // API base for Upload Studio app proxy
       const apiBase = '/apps/customizer'
 
       // Track upload start time
@@ -1781,7 +1781,7 @@ console.log('[ULTShirtModal] Script loading...')
             <button type="button" class="ul-modal-close" onclick="window.ULTShirtModal.close()">×</button>
             <div class="ul-error-icon">⚠️</div>
             <h2>Configuration Required</h2>
-            <p>The T-Shirt customizer hasn't been set up yet for this store.</p>
+            <p>The upload studio hasn't been set up yet for this store.</p>
             <p class="ul-error-detail">Please contact the store owner to configure the T-Shirt product in the admin panel.</p>
             <button type="button" onclick="window.ULTShirtModal.close()" class="ul-btn ul-btn-primary">
               Close

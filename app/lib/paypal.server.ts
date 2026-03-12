@@ -173,11 +173,11 @@ export async function createPayPalOrder(
       },
     ],
     application_context: {
-      brand_name: 'Upload Lift - Customizer App',
+      brand_name: process.env.APP_NAME || 'Upload Studio',
       landing_page: 'NO_PREFERENCE',
       user_action: 'PAY_NOW',
-      return_url: `https://customizerapp.dev/app/billing?paypal=success`,
-      cancel_url: `https://customizerapp.dev/app/billing?paypal=cancelled`,
+      return_url: `${process.env.SHOPIFY_APP_URL || 'https://localhost:3000'}/app/billing?paypal=success`,
+      cancel_url: `${process.env.SHOPIFY_APP_URL || 'https://localhost:3000'}/app/billing?paypal=cancelled`,
     },
   };
 
@@ -343,12 +343,12 @@ export async function createPayPalOrderWithVault(
     payment_source: {
       paypal: {
         experience_context: {
-          brand_name: 'Upload Lift - Customizer App',
+          brand_name: process.env.APP_NAME || 'Upload Studio',
           landing_page: 'LOGIN',
           user_action: 'PAY_NOW',
           payment_method_preference: 'IMMEDIATE_PAYMENT_REQUIRED',
-          return_url: `https://customizerapp.dev/app/billing?paypal=success`,
-          cancel_url: `https://customizerapp.dev/app/billing?paypal=cancelled`,
+          return_url: `${process.env.SHOPIFY_APP_URL || 'https://localhost:3000'}/app/billing?paypal=success`,
+          cancel_url: `${process.env.SHOPIFY_APP_URL || 'https://localhost:3000'}/app/billing?paypal=cancelled`,
         },
         attributes: {
           vault: {
@@ -417,7 +417,7 @@ export async function chargeWithVault(
       paypal: {
         vault_id: vaultId,
         experience_context: {
-          brand_name: 'Upload Lift - Customizer App',
+          brand_name: process.env.APP_NAME || 'Upload Studio',
           payment_method_preference: 'IMMEDIATE_PAYMENT_REQUIRED',
           shipping_preference: 'NO_SHIPPING',
         },

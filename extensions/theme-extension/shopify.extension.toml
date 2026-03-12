@@ -3,7 +3,7 @@ api_version = "2025-10"
 [[extensions]]
 uid = "a15fda35-486a-d53f-7288-b233dc6fe3900fa8210e"
 type = "theme"
-name = "Product 3D Customizer & Upload"
+name = "Upload Studio"
 handle = "product-3d-customizer"
 
 

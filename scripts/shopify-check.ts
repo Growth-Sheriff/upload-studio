@@ -421,9 +421,9 @@ const RULES = {
     description: 'Metafield namespace should be app-specific',
     severity: 'info' as const,
     patterns: [{
-      regex: /namespace:\s*['"](?!customizer|dtf|upload_lift)[a-z_]+['"]/g,
+      regex: /namespace:\s*['"](?!customizer|dtf|upload_studio)[a-z_]+['"]/g,
       message: 'Non-standard metafield namespace',
-      suggestion: 'Use app-specific namespace: customizer, dtf, or upload_lift',
+      suggestion: 'Use app-specific namespace: customizer, dtf, or upload_studio',
     }],
   },
 

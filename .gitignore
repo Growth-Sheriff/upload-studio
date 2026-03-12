@@ -9,6 +9,8 @@ public/build
 *.local
 dist
 
+# Tenant env files (contain secrets)
+envs/
 
 # Sentry Config File
 .env.sentry-build-plugin

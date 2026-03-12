@@ -1,18 +1,18 @@
 [Unit]
-Description=Upload Lift Flow Trigger Worker
+Description=Upload Studio - Flow Trigger Worker
 After=network.target postgresql.service redis.service
 
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/var/www/upload-lift
+WorkingDirectory=/var/www/upload-studio
 Environment=NODE_ENV=production
 ExecStart=/usr/bin/npx tsx workers/flow.worker.ts
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=upload-lift-flow
+SyslogIdentifier=upload-studio-flow
 
 [Install]
 WantedBy=multi-user.target

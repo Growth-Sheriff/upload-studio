@@ -153,7 +153,7 @@ export default function Tutorial() {
   return (
     <div>
       <h1 style={styles.title}>Video Tutorial</h1>
-      <p style={styles.subtitle}>Step-by-step guide to mastering Product 3D Customizer & Upload</p>
+      <p style={styles.subtitle}>Step-by-step guide to mastering Upload Studio</p>
 
       <div style={styles.divider} />
 

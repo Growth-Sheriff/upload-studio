@@ -1,48 +1,54 @@
 #!/bin/bash
 # ===========================================
-# Product 3D Customizer & Upload - Deployment Script
+# Upload Studio - Multi-Tenant Deployment Script
 # ===========================================
-# Run this after git pull to deploy changes
+# Builds Docker image and restarts all tenant containers.
 # Usage: bash deploy/deploy.sh
+#
+# Prerequisites:
+#   - envs/.env.{slug} files generated (scripts/generate-tenant-envs.sh)
+#   - DB schemas initialized (scripts/init-tenant-schemas.sh)
+# ===========================================
 
 set -e
 
-APP_DIR="/var/www/3d-customizer"
-SERVICE_NAME="3d-customizer"
+APP_DIR="/opt/apps/upload-studio"
 
 echo "=========================================="
-echo "3D Customizer - Deploying..."
+echo "Upload Studio - Multi-Tenant Deploy"
 echo "=========================================="
 
-cd $APP_DIR
+cd "$APP_DIR"
 
-# Check if .env exists
-if [ ! -f .env ]; then
-  echo "ERROR: .env file not found!"
-  echo "Copy .env.example to .env and configure it first."
+# Check envs directory
+if [ ! -d envs ] || [ -z "$(ls envs/.env.* 2>/dev/null)" ]; then
+  echo "ERROR: No tenant env files found in envs/"
+  echo "Run: bash scripts/generate-tenant-envs.sh"
   exit 1
 fi
 
-echo "[1/5] Pulling latest code from GitHub..."
+echo "[1/4] Pulling latest code from GitHub..."
 git pull origin main
 
-echo "[2/5] Installing dependencies..."
-pnpm install --frozen-lockfile
+echo "[2/4] Building Docker image..."
+docker build -t upload-studio:latest .
 
-echo "[3/5] Running database migrations..."
-pnpm db:migrate:deploy
+echo "[3/4] Starting containers..."
+docker compose up -d --remove-orphans
 
-echo "[4/5] Building application..."
-pnpm build
-
-echo "[5/5] Restarting service..."
-systemctl restart $SERVICE_NAME
+echo "[4/4] Checking container health..."
+sleep 5
+docker compose ps
 
 echo ""
 echo "=========================================="
 echo "Deployment complete!"
 echo "=========================================="
 echo ""
-echo "Check status: systemctl status $SERVICE_NAME"
-echo "Check logs: journalctl -u $SERVICE_NAME -f"
+echo "Commands:"
+echo "  docker compose ps          - Container status"
+echo "  docker compose logs -f     - All logs"
+echo "  docker logs us-{slug} -f   - Tenant-specific logs"
+echo "  docker compose restart     - Restart all"
+echo "  docker compose down        - Stop all"
 

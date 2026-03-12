@@ -283,15 +283,15 @@ export default function Contact() {
             <h3 style={styles.cardTitle}>Direct Contact</h3>
             <p style={styles.text}>
               <span style={styles.strong}>General:</span><br />
-              <a href="mailto:support@customizerapp.dev" style={styles.link}>support@customizerapp.dev</a>
+              <a href="mailto:support@uploadstudio.app.techifyboost.com" style={styles.link}>support@uploadstudio.app.techifyboost.com</a>
             </p>
             <p style={styles.text}>
               <span style={styles.strong}>Sales:</span><br />
-              <a href="mailto:sales@customizerapp.dev" style={styles.link}>sales@customizerapp.dev</a>
+              <a href="mailto:sales@uploadstudio.app.techifyboost.com" style={styles.link}>sales@uploadstudio.app.techifyboost.com</a>
             </p>
             <p style={styles.text}>
               <span style={styles.strong}>Enterprise:</span><br />
-              <a href="mailto:enterprise@customizerapp.dev" style={styles.link}>enterprise@customizerapp.dev</a>
+              <a href="mailto:enterprise@uploadstudio.app.techifyboost.com" style={styles.link}>enterprise@uploadstudio.app.techifyboost.com</a>
             </p>
           </div>
 

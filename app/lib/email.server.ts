@@ -13,8 +13,10 @@ const resend = process.env.RESEND_API_KEY
   : null;
 
 // Default sender - update after domain verification in Resend
-const DEFAULT_FROM = process.env.EMAIL_FROM || "Upload Lift <noreply@customizerapp.dev>";
-const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || "support@customizerapp.dev";
+const APP_DOMAIN = process.env.APP_DOMAIN || 'localhost:3000';
+const APP_NAME = process.env.APP_NAME || 'Upload Studio';
+const DEFAULT_FROM = process.env.EMAIL_FROM || `${APP_NAME} <noreply@${APP_DOMAIN}>`;
+const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || `support@${APP_DOMAIN}`;
 
 export interface EmailOptions {
   to: string | string[];
@@ -95,7 +97,7 @@ export async function sendTicketConfirmation(data: SupportTicketEmailData): Prom
     </div>
     <div class="content">
       <p>Hi <strong>${data.name}</strong>,</p>
-      <p>Thank you for contacting Upload Lift support. We've received your message and will get back to you within 24 hours.</p>
+      <p>Thank you for contacting ${APP_NAME} support. We've received your message and will get back to you within 24 hours.</p>
       
       <div class="ticket-id">
         <p style="margin: 0 0 5px 0; color: #6b7280; font-size: 0.875rem;">Your Ticket ID:</p>
@@ -112,11 +114,11 @@ export async function sendTicketConfirmation(data: SupportTicketEmailData): Prom
       
       <p>If you have any additional information to add, please reply to this email with your ticket ID.</p>
       
-      <p>Best regards,<br><strong>Upload Lift Support Team</strong></p>
+      <p>Best regards,<br><strong>${APP_NAME} Support Team</strong></p>
     </div>
     <div class="footer">
-      <p>Upload Lift - Professional Print Upload Solution</p>
-      <p><a href="https://customizerapp.dev">customizerapp.dev</a></p>
+      <p>${APP_NAME} - Professional Print Upload Solution</p>
+      <p><a href="https://${APP_DOMAIN}">${APP_DOMAIN}</a></p>
     </div>
   </div>
 </body>
@@ -128,7 +130,7 @@ Support Ticket Received
 
 Hi ${data.name},
 
-Thank you for contacting Upload Lift support. We've received your message and will get back to you within 24 hours.
+Thank you for contacting ${APP_NAME} support. We've received your message and will get back to you within 24 hours.
 
 Ticket ID: ${data.ticketId}
 Subject: ${data.subject}
@@ -140,7 +142,7 @@ ${data.message}
 If you have any additional information to add, please reply to this email with your ticket ID.
 
 Best regards,
-Upload Lift Support Team
+${APP_NAME} Support Team
   `;
 
   return sendEmail({
@@ -208,7 +210,7 @@ export async function sendTicketNotification(data: SupportTicketEmailData): Prom
       </div>
       
       <p style="text-align: center;">
-        <a href="https://customizerapp.dev/admin/support/${data.ticketId}" 
+        <a href="https://${APP_DOMAIN}/admin/support/${data.ticketId}" 
            style="display: inline-block; background: #667eea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">
           View Ticket
         </a>
@@ -266,11 +268,11 @@ export async function sendTicketReply(
       
       <p style="margin-top: 20px;">If you have any further questions, please reply to this email.</p>
       
-      <p>Best regards,<br><strong>${agentName}</strong><br>Upload Lift Support</p>
+      <p>Best regards,<br><strong>${agentName}</strong><br>${APP_NAME} Support</p>
     </div>
     <div class="footer">
       <p>Ticket ID: ${ticketId}</p>
-      <p><a href="https://customizerapp.dev">customizerapp.dev</a></p>
+      <p><a href="https://${APP_DOMAIN}">${APP_DOMAIN}</a></p>
     </div>
   </div>
 </body>
@@ -344,11 +346,11 @@ export async function sendTicketStatusUpdate(
         <p>If this doesn't resolve your issue, please reply to this email and we'll reopen your ticket.</p>
       ` : ''}
       
-      <p>Best regards,<br><strong>Upload Lift Support Team</strong></p>
+      <p>Best regards,<br><strong>${APP_NAME} Support Team</strong></p>
     </div>
     <div class="footer">
       <p>Ticket ID: ${ticketId}</p>
-      <p><a href="https://customizerapp.dev">customizerapp.dev</a></p>
+      <p><a href="https://${APP_DOMAIN}">${APP_DOMAIN}</a></p>
     </div>
   </div>
 </body>
@@ -376,7 +378,7 @@ export async function sendTeamInvite(
   role: string,
   inviterName?: string
 ): Promise<{ success: boolean; error?: string }> {
-  const acceptUrl = `https://customizerapp.dev/auth/accept-invite?token=${inviteToken}`;
+  const acceptUrl = `https://${APP_DOMAIN}/auth/accept-invite?token=${inviteToken}`;
   
   const roleDescriptions: Record<string, string> = {
     admin: "Full access to all features",
@@ -407,7 +409,7 @@ export async function sendTeamInvite(
     </div>
     <div class="content">
       <p>Hi there,</p>
-      <p>${inviterName ? `<strong>${inviterName}</strong> has` : 'You have been'} invited you to join <strong>${shopName}</strong> on Upload Lift as a team member.</p>
+      <p>${inviterName ? `<strong>${inviterName}</strong> has` : 'You have been'} invited you to join <strong>${shopName}</strong> on ${APP_NAME} as a team member.</p>
       
       <div class="role-box">
         <strong>Your Role:</strong> ${role.charAt(0).toUpperCase() + role.slice(1)}<br>
@@ -422,10 +424,10 @@ export async function sendTeamInvite(
         This invitation link will expire in 7 days. If you didn't expect this invitation, you can safely ignore this email.
       </p>
       
-      <p>Best regards,<br><strong>Upload Lift Team</strong></p>
+      <p>Best regards,<br><strong>${APP_NAME} Team</strong></p>
     </div>
     <div class="footer">
-      <p><a href="https://customizerapp.dev">customizerapp.dev</a></p>
+      <p><a href="https://${APP_DOMAIN}">${APP_DOMAIN}</a></p>
     </div>
   </div>
 </body>
@@ -434,7 +436,7 @@ export async function sendTeamInvite(
 
   return sendEmail({
     to: email,
-    subject: `You're invited to join ${shopName} on Upload Lift`,
+    subject: `You're invited to join ${shopName} on ${APP_NAME}`,
     html,
   });
 }

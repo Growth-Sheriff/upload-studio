@@ -1,8 +1,8 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "f122b497901d3db350a2c20b7ce4bc2d"
-name = "FDT-Upload"
-application_url = "https://customizerapp.dev"
+name = "Upload Studio"
+application_url = "https://fastdtftransfer.uploadstudio.app.techifyboost.com"
 embedded = true
 handle = "fast-dtf-transfer"
 
@@ -33,12 +33,12 @@ use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
-  "https://customizerapp.dev/auth/callback",
-  "https://customizerapp.dev/api/auth/callback"
+  "https://fastdtftransfer.uploadstudio.app.techifyboost.com/auth/callback",
+  "https://fastdtftransfer.uploadstudio.app.techifyboost.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://customizerapp.dev"
+url = "https://fastdtftransfer.uploadstudio.app.techifyboost.com"
 subpath = "customizer"
 prefix = "apps"
 

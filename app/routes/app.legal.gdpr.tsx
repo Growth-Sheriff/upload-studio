@@ -45,7 +45,7 @@ export default function GDPRCompliancePage() {
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">Overview</Text>
                 <Text as="p">
-                  Product 3D Customizer &amp; Upload is fully compliant with the General Data Protection Regulation (GDPR) 
+                  Upload Studio is fully compliant with the General Data Protection Regulation (GDPR) 
                   and other applicable data protection laws. We are committed to protecting the privacy and rights 
                   of our users and their customers.
                 </Text>
@@ -127,7 +127,7 @@ export default function GDPRCompliancePage() {
                 <Text as="h2" variant="headingMd">Contact Our DPO</Text>
                 <Text as="p">
                   For GDPR-related inquiries, contact our Data Protection Officer at{" "}
-                  <Link url="mailto:dpo@customizerapp.dev">dpo@customizerapp.dev</Link>
+                  <Link url={`mailto:dpo@${process.env.APP_DOMAIN || 'uploadstudio.app.techifyboost.com'}`}>dpo@{process.env.APP_DOMAIN || 'uploadstudio.app.techifyboost.com'}</Link>
                 </Text>
               </BlockStack>
             </BlockStack>

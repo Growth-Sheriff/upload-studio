@@ -39,7 +39,7 @@ const LOCAL_FILE_SECRET = process.env.SECRET_KEY || 'fallback-secret-key'
 // Bunny.net Configuration
 const BUNNY_STORAGE_ZONE = process.env.BUNNY_STORAGE_ZONE || 'customizerappdev'
 const BUNNY_API_KEY = process.env.BUNNY_API_KEY || ''
-const BUNNY_CDN_URL = process.env.BUNNY_CDN_URL || 'https://img.customizerapp.dev'
+const BUNNY_CDN_URL = process.env.BUNNY_CDN_URL || (process.env.BUNNY_CDN_URL || 'https://customizerappdev.b-cdn.net')
 const BUNNY_STORAGE_HOST = process.env.BUNNY_STORAGE_HOST || 'storage.bunnycdn.com'
 
 // R2 Configuration (for future use)
@@ -352,7 +352,7 @@ async function getR2UploadUrl(
     
     // FORCE UPDATE: Always use main app domain for R2 proxy
     // Using app. subdomain caused 404s due to missing DNS/Cloudflare config
-    const appHost = process.env.SHOPIFY_APP_URL || 'https://customizerapp.dev'
+    const appHost = process.env.SHOPIFY_APP_URL || process.env.SHOPIFY_APP_URL!
     
     // We don't strictly need a token for r2: paths in api.files.$.tsx (as per its current logic),
     // but generating one keeps it consistent with local file handling.
@@ -404,7 +404,7 @@ export async function getR2SignedGetUrl(
  * Client uploads via POST to our endpoint
  */
 function getLocalUploadUrl(_config: StorageConfig, key: string): UploadUrlResult {
-  let host = process.env.SHOPIFY_APP_URL || process.env.HOST || 'https://customizerapp.dev'
+  let host = process.env.SHOPIFY_APP_URL || process.env.HOST || process.env.SHOPIFY_APP_URL!
   if (!host.startsWith('http://') && !host.startsWith('https://')) {
     host = `https://${host}`
   }
@@ -466,7 +466,7 @@ export async function getDownloadSignedUrl(
     }
 
     // Fallback: Private bucket proxy using our API
-    let host = process.env.SHOPIFY_APP_URL || process.env.HOST || 'https://customizerapp.dev'
+    let host = process.env.SHOPIFY_APP_URL || process.env.HOST || process.env.SHOPIFY_APP_URL!
     if (!host.startsWith('http://') && !host.startsWith('https://')) {
       host = `https://${host}`
     }
@@ -480,7 +480,7 @@ export async function getDownloadSignedUrl(
   // Check if key indicates Local storage (prefix-based detection)
   if (key.startsWith('local:')) {
     const localKey = key.replace('local:', '')
-    let host = process.env.SHOPIFY_APP_URL || process.env.HOST || 'https://customizerapp.dev'
+    let host = process.env.SHOPIFY_APP_URL || process.env.HOST || process.env.SHOPIFY_APP_URL!
     if (!host.startsWith('http://') && !host.startsWith('https://')) {
       host = `https://${host}`
     }
@@ -510,7 +510,7 @@ export async function getDownloadSignedUrl(
     case 'local':
     default:
       // Local signed URL
-      let host = process.env.SHOPIFY_APP_URL || process.env.HOST || 'https://customizerapp.dev'
+      let host = process.env.SHOPIFY_APP_URL || process.env.HOST || process.env.SHOPIFY_APP_URL!
       if (!host.startsWith('http://') && !host.startsWith('https://')) {
         host = `https://${host}`
       }
@@ -561,7 +561,7 @@ export function getThumbnailUrl(
       .join('/')
       
     // Always prefer the custom domain (hardcoded + env fallback)
-    const r2PublicUrl = process.env.SHOPIFY_APP_URL || 'https://customizerapp.dev' 
+    const r2PublicUrl = process.env.SHOPIFY_APP_URL || process.env.SHOPIFY_APP_URL! 
     
     if (r2PublicUrl) {
        const baseUrl = r2PublicUrl.endsWith('/') ? r2PublicUrl.slice(0, -1) : r2PublicUrl
@@ -576,7 +576,7 @@ export function getThumbnailUrl(
   // Local key - return signed URL for local files
   if (key.startsWith('local:')) {
     const localKey = key.replace('local:', '')
-    let host = process.env.SHOPIFY_APP_URL || process.env.HOST || 'https://customizerapp.dev'
+    let host = process.env.SHOPIFY_APP_URL || process.env.HOST || process.env.SHOPIFY_APP_URL!
     if (!host.startsWith('http://') && !host.startsWith('https://')) {
       host = `https://${host}`
     }

@@ -1,0 +1,46 @@
+# Upload Studio - DTF Print Arizona
+# ⚠️ client_id will be set after Shopify Partner Dashboard registration (FAZ 6)
+
+client_id = "CHANGE_ME_dtfprintarizona"
+name = "Upload Studio DTF Print Arizona"
+application_url = "https://dtfprintarizona.uploadstudio.app.techifyboost.com"
+embedded = true
+handle = "dtfprintarizona"
+
+[build]
+automatically_update_urls_on_dev = false
+dev_store_url = "CHANGE_ME.myshopify.com"
+
+[webhooks]
+api_version = "2025-10"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app-uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "products/delete" ]
+  uri = "/webhooks/products-delete"
+
+  [[webhooks.subscriptions]]
+  topics = [ "products/update" ]
+  uri = "/webhooks/products-update"
+
+[access_scopes]
+scopes = "read_customers,read_files,read_orders,read_products,write_files,write_orders,write_products"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [
+  "https://dtfprintarizona.uploadstudio.app.techifyboost.com/auth/callback",
+  "https://dtfprintarizona.uploadstudio.app.techifyboost.com/api/auth/callback"
+]
+
+[app_proxy]
+url = "https://dtfprintarizona.uploadstudio.app.techifyboost.com"
+subpath = "customizer"
+prefix = "apps"
+
+[pos]
+embedded = false

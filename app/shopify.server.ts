@@ -46,7 +46,7 @@ const shopify = shopifyApp({
     "write_orders",
     "read_customers",
   ],
-  appUrl: process.env.SHOPIFY_APP_URL || "https://customizerapp.dev",
+  appUrl: process.env.SHOPIFY_APP_URL!,
   authPathPrefix: "/auth",
   sessionStorage: redisSessionStorage,
   distribution: AppDistribution.AppStore,

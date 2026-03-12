@@ -65,7 +65,7 @@ export default function LegalLayout() {
           alignItems: "center",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", color: "white" }}>
-            <span style={{ fontSize: "1.25rem", fontWeight: 700 }}>Product 3D Customizer & Upload</span>
+            <span style={{ fontSize: "1.25rem", fontWeight: 700 }}>Upload Studio</span>
           </div>
           <a href="/app" style={{
             color: "white",
@@ -140,7 +140,7 @@ export default function LegalLayout() {
             <div style={{ color: "#6b7280", fontSize: "0.8rem", marginBottom: "1rem", lineHeight: 1.5 }}>
               Our support team is ready to assist you with any questions.
             </div>
-            <a href="mailto:support@customizerapp.dev" style={{
+            <a href="mailto:support@uploadstudio.app.techifyboost.com" style={{
               display: "inline-block",
               background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
               color: "white",
@@ -185,7 +185,7 @@ export default function LegalLayout() {
           gap: "1rem",
         }}>
           <div style={{ color: "rgba(255,255,255,0.9)", fontSize: "0.875rem" }}>
-            © {new Date().getFullYear()} Product 3D Customizer & Upload. All rights reserved.
+            © {new Date().getFullYear()} Upload Studio. All rights reserved.
           </div>
           <div style={{ display: "flex", gap: "1.5rem" }}>
             <a href="/legal/privacy" className="legal-footer-link" style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem" }}>Privacy</a>

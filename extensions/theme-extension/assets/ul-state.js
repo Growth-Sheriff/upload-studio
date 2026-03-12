@@ -1,5 +1,5 @@
 /**
- * Product 3D Customizer - Global State Manager
+ * Upload Studio - Global State Manager
  * ====================================
  * FAZ 4: Centralized State Management
  * 
@@ -611,7 +611,7 @@
       const secondary = whiteLabel.secondaryColor || '#764ba2';
       
       styleEl.textContent = `
-        /* Upload Lift White-Label Styles */
+        /* Upload Studio White-Label Styles */
         :root {
           --ul-primary: ${primary};
           --ul-secondary: ${secondary};

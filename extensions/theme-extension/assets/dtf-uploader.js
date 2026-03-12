@@ -1,5 +1,5 @@
 /**
- * Product 3D Customizer - DTF Uploader v4.5.0
+ * Upload Studio - DTF Uploader v4.5.0
  * ======================
  * FAZ 1: Core DTF Upload Widget
  * FAZ 4: Global State Integration

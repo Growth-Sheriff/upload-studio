@@ -29,14 +29,14 @@ export default function TermsOfServicePage() {
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">1. Acceptance of Terms</Text>
                 <Text as="p">
-                  By installing and using Product 3D Customizer &amp; Upload ("the App"), you agree to be bound by these 
+                  By installing and using Upload Studio ("the App"), you agree to be bound by these 
                   Terms of Service. If you do not agree to these terms, please do not use the App.
                 </Text>
               </BlockStack>
 
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">2. Description of Service</Text>
-                <Text as="p">Product 3D Customizer &amp; Upload is a Shopify application that provides:</Text>
+                <Text as="p">Upload Studio is a Shopify application that provides:</Text>
                 <List type="bullet">
                   <List.Item>3D product visualization and customization</List.Item>
                   <List.Item>Design upload and placement tools</List.Item>
@@ -120,7 +120,7 @@ export default function TermsOfServicePage() {
                 <Text as="h2" variant="headingMd">10. Contact</Text>
                 <Text as="p">
                   For questions about these terms, contact us at{" "}
-                  <Link url="mailto:legal@customizerapp.dev">legal@customizerapp.dev</Link>
+                  <Link url={`mailto:legal@${process.env.APP_DOMAIN || 'uploadstudio.app.techifyboost.com'}`}>legal@{process.env.APP_DOMAIN || 'uploadstudio.app.techifyboost.com'}</Link>
                 </Text>
               </BlockStack>
             </BlockStack>

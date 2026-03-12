@@ -486,7 +486,7 @@ export default function AppDashboard() {
   return (
     <Page
       title="Dashboard"
-      subtitle="Welcome to Upload Lift"
+      subtitle={`Welcome to ${process.env.APP_NAME || 'Upload Studio'}`}
       primaryAction={{
         content: "Configure Product",
         onAction: () => navigate("/app/products"),

@@ -1,5 +1,5 @@
 /**
- * Upload Lift - Cart Upload Display (v2 - Fixed)
+ * Upload Studio - Cart Upload Display (v2 - Fixed)
  * Shows uploaded design info under cart line items
  * 
  * KEY FIX: Uses .cart-line-item with data-key attribute for matching
@@ -18,7 +18,7 @@
 
   function log(...args) {
     if (CONFIG.debug) {
-      console.log('[Upload Lift Cart]', ...args);
+      console.log('[Upload Studio Cart]', ...args);
     }
   }
 
@@ -122,7 +122,7 @@
       if (!response.ok) throw new Error('Failed to fetch cart');
       return await response.json();
     } catch (error) {
-      console.error('[Upload Lift Cart] Failed to get cart:', error);
+      console.error('[Upload Studio Cart] Failed to get cart:', error);
       return null;
     }
   }
@@ -133,7 +133,7 @@
       if (!response.ok) return null;
       return await response.json();
     } catch (error) {
-      console.error('[Upload Lift Cart] Failed to get upload status:', error);
+      console.error('[Upload Studio Cart] Failed to get upload status:', error);
       return null;
     }
   }

@@ -8,9 +8,9 @@ import { json } from "@remix-run/node";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   return json({
-    name: "Upload Lift Pro API",
+    name: `${process.env.APP_NAME || 'Upload Studio'} Pro API`,
     version: "v1",
-    documentation: "https://docs.customizerapp.dev/api",
+    documentation: `https://docs.${process.env.APP_DOMAIN || 'uploadstudio.app.techifyboost.com'}/api`,
     endpoints: [
       { path: "/api/v1/uploads", methods: ["GET"] },
       { path: "/api/v1/uploads/:id", methods: ["GET"] },

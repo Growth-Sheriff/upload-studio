@@ -19,7 +19,7 @@ if (fs.existsSync(envPath)) {
 
 const prisma = new PrismaClient()
 const API_VERSION = '2025-01'
-const PROXY_BASE = 'https://app.customizerapp.dev/api/files/r2:'
+const PROXY_BASE = `https://${process.env.APP_DOMAIN || 'uploadstudio.app.techifyboost.com'}/api/files/r2:`
 
 async function updateOrderNote(shopDomain: string, accessToken: string, orderId: string, links: string[]) {
   console.log(`   🔄 Updating Order ${orderId}...`)

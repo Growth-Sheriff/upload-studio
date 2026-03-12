@@ -1152,7 +1152,7 @@ export default function BillingPage() {
                   image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
                 >
                   <p>
-                    When orders with Upload Lift items are placed, commissions will appear here.
+                    When orders with app items are placed, commissions will appear here.
                   </p>
                 </EmptyState>
               ) : (
@@ -1175,7 +1175,7 @@ export default function BillingPage() {
               </Text>
               <BlockStack gap="200">
                 <Text as="p" variant="bodyMd">
-                  1. <strong>Order Placed</strong> - Customer places order with Upload Lift items
+                  1. <strong>Order Placed</strong> - Customer places order with app items
                 </Text>
                 <Text as="p" variant="bodyMd">
                   2. <strong>Commission Recorded</strong> - Fixed fee of $
@@ -1199,7 +1199,7 @@ export default function BillingPage() {
         </Layout.Section>
 
         <Layout.Section>
-          <Banner tone="info">Questions about billing? Contact support@customizerapp.dev</Banner>
+          <Banner tone="info">Questions about billing? Contact support@{process.env.APP_DOMAIN || 'uploadstudio.app.techifyboost.com'}</Banner>
         </Layout.Section>
       </Layout>
 

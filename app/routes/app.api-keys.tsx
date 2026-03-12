@@ -105,7 +105,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // Generate API key
-    const rawKey = `ulp_${nanoid(32)}`; // ulp = upload lift pro
+    const rawKey = `ulp_${nanoid(32)}`; // ulp = upload pro
     const keyHash = crypto.createHash("sha256").update(rawKey).digest("hex");
     const keyPrefix = rawKey.slice(0, 12);
 
@@ -278,13 +278,13 @@ export default function ApiKeysPage() {
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">API Documentation</Text>
                 <Text as="p" variant="bodySm" tone="subdued">
-                  Use API keys to integrate Upload Lift Pro with your systems.
+                  Use API keys to integrate the Pro API with your systems.
                 </Text>
 
                 <Box background="bg-surface-secondary" padding="300" borderRadius="200">
                   <BlockStack gap="200">
                     <Text as="p" variant="bodySm" fontWeight="semibold">Base URL</Text>
-                    <code>https://customizerapp.dev/api/v1</code>
+                    <code>{`https://${process.env.APP_DOMAIN || 'uploadstudio.app.techifyboost.com'}/api/v1`}</code>
 
                     <Text as="p" variant="bodySm" fontWeight="semibold">Authentication</Text>
                     <code>Authorization: Bearer ulp_xxxxx...</code>

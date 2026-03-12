@@ -1,5 +1,5 @@
 /**
- * Upload Lift - Product Bar JavaScript
+ * Upload Studio - Product Bar JavaScript
  * Version: 1.0.0
  *
  * Handles:

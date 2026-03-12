@@ -122,7 +122,8 @@ export async function action({ request }: ActionFunctionArgs) {
       });
 
       const totalAmount = pendingAmount.toFixed(2);
-      const description = `Upload Lift auto-charge: ${pendingOrderIds.length} orders @ $${COMMISSION_PER_ORDER}/order`;
+      const appName = process.env.APP_NAME || 'Upload Studio';
+      const description = `${appName} auto-charge: ${pendingOrderIds.length} orders @ $${COMMISSION_PER_ORDER}/order`;
 
       let captureId: string;
       let provider: 'paypal' | 'stripe';

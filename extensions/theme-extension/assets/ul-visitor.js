@@ -1,5 +1,5 @@
 /**
- * Upload Lift - Visitor Tracking Module
+ * Upload Studio - Visitor Tracking Module
  * Cross-session visitor identification and attribution tracking
  *
  * @version 1.0.0

@@ -1,30 +1,30 @@
 [Unit]
-Description=Product 3D Customizer - Export Worker
-After=network.target redis.service postgresql.service upload-lift.service
+Description=Upload Studio - Export Worker
+After=network.target redis.service postgresql.service upload-studio.service
 
 [Service]
 Type=simple
 User=www-data
 Group=www-data
-WorkingDirectory=/var/www/upload-lift
+WorkingDirectory=/var/www/upload-studio
 ExecStart=/usr/bin/pnpm run worker:export
 Restart=always
 RestartSec=5
 
 # Environment
 Environment=NODE_ENV=production
-EnvironmentFile=/var/www/upload-lift/.env
+EnvironmentFile=/var/www/upload-studio/.env
 
 # Logging
-StandardOutput=append:/var/log/upload-lift/export-worker.log
-StandardError=append:/var/log/upload-lift/export-worker-error.log
+StandardOutput=append:/var/log/upload-studio/export-worker.log
+StandardError=append:/var/log/upload-studio/export-worker-error.log
 
 # Security hardening
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-ReadWritePaths=/var/www/upload-lift/temp /var/log/upload-lift
+ReadWritePaths=/var/www/upload-studio/temp /var/log/upload-studio
 
 [Install]
 WantedBy=multi-user.target

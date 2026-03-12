@@ -7,11 +7,11 @@
  * Usage:
  *   npx tsx workers/commission.worker.ts
  *
- * Systemd service: upload-lift-commission.service
+ * Systemd service: upload-studio-commission.service
  */
 
-const CRON_SECRET = process.env.CRON_SECRET || 'upload-lift-cron-2026';
-const APP_URL = process.env.APP_URL || 'https://customizerapp.dev';
+const CRON_SECRET = process.env.CRON_SECRET || 'upload-studio-cron-secret';
+const APP_URL = process.env.APP_URL || process.env.SHOPIFY_APP_URL!;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 let isShuttingDown = false;

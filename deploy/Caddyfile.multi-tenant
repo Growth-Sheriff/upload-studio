@@ -1,0 +1,140 @@
+# ============================================
+# Upload Studio - Multi-Tenant Caddyfile
+# ============================================
+# Wildcard routing: *.uploadstudio.app.techifyboost.com
+# Each subdomain maps to a tenant Docker container port.
+#
+# Deploy: cp deploy/Caddyfile.multi-tenant /etc/caddy/Caddyfile
+#         caddy reload --config /etc/caddy/Caddyfile
+# ============================================
+
+# ─────────────────────────────────────────────
+# Global Options
+# ─────────────────────────────────────────────
+{
+	# On-Demand TLS for wildcard subdomains
+	on_demand_tls {
+		interval 10s
+		burst 5
+	}
+}
+
+# ─────────────────────────────────────────────
+# Wildcard Tenant Routing
+# ─────────────────────────────────────────────
+*.uploadstudio.app.techifyboost.com {
+	tls {
+		on_demand
+	}
+
+	# ─── Tenant → Port Mapping ───
+	@fastdtftransfer host fastdtftransfer.uploadstudio.app.techifyboost.com
+	handle @fastdtftransfer {
+		reverse_proxy localhost:4001
+	}
+
+	@everydaycustomprint host everydaycustomprint.uploadstudio.app.techifyboost.com
+	handle @everydaycustomprint {
+		reverse_proxy localhost:4002
+	}
+
+	@dtftransferohio host dtftransferohio.uploadstudio.app.techifyboost.com
+	handle @dtftransferohio {
+		reverse_proxy localhost:4003
+	}
+
+	@dtfprinthouse host dtfprinthouse.uploadstudio.app.techifyboost.com
+	handle @dtfprinthouse {
+		reverse_proxy localhost:4004
+	}
+
+	@dtfprintdepot host dtfprintdepot.uploadstudio.app.techifyboost.com
+	handle @dtfprintdepot {
+		reverse_proxy localhost:4005
+	}
+
+	@eagledtfprint host eagledtfprint.uploadstudio.app.techifyboost.com
+	handle @eagledtfprint {
+		reverse_proxy localhost:4006
+	}
+
+	@alphaprint host alphaprint.uploadstudio.app.techifyboost.com
+	handle @alphaprint {
+		reverse_proxy localhost:4007
+	}
+
+	@gangsheet host gangsheet.uploadstudio.app.techifyboost.com
+	handle @gangsheet {
+		reverse_proxy localhost:4008
+	}
+
+	@legendtransfers host legendtransfers.uploadstudio.app.techifyboost.com
+	handle @legendtransfers {
+		reverse_proxy localhost:4009
+	}
+
+	@customprintaz host customprintaz.uploadstudio.app.techifyboost.com
+	handle @customprintaz {
+		reverse_proxy localhost:4010
+	}
+
+	# @dtfprintarizona - DISABLED (şimdilik kapalı)
+	# @dtfprintarizona host dtfprintarizona.uploadstudio.app.techifyboost.com
+	# handle @dtfprintarizona {
+	# 	reverse_proxy localhost:4011
+	# }
+
+	# ─── Fallback: unknown subdomain ───
+	handle {
+		respond "Unknown tenant" 404
+	}
+
+	# ─── Common Headers ───
+	encode gzip
+
+	# Large upload support (1.5GB)
+	request_body {
+		max_size 1500MB
+	}
+
+	# Remove X-Frame-Options for Shopify embedded app
+	header -X-Frame-Options
+
+	# Content Security Policy for Shopify admin
+	header Content-Security-Policy "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;"
+
+	# Security headers
+	header X-Content-Type-Options nosniff
+	header X-XSS-Protection "1; mode=block"
+	header Referrer-Policy strict-origin-when-cross-origin
+
+	# Logging
+	log {
+		output file /var/log/caddy/upload-studio.log {
+			roll_size 100mb
+			roll_keep 5
+		}
+		format json
+	}
+}
+
+# ─────────────────────────────────────────────
+# Upload Proxy for BunnyCDN (Bypass Firewall Blocks)
+# ─────────────────────────────────────────────
+upload.uploadstudio.app.techifyboost.com {
+	reverse_proxy https://storage.bunnycdn.com {
+		header_up Host {upstream_hostport}
+	}
+
+	request_body {
+		max_size 1500MB
+	}
+
+	log {
+		output file /var/log/caddy/upload-proxy.log {
+			roll_size 50mb
+			roll_keep 3
+		}
+		format json
+	}
+}

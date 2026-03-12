@@ -13,7 +13,7 @@ export const shopifyConfig = {
   apiKey: process.env.SHOPIFY_API_KEY || '',
   apiSecret: process.env.SHOPIFY_API_SECRET || '',
   scopes: process.env.SHOPIFY_SCOPES || 'read_products,write_products,read_orders,write_orders',
-  hostName: normalizeHost(process.env.HOST || 'customizerapp.dev'),
+  hostName: normalizeHost(process.env.APP_DOMAIN || process.env.HOST || 'localhost:3000'),
   apiVersion: '2025-10',
 }
 

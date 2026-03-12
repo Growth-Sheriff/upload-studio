@@ -828,14 +828,14 @@
     if (isVariantSelect) {
       const select = e.target;
       const id = select.id;
-      console.log('[Upload Lift] Variant select changed:', id);
+      console.log('[Upload Studio] Variant select changed:', id);
 
       // Extract uniqueId: ul-option-{uniqueId}-{optionIndex}
       // uniqueId can contain dashes, so we need to find the last dash followed by a number
       const lastDashIndex = id.lastIndexOf('-');
       if (lastDashIndex > 10) { // 'ul-option-' is 10 chars
         const uniqueId = id.substring(10, lastDashIndex); // Skip 'ul-option-' prefix
-        console.log('[Upload Lift] Extracted uniqueId:', uniqueId);
+        console.log('[Upload Studio] Extracted uniqueId:', uniqueId);
         updateVariant(uniqueId);
       }
     }
@@ -896,7 +896,7 @@
       // Sync variant selection on modal open
       const uniqueId = modal.dataset.uniqueId;
       if (uniqueId) {
-        console.log('[Upload Lift] Modal opened, syncing variant for:', uniqueId);
+        console.log('[Upload Studio] Modal opened, syncing variant for:', uniqueId);
         updateVariant(uniqueId);
       }
 
@@ -912,7 +912,7 @@
   function closeModal(id) {
     // Prevent closing if modal was just opened (event bubbling protection)
     if (recentlyOpenedModal === id && (Date.now() - openTimestamp) < 200) {
-      console.log('[Upload Lift] Ignoring close - modal just opened');
+      console.log('[Upload Studio] Ignoring close - modal just opened');
       return;
     }
 
@@ -1147,7 +1147,7 @@
       }
 
       // Use the signed URL from API, fallback to constructed URL if not available
-      const finalUrl = finalDownloadUrl || publicUrl || `https://customizerapp.dev/api/upload/file/${uploadId}`;
+      const finalUrl = finalDownloadUrl || publicUrl || `${apiBase}/api/upload/file/${uploadId}`;
       if (uploadUrlInput) uploadUrlInput.value = finalUrl;
 
       // Calculate upload duration
@@ -1355,7 +1355,7 @@
   function updateVariant(uniqueId) {
     const variantsEl = document.getElementById('ul-variants-' + uniqueId);
     if (!variantsEl) {
-      console.warn('[Upload Lift] Variant data element not found for:', uniqueId);
+      console.warn('[Upload Studio] Variant data element not found for:', uniqueId);
       return false;
     }
 
@@ -1373,8 +1373,8 @@
         i++;
       }
 
-      console.log('[Upload Lift] Selected options (from text):', options);
-      console.log('[Upload Lift] Available variants:', variantsData.map(v => ({id: v.id, opt1: v.option1, opt2: v.option2, opt3: v.option3})));
+      console.log('[Upload Studio] Selected options (from text):', options);
+      console.log('[Upload Studio] Available variants:', variantsData.map(v => ({id: v.id, opt1: v.option1, opt2: v.option2, opt3: v.option3})));
 
       let variant = null;
 
@@ -1394,7 +1394,7 @@
       const variantInput = document.getElementById('ul-variant-' + uniqueId);
 
       if (variant) {
-        console.log('[Upload Lift] Matched variant:', variant.id, variant.title, 'Price:', variant.price);
+        console.log('[Upload Studio] Matched variant:', variant.id, variant.title, 'Price:', variant.price);
         if (variantInput) {
           variantInput.value = variant.id;
           // Store price in data attribute for calculations
@@ -1404,11 +1404,11 @@
         updateTotalPrice(uniqueId);
         return true;
       } else {
-        console.warn('[Upload Lift] No variant match found for options:', options);
+        console.warn('[Upload Studio] No variant match found for options:', options);
         // Fallback: use first available variant
         if (variantsData.length > 0 && variantInput) {
           const fallback = variantsData.find(v => v.available) || variantsData[0];
-          console.log('[Upload Lift] Using fallback variant:', fallback.id);
+          console.log('[Upload Studio] Using fallback variant:', fallback.id);
           variantInput.value = fallback.id;
           variantInput.dataset.price = fallback.price;
           updateTotalPrice(uniqueId);
@@ -1417,14 +1417,14 @@
       }
       return false;
     } catch (e) {
-      console.error('[Upload Lift] Variant update error:', e);
+      console.error('[Upload Studio] Variant update error:', e);
       return false;
     }
   }
 
   // Update total price display
   function updateTotalPrice(uniqueId) {
-    console.log('[Upload Lift] updateTotalPrice called for:', uniqueId);
+    console.log('[Upload Studio] updateTotalPrice called for:', uniqueId);
 
     const variantInput = document.getElementById('ul-variant-' + uniqueId);
     const qtyInput = document.getElementById('ul-qty-' + uniqueId);
@@ -1433,13 +1433,13 @@
     const totalPriceEl = document.getElementById('ul-total-price-' + uniqueId);
 
     if (!variantInput || !qtyInput || !totalPriceEl) {
-      console.warn('[Upload Lift] Missing elements - variantInput:', !!variantInput, 'qtyInput:', !!qtyInput, 'totalPriceEl:', !!totalPriceEl);
+      console.warn('[Upload Studio] Missing elements - variantInput:', !!variantInput, 'qtyInput:', !!qtyInput, 'totalPriceEl:', !!totalPriceEl);
       return;
     }
 
     // Get price from data attribute or fetch from variants
     let unitPrice = parseInt(variantInput.dataset.price, 10);
-    console.log('[Upload Lift] Price from data attr:', unitPrice);
+    console.log('[Upload Studio] Price from data attr:', unitPrice);
 
     // If no price in data attribute, get from variants JSON
     if (!unitPrice || isNaN(unitPrice)) {
@@ -1451,16 +1451,16 @@
           if (variant) {
             unitPrice = variant.price;
             variantInput.dataset.price = unitPrice;
-            console.log('[Upload Lift] Price from variants JSON:', unitPrice);
+            console.log('[Upload Studio] Price from variants JSON:', unitPrice);
           }
         } catch (e) {
-          console.error('[Upload Lift] Error parsing variants:', e);
+          console.error('[Upload Studio] Error parsing variants:', e);
         }
       }
     }
 
     if (!unitPrice || isNaN(unitPrice)) {
-      console.warn('[Upload Lift] No valid price found');
+      console.warn('[Upload Studio] No valid price found');
       return;
     }
 
@@ -1492,7 +1492,7 @@
       }, 200);
     }
 
-    console.log('[Upload Lift] Price updated - Unit:', formatMoney(unitPrice), 'Qty:', quantity, 'Total:', formatMoney(totalPrice));
+    console.log('[Upload Studio] Price updated - Unit:', formatMoney(unitPrice), 'Qty:', quantity, 'Total:', formatMoney(totalPrice));
   }
 
   // Format money helper - uses Shopify's money format
@@ -1531,7 +1531,7 @@
     const uploadUrl = uploadUrlInput?.value || '';
     const previewName = previewNameEl?.textContent || '';
 
-    console.log('[Upload Lift] Add to cart - variantId:', variantId, 'quantity:', quantity, 'uploadId:', uploadId);
+    console.log('[Upload Studio] Add to cart - variantId:', variantId, 'quantity:', quantity, 'uploadId:', uploadId);
 
     // Validation checks
     if (!uploadId) {
@@ -1540,7 +1540,7 @@
     }
 
     if (!variantId || variantId === 'undefined' || variantId === 'null') {
-      console.error('[Upload Lift] Invalid variant ID:', variantId);
+      console.error('[Upload Studio] Invalid variant ID:', variantId);
       alert('Please select a valid product variant');
       return;
     }
@@ -1568,7 +1568,7 @@
         }
       };
 
-      console.log('[Upload Lift] Cart payload:', JSON.stringify(cartPayload));
+      console.log('[Upload Studio] Cart payload:', JSON.stringify(cartPayload));
 
       const response = await fetch('/cart/add.js', {
         method: 'POST',
@@ -1581,11 +1581,11 @@
       if (!response.ok) {
         // Parse Shopify error response
         const errorMsg = responseData.description || responseData.message || 'Failed to add to cart';
-        console.error('[Upload Lift] Shopify cart error:', responseData);
+        console.error('[Upload Studio] Shopify cart error:', responseData);
         throw new Error(errorMsg);
       }
 
-      console.log('[Upload Lift] Added to cart successfully:', responseData);
+      console.log('[Upload Studio] Added to cart successfully:', responseData);
 
       // Visitor tracking: dispatch cart add event
       try {
@@ -1614,7 +1614,7 @@
       }).catch(() => {});
 
     } catch (err) {
-      console.error('[Upload Lift] Add to cart error:', err);
+      console.error('[Upload Studio] Add to cart error:', err);
       alert('Error: ' + err.message);
     } finally {
       btn.disabled = false;

@@ -1,5 +1,5 @@
 /**
- * Upload Lift - Consent Management Module
+ * Upload Studio - Consent Management Module
  * GDPR/CCPA compliant consent banner for visitor tracking
  *
  * @version 1.0.0

@@ -1,0 +1,45 @@
+# Upload Studio - Alpha Print
+
+client_id = "354e12f22c22430975dfcfcbc0c25489"
+name = "UStudio Alpha Print"
+application_url = "https://alphaprint.uploadstudio.app.techifyboost.com"
+embedded = true
+handle = "alphaprint"
+
+[build]
+automatically_update_urls_on_dev = false
+dev_store_url = "alphaprintcenter.myshopify.com"
+
+[webhooks]
+api_version = "2025-10"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app-uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "products/delete" ]
+  uri = "/webhooks/products-delete"
+
+  [[webhooks.subscriptions]]
+  topics = [ "products/update" ]
+  uri = "/webhooks/products-update"
+
+[access_scopes]
+scopes = "read_customers,read_files,read_orders,read_products,write_files,write_orders,write_products"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [
+  "https://alphaprint.uploadstudio.app.techifyboost.com/auth/callback",
+  "https://alphaprint.uploadstudio.app.techifyboost.com/api/auth/callback"
+]
+
+[app_proxy]
+url = "https://alphaprint.uploadstudio.app.techifyboost.com"
+subpath = "customizer"
+prefix = "apps"
+
+[pos]
+embedded = false

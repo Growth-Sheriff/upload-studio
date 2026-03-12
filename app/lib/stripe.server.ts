@@ -11,7 +11,7 @@ import Stripe from 'stripe';
 // ── Config ──
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
-const APP_URL = process.env.SHOPIFY_APP_URL || 'https://customizerapp.dev';
+const APP_URL = process.env.SHOPIFY_APP_URL!;
 
 // ── Stripe Client (lazy singleton) ──
 let stripeClient: Stripe | null = null;
@@ -85,7 +85,7 @@ export async function createCheckoutSession(
           currency: 'usd',
           unit_amount: amountCents,
           product_data: {
-            name: 'Upload Lift Commission',
+            name: `${process.env.APP_NAME || 'Upload Studio'} Commission`,
             description,
           },
         },
@@ -243,7 +243,7 @@ export async function getOrCreateCustomer(
   const customer = await stripe.customers.create({
     email: email || undefined,
     metadata: { shopDomain },
-    description: `Upload Lift merchant: ${shopDomain}`,
+    description: `${process.env.APP_NAME || 'Upload Studio'} merchant: ${shopDomain}`,
   });
 
   return customer.id;

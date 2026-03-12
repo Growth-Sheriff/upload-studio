@@ -139,7 +139,7 @@ export async function action({ request }: ActionFunctionArgs) {
         message: replyMessage,
         isStaff: true,
         authorName: agentName,
-        authorEmail: "support@customizerapp.dev",
+        authorEmail: `support@${process.env.APP_DOMAIN || 'uploadstudio.app.techifyboost.com'}`,
       },
     });
 

@@ -64,7 +64,7 @@ async function sendFlowTrigger(trigger: FlowTriggerRecord): Promise<boolean> {
             }
           `,
           variables: {
-            handle: `upload-lift/${trigger.eventType}`,
+            handle: `${process.env.FLOW_HANDLE_PREFIX || 'upload-studio'}/${trigger.eventType}`,
             payload: trigger.payload,
           },
         }),

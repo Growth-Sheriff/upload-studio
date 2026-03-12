@@ -56,7 +56,7 @@ export default function DocumentationPage() {
   return (
     <Page 
       title="Documentation" 
-      subtitle="Complete guide to using Product 3D Customizer & Upload"
+      subtitle="Complete guide to using Upload Studio"
       backAction={{ content: "Dashboard", url: "/app" }}
     >
       <Layout>
@@ -96,7 +96,7 @@ export default function DocumentationPage() {
               <Text as="h2" variant="headingMd">Need Help?</Text>
               <Text as="p">
                 Can't find what you're looking for? Contact our support team at{" "}
-                <Link url="mailto:support@customizerapp.dev">support@customizerapp.dev</Link>
+                <Link url={`mailto:support@${process.env.APP_DOMAIN || 'uploadstudio.app.techifyboost.com'}`}>support@{process.env.APP_DOMAIN || 'uploadstudio.app.techifyboost.com'}</Link>
               </Text>
             </BlockStack>
           </Card>

@@ -69,7 +69,7 @@ export default function GDPRCompliance() {
       <section style={styles.section}>
         <h2 style={styles.heading}>Overview</h2>
         <p style={styles.text}>
-          Product 3D Customizer & Upload is fully compliant with the General Data Protection Regulation (GDPR) 
+          Upload Studio is fully compliant with the General Data Protection Regulation (GDPR) 
           and other applicable data protection laws. We are committed to protecting the privacy and rights 
           of our users and their customers.
         </p>
@@ -129,7 +129,7 @@ export default function GDPRCompliance() {
         <h2 style={styles.heading}>Data Processing Agreement (DPA)</h2>
         <p style={styles.text}>
           A Data Processing Agreement is available for Enterprise customers upon request. 
-          Contact <a href="mailto:enterprise@customizerapp.dev" style={{ color: "#667eea" }}>enterprise@customizerapp.dev</a> for more information.
+          Contact <a href="mailto:enterprise@uploadstudio.app.techifyboost.com" style={{ color: "#667eea" }}>enterprise@uploadstudio.app.techifyboost.com</a> for more information.
         </p>
       </section>
 
@@ -149,7 +149,7 @@ export default function GDPRCompliance() {
         <h2 style={styles.heading}>Contact Our DPO</h2>
         <p style={styles.text}>For GDPR-related inquiries, contact our Data Protection Officer:</p>
         <ul style={styles.list}>
-          <li style={styles.listItem}>Email: <a href="mailto:dpo@customizerapp.dev" style={{ color: "#667eea" }}>dpo@customizerapp.dev</a></li>
+          <li style={styles.listItem}>Email: <a href="mailto:dpo@uploadstudio.app.techifyboost.com" style={{ color: "#667eea" }}>dpo@uploadstudio.app.techifyboost.com</a></li>
           <li style={styles.listItem}>Response time: Within 72 hours</li>
         </ul>
       </section>

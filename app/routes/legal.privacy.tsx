@@ -22,7 +22,7 @@ export default function PrivacyPolicy() {
       <section style={styles.section}>
         <h2 style={styles.heading}>1. Introduction</h2>
         <p style={styles.text}>
-          Product 3D Customizer & Upload ("we," "our," or "us") is committed to protecting your privacy. 
+          Upload Studio ("we," "our," or "us") is committed to protecting your privacy. 
           This Privacy Policy explains how we collect, use, disclose, and safeguard your information when 
           you use our Shopify application.
         </p>
@@ -99,8 +99,8 @@ export default function PrivacyPolicy() {
         <h2 style={styles.heading}>8. Contact Us</h2>
         <p style={styles.text}>If you have questions about this Privacy Policy, please contact us:</p>
         <ul style={styles.list}>
-          <li style={styles.listItem}>Email: <a href="mailto:privacy@customizerapp.dev" style={{ color: "#667eea" }}>privacy@customizerapp.dev</a></li>
-          <li style={styles.listItem}>Website: <a href="https://customizerapp.dev" style={{ color: "#667eea" }}>customizerapp.dev</a></li>
+          <li style={styles.listItem}>Email: <a href="mailto:privacy@uploadstudio.app.techifyboost.com" style={{ color: "#667eea" }}>privacy@uploadstudio.app.techifyboost.com</a></li>
+          <li style={styles.listItem}>Website: <a href="https://uploadstudio.app.techifyboost.com" style={{ color: "#667eea" }}>uploadstudio.app.techifyboost.com</a></li>
         </ul>
       </section>
     </div>

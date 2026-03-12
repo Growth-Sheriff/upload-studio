@@ -211,7 +211,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    // Create commission record if order contains Upload Lift items
+    // Create commission record if order contains upload items
     // Fixed fee: $0.015 per order (not percentage based)
     if (hasUploadLiftItems && processedUploads.length > 0) {
       const orderTotal = new Decimal(order.total_price || '0')

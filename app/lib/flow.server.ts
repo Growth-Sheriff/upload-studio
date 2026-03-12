@@ -133,7 +133,7 @@ export async function sendFlowTrigger(triggerId: string, shopId?: string): Promi
             }
           `,
           variables: {
-            handle: `upload-lift/${trigger.eventType}`,
+            handle: `${process.env.FLOW_HANDLE_PREFIX || 'upload-studio'}/${trigger.eventType}`,
             payload: trigger.payload,
           },
         }),

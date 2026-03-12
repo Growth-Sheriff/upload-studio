@@ -84,7 +84,7 @@ export default function Documentation() {
   return (
     <div>
       <h1 style={styles.title}>Documentation</h1>
-      <p style={styles.subtitle}>Complete guide to using Product 3D Customizer & Upload</p>
+      <p style={styles.subtitle}>Complete guide to using Upload Studio</p>
 
       <div style={styles.divider} />
 
@@ -119,7 +119,7 @@ export default function Documentation() {
         <h2 style={styles.heading}>Need More Help?</h2>
         <p style={styles.text}>Can't find what you're looking for? Our support team is here to help:</p>
         <ul style={styles.list}>
-          <li style={styles.listItem}>Email: <a href="mailto:support@customizerapp.dev" style={{ color: "#667eea" }}>support@customizerapp.dev</a></li>
+          <li style={styles.listItem}>Email: <a href="mailto:support@uploadstudio.app.techifyboost.com" style={{ color: "#667eea" }}>support@uploadstudio.app.techifyboost.com</a></li>
           <li style={styles.listItem}>Response time: Within 24 hours (business days)</li>
           <li style={styles.listItem}>Enterprise customers: Priority support available</li>
         </ul>

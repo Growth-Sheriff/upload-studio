@@ -174,7 +174,7 @@ export default function WhiteLabelPage() {
                     disabled={!canUseWhiteLabel}
                   />
                   <Text as="p" variant="bodySm" tone="subdued">
-                    When enabled, your custom branding will be shown to customers instead of Upload Lift branding.
+                    When enabled, your custom branding will be shown to customers instead of default branding.
                   </Text>
                 </BlockStack>
               </Card>
@@ -278,8 +278,8 @@ export default function WhiteLabelPage() {
                   <Text as="h2" variant="headingMd">Branding</Text>
 
                   <Checkbox
-                    label="Hide Upload Lift branding"
-                    helpText="Remove 'Powered by Upload Lift' text from customer-facing widgets"
+                    label="Hide default branding"
+                    helpText="Remove 'Powered by' text from customer-facing widgets"
                     checked={hideBranding}
                     onChange={setHideBranding}
                     name="hideBranding"

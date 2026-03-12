@@ -1,0 +1,45 @@
+# Upload Studio - Eagle DTF Print
+
+client_id = "6e582bb74b1f70faeefaa275d82d1f50"
+name = "UStudio Eagle DTF Print"
+application_url = "https://eagledtfprint.uploadstudio.app.techifyboost.com"
+embedded = true
+handle = "eagledtfprint"
+
+[build]
+automatically_update_urls_on_dev = false
+dev_store_url = "eagle-dtf-print.myshopify.com"
+
+[webhooks]
+api_version = "2025-10"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app-uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "products/delete" ]
+  uri = "/webhooks/products-delete"
+
+  [[webhooks.subscriptions]]
+  topics = [ "products/update" ]
+  uri = "/webhooks/products-update"
+
+[access_scopes]
+scopes = "read_customers,read_files,read_orders,read_products,write_files,write_orders,write_products"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [
+  "https://eagledtfprint.uploadstudio.app.techifyboost.com/auth/callback",
+  "https://eagledtfprint.uploadstudio.app.techifyboost.com/api/auth/callback"
+]
+
+[app_proxy]
+url = "https://eagledtfprint.uploadstudio.app.techifyboost.com"
+subpath = "customizer"
+prefix = "apps"
+
+[pos]
+embedded = false

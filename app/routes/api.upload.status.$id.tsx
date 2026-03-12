@@ -144,8 +144,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // Build download URLs for local storage with signed tokens (WI-004)
   // OR use Shopify URLs directly if storageKey is an external URL
   // FIX: Use SHOPIFY_APP_URL (has correct domain) instead of HOST (0.0.0.0 for binding)
-  const hostEnv = process.env.SHOPIFY_APP_URL || process.env.HOST || 'https://customizerapp.dev'
-  const host = hostEnv.startsWith('https://') ? hostEnv : `https://${hostEnv}`
+  const hostEnv = process.env.SHOPIFY_APP_URL || process.env.HOST
+  const host = hostEnv?.startsWith('https://') ? hostEnv : `https://${hostEnv}`
   const firstItem = upload.items[0]
 
   // Get storage config for this shop
@@ -211,8 +211,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       // R2 storage - build public URL via Proxy
       const r2Key = firstItem.storageKey.replace('r2:', '')
       
-      // FORCE UPDATE: Always use main app domain for R2 proxy
-      const appHost = process.env.SHOPIFY_APP_URL || 'https://customizerapp.dev'
+      const appHost = process.env.SHOPIFY_APP_URL!
       const encodedPath = r2Key
           .split('/')
           .map((segment) => encodeURIComponent(segment))
@@ -268,7 +267,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       const r2Key = firstItem.thumbnailKey.replace('r2:', '')
       
        // FORCE UPDATE: Always use main app domain for R2 proxy
-      const appHost = process.env.SHOPIFY_APP_URL || 'https://customizerapp.dev'
+      const appHost = process.env.SHOPIFY_APP_URL!
       const encodedPath = r2Key
           .split('/')
           .map((segment) => encodeURIComponent(segment))

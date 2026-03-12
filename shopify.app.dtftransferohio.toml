@@ -1,0 +1,45 @@
+# Upload Studio - DTF Transfer Ohio
+
+client_id = "7195dfd54882ada95d62cb370da7d1cf"
+name = "UStudio DTF Transfer Ohio"
+application_url = "https://dtftransferohio.uploadstudio.app.techifyboost.com"
+embedded = true
+handle = "dtftransferohio"
+
+[build]
+automatically_update_urls_on_dev = false
+dev_store_url = "428852-04.myshopify.com"
+
+[webhooks]
+api_version = "2025-10"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app-uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "products/delete" ]
+  uri = "/webhooks/products-delete"
+
+  [[webhooks.subscriptions]]
+  topics = [ "products/update" ]
+  uri = "/webhooks/products-update"
+
+[access_scopes]
+scopes = "read_customers,read_files,read_orders,read_products,write_files,write_orders,write_products"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [
+  "https://dtftransferohio.uploadstudio.app.techifyboost.com/auth/callback",
+  "https://dtftransferohio.uploadstudio.app.techifyboost.com/api/auth/callback"
+]
+
+[app_proxy]
+url = "https://dtftransferohio.uploadstudio.app.techifyboost.com"
+subpath = "customizer"
+prefix = "apps"
+
+[pos]
+embedded = false

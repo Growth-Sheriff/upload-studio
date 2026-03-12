@@ -39,10 +39,11 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
+          command_timeout: 10m
           script: |
-            cd /opt/apps/custom/customizerapp/fastdtftransfer/src
+            cd /opt/apps/upload-studio
             git pull origin main
-            cd /opt/apps/custom/customizerapp/fastdtftransfer
-            /usr/bin/docker compose build --no-cache
-            /usr/bin/docker compose up -d
+            docker build -t upload-studio:latest .
+            docker compose up -d --remove-orphans
 

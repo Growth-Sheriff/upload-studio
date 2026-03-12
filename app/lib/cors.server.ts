@@ -5,8 +5,11 @@
  * Required for widget functionality (theme extension → app API)
  */
 
-// Allowed origins for CORS
-const ALLOWED_ORIGINS = [
+// Build allowed origins dynamically from env
+const APP_DOMAIN = process.env.APP_DOMAIN || 'localhost:3000';
+const EXTRA_CORS_ORIGINS = (process.env.EXTRA_CORS_ORIGINS || '').split(',').filter(Boolean);
+
+const ALLOWED_ORIGINS: (string | RegExp)[] = [
   // All Shopify stores (*.myshopify.com)
   /\.myshopify\.com$/,
   // Custom storefront domains (any https domain for flexibility)
@@ -15,12 +18,12 @@ const ALLOWED_ORIGINS = [
   "http://localhost:3000",
   "http://localhost:5173",
   "http://127.0.0.1:3000",
-  // Production app domain
-  "https://customizerapp.dev",
-  "https://fdt.customizerapp.dev",
-  // Customer domains
-  "https://fastdtftransfer.com",
-  "https://www.fastdtftransfer.com",
+  // Production app domain (from env)
+  `https://${APP_DOMAIN}`,
+  // Upload Studio wildcard subdomains
+  /\.uploadstudio\.app\.techifyboost\.com$/,
+  // Additional tenant-specific origins from env
+  ...EXTRA_CORS_ORIGINS.map(o => o.trim()),
 ];
 
 /**

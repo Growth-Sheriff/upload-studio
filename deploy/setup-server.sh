@@ -1,14 +1,15 @@
 #!/bin/bash
 # ===========================================
-# Product 3D Customizer & Upload - Server Setup Script
+# Upload Studio - Multi-Tenant Server Setup
 # ===========================================
 # Run this ONCE on a fresh Ubuntu 24 LTS server
+# Sets up Docker, Caddy, and project directory
 # Usage: bash deploy/setup-server.sh
 
 set -e
 
 echo "=========================================="
-echo "Product 3D Customizer & Upload - Server Setup"
+echo "Upload Studio - Multi-Tenant Server Setup"
 echo "=========================================="
 
 # Colors
@@ -23,37 +24,32 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-echo -e "${GREEN}[1/8] Updating system...${NC}"
+echo -e "${GREEN}[1/6] Updating system...${NC}"
 apt-get update && apt-get upgrade -y
 
-echo -e "${GREEN}[2/8] Installing Node.js 20 LTS...${NC}"
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt-get install -y nodejs
+echo -e "${GREEN}[2/6] Installing Docker...${NC}"
+# Remove old Docker versions
+apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
 
-echo -e "${GREEN}[3/8] Installing pnpm...${NC}"
-npm install -g pnpm
+# Install Docker prerequisites
+apt-get install -y ca-certificates curl gnupg
 
-echo -e "${GREEN}[4/8] Installing PostgreSQL 16...${NC}"
-apt-get install -y postgresql postgresql-contrib
-systemctl start postgresql
-systemctl enable postgresql
+# Add Docker official GPG key
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+chmod a+r /etc/apt/keyrings/docker.gpg
 
-# Create database and user
-sudo -u postgres psql <<EOF
-CREATE USER upload_lift WITH PASSWORD 'upload_lift_2025_secure';
-CREATE DATABASE upload_lift OWNER upload_lift;
-GRANT ALL PRIVILEGES ON DATABASE upload_lift TO upload_lift;
-\c upload_lift
-GRANT ALL ON SCHEMA public TO upload_lift;
-EOF
+# Add Docker repo
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-echo -e "${GREEN}[5/8] Installing Redis 7...${NC}"
-apt-get install -y redis-server
-systemctl start redis-server
-systemctl enable redis-server
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-echo -e "${GREEN}[6/8] Installing Caddy...${NC}"
-apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
+systemctl start docker
+systemctl enable docker
+
+echo -e "${GREEN}[3/6] Installing Caddy...${NC}"
+apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
 apt-get update
@@ -64,26 +60,25 @@ systemctl stop nginx 2>/dev/null || true
 systemctl disable nginx 2>/dev/null || true
 apt-get remove --purge -y nginx nginx-common nginx-full 2>/dev/null || true
 
-echo -e "${GREEN}[7/8] Setting up application directory...${NC}"
-mkdir -p /var/www/3d-customizer
-chown -R www-data:www-data /var/www/3d-customizer
+echo -e "${GREEN}[4/6] Setting up project directory...${NC}"
+mkdir -p /opt/apps/upload-studio
+cd /opt/apps/upload-studio
 
-echo -e "${GREEN}[8/8] Creating Caddyfile...${NC}"
-cat > /etc/caddy/Caddyfile <<'CADDY'
-customizerapp.dev {
-    reverse_proxy localhost:3000
-    header X-Content-Type-Options nosniff
-    header Referrer-Policy strict-origin-when-cross-origin
-    log {
-        output file /var/log/caddy/upload-lift.log
-        format json
-    }
-}
-CADDY
+echo -e "${GREEN}[5/6] Deploying Caddyfile...${NC}"
+if [ -f deploy/Caddyfile.multi-tenant ]; then
+  cp deploy/Caddyfile.multi-tenant /etc/caddy/Caddyfile
+  echo "  Copied multi-tenant Caddyfile"
+else
+  echo -e "${YELLOW}  WARNING: deploy/Caddyfile.multi-tenant not found. Clone repo first.${NC}"
+fi
 
 mkdir -p /var/log/caddy
-systemctl restart caddy
+caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || systemctl restart caddy
 systemctl enable caddy
+
+echo -e "${GREEN}[6/6] Installing utility tools...${NC}"
+# psql client for DB schema initialization
+apt-get install -y postgresql-client
 
 echo ""
 echo -e "${GREEN}=========================================="
@@ -91,10 +86,27 @@ echo "Server setup complete!"
 echo "==========================================${NC}"
 echo ""
 echo "Next steps:"
-echo "1. Clone the repo: cd /var/www/3d-customizer && git clone git@github.com:Growth-Sheriff/customizerapp.git ."
-echo "2. Copy .env: cp .env.example .env && nano .env"
-echo "3. Run deploy: bash deploy/deploy.sh"
+echo "  1. Clone repo:"
+echo "     cd /opt/apps/upload-studio"
+echo "     git clone git@github.com:Growth-Sheriff/customizerapp.git ."
 echo ""
-echo -e "${YELLOW}PostgreSQL:${NC} postgresql://upload_lift:upload_lift_2025_secure@localhost:5432/upload_lift"
-echo -e "${YELLOW}Redis:${NC} redis://localhost:6379"
+echo "  2. Generate tenant env files:"
+echo "     bash scripts/generate-tenant-envs.sh"
+echo ""
+echo "  3. Fill in credentials in envs/.env.* files"
+echo ""
+echo "  4. Initialize DB schemas:"
+echo "     bash scripts/init-tenant-schemas.sh"
+echo ""
+echo "  5. Build & start:"
+echo "     docker build -t upload-studio:latest ."
+echo "     docker compose up -d"
+echo ""
+echo "  6. Deploy Caddyfile:"
+echo "     cp deploy/Caddyfile.multi-tenant /etc/caddy/Caddyfile"
+echo "     caddy reload --config /etc/caddy/Caddyfile"
+echo ""
+echo -e "${YELLOW}Docker:${NC} docker compose ps"
+echo -e "${YELLOW}Logs:${NC} docker compose logs -f"
+echo -e "${YELLOW}Health:${NC} bash scripts/tenant-health-check.sh"
 

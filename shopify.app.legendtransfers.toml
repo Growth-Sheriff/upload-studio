@@ -1,0 +1,45 @@
+# Upload Studio - Legend Transfers
+
+client_id = "65a59947ff9083c9582de72106792b98"
+name = "UStudio Legend Transfers"
+application_url = "https://legendtransfers.uploadstudio.app.techifyboost.com"
+embedded = true
+handle = "legendtransfers"
+
+[build]
+automatically_update_urls_on_dev = false
+dev_store_url = "legend-transfers-alt.myshopify.com"
+
+[webhooks]
+api_version = "2025-10"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app-uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "products/delete" ]
+  uri = "/webhooks/products-delete"
+
+  [[webhooks.subscriptions]]
+  topics = [ "products/update" ]
+  uri = "/webhooks/products-update"
+
+[access_scopes]
+scopes = "read_customers,read_files,read_orders,read_products,write_files,write_orders,write_products"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [
+  "https://legendtransfers.uploadstudio.app.techifyboost.com/auth/callback",
+  "https://legendtransfers.uploadstudio.app.techifyboost.com/api/auth/callback"
+]
+
+[app_proxy]
+url = "https://legendtransfers.uploadstudio.app.techifyboost.com"
+subpath = "customizer"
+prefix = "apps"
+
+[pos]
+embedded = false
