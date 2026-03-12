@@ -480,8 +480,8 @@ export default function BillingPage() {
         throw new Error(data.error || 'Failed to create Stripe checkout')
       }
 
-      // Redirect to Stripe Checkout
-      window.location.href = data.checkoutUrl
+      // Open Stripe Checkout in new tab (Shopify admin runs in iframe)
+      window.open(data.checkoutUrl, '_top')
     } catch (error) {
       console.error('Stripe error:', error)
       setStripeError(error instanceof Error ? error.message : 'Stripe payment failed')
