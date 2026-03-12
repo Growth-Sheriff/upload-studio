@@ -39,8 +39,9 @@ RUN npx prisma@5.22.0 generate
 # Stage 3: Production runtime
 FROM node:20-slim AS production
 
-# Install tsx globally for workers
-RUN npm install -g tsx@4
+# Install system deps (openssl for Prisma) + global tools
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+RUN npm install -g tsx@4 prisma@5.22.0
 
 WORKDIR /app
 

@@ -14,7 +14,7 @@ echo "============================================"
 
 # Sync database schema (creates tables if needed)
 echo "[Init] Syncing database schema..."
-npx prisma db push --accept-data-loss --skip-generate 2>&1 || echo "[Init] Schema sync warning (may already be up to date)"
+prisma db push --accept-data-loss --skip-generate 2>&1 || echo "[Init] Schema sync warning (may already be up to date)"
 
 # Worker auto-restart wrapper
 start_worker() {
