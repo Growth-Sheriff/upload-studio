@@ -51,9 +51,8 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/build ./build
 COPY --from=build /app/package.json ./
 
-# Copy Prisma schema + generated client
+# Copy Prisma schema (generated client is in node_modules from above COPY)
 COPY --from=build /app/prisma ./prisma
-COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 
 # Copy Sentry instrumentation
 COPY --from=build /app/instrumentation.server.mjs ./
