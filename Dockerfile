@@ -23,14 +23,18 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Generate Prisma client
-RUN pnpm db:generate
+# Ensure Prisma engines are downloaded and client is generated
+# (pnpm 10 may block postinstall scripts)
+RUN npx prisma@5.22.0 generate || pnpm db:generate
 
 # Build Remix app
 RUN pnpm build
 
 # Prune dev dependencies
 RUN pnpm prune --prod
+
+# Re-generate Prisma client after prune (since prisma is devDep)
+RUN npx prisma@5.22.0 generate
 
 # Stage 3: Production runtime
 FROM node:20-slim AS production
