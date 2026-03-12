@@ -19,32 +19,10 @@
 x-app-common: &app-common
   image: upload-studio:latest
   restart: unless-stopped
-  depends_on:
-    redis:
-      condition: service_healthy
   networks:
-    - upload-studio
+    - appnet
 
 services:
-  # ════════════════════════════════════════════
-  # SHARED SERVICES
-  # ════════════════════════════════════════════
-  redis:
-    image: redis:7-alpine
-    container_name: us-redis
-    restart: unless-stopped
-    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save 60 1000
-    ports:
-      - "127.0.0.1:6379:6379"
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - upload-studio
 
   # ════════════════════════════════════════════
   # TENANT 1: Fast DTF Transfer
@@ -182,8 +160,6 @@ services:
 # VOLUMES
 # ════════════════════════════════════════════
 volumes:
-  redis-data:
-    name: us-redis-data
   uploads-fastdtftransfer:
     name: us-uploads-fastdtftransfer
   uploads-everydaycustomprint:
@@ -211,6 +187,5 @@ volumes:
 # NETWORKS
 # ════════════════════════════════════════════
 networks:
-  upload-studio:
-    name: upload-studio
-    driver: bridge
+  appnet:
+    external: true
