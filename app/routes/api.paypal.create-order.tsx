@@ -109,7 +109,7 @@ export async function action({ request }: ActionFunctionArgs) {
     let order;
 
     if (hasVault) {
-      // Already vaulted - normal order (manual payments still go through normal flow)
+      // Already vaulted - normal order
       order = await createPayPalOrder(
         totalAmount,
         shopDomain,
@@ -117,13 +117,23 @@ export async function action({ request }: ActionFunctionArgs) {
         auditEntry.id
       );
     } else {
-      // No vault yet - create order with vault to save payment method for future auto-charges
-      order = await createPayPalOrderWithVault(
-        totalAmount,
-        shopDomain,
-        description,
-        auditEntry.id
-      );
+      // No vault yet - try with vault first, fallback to normal if vault not enabled
+      try {
+        order = await createPayPalOrderWithVault(
+          totalAmount,
+          shopDomain,
+          description,
+          auditEntry.id
+        );
+      } catch (vaultError) {
+        console.warn('[PayPal] Vault not available, falling back to normal order:', vaultError);
+        order = await createPayPalOrder(
+          totalAmount,
+          shopDomain,
+          description,
+          auditEntry.id
+        );
+      }
     }
 
     // Find the approval URL
