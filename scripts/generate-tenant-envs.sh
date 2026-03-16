@@ -20,14 +20,14 @@ ENVS_DIR="${PROJECT_DIR}/envs"
 mkdir -p "$ENVS_DIR"
 
 # ─────────────────────────────────────────────
-# Database config (DigitalOcean Managed PostgreSQL)
+# Database config (GCP Cloud SQL)
 # ─────────────────────────────────────────────
-DB_HOST="${DB_HOST:-private-db-postgresql-nyc3-64923-do-user-33221790-0.f.db.ondigitalocean.com}"
-DB_PORT="${DB_PORT:-25060}"
-DB_USER="${DB_USER:-doadmin}"
+DB_HOST="${DB_HOST:-34.44.26.92}"
+DB_PORT="${DB_PORT:-5432}"
+DB_USER="${DB_USER:-postgres}"
 DB_PASS="${DB_PASS:-CHANGE_ME}"
 DB_NAME="${DB_NAME:-defaultdb}"
-DB_SSL="${DB_SSL:-require}"
+DB_SSL="${DB_SSL:-prefer}"
 
 # ─────────────────────────────────────────────
 # Shared services

@@ -20,12 +20,12 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 # ─────────────────────────────────────────────
 # Database config (override with env vars)
 # ─────────────────────────────────────────────
-DB_HOST="${DB_HOST:-private-db-postgresql-nyc3-64923-do-user-33221790-0.f.db.ondigitalocean.com}"
-DB_PORT="${DB_PORT:-25060}"
-DB_USER="${DB_USER:-doadmin}"
+DB_HOST="${DB_HOST:-34.44.26.92}"
+DB_PORT="${DB_PORT:-5432}"
+DB_USER="${DB_USER:-postgres}"
 DB_PASS="${DB_PASS:-CHANGE_ME}"
 DB_NAME="${DB_NAME:-defaultdb}"
-DB_SSL="${DB_SSL:-require}"
+DB_SSL="${DB_SSL:-prefer}"
 
 # ─────────────────────────────────────────────
 # Tenant slugs (= schema names)

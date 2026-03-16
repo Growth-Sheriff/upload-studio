@@ -1,0 +1,563 @@
+{
+    email admin@techifyboost.com
+}
+
+# SSActiveWear - EverydayCustomPrint
+ssaw-e.techifyboost.com {
+    reverse_proxy ssactivewear-everydaycustomprint:3000
+}
+
+# Uptime Kuma - Health Monitoring
+status.techifyboost.com {
+    reverse_proxy uptime-kuma:3001
+}
+
+# Penpot - Design Editor
+design.techifyboost.com {
+    reverse_proxy multiservice-penpot-frontend:8080
+    encode gzip
+}
+
+# CustomizerApp - FastDTFTransfer
+customizerapp.dev {
+    reverse_proxy customizerapp-fastdtftransfer:3000
+
+    encode gzip
+
+    # Large upload support (1.5GB for Pro plan)
+    request_body {
+        max_size 1500MB
+    }
+
+    # Remove X-Frame-Options for Shopify embedded app
+    header -X-Frame-Options
+
+    # Content Security Policy for Shopify
+    header Content-Security-Policy "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;"
+
+    # Security headers
+    header X-Content-Type-Options nosniff
+    header X-XSS-Protection "1; mode=block"
+    header Referrer-Policy strict-origin-when-cross-origin
+}
+
+# Upload Proxy for BunnyCDN (Bypass Firewall Blocks)
+upload.customizerapp.dev {
+    reverse_proxy https://storage.bunnycdn.com {
+        header_up Host {upstream_hostport}
+    }
+
+    request_body {
+        max_size 1500MB
+    }
+}
+
+# === Eagle Engine (FactoryEngine/EagleDTFTransfer) ===
+app.eagledtfsupply.com {
+    reverse_proxy factoryengine-eagledtfsupply-app:3000
+    encode gzip
+}
+
+accounts.eagledtfsupply.com {
+    reverse_proxy factoryengine-eagledtfsupply-app:3001
+    encode gzip
+}
+
+api.eagledtfsupply.com {
+    @options method OPTIONS
+    handle @options {
+        header Access-Control-Allow-Origin {http.request.header.Origin}
+        header Access-Control-Allow-Methods "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        header Access-Control-Allow-Headers "Authorization,Content-Type,X-Requested-With,Origin,Accept"
+        header Access-Control-Allow-Credentials true
+        header Access-Control-Max-Age 86400
+        respond 204
+    }
+    handle {
+        header Access-Control-Allow-Origin {http.request.header.Origin}
+        header Access-Control-Allow-Methods "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        header Access-Control-Allow-Headers "Authorization,Content-Type,X-Requested-With,Origin,Accept"
+        header Access-Control-Allow-Credentials true
+        reverse_proxy factoryengine-eagledtfsupply-app:4000
+    }
+    encode gzip
+}
+
+# Dittofeed - Marketing Campaigns
+marketing.techifyboost.com {
+    reverse_proxy multiservice-dittofeed:3010
+    encode gzip
+}
+
+# === Eagle Engine (FactoryEngine/EagleDTFPrint) ===
+app.eagledtfprint.com {
+    redir /crm-app /crm-app/ 301
+    handle_path /crm-app/* {
+        reverse_proxy multiservice-twenty-dtfbank-server:3000
+    }
+    handle {
+        reverse_proxy factoryengine-dtfprint-app:3000
+    }
+    encode gzip
+}
+
+accounts.eagledtfprint.com {
+    reverse_proxy factoryengine-dtfprint-app:3001
+    encode gzip
+}
+
+api.eagledtfprint.com {
+    @options method OPTIONS
+    handle @options {
+        header Access-Control-Allow-Origin {http.request.header.Origin}
+        header Access-Control-Allow-Methods "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        header Access-Control-Allow-Headers "Authorization,Content-Type,X-Requested-With,Origin,Accept"
+        header Access-Control-Allow-Credentials true
+        header Access-Control-Max-Age 86400
+        respond 204
+    }
+    handle {
+        header Access-Control-Allow-Origin {http.request.header.Origin}
+        header Access-Control-Allow-Methods "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        header Access-Control-Allow-Headers "Authorization,Content-Type,X-Requested-With,Origin,Accept"
+        header Access-Control-Allow-Credentials true
+        reverse_proxy factoryengine-dtfprint-app:4000
+    }
+    encode gzip
+}
+
+cdn.eagledtfprint.com {
+    root * /srv/cdn/dtfprint
+    file_server
+
+    header Access-Control-Allow-Origin *
+    header Access-Control-Allow-Methods "GET,OPTIONS"
+    header Cache-Control "public, max-age=3600"
+    header X-Content-Type-Options nosniff
+
+    encode gzip
+}
+
+# Beszel - Server Monitoring
+monitor.techifyboost.com {
+    reverse_proxy beszel:8090
+    encode gzip
+}
+
+# Dozzle - Container Log Viewer
+logs.techifyboost.com {
+    reverse_proxy dozzle:8080
+    encode gzip
+}
+
+# === Gang Sheet Builder (GSB Engine) ===
+gangsheetstudio.techifyboost.com {
+    encode zstd gzip
+
+    # Remove X-Frame-Options for Shopify embedded app
+    header -X-Frame-Options
+    header Content-Security-Policy "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;"
+    header X-Content-Type-Options nosniff
+
+    route {
+        # Short URL routes → Node.js backend
+        reverse_proxy /d/* gangsheetbuilder-app:4000
+        reverse_proxy /e/* gangsheetbuilder-app:4000
+        reverse_proxy /p/* gangsheetbuilder-app:4000
+        reverse_proxy /a/* gangsheetbuilder-app:4000
+        reverse_proxy /v/* gangsheetbuilder-app:4000
+        reverse_proxy /admin-download/* gangsheetbuilder-app:4000
+
+        # All /apps/gsb/* routes → Node.js backend (editor, builder, API, etc.)
+        reverse_proxy /apps/gsb/* gangsheetbuilder-app:4000
+
+        # API routes → Node.js backend
+        reverse_proxy /api/* gangsheetbuilder-app:4000
+
+        # Geri kalan HER SEY -> Node.js (static + SPA fallback zaten app.ts de var)
+        reverse_proxy gangsheetbuilder-app:4000
+    }
+}
+
+api.gangsheetstudio.techifyboost.com {
+    encode zstd gzip
+
+    @options method OPTIONS
+    handle @options {
+        header Access-Control-Allow-Origin {http.request.header.Origin}
+        header Access-Control-Allow-Methods "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        header Access-Control-Allow-Headers "Authorization,Content-Type,X-Requested-With,Origin,Accept"
+        header Access-Control-Allow-Credentials true
+        header Access-Control-Max-Age 86400
+        respond 204
+    }
+    handle {
+        header Access-Control-Allow-Origin {http.request.header.Origin}
+        header Access-Control-Allow-Credentials true
+        reverse_proxy gangsheetbuilder-app:4000
+    }
+}
+
+# Loki - Log Aggregation API (Agent CLI erişimi)
+loki.techifyboost.com {
+    # Sadece GET (read-only sorgu) izin ver
+    @write {
+        method POST PUT DELETE PATCH
+        not path /loki/api/v1/push
+    }
+
+    # Promtail push erişimi (internal)
+    @push {
+        path /loki/api/v1/push
+        remote_ip 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+    }
+    handle @push {
+        reverse_proxy loki:3100
+    }
+
+    # API sorguları
+    reverse_proxy loki:3100
+    encode gzip
+
+    # Basic Auth koruma
+    basicauth {
+        agent $2a$14$8nY94GvsvZbmKQvprty5aOwN.do4ZnEWMUbWwHzcu.PFgnPyNURNa
+    }
+}
+
+# === Eagle Engine (FactoryEngine/DTFBank) ===
+app.dtfbank.com {
+    redir /crm-app /crm-app/ 301
+    handle_path /crm-app/* {
+        reverse_proxy multiservice-twenty-dtfbank-server:3000
+    }
+    handle {
+        reverse_proxy factoryengine-dtfbank-app:3000
+    }
+    encode gzip
+}
+
+accounts.dtfbank.com {
+    reverse_proxy factoryengine-dtfbank-app:3001
+    encode gzip
+}
+
+api.dtfbank.com {
+    @options method OPTIONS
+    handle @options {
+        header Access-Control-Allow-Origin {http.request.header.Origin}
+        header Access-Control-Allow-Methods "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        header Access-Control-Allow-Headers "Authorization,Content-Type,X-Requested-With,Origin,Accept"
+        header Access-Control-Allow-Credentials true
+        header Access-Control-Max-Age 86400
+        respond 204
+    }
+    handle {
+        header Access-Control-Allow-Origin {http.request.header.Origin}
+        header Access-Control-Allow-Methods "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        header Access-Control-Allow-Headers "Authorization,Content-Type,X-Requested-With,Origin,Accept"
+        header Access-Control-Allow-Credentials true
+        reverse_proxy factoryengine-dtfbank-app:4000
+    }
+    encode gzip
+}
+
+cdn.dtfbank.com {
+    root * /srv/cdn/dtfbank
+    file_server
+
+    header Access-Control-Allow-Origin *
+    header Access-Control-Allow-Methods "GET,OPTIONS"
+    header Cache-Control "public, max-age=3600"
+    header X-Content-Type-Options nosniff
+
+    encode gzip
+}
+
+# === Eagle Engine (FactoryEngine/FastDTFTransfer) ===
+app.fastdtftransfer.com {
+    reverse_proxy factoryengine-fastdtftransfer-app:3000
+    encode gzip
+}
+
+accounts.fastdtftransfer.com {
+    reverse_proxy factoryengine-fastdtftransfer-app:3001
+    encode gzip
+}
+
+api.fastdtftransfer.com {
+    @options method OPTIONS
+    handle @options {
+        header Access-Control-Allow-Origin {http.request.header.Origin}
+        header Access-Control-Allow-Methods "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        header Access-Control-Allow-Headers "Authorization,Content-Type,X-Requested-With,Origin,Accept"
+        header Access-Control-Allow-Credentials true
+        header Access-Control-Max-Age 86400
+        respond 204
+    }
+    handle {
+        header Access-Control-Allow-Origin {http.request.header.Origin}
+        header Access-Control-Allow-Methods "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        header Access-Control-Allow-Headers "Authorization,Content-Type,X-Requested-With,Origin,Accept"
+        header Access-Control-Allow-Credentials true
+        reverse_proxy factoryengine-fastdtftransfer-app:4000
+    }
+    encode gzip
+}
+
+# === Eagle Engine (FactoryEngine/DTFPrintDepot) ===
+app.dtfprintdepot.com {
+    reverse_proxy factoryengine-dtfprintdepot-app:3000
+    encode gzip
+}
+
+accounts.dtfprintdepot.com {
+    reverse_proxy factoryengine-dtfprintdepot-app:3001
+    encode gzip
+}
+
+api.dtfprintdepot.com {
+    @options method OPTIONS
+    handle @options {
+        header Access-Control-Allow-Origin {http.request.header.Origin}
+        header Access-Control-Allow-Methods "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        header Access-Control-Allow-Headers "Authorization,Content-Type,X-Requested-With,Origin,Accept"
+        header Access-Control-Allow-Credentials true
+        header Access-Control-Max-Age 86400
+        respond 204
+    }
+    handle {
+        header Access-Control-Allow-Origin {http.request.header.Origin}
+        header Access-Control-Allow-Methods "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        header Access-Control-Allow-Headers "Authorization,Content-Type,X-Requested-With,Origin,Accept"
+        header Access-Control-Allow-Credentials true
+        reverse_proxy factoryengine-dtfprintdepot-app:4000
+    }
+    encode gzip
+}
+
+cdn.fastdtftransfer.com {
+    root * /srv/cdn/fastdtf
+    file_server
+
+    header Access-Control-Allow-Origin *
+    header Access-Control-Allow-Methods "GET,OPTIONS"
+    header Cache-Control "public, max-age=3600"
+    header X-Content-Type-Options nosniff
+
+    encode gzip
+}
+
+cdn.dtfprintdepot.com {
+    root * /srv/cdn/dtfprintdepot
+    file_server
+
+    header Access-Control-Allow-Origin *
+    header Access-Control-Allow-Methods "GET,OPTIONS"
+    header Cache-Control "public, max-age=3600"
+    header X-Content-Type-Options nosniff
+
+    encode gzip
+}
+
+# Twenty CRM - Sales Platform
+sales.techifyboost.com {
+    reverse_proxy multiservice-twenty-server:3000
+    encode gzip
+
+    # Allow iframe embedding from admin panels
+    header -X-Frame-Options
+    header Content-Security-Policy  frame-ancestors self https://app.dtfbank.com https://app.fastdtftransfer.com https://app.dtfprintdepot.com https://app.eagledtfprint.com https://*.techifyboost.com
+}
+
+# Twenty CRM proxy for DTFBank (same-site cookie fix for iframe)
+crm.dtfbank.com {
+    reverse_proxy multiservice-twenty-server:3000
+    encode gzip
+
+    # Allow iframe embedding from DTFBank admin
+    header -X-Frame-Options
+    header Content-Security-Policy "frame-ancestors self https://app.dtfbank.com https://*.dtfbank.com"
+}
+
+# === GSB Engine - DTF Print Depot (h1s00r-21.myshopify.com) ===
+dtf-print-depot.gangsheetstudio.techifyboost.com {
+    encode zstd gzip
+    header -X-Frame-Options
+    header Content-Security-Policy "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;"
+    header X-Content-Type-Options nosniff
+
+    route {
+        reverse_proxy gangsheetbuilder-app-dtf-print-depot:4000
+    }
+}
+
+# === Customer Protect - Shopify User Management App ===
+customer-protect.techifyboost.com {
+    reverse_proxy customer-protect:3000
+    encode gzip
+
+    # Remove X-Frame-Options for Shopify embedded app
+    header -X-Frame-Options
+    header Content-Security-Policy "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;"
+    header X-Content-Type-Options nosniff
+    header X-XSS-Protection "1; mode=block"
+    header Referrer-Policy strict-origin-when-cross-origin
+}
+
+# ============================================
+# Upload Studio - Multi-Tenant Wildcard
+# ============================================
+# Wildcard routing: *.uploadstudio.app.techifyboost.com
+# Each subdomain maps to a tenant Docker container port.
+# ============================================
+
+# --- Upload Proxy for BunnyCDN ---
+upload.uploadstudio.app.techifyboost.com {
+    reverse_proxy https://storage.bunnycdn.com {
+        header_up Host {upstream_hostport}
+    }
+    request_body {
+        max_size 1500MB
+    }
+}
+
+# --- Tenant: FastDTFTransfer (#1) ---
+fastdtftransfer.uploadstudio.app.techifyboost.com {
+    reverse_proxy localhost:4001
+    encode gzip
+    request_body {
+        max_size 1500MB
+    }
+    header -X-Frame-Options
+    header Content-Security-Policy "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;"
+    header X-Content-Type-Options nosniff
+    header X-XSS-Protection "1; mode=block"
+    header Referrer-Policy strict-origin-when-cross-origin
+}
+
+# --- Tenant: EverydayCustomPrint (#2) ---
+everydaycustomprint.uploadstudio.app.techifyboost.com {
+    reverse_proxy localhost:4002
+    encode gzip
+    request_body {
+        max_size 1500MB
+    }
+    header -X-Frame-Options
+    header Content-Security-Policy "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;"
+    header X-Content-Type-Options nosniff
+    header X-XSS-Protection "1; mode=block"
+    header Referrer-Policy strict-origin-when-cross-origin
+}
+
+# --- Tenant: DTFTransferOhio (#3) ---
+dtftransferohio.uploadstudio.app.techifyboost.com {
+    reverse_proxy localhost:4003
+    encode gzip
+    request_body {
+        max_size 1500MB
+    }
+    header -X-Frame-Options
+    header Content-Security-Policy "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;"
+    header X-Content-Type-Options nosniff
+    header X-XSS-Protection "1; mode=block"
+    header Referrer-Policy strict-origin-when-cross-origin
+}
+
+# --- Tenant: DTFPrintHouse (#4) ---
+dtfprinthouse.uploadstudio.app.techifyboost.com {
+    reverse_proxy localhost:4004
+    encode gzip
+    request_body {
+        max_size 1500MB
+    }
+    header -X-Frame-Options
+    header Content-Security-Policy "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;"
+    header X-Content-Type-Options nosniff
+    header X-XSS-Protection "1; mode=block"
+    header Referrer-Policy strict-origin-when-cross-origin
+}
+
+# --- Tenant: DTFPrintDepot (#5) ---
+dtfprintdepot.uploadstudio.app.techifyboost.com {
+    reverse_proxy localhost:4005
+    encode gzip
+    request_body {
+        max_size 1500MB
+    }
+    header -X-Frame-Options
+    header Content-Security-Policy "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;"
+    header X-Content-Type-Options nosniff
+    header X-XSS-Protection "1; mode=block"
+    header Referrer-Policy strict-origin-when-cross-origin
+}
+
+# --- Tenant: EagleDTFPrint (#6) ---
+eagledtfprint.uploadstudio.app.techifyboost.com {
+    reverse_proxy localhost:4006
+    encode gzip
+    request_body {
+        max_size 1500MB
+    }
+    header -X-Frame-Options
+    header Content-Security-Policy "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;"
+    header X-Content-Type-Options nosniff
+    header X-XSS-Protection "1; mode=block"
+    header Referrer-Policy strict-origin-when-cross-origin
+}
+
+# --- Tenant: AlphaPrint (#7) ---
+alphaprint.uploadstudio.app.techifyboost.com {
+    reverse_proxy localhost:4007
+    encode gzip
+    request_body {
+        max_size 1500MB
+    }
+    header -X-Frame-Options
+    header Content-Security-Policy "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;"
+    header X-Content-Type-Options nosniff
+    header X-XSS-Protection "1; mode=block"
+    header Referrer-Policy strict-origin-when-cross-origin
+}
+
+# --- Tenant: GangSheet (#8) ---
+gangsheet.uploadstudio.app.techifyboost.com {
+    reverse_proxy localhost:4008
+    encode gzip
+    request_body {
+        max_size 1500MB
+    }
+    header -X-Frame-Options
+    header Content-Security-Policy "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;"
+    header X-Content-Type-Options nosniff
+    header X-XSS-Protection "1; mode=block"
+    header Referrer-Policy strict-origin-when-cross-origin
+}
+
+# --- Tenant: LegendTransfers (#9) ---
+legendtransfers.uploadstudio.app.techifyboost.com {
+    reverse_proxy localhost:4009
+    encode gzip
+    request_body {
+        max_size 1500MB
+    }
+    header -X-Frame-Options
+    header Content-Security-Policy "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;"
+    header X-Content-Type-Options nosniff
+    header X-XSS-Protection "1; mode=block"
+    header Referrer-Policy strict-origin-when-cross-origin
+}
+
+# --- Tenant: CustomPrintAZ (#10) ---
+customprintaz.uploadstudio.app.techifyboost.com {
+    reverse_proxy localhost:4010
+    encode gzip
+    request_body {
+        max_size 1500MB
+    }
+    header -X-Frame-Options
+    header Content-Security-Policy "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;"
+    header X-Content-Type-Options nosniff
+    header X-XSS-Protection "1; mode=block"
+    header Referrer-Policy strict-origin-when-cross-origin
+}

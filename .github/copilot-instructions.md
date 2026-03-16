@@ -18,11 +18,11 @@ git@github.com:Growth-Sheriff/customizerapp.git
 ### Server SSH Access
 
 ```powershell
-# Windows PowerShell
-ssh -i $env:USERPROFILE\.ssh\id_ed25519_customizer_app root@5.78.136.98
+# Windows PowerShell / Linux / Mac
+gcloud compute ssh appserver-mothership --zone=us-central1-b
 
-# Linux/Mac
-ssh -i ~/.ssh/id_ed25519_customizer_app root@5.78.136.98
+# Direct SSH (alternative)
+ssh AvrasyaKreatif@34.60.49.145
 ```
 
 ### 3D Reference Repository
@@ -103,13 +103,14 @@ pnpm dev && pnpm test && pnpm build
 # Push
 git push origin main
 
-# Server
-cd /var/www/3d-customizer
+# Server (GCP)
+gcloud compute ssh appserver-mothership --zone=us-central1-b
+cd /opt/apps/custom/customizerapp/upload-studio/src
 git pull origin main
-pnpm install --frozen-lockfile
-pnpm build
-pnpm db:migrate:deploy
-systemctl restart 3d-customizer
+sudo docker build -t upload-studio:latest .
+cd /opt/apps/custom/customizerapp/upload-studio
+sudo docker compose down
+sudo docker compose up -d
 ```
 
 ---
@@ -118,13 +119,17 @@ systemctl restart 3d-customizer
 
 | Item            | Value                                 |
 | --------------- | ------------------------------------- |
+| Cloud           | **GCP** (`appserver-mothership`)      |
+| VM IP           | `34.60.49.145` (Static)               |
 | OS              | Ubuntu 24 LTS                         |
 | Reverse Proxy   | **Caddy** (auto SSL)                  |
 | Node.js         | 20 LTS                                |
 | Package Manager | pnpm                                  |
-| Database        | PostgreSQL 16                         |
-| Cache/Queue     | Redis 7                               |
-| Storage         | Cloudflare R2 (default) / S3 (option) |
+| Database        | Cloud SQL PostgreSQL 15 (`34.44.26.92`) |
+| Cache/Queue     | Memorystore Redis (`10.130.237.107`)  |
+| Storage         | Bunny.net (default) / R2 (fallback)   |
+| Docker          | Commands need `sudo`                  |
+| SSH             | `gcloud compute ssh appserver-mothership --zone=us-central1-b` |
 
 ### ❌ NGINX IS FORBIDDEN
 

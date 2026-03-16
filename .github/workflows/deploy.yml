@@ -14,7 +14,7 @@ jobs:
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SERVER_HOST }}
-          username: root
+          username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: 30m
           script: |
@@ -24,12 +24,12 @@ jobs:
             git pull origin main
 
             echo "=== [2/4] Docker Build ==="
-            /usr/bin/docker build -t upload-studio:latest .
+            sudo docker build -t upload-studio:latest .
 
             echo "=== [3/4] Restart Containers ==="
             cd /opt/apps/custom/customizerapp/upload-studio
-            /usr/bin/docker compose down
-            /usr/bin/docker compose up -d
+            sudo docker compose down
+            sudo docker compose up -d
 
             echo "=== [4/4] Health Check (retry 3x) ==="
             for attempt in 1 2 3; do
@@ -37,7 +37,7 @@ jobs:
               sleep 90
               FAILED=0
               for name in everydaycustomprint dtftransferohio dtfprinthouse dtfprintdepot eagledtfprint alphaprint gangsheet legendtransfers customprintaz; do
-                port=$(/usr/bin/docker port us-$name 3000/tcp 2>/dev/null | cut -d: -f2)
+                port=$(sudo docker port us-$name 3000/tcp 2>/dev/null | cut -d: -f2)
                 code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 http://127.0.0.1:$port/health 2>/dev/null)
                 echo "$name (:$port): $code"
                 if [ "$code" != "200" ]; then
