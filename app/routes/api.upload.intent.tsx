@@ -121,7 +121,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   // Validate mode
-  if (!['dtf', '3d_designer', 'classic', 'quick'].includes(mode)) {
+  if (!['dtf', '3d_designer', 'classic', 'quick', 'builder'].includes(mode)) {
     return corsJson({ error: 'Invalid mode' }, request, { status: 400 })
   }
 

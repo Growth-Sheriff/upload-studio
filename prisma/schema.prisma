@@ -117,6 +117,10 @@ model ProductConfig {
   assetSetId      String? @map("asset_set_id")
   policyOverrides Json?   @map("policy_overrides_json")
 
+  // Builder Modal pricing config
+  // Format: { tiers: [{minSqIn, maxSqIn, ratePerSqIn}], volumeDiscounts: [{minQty, discountPercent}], minimumCharge: number, setupFee: number }
+  builderConfig Json? @map("builder_config_json")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
