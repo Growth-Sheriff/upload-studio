@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================
 # Upload Studio - Docker Entrypoint
-# Starts Remix app + 4 background workers
+# Starts Remix app + 5 background workers
 # ============================================
 set -e
 
@@ -41,13 +41,16 @@ FLOW_PID=$!
 start_worker "commission" tsx workers/commission.worker.ts &
 COMMISSION_PID=$!
 
-echo "[App:${TENANT_SLUG}] Workers started (PIDs: ${PREFLIGHT_PID}, ${EXPORT_PID}, ${FLOW_PID}, ${COMMISSION_PID})"
+start_worker "telemetry" tsx workers/telemetry.worker.ts &
+TELEMETRY_PID=$!
+
+echo "[App:${TENANT_SLUG}] Workers started (PIDs: ${PREFLIGHT_PID}, ${EXPORT_PID}, ${FLOW_PID}, ${COMMISSION_PID}, ${TELEMETRY_PID})"
 
 # Graceful shutdown
 cleanup() {
   echo "[App:${TENANT_SLUG}] Shutting down..."
-  kill $PREFLIGHT_PID $EXPORT_PID $FLOW_PID $COMMISSION_PID 2>/dev/null || true
-  wait $PREFLIGHT_PID $EXPORT_PID $FLOW_PID $COMMISSION_PID 2>/dev/null || true
+  kill $PREFLIGHT_PID $EXPORT_PID $FLOW_PID $COMMISSION_PID $TELEMETRY_PID 2>/dev/null || true
+  wait $PREFLIGHT_PID $EXPORT_PID $FLOW_PID $COMMISSION_PID $TELEMETRY_PID 2>/dev/null || true
   echo "[App:${TENANT_SLUG}] All processes stopped."
   exit 0
 }
