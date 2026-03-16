@@ -44,7 +44,7 @@ services:
     container_name: us-everydaycustomprint
     env_file: envs/.env.everydaycustomprint
     ports:
-      - "127.0.0.1:4002:3000"
+      - "127.0.0.1:4102:3000"
     volumes:
       - uploads-everydaycustomprint:/app/uploads
 
@@ -56,7 +56,7 @@ services:
     container_name: us-dtftransferohio
     env_file: envs/.env.dtftransferohio
     ports:
-      - "127.0.0.1:4003:3000"
+      - "127.0.0.1:4103:3000"
     volumes:
       - uploads-dtftransferohio:/app/uploads
 
@@ -68,7 +68,7 @@ services:
     container_name: us-dtfprinthouse
     env_file: envs/.env.dtfprinthouse
     ports:
-      - "127.0.0.1:4004:3000"
+      - "127.0.0.1:4104:3000"
     volumes:
       - uploads-dtfprinthouse:/app/uploads
 
@@ -80,7 +80,7 @@ services:
     container_name: us-dtfprintdepot
     env_file: envs/.env.dtfprintdepot
     ports:
-      - "127.0.0.1:4005:3000"
+      - "127.0.0.1:4105:3000"
     volumes:
       - uploads-dtfprintdepot:/app/uploads
 
@@ -92,7 +92,7 @@ services:
     container_name: us-eagledtfprint
     env_file: envs/.env.eagledtfprint
     ports:
-      - "127.0.0.1:4006:3000"
+      - "127.0.0.1:4106:3000"
     volumes:
       - uploads-eagledtfprint:/app/uploads
 
@@ -104,7 +104,7 @@ services:
     container_name: us-alphaprint
     env_file: envs/.env.alphaprint
     ports:
-      - "127.0.0.1:4007:3000"
+      - "127.0.0.1:4107:3000"
     volumes:
       - uploads-alphaprint:/app/uploads
 
@@ -116,7 +116,7 @@ services:
     container_name: us-gangsheet
     env_file: envs/.env.gangsheet
     ports:
-      - "127.0.0.1:4008:3000"
+      - "127.0.0.1:4108:3000"
     volumes:
       - uploads-gangsheet:/app/uploads
 
@@ -128,7 +128,7 @@ services:
     container_name: us-legendtransfers
     env_file: envs/.env.legendtransfers
     ports:
-      - "127.0.0.1:4009:3000"
+      - "127.0.0.1:4109:3000"
     volumes:
       - uploads-legendtransfers:/app/uploads
 
@@ -140,7 +140,7 @@ services:
     container_name: us-customprintaz
     env_file: envs/.env.customprintaz
     ports:
-      - "127.0.0.1:4010:3000"
+      - "127.0.0.1:4110:3000"
     volumes:
       - uploads-customprintaz:/app/uploads
 
