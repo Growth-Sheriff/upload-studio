@@ -9,8 +9,7 @@ import { json } from '@remix-run/node';
 import { capturePayPalOrder, isPayPalConfigured } from '~/lib/paypal.server';
 import prisma from '~/lib/prisma.server';
 import { authenticate } from '~/shopify.server';
-
-const COMMISSION_PER_ORDER = 0.1;
+import { calculatePendingCommissions } from '~/lib/billing.server';
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
@@ -118,8 +117,10 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // Mark all pending commissions as paid
+    const { orderRates } = await calculatePendingCommissions(shop.id, pendingOrderIds);
     let markedCount = 0;
     for (const orderId of pendingOrderIds) {
+      const rate = orderRates.get(orderId) || 0.10;
       await prisma.commission.upsert({
         where: {
           commission_shop_order: {
@@ -134,7 +135,7 @@ export async function action({ request }: ActionFunctionArgs) {
           orderTotal: 0,
           orderCurrency: 'USD',
           commissionRate: 0,
-          commissionAmount: COMMISSION_PER_ORDER,
+          commissionAmount: rate,
           status: 'paid',
           paidAt: new Date(),
           paymentRef: captureId,

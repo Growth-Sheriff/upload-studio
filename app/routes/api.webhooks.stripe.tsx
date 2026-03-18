@@ -18,8 +18,7 @@ import { json } from '@remix-run/node';
 import { verifyWebhookEvent } from '~/lib/stripe.server';
 import type Stripe from 'stripe';
 import prisma from '~/lib/prisma.server';
-
-const COMMISSION_PER_ORDER = 0.1;
+import { calculatePendingCommissions } from '~/lib/billing.server';
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
@@ -120,7 +119,9 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session, eventId
   const pendingOrderIds = allOrderIds.filter((id) => !paidSet.has(id));
 
   // Mark as paid
+  const { orderRates } = await calculatePendingCommissions(shop.id, pendingOrderIds);
   for (const orderId of pendingOrderIds) {
+    const rate = orderRates.get(orderId) || 0.10;
     await prisma.commission.upsert({
       where: {
         commission_shop_order: {
@@ -135,7 +136,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session, eventId
         orderTotal: 0,
         orderCurrency: 'USD',
         commissionRate: 0,
-        commissionAmount: COMMISSION_PER_ORDER,
+        commissionAmount: rate,
         status: 'paid',
         paidAt: new Date(),
         paymentRef: paymentIntentId,

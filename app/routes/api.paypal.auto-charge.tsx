@@ -13,8 +13,8 @@ import { json } from '@remix-run/node';
 import { chargeWithVault, isPayPalConfigured } from '~/lib/paypal.server';
 import { chargeWithSavedMethod, isStripeConfigured } from '~/lib/stripe.server';
 import prisma from '~/lib/prisma.server';
+import { calculatePendingCommissions } from '~/lib/billing.server';
 
-const COMMISSION_PER_ORDER = 0.1;
 const AUTO_CHARGE_THRESHOLD = 49.99;
 const CRON_SECRET = process.env.CRON_SECRET;
 
@@ -87,7 +87,10 @@ export async function action({ request }: ActionFunctionArgs) {
 
       const paidSet = new Set(paidCommissions.map((c) => c.orderId));
       const pendingOrderIds = allOrderIds.filter((id) => !paidSet.has(id));
-      const pendingAmount = pendingOrderIds.length * COMMISSION_PER_ORDER;
+
+      // Calculate mode-aware commission amounts
+      const { totalAmount: pendingAmount, orderRates, description } =
+        await calculatePendingCommissions(shop.id, pendingOrderIds);
 
       // Check threshold
       if (pendingAmount < AUTO_CHARGE_THRESHOLD) {
@@ -122,8 +125,6 @@ export async function action({ request }: ActionFunctionArgs) {
       });
 
       const totalAmount = pendingAmount.toFixed(2);
-      const appName = process.env.APP_NAME || 'Upload Studio';
-      const description = `${appName} auto-charge: ${pendingOrderIds.length} orders @ $${COMMISSION_PER_ORDER}/order`;
 
       let captureId: string;
       let provider: 'paypal' | 'stripe';
@@ -163,6 +164,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
       // Mark all pending commissions as paid
       for (const orderId of pendingOrderIds) {
+        const rate = orderRates.get(orderId) || 0.10;
         await prisma.commission.upsert({
           where: {
             commission_shop_order: {
@@ -177,7 +179,7 @@ export async function action({ request }: ActionFunctionArgs) {
             orderTotal: 0,
             orderCurrency: 'USD',
             commissionRate: 0,
-            commissionAmount: COMMISSION_PER_ORDER,
+            commissionAmount: rate,
             status: 'paid',
             paidAt: new Date(),
             paymentRef: captureId,

@@ -15,7 +15,6 @@ import {
 } from "@shopify/polaris-icons";
 import { useState, useCallback } from "react";
 import { authenticate } from "~/shopify.server";
-import { getUsageAlerts } from "~/lib/billing.server";
 import prisma from "~/lib/prisma.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -81,14 +80,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }).then(groups => groups.length),
   ]);
 
-  // Plan limits
-  const planLimits: Record<string, number> = {
-    free: 100, starter: 1000, pro: -1, enterprise: -1,
-  };
-  const monthlyLimit = planLimits[shop.plan] || 100;
+  // No monthly upload limits anymore
+  const monthlyLimit = -1;
 
-  // Get usage alerts
-  const usageAlerts = await getUsageAlerts(shop.id);
+  // Usage alerts (no plan-based limits anymore)
+  const usageAlerts: Array<{ type: string; message: string; action?: { label: string; url: string } }> = [];
 
   return json({
     shop: {

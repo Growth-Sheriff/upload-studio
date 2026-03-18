@@ -9,8 +9,7 @@ import { json } from '@remix-run/node';
 import { createCheckoutSession, isStripeConfigured } from '~/lib/stripe.server';
 import prisma from '~/lib/prisma.server';
 import { authenticate } from '~/shopify.server';
-
-const COMMISSION_PER_ORDER = 0.1;
+import { calculatePendingCommissions } from '~/lib/billing.server';
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
@@ -82,11 +81,12 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: 'No pending commissions to pay' }, { status: 400 });
   }
 
-  const totalAmount = (pendingOrderIds.length * COMMISSION_PER_ORDER).toFixed(2);
-  const appName = process.env.APP_NAME || 'Upload Studio';
-  const description = monthKey
-    ? `${appName} commission (${monthKey}): ${pendingOrderIds.length} orders @ $${COMMISSION_PER_ORDER}/order`
-    : `${appName} commission: ${pendingOrderIds.length} orders @ $${COMMISSION_PER_ORDER}/order`;
+  const { totalAmount: total, description } = await calculatePendingCommissions(
+    shop.id,
+    pendingOrderIds,
+    monthKey
+  );
+  const totalAmount = total.toFixed(2);
 
   try {
     // Create audit entry for reference

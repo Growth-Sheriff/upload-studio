@@ -3,9 +3,7 @@ import type { ActionFunctionArgs } from '@remix-run/node'
 import { json } from '@remix-run/node'
 import crypto from 'crypto'
 import prisma from '~/lib/prisma.server'
-
-// Fixed commission per order: $0.015 (1.5 cents)
-const COMMISSION_PER_ORDER = new Decimal(0.1)
+import { getCommissionRate } from '~/lib/billing.server'
 
 // Verify Shopify webhook signature
 function verifyWebhookSignature(body: string, hmac: string, secret: string): boolean {
@@ -212,10 +210,21 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // Create commission record if order contains upload items
-    // Fixed fee: $0.015 per order (not percentage based)
+    // Commission rate depends on upload mode: $0.10 default, $0.50 for builder
     if (hasUploadLiftItems && processedUploads.length > 0) {
+      // Determine highest commission rate among processed uploads
+      const uploads = await prisma.upload.findMany({
+        where: { id: { in: processedUploads }, shopId: shop.id },
+        select: { mode: true },
+      })
+      let maxRate = 0
+      for (const u of uploads) {
+        maxRate = Math.max(maxRate, getCommissionRate(u.mode))
+      }
+      if (maxRate === 0) maxRate = getCommissionRate('dtf')
+
       const orderTotal = new Decimal(order.total_price || '0')
-      const commissionAmount = COMMISSION_PER_ORDER // Fixed $0.10 per order
+      const commissionAmount = new Decimal(maxRate)
 
       // Upsert for idempotency (Shopify may retry webhooks)
       await prisma.commission.upsert({

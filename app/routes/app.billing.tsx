@@ -25,9 +25,8 @@ import prisma from '~/lib/prisma.server'
 import { isPayPalConfigured } from '~/lib/paypal.server'
 import { isStripeConfigured } from '~/lib/stripe.server'
 import { authenticate } from '~/shopify.server'
+import { calculatePendingCommissions, getCommissionRate, COMMISSION_RATES } from '~/lib/billing.server'
 
-// Fixed commission per order: $0.10
-const COMMISSION_PER_ORDER = 0.1
 const PAYPAL_EMAIL = process.env.PAYPAL_EMAIL || 'billing@techifyboost.com'
 
 interface CommissionSummary {
@@ -83,12 +82,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   // Get ALL unique orders from OrderLink table (this is the source of truth)
-  // Each unique orderId = 1 commission of $0.10
+  // Each unique orderId = 1 commission (rate depends on upload mode)
   const orderLinks = await prisma.orderLink.findMany({
     where: { shopId: shop.id },
     select: {
       orderId: true,
       createdAt: true,
+      upload: { select: { mode: true } },
     },
     orderBy: { createdAt: 'desc' },
   })
@@ -98,10 +98,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   // Create a map of orderId -> earliest createdAt
   const orderDateMap = new Map<string, Date>()
+  // Build mode-based commission rate for each order
+  const orderRateMap = new Map<string, number>()
   for (const ol of orderLinks) {
     if (!orderDateMap.has(ol.orderId) || ol.createdAt < orderDateMap.get(ol.orderId)!) {
       orderDateMap.set(ol.orderId, ol.createdAt)
     }
+    // Use the highest commission rate across all uploads for this order
+    const mode = ol.upload?.mode || 'dtf'
+    const rate = getCommissionRate(mode)
+    const existing = orderRateMap.get(ol.orderId) || 0
+    orderRateMap.set(ol.orderId, Math.max(existing, rate))
   }
 
   // Get ALL commissions from Commission table (includes orderNumber)
@@ -154,11 +161,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const commission = commissionInfo.get(orderId)
     const isPaid = paidOrderIds.has(orderId)
     const createdAt = orderDateMap.get(orderId) || new Date()
+    const rate = orderRateMap.get(orderId) || COMMISSION_RATES.default
 
     return {
       orderId,
       orderNumber: commission?.orderNumber || `#${orderId.slice(-6)}`, // Use real orderNumber from Commission
-      commissionAmount: COMMISSION_PER_ORDER,
+      commissionAmount: rate,
       status: isPaid ? 'paid' : 'pending',
       createdAt: createdAt.toISOString(),
       paidAt: commission?.paidAt?.toISOString() || null,
@@ -186,18 +194,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
         year: 'numeric',
         month: 'long',
       })
-      const pendingOrders = orders.filter((o) => o.status === 'pending').length
-      const paidOrders = orders.filter((o) => o.status === 'paid').length
+      const pendingOrders = orders.filter((o) => o.status === 'pending')
+      const paidOrders = orders.filter((o) => o.status === 'paid')
 
       return {
         monthKey,
         monthLabel,
         totalOrders: orders.length,
-        pendingOrders,
-        paidOrders,
-        totalAmount: orders.length * COMMISSION_PER_ORDER,
-        pendingAmount: pendingOrders * COMMISSION_PER_ORDER,
-        paidAmount: paidOrders * COMMISSION_PER_ORDER,
+        pendingOrders: pendingOrders.length,
+        paidOrders: paidOrders.length,
+        totalAmount: orders.reduce((sum, o) => sum + o.commissionAmount, 0),
+        pendingAmount: pendingOrders.reduce((sum, o) => sum + o.commissionAmount, 0),
+        paidAmount: paidOrders.reduce((sum, o) => sum + o.commissionAmount, 0),
         orders,
       }
     })
@@ -207,10 +215,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const paidOrders = paidOrderIds.size
   const pendingOrders = totalOrders - paidOrders
 
+  const totalCommission = records.reduce((sum, r) => sum + r.commissionAmount, 0)
+  const pendingAmount = records.filter((r) => r.status === 'pending').reduce((sum, r) => sum + r.commissionAmount, 0)
+  const paidAmount = records.filter((r) => r.status === 'paid').reduce((sum, r) => sum + r.commissionAmount, 0)
+
   const summary: CommissionSummary = {
-    totalCommission: totalOrders * COMMISSION_PER_ORDER,
-    pendingAmount: pendingOrders * COMMISSION_PER_ORDER,
-    paidAmount: paidOrders * COMMISSION_PER_ORDER,
+    totalCommission,
+    pendingAmount,
+    paidAmount,
     totalOrders,
     pendingOrders,
     paidOrders,
@@ -223,7 +235,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     monthlyBreakdowns,
     totalTransferGB,
     totalFiles: uploadStats._count,
-    commissionPerOrder: COMMISSION_PER_ORDER,
+    commissionRates: COMMISSION_RATES,
     paypalEmail: PAYPAL_EMAIL,
     paypalEnabled: isPayPalConfigured(),
     paypalClientId: process.env.PAYPAL_CLIENT_ID || '',
@@ -310,8 +322,12 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const ids = orderIds.split(',').filter(Boolean)
 
+    // Get per-order commission rates based on mode
+    const { orderRates, totalAmount: totalPaid } = await calculatePendingCommissions(shop.id, ids)
+
     // Create or update commission records for each order
     for (const orderId of ids) {
+      const rate = orderRates.get(orderId) || COMMISSION_RATES.default
       await prisma.commission.upsert({
         where: {
           commission_shop_order: {
@@ -326,7 +342,7 @@ export async function action({ request }: ActionFunctionArgs) {
           orderTotal: 0, // Not tracking order total anymore
           orderCurrency: 'USD',
           commissionRate: 0,
-          commissionAmount: COMMISSION_PER_ORDER,
+          commissionAmount: rate,
           status: 'paid',
           paidAt: new Date(),
           paymentRef: paymentRef,
@@ -350,7 +366,7 @@ export async function action({ request }: ActionFunctionArgs) {
           orderIds: ids,
           paymentRef,
           count: ids.length,
-          totalAmount: ids.length * COMMISSION_PER_ORDER,
+          totalAmount: totalPaid,
         },
       },
     })
@@ -369,7 +385,7 @@ export default function BillingPage() {
     monthlyBreakdowns,
     totalTransferGB,
     totalFiles,
-    commissionPerOrder,
+    commissionRates,
     paypalEmail,
     paypalEnabled,
     autoChargeEnabled,
@@ -639,8 +655,8 @@ export default function BillingPage() {
         <Layout.Section>
           <Banner tone="info">
             <p>
-              <strong>Commission:</strong> ${commissionPerOrder.toFixed(3)} per order with Upload
-              Lift items (fixed fee). Payments are collected via Stripe (card) or PayPal.
+              <strong>Commission:</strong> ${commissionRates.default.toFixed(2)} per order (${commissionRates.builder.toFixed(2)} for Builder mode).
+              Payments are collected via Stripe (card) or PayPal.
             </p>
           </Banner>
         </Layout.Section>
@@ -1178,8 +1194,7 @@ export default function BillingPage() {
                   1. <strong>Order Placed</strong> - Customer places order with app items
                 </Text>
                 <Text as="p" variant="bodyMd">
-                  2. <strong>Commission Recorded</strong> - Fixed fee of $
-                  {commissionPerOrder.toFixed(3)} per order
+                  2. <strong>Commission Recorded</strong> - ${commissionRates.default.toFixed(2)} per order (${commissionRates.builder.toFixed(2)} for Builder mode)
                 </Text>
                 <Text as="p" variant="bodyMd">
                   3. <strong>Pay with Stripe or PayPal</strong> - Click the payment button to pay

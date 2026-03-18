@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from '@remix-run/node'
 import { nanoid } from 'nanoid'
-import { checkUploadAllowed } from '~/lib/billing.server'
+import { checkUploadAllowed, MAX_FILE_SIZE_MB } from '~/lib/billing.server'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
@@ -12,14 +12,6 @@ import {
   type UploadUrlResult,
 } from '~/lib/storage.server'
 import { uploadLogger } from '~/lib/uploadLogger.server'
-
-// Plan limits - Updated for 1GB standard, 1453MB pro
-const PLAN_LIMITS = {
-  free: { maxSizeMB: 1024, uploadsPerMonth: 100 }, // Free: 1GB (1024MB)
-  starter: { maxSizeMB: 1024, uploadsPerMonth: 10000 }, // Starter: 1GB (1024MB), 10K/ay
-  pro: { maxSizeMB: 1453, uploadsPerMonth: -1 }, // Pro: 1453MB unlimited
-  enterprise: { maxSizeMB: 1453, uploadsPerMonth: -1 }, // Enterprise: 1453MB unlimited
-}
 
 // GET handler - returns API info
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -197,48 +189,17 @@ export async function action({ request }: ActionFunctionArgs) {
     }
   }
 
-  // Check plan limits
-  const planKey = shop.plan as keyof typeof PLAN_LIMITS
-  const limits = PLAN_LIMITS[planKey] || PLAN_LIMITS.free
-
-  // Check file size
-  if (fileSize && fileSize > limits.maxSizeMB * 1024 * 1024) {
+  // Check file size (universal limit)
+  if (fileSize && fileSize > MAX_FILE_SIZE_MB * 1024 * 1024) {
     return corsJson(
       {
-        error: `File too large. Max size for ${shop.plan} plan: ${limits.maxSizeMB}MB`,
+        error: `File too large. Maximum size: ${MAX_FILE_SIZE_MB}MB`,
         code: 'FILE_TOO_LARGE',
-        maxSizeMB: limits.maxSizeMB,
+        maxSizeMB: MAX_FILE_SIZE_MB,
       },
       request,
       { status: 413 }
     )
-  }
-
-  // Check monthly upload limit
-  if (limits.uploadsPerMonth > 0) {
-    const startOfMonth = new Date()
-    startOfMonth.setDate(1)
-    startOfMonth.setHours(0, 0, 0, 0)
-
-    const monthlyUploads = await prisma.upload.count({
-      where: {
-        shopId: shop.id,
-        createdAt: { gte: startOfMonth },
-      },
-    })
-
-    if (monthlyUploads >= limits.uploadsPerMonth) {
-      return corsJson(
-        {
-          error: `Monthly upload limit reached (${limits.uploadsPerMonth})`,
-          code: 'LIMIT_REACHED',
-          limit: limits.uploadsPerMonth,
-          used: monthlyUploads,
-        },
-        request,
-        { status: 429 }
-      )
-    }
   }
 
   // Generate IDs

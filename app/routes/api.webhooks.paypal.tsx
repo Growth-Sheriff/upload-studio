@@ -19,7 +19,6 @@ import type { PayPalWebhookEvent } from '~/lib/paypal.server';
 import prisma from '~/lib/prisma.server';
 
 const PAYPAL_WEBHOOK_ID = process.env.PAYPAL_WEBHOOK_ID || '';
-const COMMISSION_PER_ORDER = 0.1;
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
