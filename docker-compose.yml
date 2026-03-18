@@ -25,16 +25,16 @@ x-app-common: &app-common
 services:
 
   # ════════════════════════════════════════════
-  # TENANT 1: Fast DTF Transfer (DISABLED - canlı FDT ayrı container'da çalışıyor)
+  # TENANT 1: Fast DTF Transfer
   # ════════════════════════════════════════════
-  # fastdtftransfer:
-  #   <<: *app-common
-  #   container_name: us-fastdtftransfer
-  #   env_file: envs/.env.fastdtftransfer
-  #   ports:
-  #     - "127.0.0.1:4001:3000"
-  #   volumes:
-  #     - uploads-fastdtftransfer:/app/uploads
+  fastdtftransfer:
+    <<: *app-common
+    container_name: us-fastdtftransfer
+    env_file: envs/.env.fastdtftransfer
+    ports:
+      - "127.0.0.1:4101:3000"
+    volumes:
+      - uploads-fastdtftransfer:/app/uploads
 
   # ════════════════════════════════════════════
   # TENANT 2: Everyday Custom Print

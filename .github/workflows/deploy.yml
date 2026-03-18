@@ -36,7 +36,7 @@ jobs:
               echo "Attempt $attempt - waiting 90s..."
               sleep 90
               FAILED=0
-              for name in everydaycustomprint dtftransferohio dtfprinthouse dtfprintdepot eagledtfprint alphaprint gangsheet legendtransfers customprintaz; do
+              for name in fastdtftransfer everydaycustomprint dtftransferohio dtfprinthouse dtfprintdepot eagledtfprint alphaprint gangsheet legendtransfers customprintaz; do
                 port=$(sudo docker port us-$name 3000/tcp 2>/dev/null | cut -d: -f2)
                 code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 http://127.0.0.1:$port/health 2>/dev/null)
                 echo "$name (:$port): $code"
@@ -45,7 +45,7 @@ jobs:
                 fi
               done
               if [ $FAILED -eq 0 ]; then
-                echo "All 9 tenants healthy!"
+                echo "All 10 tenants healthy!"
                 exit 0
               fi
               echo "$FAILED tenant(s) not ready yet..."
