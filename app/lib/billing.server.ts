@@ -17,7 +17,7 @@ export const PLAN_LIMITS = {
     freeOrdersPerMonth: 20,
     extraOrderPrice: 0.05,
     maxFileSizeMB: 1024,
-    modes: ["classic", "quick", "dtf"],
+    modes: ["classic", "quick", "dtf", "builder"],
     features: {
       "3d_designer": false,
       "quick_upload": true,
@@ -36,7 +36,7 @@ export const PLAN_LIMITS = {
     freeOrdersPerMonth: 30,
     extraOrderPrice: 0.06,
     maxFileSizeMB: 1453,
-    modes: ["3d_designer", "classic", "quick", "dtf"],
+    modes: ["3d_designer", "classic", "quick", "dtf", "builder"],
     features: {
       "3d_designer": true,
       "quick_upload": true,
@@ -56,7 +56,7 @@ export const PLAN_LIMITS = {
     freeOrdersPerMonth: 999999, // Unlimited
     extraOrderPrice: 0,
     maxFileSizeMB: 10240, // 10GB - no limits
-    modes: ["3d_designer", "classic", "quick", "dtf"],
+    modes: ["3d_designer", "classic", "quick", "dtf", "builder"],
     features: {
       "3d_designer": true,
       "quick_upload": true,
