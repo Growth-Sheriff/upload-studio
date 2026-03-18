@@ -746,7 +746,8 @@
   display: flex;
   flex-direction: column;
   flex: 1;
-  gap: 16px;
+  gap: 12px;
+  overflow-y: auto;
 }
 
 .ulb-fitcheck-empty {
@@ -762,100 +763,219 @@
   flex: 1;
 }
 
-.ulb-fitcheck-preview {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  min-height: 300px;
-  background: var(--ulb-gray-50);
-  border-radius: var(--ulb-radius-sm);
-  overflow: hidden;
-  position: relative;
-}
-
-.ulb-fitcheck-mockup {
-  position: relative;
-  display: inline-block;
-}
-
-.ulb-fitcheck-mockup-img {
-  max-width: 100%;
-  max-height: 400px;
-  display: block;
-}
-
-.ulb-fitcheck-design-overlay {
-  position: absolute;
-  pointer-events: none;
-}
-
-/* Mockup selector */
-.ulb-fitcheck-products {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-
-.ulb-fitcheck-product {
+/* Color row (top) */
+.fc-color-row {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 8px;
-  border: 2px solid var(--ulb-gray-200);
-  border-radius: var(--ulb-radius-sm);
-  background: var(--ulb-white);
-  cursor: pointer;
-  transition: all var(--ulb-transition);
+  gap: 6px;
+  padding: 0 4px;
+}
+.fc-color-label {
   font-size: 12px;
-  color: var(--ulb-gray-600);
+  color: var(--ulb-gray-500);
   font-family: var(--ulb-font);
 }
-
-.ulb-fitcheck-product:hover {
-  border-color: var(--ulb-primary);
-}
-
-.ulb-fitcheck-product.ulb-fitcheck-selected {
-  border-color: var(--ulb-primary);
-  background: var(--ulb-primary-light);
-  color: var(--ulb-primary);
-}
-
-.ulb-fitcheck-product-icon {
-  font-size: 28px;
-  line-height: 1;
-}
-
-/* Color picker */
-.ulb-fitcheck-colors {
+.fc-colors {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  padding: 8px 0;
 }
-
-.ulb-fitcheck-color {
-  width: 28px;
-  height: 28px;
+.fc-color-dot {
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   border: 2px solid var(--ulb-gray-200);
   cursor: pointer;
   transition: all var(--ulb-transition);
   padding: 0;
+}
+.fc-color-dot:hover {
+  border-color: var(--ulb-gray-400);
+  transform: scale(1.15);
+}
+.fc-color-dot.fc-color-active {
+  border-color: var(--ulb-gray-800);
+  box-shadow: 0 0 0 2px var(--ulb-white), 0 0 0 4px var(--ulb-gray-800);
+}
+
+/* 3×2 garment grid */
+.fc-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  padding: 0 4px;
+}
+
+/* Single garment card */
+.fc-card {
+  background: var(--ulb-white);
+  border: 1px solid var(--ulb-gray-200);
+  border-radius: var(--ulb-radius-sm);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.fc-garment-wrapper {
+  background: var(--ulb-gray-50);
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+}
+
+.fc-garment {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+.fc-mockup-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.fc-design-overlay {
+  position: absolute;
+  pointer-events: none;
+}
+
+.fc-design-overlay img {
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.2));
+}
+
+/* Card info */
+.fc-card-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px 0;
+  font-family: var(--ulb-font);
+}
+.fc-card-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ulb-gray-800);
+}
+.fc-card-placement {
+  font-size: 11px;
+  color: var(--ulb-gray-500);
+}
+
+/* Action buttons */
+.fc-card-actions {
+  display: flex;
+  gap: 8px;
+  padding: 4px 10px;
+}
+.fc-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: var(--ulb-font);
+  color: var(--ulb-gray-600);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all var(--ulb-transition);
+}
+.fc-action-btn:hover {
+  background: var(--ulb-gray-100);
+  color: var(--ulb-primary);
+}
+.fc-action-btn svg {
+  flex-shrink: 0;
+}
+
+/* Size label */
+.fc-size-label {
+  font-size: 12px;
+  color: var(--ulb-gray-600);
+  text-align: center;
+  padding: 2px 10px 8px;
   font-family: var(--ulb-font);
 }
 
-.ulb-fitcheck-color:hover {
-  border-color: var(--ulb-gray-400);
-  transform: scale(1.1);
+.fc-overflow-badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #fef3c7;
+  color: #92400e;
+  font-weight: 500;
+  vertical-align: middle;
 }
 
-.ulb-fitcheck-color.ulb-color-active {
-  border-color: var(--ulb-gray-800);
-  box-shadow: 0 0 0 2px var(--ulb-white), 0 0 0 4px var(--ulb-gray-800);
+/* ── FITCHECK ZOOM OVERLAY ── */
+.fc-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.fc-zoom-overlay.fc-zoom-visible {
+  opacity: 1;
+}
+.fc-zoom-panel {
+  background: var(--ulb-white);
+  border-radius: var(--ulb-radius);
+  max-width: 600px;
+  max-height: 90vh;
+  width: 90vw;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.fc-zoom-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--ulb-gray-200);
+  font-family: var(--ulb-font);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ulb-gray-800);
+}
+.fc-zoom-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: var(--ulb-gray-100);
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ulb-gray-600);
+  transition: all var(--ulb-transition);
+}
+.fc-zoom-close:hover {
+  background: var(--ulb-gray-200);
+}
+.fc-zoom-body {
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+}
+.fc-garment-zoom {
+  max-width: 500px;
+  width: 100%;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1309,8 +1429,8 @@
     padding: 16px 32px;
   }
 
-  .ulb-fitcheck-products {
-    grid-template-columns: repeat(6, 1fr);
+  .fc-grid {
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 
