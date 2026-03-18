@@ -66,7 +66,7 @@
   id="ul-builder-trigger-{{ product.id }}"
   data-product-id="{{ product.id }}"
   data-shop-domain="{{ shop.permanent_domain }}"
-  data-api-base="{{ block.settings.api_base }}"
+  data-api-base="/apps/customizer"
   data-currency="{{ cart.currency.iso_code }}"
   data-money-format="{{ shop.money_format | strip_html | escape }}"
 >
@@ -186,13 +186,7 @@
       "type": "paragraph",
       "content": "Adds a full-featured upload builder with Canvas preview, FitCheck mockups, and area-based pricing. Configure pricing tiers in the Upload Studio app dashboard."
     },
-    {
-      "type": "text",
-      "id": "api_base",
-      "label": "API Base URL",
-      "info": "Your Upload Studio tenant URL (e.g., https://mystore.customizerapp.dev)",
-      "default": "https://customizerapp.dev"
-    },
+
     {
       "type": "checkbox",
       "id": "show_header",
