@@ -9,7 +9,6 @@
   - Multi-file upload (drag & drop)
   - Canvas tab (marching ants, inch labels, reference squares)
   - FitCheck tab (6 mockups, 14-color picker)
-  - Area-based pricing (per in², volume discounts)
   - Dimension controls with aspect-ratio lock
   - Add to Cart with line item properties
 
@@ -50,9 +49,8 @@
 {{ 'ul-builder.css' | asset_url | stylesheet_tag }}
 
 {% comment %}
-  Builder JS Modules (order matters: pricing → upload → canvas → fitcheck → modal)
+  Builder JS Modules (order matters: upload → canvas → fitcheck → modal)
 {% endcomment %}
-<script src="{{ 'ul-builder-pricing.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-builder-upload.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-builder-canvas.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-builder-fitcheck.js' | asset_url }}" defer></script>
@@ -184,7 +182,7 @@
   "settings": [
     {
       "type": "paragraph",
-      "content": "Adds a full-featured upload builder with Canvas preview, FitCheck mockups, and area-based pricing. Configure pricing tiers in the Upload Studio app dashboard."
+      "content": "Adds a full-featured upload builder with Canvas preview and FitCheck mockups. Configure settings in the Upload Studio app dashboard."
     },
 
     {

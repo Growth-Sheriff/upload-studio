@@ -12,7 +12,6 @@
  *   - ul-builder-upload.js   (window.ULBuilderUpload)
  *   - ul-builder-canvas.js   (window.ULBuilderCanvas)
  *   - ul-builder-fitcheck.js (window.ULBuilderFitCheck)
- *   - ul-builder-pricing.js  (window.ULBuilderPricing)
  *   - ul-state.js            (window.ULState) [optional]
  *   - ul-analytics.js        (window.ULAnalytics) [optional]
  */
@@ -68,16 +67,18 @@
     currency: 'USD',
     moneyFormat: '${{amount}}',
 
+    /* Product info read from page */
+    variantId: null,
+    variantPrice: 0,      // in cents from Shopify
+    productTitle: '',
+    productHandle: '',
+
     /* Uploads list – each item:
        { id, uploadId, file, fileName, thumbUrl, originalUrl,
          widthPx, heightPx, dpi, widthIn, heightIn,
-         quantity, keepAspect, status, price } */
+         quantity, keepAspect, status } */
     items: [],
     selectedIndex: -1,
-
-    /* Config from backend */
-    pricingTiers: null,
-    volumeDiscounts: null,
 
     modalEl: null,
     fileInputEl: null,
@@ -96,41 +97,95 @@
     state.moneyFormat = opts.moneyFormat || '${{amount}}'
     state.initialized = true
 
-    // Load pricing tiers from backend
-    loadPricingConfig()
+    // Read product/variant info from page
+    readProductData()
 
-    console.log('[ULBuilderModal] Initialized for product', state.productId)
+    console.log('[ULBuilderModal] Initialized for product', state.productId, 'variant', state.variantId)
   }
 
   /* ─────────────────────────────────────────────
-     Pricing Config Fetch
+     Read Product Data from Page
      ───────────────────────────────────────────── */
-  function loadPricingConfig() {
-    if (!state.apiBase || !state.productId) return
-
-    var url =
-      state.apiBase +
-      '/api/v1/pricing/' +
-      encodeURIComponent(state.productId) +
-      '?shop=' +
-      encodeURIComponent(state.shopDomain)
-
-    fetch(url)
-      .then(function (r) {
-        if (!r.ok) throw new Error('Pricing API ' + r.status)
-        return r.json()
-      })
-      .then(function (data) {
-        state.pricingTiers = data.tiers || null
-        state.volumeDiscounts = data.volumeDiscounts || null
-        if (window.ULBuilderPricing) {
-          window.ULBuilderPricing.setConfig(data)
+  function readProductData() {
+    // 1. Try Shopify product JSON (most themes include this)
+    var productJsonEl = document.querySelector(
+      '[data-product-json], script[type="application/json"][data-product-json], ' +
+      'script[data-product-json], .product-json, ' +
+      'script[id="ProductJson-product-template"]'
+    )
+    if (productJsonEl) {
+      try {
+        var data = JSON.parse(productJsonEl.textContent)
+        var product = data.product || data
+        state.productTitle = product.title || ''
+        state.productHandle = product.handle || ''
+        var variants = product.variants || []
+        if (variants.length > 0) {
+          // Find selected variant or use first
+          var selected = findSelectedVariant(variants)
+          if (selected) {
+            state.variantId = selected.id
+            state.variantPrice = selected.price
+          }
         }
-        console.log('[ULBuilderModal] Pricing loaded', data)
-      })
-      .catch(function (err) {
-        console.warn('[ULBuilderModal] Pricing fetch failed, using variant pricing', err)
-      })
+        console.log('[ULBuilderModal] Product data from JSON:', state.productTitle, 'variant:', state.variantId)
+        return
+      } catch (e) { /* ignore */ }
+    }
+
+    // 2. Try product form hidden input
+    var hiddenInput = document.querySelector(
+      'form[action*="/cart/add"] input[name="id"][type="hidden"], ' +
+      'form[action*="/cart/add"] select[name="id"]'
+    )
+    if (hiddenInput && hiddenInput.value) {
+      state.variantId = parseInt(hiddenInput.value, 10)
+    }
+
+    // 3. Try URL param
+    if (!state.variantId) {
+      var urlParams = new URLSearchParams(window.location.search)
+      var urlVariant = urlParams.get('variant')
+      if (urlVariant) state.variantId = parseInt(urlVariant, 10)
+    }
+
+    // 4. Try meta tags for title
+    var metaTitle = document.querySelector('meta[property="og:title"]')
+    if (metaTitle) state.productTitle = metaTitle.getAttribute('content') || ''
+
+    console.log('[ULBuilderModal] Product data from DOM:', state.productTitle, 'variant:', state.variantId)
+  }
+
+  function findSelectedVariant(variants) {
+    if (!variants || !variants.length) return null
+
+    // Check URL param first
+    var urlParams = new URLSearchParams(window.location.search)
+    var urlVariant = urlParams.get('variant')
+    if (urlVariant) {
+      var vid = parseInt(urlVariant, 10)
+      for (var i = 0; i < variants.length; i++) {
+        if (variants[i].id === vid) return variants[i]
+      }
+    }
+
+    // Check form select/input
+    var formInput = document.querySelector(
+      'form[action*="/cart/add"] input[name="id"][type="hidden"], ' +
+      'form[action*="/cart/add"] select[name="id"]'
+    )
+    if (formInput && formInput.value) {
+      var fid = parseInt(formInput.value, 10)
+      for (var j = 0; j < variants.length; j++) {
+        if (variants[j].id === fid) return variants[j]
+      }
+    }
+
+    // Fallback to first available variant
+    for (var k = 0; k < variants.length; k++) {
+      if (variants[k].available !== false) return variants[k]
+    }
+    return variants[0]
   }
 
   /* ─────────────────────────────────────────────
@@ -319,21 +374,10 @@
       /* ── RIGHT PANEL ── */
       '        <div class="ulb-right-panel" id="ulb-right-panel">',
 
-      /* Enhancements */
-      '          <div class="ulb-section" id="ulb-section-enhancements" style="display:none;">',
-      '            <div class="ulb-section-title">Enhancements</div>',
-      '            <div class="ulb-toggle-row">',
-      '              <span class="ulb-toggle-label">Remove Background</span>',
-      '              <button type="button" class="ulb-toggle" data-toggle="removeBg" id="ulb-toggle-removebg"></button>',
-      '            </div>',
-      '            <div class="ulb-toggle-row">',
-      '              <span class="ulb-toggle-label">Upscale Image</span>',
-      '              <button type="button" class="ulb-toggle" data-toggle="upscale" id="ulb-toggle-upscale"></button>',
-      '            </div>',
-      '            <div class="ulb-toggle-row">',
-      '              <span class="ulb-toggle-label">Halftone Effect</span>',
-      '              <button type="button" class="ulb-toggle" data-toggle="halftone" id="ulb-toggle-halftone"></button>',
-      '            </div>',
+      /* Product Info */
+      '          <div class="ulb-section" id="ulb-section-productinfo" style="display:none;">',
+      '            <div class="ulb-section-title">Product</div>',
+      '            <div style="font-size:13px;color:#374151;font-weight:500;" id="ulb-product-title">' + escapeAttr(state.productTitle || 'Upload your design') + '</div>',
       '          </div>',
 
       /* Aspect Ratio */
@@ -383,34 +427,21 @@
       '            </div>',
       '          </div>',
 
-      /* Pricing */
+      /* File Info */
       '          <div class="ulb-section" id="ulb-section-pricing" style="display:none;">',
-      '            <div class="ulb-section-title">Pricing</div>',
+      '            <div class="ulb-section-title">File Details</div>',
       '            <div class="ulb-pricing" id="ulb-pricing-box">',
       '              <div class="ulb-pricing-row">',
       '                <span>Dimensions</span>',
       '                <span id="ulb-price-dims">-</span>',
       '              </div>',
       '              <div class="ulb-pricing-row">',
-      '                <span>Area</span>',
-      '                <span id="ulb-price-area">-</span>',
-      '              </div>',
-      '              <div class="ulb-pricing-row">',
-      '                <span>Rate</span>',
-      '                <span id="ulb-price-rate">-</span>',
+      '                <span>Resolution</span>',
+      '                <span id="ulb-price-dpi">-</span>',
       '              </div>',
       '              <div class="ulb-pricing-row">',
       '                <span>Quantity</span>',
       '                <span id="ulb-price-qty">1</span>',
-      '              </div>',
-      '              <hr class="ulb-pricing-divider">',
-      '              <div class="ulb-pricing-row" id="ulb-price-discount-row" style="display:none;">',
-      '                <span>Volume Discount</span>',
-      '                <span class="ulb-pricing-discount" id="ulb-price-discount"></span>',
-      '              </div>',
-      '              <div class="ulb-pricing-total">',
-      '                <span>Total</span>',
-      '                <span id="ulb-price-total">$0.00</span>',
       '              </div>',
       '            </div>',
       '          </div>',
@@ -549,17 +580,7 @@
       case 'aspect':
         item.keepAspect = isOn
         break
-      case 'removeBg':
-        item.removeBg = isOn
-        break
-      case 'upscale':
-        item.upscale = isOn
-        break
-      case 'halftone':
-        item.halftone = isOn
-        break
     }
-    recalcPrice()
   }
 
   /* ─────────────────────────────────────────────
@@ -601,12 +622,8 @@
       heightIn: 0,
       quantity: 1,
       keepAspect: true,
-      removeBg: false,
-      upscale: false,
-      halftone: false,
       status: 'uploading', // uploading | processing | ready | error
       progress: 0,
-      price: 0,
       error: null,
     }
     state.items.push(item)
@@ -634,7 +651,6 @@
           item.dpi = result.dpi || 300
           item.widthIn = result.widthIn || (item.widthPx / (item.dpi || 300))
           item.heightIn = result.heightIn || (item.heightPx / (item.dpi || 300))
-          recalcPrice()
           updateUI()
           showRightPanelSections()
           showToast(item.fileName + ' uploaded successfully', 'success')
@@ -681,7 +697,7 @@
       }
     }
 
-    recalcPrice()
+    updateFileDetailsDisplay()
     updateCanvasLabels()
   }
 
@@ -694,7 +710,7 @@
     var hInput = state.modalEl.querySelector('#ulb-dim-height')
     if (wInput) wInput.value = item.widthIn
     if (hInput) hInput.value = item.heightIn
-    recalcPrice()
+    updateFileDetailsDisplay()
     updateCanvasLabels()
   }
 
@@ -725,31 +741,10 @@
     if (state.selectedIndex >= state.items.length) {
       state.selectedIndex = state.items.length - 1
     }
-    recalcPrice()
     updateUI()
     if (state.items.length === 0) {
       hideRightPanelSections()
     }
-  }
-
-  /* ─────────────────────────────────────────────
-     Price Calculation
-     ───────────────────────────────────────────── */
-  function recalcPrice() {
-    if (window.ULBuilderPricing) {
-      for (var i = 0; i < state.items.length; i++) {
-        var item = state.items[i]
-        if (item.status === 'ready') {
-          item.price = window.ULBuilderPricing.calculate(
-            item.widthIn,
-            item.heightIn,
-            item.quantity
-          )
-        }
-      }
-    }
-    updatePricingDisplay()
-    updateCartButton()
   }
 
   /* ─────────────────────────────────────────────
@@ -763,7 +758,7 @@
     updateDpiDisplay()
     updateDimensionInputs()
     updateThumbnailStrip()
-    updatePricingDisplay()
+    updateFileDetailsDisplay()
     updateCartButton()
   }
 
@@ -823,7 +818,6 @@
       var item = state.items[i]
       var selectedClass = i === state.selectedIndex ? ' ulb-gallery-selected' : ''
       var thumbSrc = item.thumbUrl || ''
-      var priceStr = item.price ? formatMoney(item.price) : ''
       var dimsStr = item.widthIn && item.heightIn
         ? item.widthIn.toFixed(1) + '" × ' + item.heightIn.toFixed(1) + '"'
         : ''
@@ -849,7 +843,6 @@
         }
         html += '  <div class="ulb-gallery-item-info">'
         if (dimsStr) html += '<span class="ulb-gallery-dims">' + dimsStr + '</span>'
-        if (priceStr) html += '<span class="ulb-gallery-price">' + priceStr + '</span>'
         html += '  </div>'
         html += '  <button class="ulb-gallery-remove" data-action="remove-item" data-index="' + i + '">×</button>'
         html += '</div>'
@@ -884,9 +877,6 @@
       } else {
         html += '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:18px;color:var(--ulb-gray-400);">📄</div>'
       }
-      if (item.price) {
-        html += '<span class="ulb-thumb-price">' + formatMoney(item.price) + '</span>'
-      }
       html += '</div>'
     }
     html += '<button type="button" class="ulb-thumb-add" data-action="browse" title="Add design">+</button>'
@@ -901,47 +891,30 @@
     }
   }
 
-  function updatePricingDisplay() {
+  function updateFileDetailsDisplay() {
     var item = getSelectedItem()
     var pricingSection = state.modalEl.querySelector('#ulb-section-pricing')
     if (!pricingSection) return
 
     if (!item || item.status !== 'ready') return
 
-    var area = item.widthIn * item.heightIn
     var dimsEl = state.modalEl.querySelector('#ulb-price-dims')
-    var areaEl = state.modalEl.querySelector('#ulb-price-area')
-    var rateEl = state.modalEl.querySelector('#ulb-price-rate')
+    var dpiEl = state.modalEl.querySelector('#ulb-price-dpi')
     var qtyEl = state.modalEl.querySelector('#ulb-price-qty')
-    var totalEl = state.modalEl.querySelector('#ulb-price-total')
-    var discountRow = state.modalEl.querySelector('#ulb-price-discount-row')
-    var discountEl = state.modalEl.querySelector('#ulb-price-discount')
 
-    if (dimsEl) dimsEl.textContent = item.widthIn.toFixed(1) + '" × ' + item.heightIn.toFixed(1) + '"'
-    if (areaEl) areaEl.textContent = area.toFixed(1) + ' in²'
-
-    if (window.ULBuilderPricing) {
-      var detail = window.ULBuilderPricing.getDetail(item.widthIn, item.heightIn, item.quantity)
-      if (rateEl) rateEl.textContent = formatMoney(detail.ratePerSqIn) + '/in²'
-      if (qtyEl) qtyEl.textContent = '× ' + item.quantity
-      if (detail.discountPercent > 0 && discountRow && discountEl) {
-        discountRow.style.display = 'flex'
-        discountEl.textContent = '-' + detail.discountPercent + '%'
-      } else if (discountRow) {
-        discountRow.style.display = 'none'
+    if (dimsEl) {
+      if (item.widthIn > 0 && item.heightIn > 0) {
+        dimsEl.textContent = item.widthIn.toFixed(1) + '" × ' + item.heightIn.toFixed(1) + '" (' + item.widthPx + '×' + item.heightPx + 'px)'
+      } else if (item.widthPx > 0 && item.heightPx > 0) {
+        dimsEl.textContent = item.widthPx + ' × ' + item.heightPx + ' px'
+      } else {
+        dimsEl.textContent = 'Analyzing...'
       }
     }
-
-    // Grand total across all items
-    var grandTotal = 0
-    var totalQty = 0
-    for (var i = 0; i < state.items.length; i++) {
-      if (state.items[i].status === 'ready') {
-        grandTotal += state.items[i].price || 0
-        totalQty += state.items[i].quantity || 1
-      }
+    if (dpiEl) {
+      dpiEl.textContent = item.dpi ? item.dpi + ' DPI' : '-'
     }
-    if (totalEl) totalEl.textContent = formatMoney(grandTotal)
+    if (qtyEl) qtyEl.textContent = '× ' + item.quantity
   }
 
   function updateUploadProgress(item, pct, speed) {
@@ -996,7 +969,7 @@
   }
 
   function showRightPanelSections() {
-    var sections = ['enhancements', 'aspect', 'dims', 'thumbs', 'pricing']
+    var sections = ['productinfo', 'aspect', 'dims', 'thumbs', 'pricing']
     for (var i = 0; i < sections.length; i++) {
       var el = state.modalEl.querySelector('#ulb-section-' + sections[i])
       if (el) el.style.display = ''
@@ -1004,7 +977,7 @@
   }
 
   function hideRightPanelSections() {
-    var sections = ['enhancements', 'aspect', 'dims', 'thumbs', 'pricing']
+    var sections = ['productinfo', 'aspect', 'dims', 'thumbs', 'pricing']
     for (var i = 0; i < sections.length; i++) {
       var el = state.modalEl.querySelector('#ulb-section-' + sections[i])
       if (el) el.style.display = 'none'
@@ -1034,10 +1007,6 @@
         heightIn: item.heightIn,
         dpi: item.dpi,
         quantity: item.quantity,
-        price: item.price,
-        removeBg: item.removeBg,
-        upscale: item.upscale,
-        halftone: item.halftone,
       }
     })
 
@@ -1046,8 +1015,8 @@
         detail: {
           productId: state.productId,
           shopDomain: state.shopDomain,
+          variantId: state.variantId,
           items: cartItems,
-          total: cartItems.reduce(function (sum, it) { return sum + (it.price || 0) }, 0),
         },
       })
     )
@@ -1057,8 +1026,17 @@
   }
 
   function addItemsToShopifyCart(items) {
-    // Build Shopify cart payload
-    // Each item = separate line item with properties
+    var variantId = state.variantId
+    if (!variantId) {
+      showToast('Could not determine product variant. Please refresh the page.', 'error')
+      var btn = state.modalEl.querySelector('#ulb-cart-btn')
+      if (btn) {
+        btn.disabled = false
+        btn.innerHTML = ICONS.cart + ' <span>Add To Cart</span>'
+      }
+      return
+    }
+
     var promises = items.map(function (item) {
       var properties = {
         '_Upload ID': item.uploadId,
@@ -1068,19 +1046,16 @@
         '_DPI': String(item.dpi),
         '_Thumbnail': item.thumbUrl,
         '_Original': item.originalUrl,
+        '_Mode': 'builder',
       }
-      if (item.removeBg) properties['_Remove BG'] = 'Yes'
-      if (item.upscale) properties['_Upscale'] = 'Yes'
-      if (item.halftone) properties['_Halftone'] = 'Yes'
 
-      // Use Shopify AJAX API
       return fetch('/cart/add.js', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           items: [
             {
-              id: getVariantId(),
+              id: variantId,
               quantity: item.quantity,
               properties: properties,
             },
@@ -1110,34 +1085,6 @@
           btn.innerHTML = ICONS.cart + ' <span>Add To Cart</span>'
         }
       })
-  }
-
-  function getVariantId() {
-    // Try multiple sources for the variant ID
-    // 1. Hidden input
-    var hiddenInput = document.querySelector(
-      'input[name="id"][type="hidden"], select[name="id"]'
-    )
-    if (hiddenInput && hiddenInput.value) return parseInt(hiddenInput.value, 10)
-
-    // 2. URL param
-    var urlParams = new URLSearchParams(window.location.search)
-    var urlVariant = urlParams.get('variant')
-    if (urlVariant) return parseInt(urlVariant, 10)
-
-    // 3. Product JSON
-    var productJsonEl = document.querySelector(
-      '[data-product-json], script[type="application/json"][data-product-json]'
-    )
-    if (productJsonEl) {
-      try {
-        var data = JSON.parse(productJsonEl.textContent)
-        var variants = data.variants || (data.product && data.product.variants)
-        if (variants && variants[0]) return variants[0].id
-      } catch (e) { /* ignore */ }
-    }
-
-    return null
   }
 
   function refreshShopifyCart() {
@@ -1210,7 +1157,6 @@
     getSelectedItem: getSelectedItem,
     selectItem: selectItem,
     removeItem: removeItem,
-    recalcPrice: recalcPrice,
     showToast: showToast,
     formatMoney: formatMoney,
     ICONS: ICONS,

@@ -295,6 +295,35 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // This allows the widget to show spinner and poll for thumbnail
   // Old code returned downloadUrl which made hasThumbnail always true for PSD/PDF etc.
 
+  // Extract dimension/DPI data from preflightResult checks so clients
+  // can access widthPx, heightPx, dpi without parsing the checks array
+  const enrichedItems = upload.items.map((item) => {
+    const pf = item.preflightResult as Record<string, unknown> | null
+    const checks = Array.isArray(pf?.checks) ? (pf.checks as Array<Record<string, unknown>>) : []
+
+    let widthPx = 0
+    let heightPx = 0
+    let dpi = 0
+
+    for (const check of checks) {
+      if (check.name === 'dimensions' && check.details) {
+        const details = check.details as Record<string, number>
+        widthPx = details.width || 0
+        heightPx = details.height || 0
+      }
+      if (check.name === 'dpi' && typeof check.value === 'number') {
+        dpi = check.value
+      }
+    }
+
+    return {
+      ...item,
+      widthPx,
+      heightPx,
+      dpi,
+    }
+  })
+
   return corsJson(
     {
       uploadId: upload.id,
@@ -304,7 +333,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       variantId: upload.variantId,
       overallPreflight,
       preflightSummary: upload.preflightSummary,
-      items: upload.items,
+      items: enrichedItems,
       downloadUrl,
       thumbnailUrl,
       createdAt: upload.createdAt,
