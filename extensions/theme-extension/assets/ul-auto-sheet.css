@@ -78,10 +78,11 @@
 .ul-sheet-modal-container {
   position: relative;
   background: var(--ul-sheet-bg);
-  border-radius: var(--ul-sheet-radius);
-  width: 92vw;
-  max-width: 1600px;
-  max-height: 92vh;
+  border-radius: 14px;
+  width: 96vw;
+  max-width: 1800px;
+  height: 95vh;
+  max-height: 95vh;
   overflow: hidden;
   box-shadow: var(--ul-sheet-shadow-xl);
   animation: ulSheetSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
@@ -89,12 +90,12 @@
   flex-direction: column;
 }
 
-/* ── Modal Header ── */
+/* ── Modal Header (compact) ── */
 .ul-sheet-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 24px;
+  padding: 12px 20px;
   border-bottom: 1px solid var(--ul-sheet-border-light);
   background: var(--ul-sheet-bg);
   flex-shrink: 0;
@@ -107,9 +108,9 @@
 }
 
 .ul-sheet-header-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--ul-sheet-radius-sm);
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
   background: var(--ul-sheet-primary-light);
   display: flex;
   align-items: center;
@@ -119,21 +120,21 @@
 }
 
 .ul-sheet-header-icon svg {
-  width: 20px;
-  height: 20px;
+  width: 17px;
+  height: 17px;
 }
 
 .ul-sheet-header-title {
   margin: 0;
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 650;
   color: var(--ul-sheet-text);
   letter-spacing: -0.01em;
 }
 
 .ul-sheet-header-subtitle {
-  margin: 2px 0 0;
-  font-size: 13px;
+  margin: 1px 0 0;
+  font-size: 12px;
   color: var(--ul-sheet-text-muted);
 }
 
@@ -161,14 +162,13 @@
 /* ── Modal Body ── */
 .ul-sheet-body {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 24px;
-  overscroll-behavior: contain;
+  overflow: hidden;
+  padding: 16px;
+  min-height: 0;
 }
 
 .ul-sheet-body::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 
 .ul-sheet-body::-webkit-scrollbar-track {
@@ -180,20 +180,42 @@
   border-radius: 3px;
 }
 
-/* ── Two-Column Layout ── */
+/* ── Dashboard Layout: 2-column, full height ── */
 .ul-sheet-layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-  align-items: start;
+  grid-template-columns: minmax(340px, 1fr) minmax(400px, 1.2fr);
+  gap: 16px;
+  align-items: stretch;
+  height: 100%;
 }
 
-/* ── Section Card ── */
+/* Left column: scrollable controls + results */
+.ul-sheet-left-col {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 8px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ul-sheet-border) transparent;
+}
+.ul-sheet-left-col::-webkit-scrollbar { width: 5px; }
+.ul-sheet-left-col::-webkit-scrollbar-track { background: transparent; }
+.ul-sheet-left-col::-webkit-scrollbar-thumb { background: var(--ul-sheet-border); border-radius: 3px; }
+
+/* Right column: simulator stretches full height */
+.ul-sheet-right-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+/* ── Section Card (compact) ── */
 .ul-sheet-section {
   background: var(--ul-sheet-bg);
   border: 1px solid var(--ul-sheet-border);
   border-radius: var(--ul-sheet-radius-sm);
-  padding: 20px;
+  padding: 14px;
   transition: var(--ul-sheet-transition);
 }
 
@@ -205,8 +227,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 16px;
-  font-size: 14px;
+  margin: 0 0 10px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--ul-sheet-text);
 }
@@ -521,13 +543,17 @@
   color: white;
 }
 
-/* ── Canvas Simulator ── */
+/* ── Canvas Simulator (fills right column) ── */
 .ul-sheet-simulator {
   position: relative;
   background: var(--ul-sheet-bg);
   border: 1px solid var(--ul-sheet-border);
   border-radius: var(--ul-sheet-radius-sm);
   overflow: hidden;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .ul-sheet-simulator-header {
@@ -579,7 +605,8 @@
   position: relative;
   padding: 16px;
   background: var(--ul-sheet-bg-secondary);
-  min-height: 280px;
+  flex: 1;
+  min-height: 200px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -792,7 +819,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 24px;
+  padding: 10px 20px;
   border-top: 1px solid var(--ul-sheet-border-light);
   background: var(--ul-sheet-bg);
   flex-shrink: 0;
