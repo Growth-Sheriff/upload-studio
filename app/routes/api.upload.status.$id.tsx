@@ -297,6 +297,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   // Extract dimension/DPI data from preflightResult checks so clients
   // can access widthPx, heightPx, dpi without parsing the checks array
+  // v1.1.0: Also compute per-item thumbnailUrl and originalUrl
   const enrichedItems = upload.items.map((item) => {
     const pf = item.preflightResult as Record<string, unknown> | null
     const checks = Array.isArray(pf?.checks) ? (pf.checks as Array<Record<string, unknown>>) : []
@@ -316,11 +317,66 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       }
     }
 
+    // v1.1.0: Compute per-item thumbnail URL
+    let itemThumbnailUrl: string | null = null
+    if (item.thumbnailKey) {
+      if (isExternalUrl(item.thumbnailKey)) {
+        itemThumbnailUrl = isBunnyUrl(item.thumbnailKey)
+          ? getThumbnailUrl(storageConfig, item.thumbnailKey, 200)
+          : item.thumbnailKey
+      } else if (isBunnyKey(item.thumbnailKey)) {
+        itemThumbnailUrl = getThumbnailUrl(storageConfig, item.thumbnailKey, 200)
+      } else if (isR2Key(item.thumbnailKey)) {
+        const r2Key = item.thumbnailKey.replace('r2:', '')
+        const appHost = process.env.SHOPIFY_APP_URL!
+        const encodedPath = r2Key.split('/').map((s: string) => encodeURIComponent(s)).join('/')
+        const tokenExp = Date.now() + 365 * 24 * 3600 * 1000
+        const tok = generateLocalFileToken(`r2:${r2Key}`, tokenExp)
+        itemThumbnailUrl = `${appHost}/api/files/r2:${encodedPath}?token=${tok}`
+      } else if (isLocalKey(item.thumbnailKey)) {
+        const localKey = item.thumbnailKey.replace('local:', '')
+        const tok = generateLocalFileToken(localKey, expiresAt)
+        itemThumbnailUrl = `${host}/api/files/${encodeURIComponent(localKey)}?token=${encodeURIComponent(tok)}`
+      } else {
+        const tok = generateLocalFileToken(item.thumbnailKey, expiresAt)
+        itemThumbnailUrl = `${host}/api/files/${encodeURIComponent(item.thumbnailKey)}?token=${encodeURIComponent(tok)}`
+      }
+    }
+
+    // v1.1.0: Compute per-item original/file URL
+    let itemOriginalUrl: string | null = null
+    if (item.storageKey) {
+      if (isExternalUrl(item.storageKey)) {
+        itemOriginalUrl = item.storageKey
+      } else if (isBunnyKey(item.storageKey)) {
+        const bunnyKey = item.storageKey.replace('bunny:', '')
+        const cdnUrl = storageConfig.bunnyCdnUrl || process.env.BUNNY_CDN_URL || 'https://customizerappdev.b-cdn.net'
+        const encodedPath = bunnyKey.split('/').map((s: string) => encodeURIComponent(s)).join('/')
+        itemOriginalUrl = `${cdnUrl}/${encodedPath}`
+      } else if (isR2Key(item.storageKey)) {
+        const r2Key = item.storageKey.replace('r2:', '')
+        const appHost = process.env.SHOPIFY_APP_URL!
+        const encodedPath = r2Key.split('/').map((s: string) => encodeURIComponent(s)).join('/')
+        const tokenExp = Date.now() + 365 * 24 * 3600 * 1000
+        const tok = generateLocalFileToken(`r2:${r2Key}`, tokenExp)
+        itemOriginalUrl = `${appHost}/api/files/r2:${encodedPath}?token=${tok}`
+      } else if (isLocalKey(item.storageKey)) {
+        const localKey = item.storageKey.replace('local:', '')
+        const tok = generateLocalFileToken(localKey, expiresAt)
+        itemOriginalUrl = `${host}/api/files/${encodeURIComponent(localKey)}?token=${encodeURIComponent(tok)}`
+      } else {
+        const tok = generateLocalFileToken(item.storageKey, expiresAt)
+        itemOriginalUrl = `${host}/api/files/${encodeURIComponent(item.storageKey)}?token=${encodeURIComponent(tok)}`
+      }
+    }
+
     return {
       ...item,
       widthPx,
       heightPx,
       dpi,
+      thumbnailUrl: itemThumbnailUrl,
+      originalUrl: itemOriginalUrl,
     }
   })
 

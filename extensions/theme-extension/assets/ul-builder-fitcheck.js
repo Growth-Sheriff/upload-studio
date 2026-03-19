@@ -1,22 +1,22 @@
 /**
- * Upload Studio - Builder FitCheck v2.0.0
+ * Upload Studio - Builder FitCheck v3.0.0
  * =========================================
- * FitCheck tab: shows uploaded design overlaid on 6 garment mockups
- * in a 3×2 grid. Each mockup has real print-area dimensions (inches)
- * so the design is placed at its true proportional size.
+ * FitCheck tab: shows uploaded design overlaid on 6 real garment
+ * mockup photographs in a 3×2 grid.
  *
- * Features:
- *   - Dimension-aware scaling (design sized relative to garment print area)
- *   - 6 garment grid with size labels
- *   - Zoom overlay per mockup
- *   - Save mockup as PNG
- *   - 14-color picker
+ * v3.0.0 Changes:
+ *   - Replaced SVG cartoons with real PNG mockup images
+ *   - CSS mix-blend-mode: multiply for color tinting
+ *   - Proper dimension-aware scaling
+ *   - Improved zoom overlay with mockup image
+ *   - Better save-as-PNG via canvas compositing
  *
  * Namespace: window.ULBuilderFitCheck
  *
  * Dependencies:
  *   - ul-builder-modal.js (window.ULBuilderModal)
  *   - ul-builder.css
+ *   - Mockup images must be set via window.ULBuilderAssets
  */
 
 ;(function () {
@@ -26,10 +26,8 @@
 
   /* ─────────────────────────────────────────────
      Garment Definitions with REAL print area sizes
-     Each garment has:
-       - printArea: max printable area in INCHES { w, h }
-       - svgArea: where the print area sits on the SVG (percent)
-       - placement: label like "Full Front", "Center"
+     printArea: max printable area in INCHES { w, h }
+     imgArea: where the print area sits on the image (percent of image)
      ───────────────────────────────────────────── */
   var GARMENTS = [
     {
@@ -37,42 +35,42 @@
       label: 'T-Shirt',
       placement: 'Full Front',
       printArea: { w: 12, h: 14 },
-      svgArea: { top: 22, left: 25, width: 50, height: 40 },
+      imgArea: { top: 28, left: 28, width: 44, height: 38 },
     },
     {
       id: 'hat',
       label: 'Hat',
       placement: 'Front Panel',
       printArea: { w: 4, h: 2.5 },
-      svgArea: { top: 15, left: 20, width: 60, height: 35 },
+      imgArea: { top: 18, left: 25, width: 50, height: 30 },
     },
     {
       id: 'polo',
       label: 'Polo',
       placement: 'Left Chest',
       printArea: { w: 4.5, h: 4.5 },
-      svgArea: { top: 24, left: 28, width: 44, height: 38 },
+      imgArea: { top: 28, left: 30, width: 40, height: 35 },
     },
     {
       id: 'tote',
       label: 'Tote Bag',
       placement: 'Center',
       printArea: { w: 10, h: 14 },
-      svgArea: { top: 15, left: 15, width: 70, height: 55 },
+      imgArea: { top: 20, left: 18, width: 64, height: 50 },
     },
     {
       id: 'hoodie',
       label: 'Hoodie',
       placement: 'Full Front',
       printArea: { w: 12, h: 14 },
-      svgArea: { top: 25, left: 22, width: 56, height: 38 },
+      imgArea: { top: 30, left: 26, width: 48, height: 36 },
     },
     {
       id: 'apron',
       label: 'Apron',
       placement: 'Center',
       printArea: { w: 10, h: 12 },
-      svgArea: { top: 18, left: 22, width: 56, height: 42 },
+      imgArea: { top: 22, left: 24, width: 52, height: 40 },
     },
   ]
 
@@ -100,6 +98,14 @@
   var selectedColor = '#FFFFFF'
 
   /* ─────────────────────────────────────────────
+     Get mockup image URL for a garment
+     ───────────────────────────────────────────── */
+  function getMockupUrl(garmentId) {
+    var assets = window.ULBuilderAssets || {}
+    return assets[garmentId] || ''
+  }
+
+  /* ─────────────────────────────────────────────
      Calculate design fit for a garment
      Returns { fitW, fitH, scalePercent, overflow }
      ───────────────────────────────────────────── */
@@ -122,6 +128,17 @@
       designW: designWidthIn,
       designH: designHeightIn,
     }
+  }
+
+  /* ─────────────────────────────────────────────
+     CSS filter for color tinting
+     Converts hex color to CSS filter values for multiply blend
+     ───────────────────────────────────────────── */
+  function getColorFilter(hex) {
+    // For white (default), no filter needed
+    if (hex === '#FFFFFF' || hex === '#ffffff') return 'none'
+    // For other colors, we use background-color with mix-blend-mode
+    return hex
   }
 
   /* ─────────────────────────────────────────────
@@ -160,7 +177,7 @@
 
     // Color picker row (top)
     html += '<div class="fc-color-row" id="fc-color-row">'
-    html += '  <span class="fc-color-label">Change your preview items to any color below:</span>'
+    html += '  <span class="fc-color-label">Change preview color:</span>'
     html += '  <div class="fc-colors">'
     for (var c = 0; c < COLORS.length; c++) {
       var col = COLORS[c]
@@ -185,14 +202,15 @@
   }
 
   /* ─────────────────────────────────────────────
-     Build a single garment card
+     Build a single garment card with PNG mockup
      ───────────────────────────────────────────── */
   function buildGarmentCard(garment, item) {
     var designSrc = item.thumbUrl || item.originalUrl || ''
     var fit = calcDesignFit(garment, item.widthIn, item.heightIn)
-    var sa = garment.svgArea
+    var ia = garment.imgArea
+    var mockupUrl = getMockupUrl(garment.id)
 
-    // Calculate design overlay size as % of mockup area
+    // Calculate design overlay size as % of print area
     var designWidthPct = 100
     var designHeightPct = 100
     if (fit.fitW > 0 && fit.fitH > 0) {
@@ -200,54 +218,78 @@
       designHeightPct = (fit.fitH / garment.printArea.h) * 100
     }
 
-    // Actual display dimensions label
+    // Size label
     var sizeLabel = fit.fitW > 0
-      ? fit.fitW.toFixed(2) + 'in × ' + fit.fitH.toFixed(2) + 'in'
-      : (item.widthIn ? item.widthIn.toFixed(2) + 'in × ' + item.heightIn.toFixed(2) + 'in' : '—')
+      ? fit.fitW.toFixed(1) + '" × ' + fit.fitH.toFixed(1) + '"'
+      : (item.widthIn ? item.widthIn.toFixed(1) + '" × ' + item.heightIn.toFixed(1) + '"' : '—')
 
     var overflowBadge = fit.overflow
       ? '<span class="fc-overflow-badge" title="Design exceeds print area, will be scaled down">↕ Scaled</span>'
       : ''
 
+    // Determine tint style
+    var isWhite = selectedColor === '#FFFFFF' || selectedColor === '#ffffff'
+    var tintBg = isWhite ? '#f0f0f0' : selectedColor
+    var blendMode = isWhite ? 'normal' : 'multiply'
+
     var html = ''
     html += '<div class="fc-card" data-fc-garment="' + garment.id + '">'
 
     // Garment mockup with design overlay
-    html += '  <div class="fc-garment-wrapper">'
-    html += '    <div class="fc-garment">'
-    // SVG mockup
-    html += '      ' + buildSVGMockup(garment, selectedColor)
-    // Design overlay — positioned within the print area, scaled proportionally
+    html += '  <div class="fc-garment-wrapper" style="background:' + tintBg + ';border-radius:12px;overflow:hidden;position:relative;">'
+    html += '    <div class="fc-garment" style="position:relative;width:100%;aspect-ratio:4/5;">'
+
+    // Mockup image with color tinting via mix-blend-mode
+    if (mockupUrl) {
+      html += '      <img src="' + escapeAttr(mockupUrl) + '" alt="' + garment.label + '" '
+      html += '        class="fc-mockup-img" style="'
+      html += 'position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;'
+      html += 'mix-blend-mode:' + blendMode + ';'
+      html += 'pointer-events:none;'
+      html += '">'
+    } else {
+      // Fallback: colored rectangle with label
+      html += '      <div style="position:absolute;top:0;left:0;width:100%;height:100%;'
+      html += 'display:flex;align-items:center;justify-content:center;'
+      html += 'font-size:18px;font-weight:600;color:rgba(0,0,0,0.3);'
+      html += '">' + garment.label + '</div>'
+    }
+
+    // Design overlay — positioned within the print area
     html += '      <div class="fc-design-overlay" style="'
     html += 'position:absolute;'
-    html += 'top:' + sa.top + '%;'
-    html += 'left:' + sa.left + '%;'
-    html += 'width:' + sa.width + '%;'
-    html += 'height:' + sa.height + '%;'
+    html += 'top:' + ia.top + '%;'
+    html += 'left:' + ia.left + '%;'
+    html += 'width:' + ia.width + '%;'
+    html += 'height:' + ia.height + '%;'
     html += 'display:flex;align-items:center;justify-content:center;'
+    html += 'pointer-events:none;'
     html += '">'
     if (designSrc) {
       html += '        <img src="' + escapeAttr(designSrc) + '" alt="Design" style="'
       html += 'max-width:' + designWidthPct.toFixed(1) + '%;'
       html += 'max-height:' + designHeightPct.toFixed(1) + '%;'
       html += 'object-fit:contain;'
-      html += 'filter:drop-shadow(0 2px 6px rgba(0,0,0,0.2));'
+      html += 'filter:drop-shadow(0 1px 4px rgba(0,0,0,0.15));'
       html += '">'
     }
     html += '      </div>'
+
     html += '    </div>'
     html += '  </div>'
 
-    // Info row: garment name + placement
+    // Info row
     html += '  <div class="fc-card-info">'
     html += '    <span class="fc-card-name">' + garment.label + '</span>'
     html += '    <span class="fc-card-placement">' + garment.placement + '</span>'
     html += '  </div>'
 
-    // Action row: zoom + save + size
+    // Action row
     html += '  <div class="fc-card-actions">'
-    html += '    <button type="button" class="fc-action-btn" data-fc-zoom="' + garment.id + '" title="Zoom"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg> Zoom</button>'
-    html += '    <button type="button" class="fc-action-btn" data-fc-save="' + garment.id + '" title="Save"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Save</button>'
+    html += '    <button type="button" class="fc-action-btn" data-fc-zoom="' + garment.id + '" title="Zoom">'
+    html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg> Zoom</button>'
+    html += '    <button type="button" class="fc-action-btn" data-fc-save="' + garment.id + '" title="Save">'
+    html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Save</button>'
     html += '  </div>'
 
     // Size label
@@ -255,72 +297,6 @@
 
     html += '</div>'
     return html
-  }
-
-  /* ─────────────────────────────────────────────
-     SVG Mockup Generator
-     ───────────────────────────────────────────── */
-  function buildSVGMockup(garment, color) {
-    var w = 320
-    var h = 400
-    var bc = isLightColor(color) ? '#e5e7eb' : 'rgba(255,255,255,0.1)'
-
-    switch (garment.id) {
-      case 'tshirt':
-        return '<svg viewBox="0 0 ' + w + ' ' + h + '" class="fc-mockup-svg" xmlns="http://www.w3.org/2000/svg">' +
-          '<rect width="' + w + '" height="' + h + '" fill="transparent"/>' +
-          '<path d="M80,50 L60,55 L30,100 L55,115 L75,85 L75,350 L245,350 L245,85 L265,115 L290,100 L260,55 L240,50 L210,70 C195,80 125,80 110,70 Z" fill="' + color + '" stroke="' + bc + '" stroke-width="1.5"/>' +
-          '<path d="M110,70 C125,82 195,82 210,70 C200,58 120,58 110,70 Z" fill="' + darkenColor(color, 10) + '" stroke="' + bc + '" stroke-width="1"/>' +
-          '</svg>'
-
-      case 'hat':
-        return '<svg viewBox="0 0 ' + w + ' ' + h + '" class="fc-mockup-svg" xmlns="http://www.w3.org/2000/svg">' +
-          '<rect width="' + w + '" height="' + h + '" fill="transparent"/>' +
-          '<path d="M60,200 Q80,80 160,70 Q240,80 260,200 Z" fill="' + color + '" stroke="' + bc + '" stroke-width="1.5"/>' +
-          '<path d="M30,200 Q160,220 290,200 Q280,240 160,250 Q40,240 30,200 Z" fill="' + darkenColor(color, 15) + '" stroke="' + bc + '" stroke-width="1.5"/>' +
-          '</svg>'
-
-      case 'polo':
-        return '<svg viewBox="0 0 ' + w + ' ' + h + '" class="fc-mockup-svg" xmlns="http://www.w3.org/2000/svg">' +
-          '<rect width="' + w + '" height="' + h + '" fill="transparent"/>' +
-          '<path d="M80,55 L55,60 L30,110 L60,120 L75,90 L75,350 L245,350 L245,90 L260,120 L290,110 L265,60 L240,55 L215,72 C200,82 120,82 105,72 Z" fill="' + color + '" stroke="' + bc + '" stroke-width="1.5"/>' +
-          '<path d="M105,72 C120,84 200,84 215,72 L210,55 C195,65 125,65 110,55 Z" fill="' + darkenColor(color, 8) + '" stroke="' + bc + '" stroke-width="1"/>' +
-          '<line x1="160" y1="72" x2="160" y2="140" stroke="' + bc + '" stroke-width="1"/>' +
-          '<circle cx="160" cy="90" r="2.5" fill="' + bc + '"/>' +
-          '<circle cx="160" cy="110" r="2.5" fill="' + bc + '"/>' +
-          '</svg>'
-
-      case 'tote':
-        return '<svg viewBox="0 0 ' + w + ' ' + h + '" class="fc-mockup-svg" xmlns="http://www.w3.org/2000/svg">' +
-          '<rect width="' + w + '" height="' + h + '" fill="transparent"/>' +
-          '<path d="M100,60 Q100,30 130,30 L130,85" fill="none" stroke="' + color + '" stroke-width="8" stroke-linecap="round"/>' +
-          '<path d="M220,60 Q220,30 190,30 L190,85" fill="none" stroke="' + color + '" stroke-width="8" stroke-linecap="round"/>' +
-          '<rect x="60" y="80" width="200" height="280" rx="5" fill="' + color + '" stroke="' + bc + '" stroke-width="1.5"/>' +
-          '</svg>'
-
-      case 'hoodie':
-        return '<svg viewBox="0 0 ' + w + ' ' + h + '" class="fc-mockup-svg" xmlns="http://www.w3.org/2000/svg">' +
-          '<rect width="' + w + '" height="' + h + '" fill="transparent"/>' +
-          '<path d="M80,65 L55,70 L25,130 L60,140 L72,100 L72,355 L248,355 L248,100 L260,140 L295,130 L265,70 L240,65 L210,80 C195,90 125,90 110,80 Z" fill="' + color + '" stroke="' + bc + '" stroke-width="1.5"/>' +
-          '<path d="M110,80 C115,40 145,20 160,18 C175,20 205,40 210,80" fill="' + darkenColor(color, 8) + '" stroke="' + bc + '" stroke-width="1.5"/>' +
-          '<path d="M105,240 L215,240 L215,290 Q160,300 105,290 Z" fill="' + darkenColor(color, 5) + '" stroke="' + bc + '" stroke-width="1"/>' +
-          '<line x1="150" y1="80" x2="145" y2="130" stroke="' + bc + '" stroke-width="1.5"/>' +
-          '<line x1="170" y1="80" x2="175" y2="130" stroke="' + bc + '" stroke-width="1.5"/>' +
-          '</svg>'
-
-      case 'apron':
-        return '<svg viewBox="0 0 ' + w + ' ' + h + '" class="fc-mockup-svg" xmlns="http://www.w3.org/2000/svg">' +
-          '<rect width="' + w + '" height="' + h + '" fill="transparent"/>' +
-          '<path d="M120,50 Q160,30 200,50" fill="none" stroke="' + color + '" stroke-width="6" stroke-linecap="round"/>' +
-          '<path d="M80,50 L80,320 Q160,340 240,320 L240,50 Q200,60 160,55 Q120,60 80,50 Z" fill="' + color + '" stroke="' + bc + '" stroke-width="1.5"/>' +
-          '<path d="M80,180 L30,190" stroke="' + color + '" stroke-width="5" stroke-linecap="round"/>' +
-          '<path d="M240,180 L290,190" stroke="' + color + '" stroke-width="5" stroke-linecap="round"/>' +
-          '<rect x="110" y="220" width="100" height="70" rx="5" fill="' + darkenColor(color, 5) + '" stroke="' + bc + '" stroke-width="1"/>' +
-          '</svg>'
-
-      default:
-        return '<div style="width:320px;height:400px;background:' + color + ';border-radius:8px;"></div>'
-    }
   }
 
   /* ─────────────────────────────────────────────
@@ -390,13 +366,18 @@
 
     var fit = calcDesignFit(garment, currentItem.widthIn, currentItem.heightIn)
     var designSrc = currentItem.thumbUrl || currentItem.originalUrl || ''
-    var sa = garment.svgArea
+    var ia = garment.imgArea
+    var mockupUrl = getMockupUrl(garment.id)
     var designWidthPct = fit.fitW > 0 ? (fit.fitW / garment.printArea.w) * 100 : 100
     var designHeightPct = fit.fitH > 0 ? (fit.fitH / garment.printArea.h) * 100 : 100
 
     var sizeLabel = fit.fitW > 0
-      ? fit.fitW.toFixed(2) + 'in × ' + fit.fitH.toFixed(2) + 'in'
+      ? fit.fitW.toFixed(2) + '" × ' + fit.fitH.toFixed(2) + '"'
       : '—'
+
+    var isWhite = selectedColor === '#FFFFFF' || selectedColor === '#ffffff'
+    var tintBg = isWhite ? '#f0f0f0' : selectedColor
+    var blendMode = isWhite ? 'normal' : 'multiply'
 
     var overlay = document.createElement('div')
     overlay.className = 'fc-zoom-overlay'
@@ -406,13 +387,15 @@
       '    <span>' + garment.label + ' — ' + garment.placement + ' — ' + sizeLabel + '</span>',
       '    <button type="button" class="fc-zoom-close">×</button>',
       '  </div>',
-      '  <div class="fc-zoom-body">',
-      '    <div class="fc-garment fc-garment-zoom">',
-             buildSVGMockup(garment, selectedColor),
+      '  <div class="fc-zoom-body" style="background:' + tintBg + ';border-radius:12px;overflow:hidden;">',
+      '    <div class="fc-garment fc-garment-zoom" style="position:relative;width:100%;aspect-ratio:4/5;">',
+             mockupUrl
+               ? '<img src="' + escapeAttr(mockupUrl) + '" alt="' + garment.label + '" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;mix-blend-mode:' + blendMode + ';">'
+               : '',
       '      <div class="fc-design-overlay" style="',
       '        position:absolute;',
-      '        top:' + sa.top + '%;left:' + sa.left + '%;',
-      '        width:' + sa.width + '%;height:' + sa.height + '%;',
+      '        top:' + ia.top + '%;left:' + ia.left + '%;',
+      '        width:' + ia.width + '%;height:' + ia.height + '%;',
       '        display:flex;align-items:center;justify-content:center;">',
              designSrc ? '<img src="' + escapeAttr(designSrc) + '" alt="Design" style="max-width:' + designWidthPct.toFixed(1) + '%;max-height:' + designHeightPct.toFixed(1) + '%;object-fit:contain;filter:drop-shadow(0 2px 8px rgba(0,0,0,0.25));">' : '',
       '      </div>',
@@ -423,6 +406,13 @@
 
     document.body.appendChild(overlay)
     requestAnimationFrame(function () { overlay.classList.add('fc-zoom-visible') })
+
+    // Bind close for this overlay
+    overlay.addEventListener('click', function (e) {
+      if (e.target.closest('.fc-zoom-close') || e.target === overlay) {
+        closeZoom()
+      }
+    })
   }
 
   function closeZoom() {
@@ -434,32 +424,37 @@
      Save Mockup as PNG via Canvas
      ───────────────────────────────────────────── */
   function saveMockup(garmentId) {
-    var card = document.querySelector('[data-fc-garment="' + garmentId + '"]')
-    if (!card) return
-    var garmentEl = card.querySelector('.fc-garment')
-    if (!garmentEl) return
-
     var garment = getGarment(garmentId)
     if (!garment || !currentItem) return
+
+    var mockupUrl = getMockupUrl(garmentId)
+    if (!mockupUrl) {
+      if (window.ULBuilderModal && window.ULBuilderModal.showToast) {
+        window.ULBuilderModal.showToast('Mockup image not available', 'error')
+      }
+      return
+    }
 
     var canvas = document.createElement('canvas')
     var ctx = canvas.getContext('2d')
     var size = 800
     canvas.width = size
-    canvas.height = size
+    canvas.height = Math.round(size * 1.25) // 4:5 aspect ratio
 
-    // Draw SVG as background
-    var svgEl = garmentEl.querySelector('svg')
-    if (!svgEl) return
+    // Fill background with selected color
+    ctx.fillStyle = selectedColor === '#FFFFFF' ? '#f0f0f0' : selectedColor
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-    var svgData = new XMLSerializer().serializeToString(svgEl)
-    var svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' })
-    var svgUrl = URL.createObjectURL(svgBlob)
-
-    var svgImg = new Image()
-    svgImg.onload = function () {
-      ctx.drawImage(svgImg, 0, 0, size, size)
-      URL.revokeObjectURL(svgUrl)
+    // Draw mockup image
+    var mockImg = new Image()
+    mockImg.crossOrigin = 'anonymous'
+    mockImg.onload = function () {
+      // Apply multiply blend if not white
+      if (selectedColor !== '#FFFFFF' && selectedColor !== '#ffffff') {
+        ctx.globalCompositeOperation = 'multiply'
+      }
+      ctx.drawImage(mockImg, 0, 0, canvas.width, canvas.height)
+      ctx.globalCompositeOperation = 'source-over'
 
       // Draw design overlay
       var designSrc = currentItem.thumbUrl || currentItem.originalUrl
@@ -468,12 +463,13 @@
       var designImg = new Image()
       designImg.crossOrigin = 'anonymous'
       designImg.onload = function () {
-        var sa = garment.svgArea
+        var ia = garment.imgArea
         var fit = calcDesignFit(garment, currentItem.widthIn, currentItem.heightIn)
-        var areaX = (sa.left / 100) * size
-        var areaY = (sa.top / 100) * size
-        var areaW = (sa.width / 100) * size
-        var areaH = (sa.height / 100) * size
+
+        var areaX = (ia.left / 100) * canvas.width
+        var areaY = (ia.top / 100) * canvas.height
+        var areaW = (ia.width / 100) * canvas.width
+        var areaH = (ia.height / 100) * canvas.height
 
         var designRatio = designImg.width / designImg.height
         var fitWPct = fit.fitW > 0 ? fit.fitW / garment.printArea.w : 1
@@ -496,7 +492,12 @@
       designImg.onerror = function () { downloadCanvas(canvas, garmentId) }
       designImg.src = designSrc
     }
-    svgImg.src = svgUrl
+    mockImg.onerror = function () {
+      if (window.ULBuilderModal && window.ULBuilderModal.showToast) {
+        window.ULBuilderModal.showToast('Failed to load mockup for save', 'error')
+      }
+    }
+    mockImg.src = mockupUrl
   }
 
   function downloadCanvas(canvas, garmentId) {
@@ -516,24 +517,6 @@
     return null
   }
 
-  function isLightColor(hex) {
-    var r = parseInt(hex.slice(1, 3), 16)
-    var g = parseInt(hex.slice(3, 5), 16)
-    var b = parseInt(hex.slice(5, 7), 16)
-    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6
-  }
-
-  function darkenColor(hex, percent) {
-    var r = parseInt(hex.slice(1, 3), 16)
-    var g = parseInt(hex.slice(3, 5), 16)
-    var b = parseInt(hex.slice(5, 7), 16)
-    var f = 1 - percent / 100
-    r = Math.round(r * f)
-    g = Math.round(g * f)
-    b = Math.round(b * f)
-    return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)
-  }
-
   function escapeAttr(str) {
     if (!str) return ''
     return str
@@ -548,7 +531,7 @@
      Public API
      ───────────────────────────────────────────── */
   window.ULBuilderFitCheck = {
-    version: '2.0.0',
+    version: '3.0.0',
     activate: activate,
     GARMENTS: GARMENTS,
     COLORS: COLORS,

@@ -637,20 +637,39 @@
         shopDomain: state.shopDomain,
         productId: state.productId,
         itemId: item.id,
+        _startTime: Date.now(),
         onProgress: function (pct, speed) {
           item.progress = pct
+          if (pct >= 100 && item.status === 'uploading') {
+            item.status = 'processing' // Show processing state during preflight
+          }
           updateUploadProgress(item, pct, speed)
+        },
+        onDimensions: function (dims) {
+          // v1.1.0: Early client-side dimensions for browser-supported formats
+          if (dims && item.widthPx === 0) {
+            item.widthPx = dims.widthPx
+            item.heightPx = dims.heightPx
+            item.dpi = dims.dpi || 72
+            item.widthIn = parseFloat((dims.widthPx / (dims.dpi || 72)).toFixed(2))
+            item.heightIn = parseFloat((dims.heightPx / (dims.dpi || 72)).toFixed(2))
+            updateUI()
+          }
         },
         onComplete: function (result) {
           item.status = 'ready'
           item.uploadId = result.uploadId
           item.thumbUrl = result.thumbnailUrl || ''
           item.originalUrl = result.originalUrl || result.fileUrl || ''
-          item.widthPx = result.widthPx || 0
-          item.heightPx = result.heightPx || 0
-          item.dpi = result.dpi || 300
-          item.widthIn = result.widthIn || (item.widthPx / (item.dpi || 300))
-          item.heightIn = result.heightIn || (item.heightPx / (item.dpi || 300))
+          // Server DPI/dimensions override client-side values
+          if (result.widthPx > 0) item.widthPx = result.widthPx
+          if (result.heightPx > 0) item.heightPx = result.heightPx
+          if (result.dpi > 0) item.dpi = result.dpi
+          // Recalculate inches with server DPI
+          if (item.widthPx > 0 && item.dpi > 0) {
+            item.widthIn = parseFloat((item.widthPx / item.dpi).toFixed(2))
+            item.heightIn = parseFloat((item.heightPx / item.dpi).toFixed(2))
+          }
           updateUI()
           showRightPanelSections()
           showToast(item.fileName + ' uploaded successfully', 'success')
@@ -822,11 +841,12 @@
         ? item.widthIn.toFixed(1) + '" × ' + item.heightIn.toFixed(1) + '"'
         : ''
 
-      if (item.status === 'uploading') {
+      if (item.status === 'uploading' || item.status === 'processing') {
+        var statusLabel = item.status === 'processing' ? 'Processing...' : Math.round(item.progress) + '%'
         html += '<div class="ulb-gallery-item' + selectedClass + '" data-gallery-index="' + i + '">'
         html += '  <div style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:6px;">'
         html += '    <div class="ulb-spinner" style="border-top-color:var(--ulb-primary);border-color:var(--ulb-gray-300);"></div>'
-        html += '    <span style="font-size:11px;color:var(--ulb-gray-500);">' + Math.round(item.progress) + '%</span>'
+        html += '    <span style="font-size:11px;color:var(--ulb-gray-500);">' + statusLabel + '</span>'
         html += '  </div>'
         html += '</div>'
       } else if (item.status === 'error') {

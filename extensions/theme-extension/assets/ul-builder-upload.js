@@ -1,14 +1,16 @@
 /**
- * Upload Studio - Builder Upload v1.0.0
+ * Upload Studio - Builder Upload v1.1.0
  * =======================================
  * Handles file upload via the existing signed-URL flow:
  *   POST /api/upload/intent  → get signed URL
  *   XHR PUT to signed URL    → direct storage upload
  *   POST /api/upload/complete → finalize
- *   GET  /api/upload/status   → poll for thumbnail
+ *   GET  /api/upload/status   → poll for thumbnail + preflight
  *
- * Reuses the same backend endpoints as dtf-uploader.js
- * but with a simpler, callback-based interface for the builder.
+ * v1.1.0 Changes:
+ *   - Poll waits for preflightStatus (not just upload status)
+ *   - Client-side dimension reading for browser-supported formats
+ *   - Better thumbnailUrl extraction from response
  *
  * Namespace: window.ULBuilderUpload
  *
@@ -22,6 +24,51 @@
 
   var POLL_INTERVAL = 1500
   var MAX_POLLS = 80 // 2 minutes max
+
+  // Browser-supported image types for client-side dimension reading
+  var BROWSER_IMAGE_TYPES = [
+    'image/png', 'image/jpeg', 'image/jpg', 'image/webp',
+    'image/gif', 'image/bmp', 'image/svg+xml',
+  ]
+
+  /* ─────────────────────────────────────────────
+     Client-side dimension reading
+     For browser-supported formats, read w/h immediately
+     ───────────────────────────────────────────── */
+  function readClientDimensions(file, callback) {
+    // Only works for browser-supported image types
+    var type = (file.type || '').toLowerCase()
+    var ext = (file.name || '').split('.').pop().toLowerCase()
+
+    var isBrowserImage = BROWSER_IMAGE_TYPES.indexOf(type) >= 0 ||
+      ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg'].indexOf(ext) >= 0
+
+    if (!isBrowserImage) {
+      callback(null)
+      return
+    }
+
+    try {
+      var url = URL.createObjectURL(file)
+      var img = new Image()
+      img.onload = function () {
+        var result = {
+          widthPx: img.naturalWidth,
+          heightPx: img.naturalHeight,
+          dpi: 72, // Browser default — server will provide actual DPI
+        }
+        URL.revokeObjectURL(url)
+        callback(result)
+      }
+      img.onerror = function () {
+        URL.revokeObjectURL(url)
+        callback(null)
+      }
+      img.src = url
+    } catch (e) {
+      callback(null)
+    }
+  }
 
   /* ─────────────────────────────────────────────
      Upload Entry Point
@@ -37,6 +84,7 @@
    * @param {string} opts.productId - Shopify product ID
    * @param {string} opts.itemId - internal item ID (for tracking)
    * @param {function} opts.onProgress - (percentFloat, speedText) => void
+   * @param {function} opts.onDimensions - (dims) => void  [NEW: early dimensions]
    * @param {function} opts.onComplete - (result) => void
    * @param {function} opts.onError - (errorMessage) => void
    */
@@ -44,6 +92,13 @@
     var apiBase = opts.apiBase
     var shopDomain = opts.shopDomain
     var productId = opts.productId
+
+    // Start client-side dimension reading in parallel
+    readClientDimensions(file, function (dims) {
+      if (dims && opts.onDimensions) {
+        opts.onDimensions(dims)
+      }
+    })
 
     // Step 1: Intent
     fetch(apiBase + '/api/upload/intent', {
@@ -81,23 +136,9 @@
      Upload to Storage (Provider-aware)
      ───────────────────────────────────────────── */
   function uploadToStorage(file, intentData, opts) {
-    var provider = intentData.storageProvider || 'local'
-
-    if (provider === 'bunny') {
-      uploadXHR(file, intentData, opts, function onDone(uploadResult) {
-        completeUpload(intentData, uploadResult, file, opts)
-      })
-    } else if (provider === 'r2' || provider === 'local') {
-      // R2 and local also use PUT to signed URL
-      uploadXHR(file, intentData, opts, function onDone(uploadResult) {
-        completeUpload(intentData, uploadResult, file, opts)
-      })
-    } else {
-      // Unknown provider - try XHR anyway
-      uploadXHR(file, intentData, opts, function onDone(uploadResult) {
-        completeUpload(intentData, uploadResult, file, opts)
-      })
-    }
+    uploadXHR(file, intentData, opts, function onDone(uploadResult) {
+      completeUpload(intentData, uploadResult, file, opts)
+    })
   }
 
   /* ─────────────────────────────────────────────
@@ -236,7 +277,7 @@
         return r.json()
       })
       .then(function () {
-        // Start polling for thumbnail / dimensions
+        // Start polling for thumbnail / dimensions / preflight
         pollStatus(apiBase, shopDomain, intentData.uploadId, opts, 0)
       })
       .catch(function (err) {
@@ -246,10 +287,12 @@
 
   /* ─────────────────────────────────────────────
      Poll Upload Status
+     v1.1.0: Now waits for preflightStatus to complete
      ───────────────────────────────────────────── */
   function pollStatus(apiBase, shopDomain, uploadId, opts, count) {
     if (count >= MAX_POLLS) {
       // Timeout but still return what we have
+      console.warn('[ULBuilderUpload] Polling timeout after ' + count + ' attempts')
       if (opts.onComplete) {
         opts.onComplete({
           uploadId: uploadId,
@@ -260,6 +303,7 @@
           dpi: 300,
           widthIn: 0,
           heightIn: 0,
+          preflightTimedOut: true,
         })
       }
       return
@@ -278,31 +322,54 @@
         return r.json()
       })
       .then(function (data) {
-        if (data.status === 'ready' || data.status === 'approved' || data.status === 'uploaded') {
-          var item = (data.items && data.items[0]) || {}
+        // v1.1.0: Check BOTH upload status AND preflight status
+        var uploadDone = data.status === 'ready' || data.status === 'approved' ||
+          data.status === 'uploaded' || data.status === 'needs_review' ||
+          data.status === 'pending_approval' || data.status === 'blocked'
+
+        var item = (data.items && data.items[0]) || {}
+
+        // Preflight is done when status is not 'pending'
+        var preflightDone = item.preflightStatus === 'ok' ||
+          item.preflightStatus === 'warning' ||
+          item.preflightStatus === 'error'
+
+        if (data.status === 'error' || data.status === 'rejected') {
+          // Fatal error
+          if (opts.onError) opts.onError(data.error || 'Processing failed')
+          return
+        }
+
+        if (uploadDone && preflightDone) {
+          // Both upload and preflight are done — extract all data
           var dpi = item.dpi || 300
           var widthPx = item.widthPx || item.width || 0
           var heightPx = item.heightPx || item.height || 0
           var widthIn = widthPx > 0 ? widthPx / dpi : 0
           var heightIn = heightPx > 0 ? heightPx / dpi : 0
 
+          // v1.1.0: Better thumbnailUrl extraction
+          // Try item-level first, then top-level
+          var thumbnailUrl = item.thumbnailUrl || data.thumbnailUrl || ''
+          var originalUrl = item.originalUrl || item.fileUrl || data.downloadUrl || data.fileUrl || ''
+
           if (opts.onComplete) {
             opts.onComplete({
               uploadId: uploadId,
-              thumbnailUrl: item.thumbnailUrl || data.thumbnailUrl || '',
-              originalUrl: item.originalUrl || item.fileUrl || data.fileUrl || '',
-              fileUrl: item.fileUrl || data.fileUrl || '',
+              thumbnailUrl: thumbnailUrl,
+              originalUrl: originalUrl,
+              fileUrl: originalUrl,
               widthPx: widthPx,
               heightPx: heightPx,
               dpi: dpi,
               widthIn: parseFloat(widthIn.toFixed(2)),
               heightIn: parseFloat(heightIn.toFixed(2)),
+              preflightStatus: item.preflightStatus,
+              preflightResult: item.preflightResult,
             })
           }
-        } else if (data.status === 'error' || data.status === 'rejected') {
-          if (opts.onError) opts.onError(data.error || 'Processing failed')
         } else {
-          // Still processing, poll again
+          // Still processing — poll again
           setTimeout(function () {
             pollStatus(apiBase, shopDomain, uploadId, opts, count + 1)
           }, POLL_INTERVAL)
@@ -337,7 +404,8 @@
      Public API
      ───────────────────────────────────────────── */
   window.ULBuilderUpload = {
-    version: '1.0.0',
+    version: '1.1.0',
     upload: upload,
+    readClientDimensions: readClientDimensions,
   }
 })()

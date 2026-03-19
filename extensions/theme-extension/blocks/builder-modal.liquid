@@ -49,6 +49,19 @@
 {{ 'ul-builder.css' | asset_url | stylesheet_tag }}
 
 {% comment %}
+  Mockup Asset URLs for FitCheck (must be before JS modules)
+{% endcomment %}
+<script>
+  window.ULBuilderAssets = window.ULBuilderAssets || {};
+  window.ULBuilderAssets.tshirt = {{ 'mockup-tshirt.png' | asset_url | json }};
+  window.ULBuilderAssets.hoodie = {{ 'mockup-hoodie.png' | asset_url | json }};
+  window.ULBuilderAssets.hat = {{ 'mockup-hat.png' | asset_url | json }};
+  window.ULBuilderAssets.polo = {{ 'mockup-polo.png' | asset_url | json }};
+  window.ULBuilderAssets.tote = {{ 'mockup-tote.png' | asset_url | json }};
+  window.ULBuilderAssets.apron = {{ 'mockup-apron.png' | asset_url | json }};
+</script>
+
+{% comment %}
   Builder JS Modules (order matters: upload → canvas → fitcheck → modal)
 {% endcomment %}
 <script src="{{ 'ul-builder-upload.js' | asset_url }}" defer></script>
