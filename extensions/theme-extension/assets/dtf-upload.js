@@ -16,32 +16,32 @@
   var FITCHECK_MOCKUPS = [
     {
       id: 'tshirt', name: 'T-Shirt', placement: 'Full Front',
-      svg: '<svg viewBox="0 0 200 250" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg"><defs><filter id="fabric-ts"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" result="noise" /><feColorMatrix type="matrix" values="0 0 0 0 0   0 0 0 0 0   0 0 0 0 0   0 0 0 0.05 0" in="noise" result="coloredNoise" /><feBlend in="SourceGraphic" in2="coloredNoise" mode="darken" /></filter><linearGradient id="ts-grad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#000" stop-opacity="0.3"/><stop offset="10%" stop-color="#fff" stop-opacity="0.1"/><stop offset="30%" stop-color="#000" stop-opacity="0.0"/><stop offset="70%" stop-color="#000" stop-opacity="0.0"/><stop offset="90%" stop-color="#fff" stop-opacity="0.1"/><stop offset="100%" stop-color="#000" stop-opacity="0.3"/></linearGradient></defs><g filter="url(#fabric-ts)"><path d="M60,20 C75,20 85,35 100,35 C115,35 125,20 140,20 L185,45 L170,95 L145,75 L145,230 C145,235 140,240 135,240 L65,240 C60,240 55,235 55,230 L55,75 L30,95 L15,45 Z" fill="currentColor"/><path d="M60,20 C75,20 85,35 100,35 C115,35 125,20 140,20 L185,45 L170,95 L145,75 L145,230 C145,235 140,240 135,240 L65,240 C60,240 55,235 55,230 L55,75 L30,95 L15,45 Z" fill="url(#ts-grad)"/><path d="M60,20 C75,35 125,35 140,20 C125,45 75,45 60,20 Z" fill="#000" opacity="0.2"/></g></svg>',
+      imgFile: 'mockup-tshirt.png',
       printArea: { top: 25, left: 50, width: 35, maxInches: 12 }
     },
     {
       id: 'hat', name: 'Hat', placement: 'Front Panel',
-      svg: '<svg viewBox="0 0 200 200" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg"><defs><filter id="fabric-hat"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" result="noise" /><feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.05 0" in="noise" result="coloredNoise" /><feBlend in="SourceGraphic" in2="coloredNoise" mode="darken" /></filter><radialGradient id="hat-grad" cx="50%" cy="30%" r="70%"><stop offset="0%" stop-color="#fff" stop-opacity="0.4"/><stop offset="100%" stop-color="#000" stop-opacity="0.4"/></radialGradient></defs><g filter="url(#fabric-hat)"><path d="M40,120 C40,50 70,30 100,30 C130,30 160,50 160,120 Z" fill="currentColor"/><path d="M40,120 C40,50 70,30 100,30 C130,30 160,50 160,120 Z" fill="url(#hat-grad)"/><path d="M15,120 C60,90 140,90 185,120 C195,145 160,170 100,170 C40,170 5,145 15,120 Z" fill="currentColor"/><path d="M40,120 C70,105 130,105 160,120" fill="none" stroke="#000" stroke-opacity="0.3" stroke-width="2"/><circle cx="100" cy="30" r="6" fill="currentColor"/><circle cx="100" cy="30" r="6" fill="#000" opacity="0.2"/></g></svg>',
+      imgFile: 'mockup-hat.png',
       printArea: { top: 35, left: 50, width: 25, maxInches: 5 }
     },
     {
       id: 'polo', name: 'Polo', placement: 'Left Chest',
-      svg: '<svg viewBox="0 0 200 250" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg"><defs><filter id="fabric-polo"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" result="noise" /><feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.06 0" in="noise" result="coloredNoise" /><feBlend in="SourceGraphic" in2="coloredNoise" mode="darken" /></filter></defs><g filter="url(#fabric-polo)"><path d="M60,25 C75,25 85,40 100,40 C115,40 125,25 140,25 L185,50 L170,100 L145,80 L145,235 C145,240 140,245 135,245 L65,245 C60,245 55,240 55,235 L55,80 L30,100 L15,50 Z" fill="currentColor"/><path d="M60,25 L85,40 L100,20 L115,40 L140,25 Z" fill="currentColor"/><path d="M60,25 L85,40 L100,20 L115,40 L140,25 Z" fill="#fff" opacity="0.1"/><circle cx="100" cy="55" r="2.5" fill="#fff" stroke="#000" stroke-width="0.5"/><circle cx="100" cy="75" r="2.5" fill="#fff" stroke="#000" stroke-width="0.5"/></g></svg>',
+      imgFile: 'mockup-polo.png',
       printArea: { top: 30, left: 65, width: 15, maxInches: 4 }
     },
     {
       id: 'tote', name: 'Tote Bag', placement: 'Center',
-      svg: '<svg viewBox="0 0 200 250" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg"><defs><filter id="fabric-tote"><feTurbulence type="fractalNoise" baseFrequency="1.2" numOctaves="4" result="noise" /><feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.08 0" in="noise" result="coloredNoise" /><feBlend in="SourceGraphic" in2="coloredNoise" mode="darken" /></filter></defs><g filter="url(#fabric-tote)"><path d="M70,80 C70,5 130,5 130,80" fill="none" stroke="currentColor" stroke-width="8"/><path d="M35,80 L165,80 L175,230 C175,235 170,240 165,240 L35,240 C30,240 25,235 25,230 Z" fill="currentColor"/><path d="M70,80 C70,15 130,15 130,80" fill="none" stroke="currentColor" stroke-width="8"/><path d="M70,80 C70,15 130,15 130,80" fill="none" stroke="#fff" stroke-opacity="0.2" stroke-width="8"/></g></svg>',
+      imgFile: 'mockup-totebag.png',
       printArea: { top: 45, left: 50, width: 40, maxInches: 10 }
     },
     {
       id: 'hoodie', name: 'Hoodie', placement: 'Full Front',
-      svg: '<svg viewBox="0 0 200 250" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg"><defs><filter id="fabric-hoodie"><feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves="3" result="noise" /><feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.05 0" in="noise" result="coloredNoise" /><feBlend in="SourceGraphic" in2="coloredNoise" mode="darken" /></filter></defs><g filter="url(#fabric-hoodie)"><path d="M65,40 C65,10 135,10 135,40 L185,65 L170,115 L145,95 L145,225 C145,230 140,235 135,235 L65,235 C60,235 55,230 55,225 L55,95 L30,115 L15,65 Z" fill="currentColor"/><path d="M80,15 C80,35 120,35 120,15 C100,0 80,15 80,15 Z" fill="#000" opacity="0.4"/><path d="M65,40 C80,60 120,60 135,40 C120,5 80,5 65,40 Z" fill="currentColor"/><path d="M65,40 C80,60 120,60 135,40" fill="none" stroke="#000" stroke-opacity="0.3" stroke-width="2.5"/><path d="M85,55 Q80,100 85,110" fill="none" stroke="#000" stroke-opacity="0.2" stroke-width="3"/><path d="M115,55 Q120,100 115,110" fill="none" stroke="#000" stroke-opacity="0.2" stroke-width="3"/></g></svg>',
+      imgFile: 'mockup-hoodie.png',
       printArea: { top: 35, left: 50, width: 30, maxInches: 12 }
     },
     {
       id: 'apron', name: 'Apron', placement: 'Center',
-      svg: '<svg viewBox="0 0 200 250" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg"><defs><filter id="fabric-apron"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" result="noise" /><feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.06 0" in="noise" result="coloredNoise" /><feBlend in="SourceGraphic" in2="coloredNoise" mode="darken" /></filter></defs><g filter="url(#fabric-apron)"><path d="M70,40 C70,0 130,0 130,40" fill="none" stroke="currentColor" stroke-width="5"/><path d="M55,90 C25,90 5,130 5,130" fill="none" stroke="currentColor" stroke-width="5"/><path d="M145,90 C175,90 195,130 195,130" fill="none" stroke="currentColor" stroke-width="5"/><path d="M70,40 L130,40 L145,90 L165,230 C165,235 160,240 155,240 L45,240 C40,240 35,235 35,230 L55,90 Z" fill="currentColor"/><path d="M65,140 L135,140 L135,195 L65,195 Z" fill="currentColor"/><path d="M65,140 L135,140 L135,195 L65,195 Z" fill="#000" opacity="0.05"/></g></svg>',
+      imgFile: 'mockup-apron.png',
       printArea: { top: 40, left: 50, width: 35, maxInches: 10 }
     }
   ];
@@ -61,6 +61,11 @@
     this.activeFileIndex = -1;
     this.currentTab = 'canvas';
     this.mockupColor = '#ffffff';
+
+    // Derive asset base URL from this script's src (same CDN folder)
+    var scripts = document.querySelectorAll('script[src*="dtf-upload"]');
+    var scriptSrc = scripts.length ? scripts[scripts.length - 1].src : '';
+    this.mockupAssetBase = scriptSrc.replace(/dtf-upload\.js.*$/, '');
 
     this.initDOM();
     this.bindEvents();
@@ -664,8 +669,10 @@
                      'class="dtf-mockup-server-img" ' +
                      'loading="lazy" ' +
                      'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\';" />' +
-                // Hidden SVG fallback (shows if img fails)
-                '<div class="dtf-mockup-base" style="display:none;color:' + this.mockupColor + ';">' + mockup.svg + '</div>' +
+                // Hidden PNG fallback (shows if server img fails)
+                '<div class="dtf-mockup-base" style="display:none;">' +
+                  '<img src="' + self.mockupAssetBase + mockup.imgFile + '" alt="' + mockup.name + '" style="width:100%;height:100%;object-fit:contain;" />' +
+                '</div>' +
               '</div>' +
               '<div class="dtf-mockup-info">' +
                 '<h4>' + mockup.name + '</h4>' +
@@ -675,12 +682,14 @@
               '</div>' +
             '</div>';
         } else {
-          // ═══ SVG FALLBACK (inline mockup + artwork overlay) ═══
+          // ═══ PNG FALLBACK (garment photo + artwork overlay) ═══
           var artworkWidth = Math.min((file.widthIn / mockup.printArea.maxInches) * 100, 100);
           mockupCards +=
             '<div class="dtf-mockup-card' + (isMockupLoading ? ' dtf-mockup-card--loading' : '') + '">' +
-              '<div class="dtf-mockup-image-container" style="color:' + this.mockupColor + ';">' +
-                '<div class="dtf-mockup-base">' + mockup.svg + '</div>' +
+              '<div class="dtf-mockup-image-container">' +
+                '<div class="dtf-mockup-base">' +
+                  '<img src="' + self.mockupAssetBase + mockup.imgFile + '" alt="' + mockup.name + '" style="width:100%;height:100%;object-fit:contain;" />' +
+                '</div>' +
                 '<div class="dtf-mockup-print-area" style="top:' + mockup.printArea.top + '%;left:' + mockup.printArea.left + '%;width:' + mockup.printArea.width + '%;">' +
                   (file.previewUrl
                     ? '<img src="' + file.previewUrl + '" class="dtf-mockup-artwork" style="width:' + artworkWidth + '%;" />'
