@@ -318,20 +318,118 @@
 
     /* ─── Mode: upload_studio ─── */
     if (mode === 'upload_studio') {
-      // Upload Studio uses dtf-uploader.js
-      // It renders its own full UI. We redirect to the product page
-      // where the app block handles everything.
-      // OR if ULDtfUploader is available globally, init it here.
-      if (typeof window.ULDtfUploader !== 'undefined') {
-        window.ULDtfUploader.initForProduct({
-          productId: productId,
-          productTitle: productTitle,
-          shopDomain: SHOP_DOMAIN,
-          apiBase: API_BASE,
-          assetBase: ASSET_BASE,
-          variants: productData ? productData.variants : [],
-          metafields: productData ? productData.metafields : {}
-        });
+      if (typeof window.ULDTFUploader !== 'undefined') {
+        // Remove existing container if any
+        var existingContainer = document.getElementById('ul-dtf-' + productId);
+        if (existingContainer) existingContainer.remove();
+
+        // Build the full DOM container that ULDTFUploader expects
+        var variants = productData ? productData.variants : [];
+        var variantJson = JSON.stringify(variants);
+        var firstVariant = variants.length ? variants[0] : { id: '', title: '-', price: 0 };
+
+        // Build option dropdowns HTML from variants
+        var optionGroupsHtml = '';
+        if (variants.length > 0 && variants[0].options) {
+          // Collect unique option names and values
+          var optionNames = [];
+          var optionValues = {};
+          for (var vi = 0; vi < variants.length; vi++) {
+            var v = variants[vi];
+            if (v.options) {
+              for (var oi = 0; oi < v.options.length; oi++) {
+                if (optionNames.indexOf(v.option1 ? 'Option ' + (oi+1) : '') < 0) {
+                  // simplified: use title parsing
+                }
+              }
+            }
+          }
+        }
+
+        var containerHtml = '' +
+          '<div id="ul-dtf-' + productId + '" class="ul-dtf-uploader"' +
+          ' data-api-base="/apps/customizer"' +
+          ' data-shop-domain="' + SHOP_DOMAIN + '"' +
+          ' data-product-id="' + productId + '"' +
+          ' data-product-title="' + (productTitle || '').replace(/"/g, '&quot;') + '">' +
+          '<div class="ul-loading active" id="ul-loading-' + productId + '"><div class="ul-loading-spinner"></div><div>Loading configuration...</div></div>' +
+          '<div class="ul-error" id="ul-error-' + productId + '">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>' +
+            '<span id="ul-error-text-' + productId + '"></span>' +
+          '</div>' +
+          '<div id="ul-content-' + productId + '" style="display:none;">' +
+            '<div class="ul-section" id="ul-upload-section-' + productId + '">' +
+              '<div class="ul-section-header ul-section-header--centered">' +
+                '<span class="ul-step-badge ul-step-badge--glow" id="ul-step-1-' + productId + '">1</span>' +
+                '<span class="ul-section-title ul-section-title--hero">Upload Your Design</span>' +
+              '</div>' +
+              '<div class="ul-dropzone" id="ul-dropzone-' + productId + '">' +
+                '<input type="file" id="ul-file-input-' + productId + '" accept=".png,.jpg,.jpeg,.webp,.tiff,.tif,.psd,.svg,.pdf,.ai,.eps">' +
+                '<svg class="ul-dropzone-icon ul-bounce-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4m0 0L8 8m4-4l4 4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+                '<div class="ul-dropzone-text ul-pulse-text">Drag & drop your design here</div>' +
+                '<div class="ul-dropzone-hint">or click to browse • PNG, JPG, WEBP, TIFF, PSD, PDF, AI, EPS</div>' +
+              '</div>' +
+              '<div class="ul-upload-progress" id="ul-progress-' + productId + '">' +
+                '<div class="ul-progress-bar"><div class="ul-progress-fill" id="ul-progress-fill-' + productId + '"></div></div>' +
+                '<div class="ul-progress-info"><div class="ul-progress-text" id="ul-progress-text-' + productId + '">Uploading...</div>' +
+                  '<button type="button" class="ul-cancel-upload" id="ul-cancel-upload-' + productId + '" title="Cancel Upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M18 6L6 18M6 6l12 12" stroke-linecap="round"/></svg>Cancel</button>' +
+                '</div>' +
+              '</div>' +
+              '<div class="ul-file-preview" id="ul-preview-' + productId + '">' +
+                '<img class="ul-file-thumb" id="ul-thumb-' + productId + '" src="" alt="Preview" width="72" height="72">' +
+                '<div class="ul-file-info">' +
+                  '<div class="ul-file-name" id="ul-filename-' + productId + '"></div>' +
+                  '<div class="ul-file-meta" id="ul-filemeta-' + productId + '"></div>' +
+                  '<div class="ul-file-status" id="ul-filestatus-' + productId + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Ready</span></div>' +
+                '</div>' +
+                '<button type="button" class="ul-file-remove" id="ul-remove-' + productId + '" aria-label="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12" stroke-linecap="round"/></svg></button>' +
+              '</div>' +
+            '</div>' +
+            '<div class="ul-section" id="ul-options-section-' + productId + '">' +
+              '<div class="ul-section-header"><span class="ul-step-badge" id="ul-step-2-' + productId + '">2</span><span class="ul-section-title">Select Options</span></div>' +
+              '<div class="ul-selected-variant-display" id="ul-selected-variant-' + productId + '">' +
+                '<span class="ul-variant-name-display" id="ul-variant-name-' + productId + '">' + (firstVariant.title || '-') + '</span>' +
+                '<span class="ul-variant-price-display" id="ul-variant-price-' + productId + '"></span>' +
+              '</div>' +
+              '<input type="hidden" id="ul-size-select-' + productId + '" value="' + (firstVariant.id || '') + '" data-price-raw="' + (firstVariant.price || 0) + '">' +
+            '</div>' +
+            '<script type="application/json" id="ul-variants-json-' + productId + '">' + variantJson + '<\/script>' +
+            '<div class="ul-section" id="ul-qty-section-' + productId + '">' +
+              '<div class="ul-section-header"><span class="ul-step-badge" id="ul-step-3-' + productId + '">3</span><span class="ul-section-title">Quantity</span></div>' +
+              '<div class="ul-quantity-row"><div class="ul-quantity-control">' +
+                '<button type="button" class="ul-qty-btn" id="ul-qty-minus-' + productId + '">−</button>' +
+                '<input type="number" class="ul-qty-input" id="ul-qty-input-' + productId + '" value="1" min="1" max="999">' +
+                '<button type="button" class="ul-qty-btn" id="ul-qty-plus-' + productId + '">+</button>' +
+              '</div><div class="ul-bulk-hint" id="ul-bulk-hint-' + productId + '" style="display:none;"><span>Bulk discount!</span></div></div>' +
+            '</div>' +
+            '<div class="ul-section" id="ul-questions-section-' + productId + '" style="display:none;">' +
+              '<div class="ul-section-header"><span class="ul-step-badge" id="ul-step-4-' + productId + '">4</span><span class="ul-section-title">Additional Options</span></div>' +
+              '<div class="ul-questions-container" id="ul-questions-' + productId + '"></div>' +
+            '</div>' +
+            '<div class="ul-divider"></div>' +
+            '<div class="ul-price-summary" id="ul-price-summary-' + productId + '">' +
+              '<div class="ul-price-row"><span class="ul-price-label">Size (<span id="ul-selected-size-' + productId + '">-</span>)</span><span class="ul-price-value" id="ul-unit-price-' + productId + '">$0.00</span></div>' +
+              '<div class="ul-price-row"><span class="ul-price-label">Quantity</span><span class="ul-price-value">× <span id="ul-qty-display-' + productId + '">1</span></span></div>' +
+              '<div class="ul-price-row ul-price-total"><span class="ul-price-label">Total</span><span class="ul-price-value ul-price-total" id="ul-total-price-' + productId + '">$0.00</span></div>' +
+            '</div>' +
+            '<div class="ul-buttons-stack">' +
+              '<button type="button" class="ul-btn ul-btn-secondary" id="ul-tshirt-btn-' + productId + '" style="display:none;" disabled><span>👕</span><span class="ul-btn-text">I want this on a T-Shirt too!</span></button>' +
+              '<button type="button" class="ul-btn ul-btn-primary" id="ul-add-cart-' + productId + '" disabled>' +
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>' +
+                '<span class="ul-btn-text">Add to Cart</span><span class="ul-btn-price" id="ul-btn-price-' + productId + '"></span>' +
+              '</button>' +
+            '</div>' +
+          '</div>' +
+          '<input type="hidden" id="ul-upload-id-' + productId + '" value="">' +
+          '<input type="hidden" id="ul-upload-url-' + productId + '" value="">' +
+          '<input type="hidden" id="ul-thumbnail-url-' + productId + '" value="">' +
+        '</div>';
+
+        // Insert container into page
+        document.body.insertAdjacentHTML('beforeend', containerHtml);
+
+        // Init ULDTFUploader
+        window.ULDTFUploader.init(productId);
       } else {
         // Fallback: redirect to product page
         window.location.href = '/products/' + productHandle;
