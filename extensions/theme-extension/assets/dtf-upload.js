@@ -447,7 +447,7 @@
         return;
       }
 
-      fetch(apiBase + '/api/upload/status/' + uploadId)
+      fetch(apiBase + '/api/upload/status/' + uploadId + '?shopDomain=' + encodeURIComponent(self.config.shopDomain))
         .then(function(res) { return res.json(); })
         .then(function(data) {
           if (!data || !data.items || !data.items.length) return;
@@ -1174,6 +1174,9 @@
       window.dtfBlock.fetchConfigFallback();
     }
   }
+
+  // Export for dtf-listing.js to reuse
+  window.DtfUploadBlock = DtfUploadBlock;
 
   document.addEventListener('DOMContentLoaded', init);
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
