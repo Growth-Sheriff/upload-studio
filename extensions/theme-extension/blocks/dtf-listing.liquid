@@ -1,196 +1,26 @@
-{% comment %}
-  Upload Studio — DTF Product Listing Block
-  =============================================
-  Renders a Polaris-style product grid from a selected collection.
-  Each card has an "Upload" button that opens the DTF Transfer By Size modal.
-
-  Version: 1.0.0
-{% endcomment %}
-
-{%- assign dtf_tiers    = product.metafields.dtf_app.volume_discount_tiers.value -%}
-{%- assign max_w        = product.metafields.dtf_app.max_width_in.value   | default: 21.75 -%}
-{%- assign max_h        = product.metafields.dtf_app.max_height_in.value  | default: 35.75 -%}
-{%- assign min_w        = product.metafields.dtf_app.min_width_in.value   | default: 1 -%}
-{%- assign min_h        = product.metafields.dtf_app.min_height_in.value  | default: 1 -%}
-{%- assign color_profile = product.metafields.dtf_app.color_profile.value | default: "CMYK" -%}
-{%- assign max_file_mb  = product.metafields.dtf_app.max_file_size_mb.value | default: 500 -%}
-{%- assign formats      = product.metafields.dtf_app.supported_formats.value | default: '["PNG","JPG","JPEG","SVG","PSD","AI","EPS","PDF"]' -%}
-
-{% comment %} Shared deps {% endcomment %}
+{%- assign max_w = product.metafields.dtf_app.max_width_in.value | default: 21.75 -%}
+{%- assign max_h = product.metafields.dtf_app.max_height_in.value | default: 35.75 -%}
+{%- assign min_w = product.metafields.dtf_app.min_width_in.value | default: 1 -%}
+{%- assign min_h = product.metafields.dtf_app.min_height_in.value | default: 1 -%}
+{%- assign dtf_tiers = product.metafields.dtf_app.volume_discount_tiers.value -%}
+{%- assign max_file_mb = product.metafields.dtf_app.max_file_size_mb.value | default: 500 -%}
+{%- assign formats = product.metafields.dtf_app.supported_formats.value | default: '["PNG","JPG","JPEG","SVG","PSD","AI","EPS","PDF"]' -%}
 <script src="{{ 'ul-state.js' | asset_url }}" defer></script>
-<script>
-  window.ULCustomer = window.ULCustomer || {
-    id: {{ customer.id | default: 'null' }},
-    email: {{ customer.email | json | default: 'null' }}
-  };
-</script>
-<script
-  src="{{ 'ul-visitor.js' | asset_url }}"
-  defer
-  data-shop-domain="{{ shop.permanent_domain }}"
-></script>
-
-{% comment %} DTF By Size modal — CSS + JS {% endcomment %}
+<script>window.ULCustomer=window.ULCustomer||{id:{{ customer.id | default: 'null' }},email:{{ customer.email | json | default: 'null' }}};</script>
+<script src="{{ 'ul-visitor.js' | asset_url }}" defer data-shop-domain="{{ shop.permanent_domain }}"></script>
 {{ 'dtf-upload.css' | asset_url | stylesheet_tag }}
-<script src="{{ 'dtf-upload.js' | asset_url }}" defer></script>
-
-{% comment %} Listing CSS + JS {% endcomment %}
 {{ 'dtf-listing.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'dtf-upload.js' | asset_url }}" defer></script>
 <script src="{{ 'dtf-listing.js' | asset_url }}" defer></script>
-
-{% comment %} Hidden root for dtf-upload.js — data attrs updated by listing JS {% endcomment %}
-<div
-  id="dtf-upload-root"
-  data-product-id="{{ product.id }}"
-  data-product-title="{{ product.title | escape }}"
-  data-shop-domain="{{ shop.permanent_domain }}"
-  data-api-base="/apps/customizer"
-  data-max-width="{{ max_w }}"
-  data-max-height="{{ max_h }}"
-  data-min-width="{{ min_w }}"
-  data-min-height="{{ min_h }}"
-  data-color-profile="{{ color_profile }}"
-  data-max-file-mb="{{ max_file_mb }}"
-  data-formats="{{ formats | escape }}"
-  data-tiers="{{ dtf_tiers | escape }}"
-  data-currency="{{ cart.currency.iso_code }}"
-  data-locale="{{ request.locale.iso_code }}"
-  data-enable-fitcheck="true"
-  style="display:none;"
->
-  <div class="dtf-dropzone" id="dtf-trigger-zone" style="display:none;">
-    <button class="dtf-upload-trigger" type="button" style="display:none;">Upload</button>
-    <p class="dtf-upload-trigger__hint" style="display:none;"></p>
-  </div>
-</div>
-
-{% comment %} Modal shell — same as dtf-upload.liquid {% endcomment %}
-<div id="dtf-modal" class="dtf-modal" role="dialog" aria-modal="true" aria-labelledby="dtf-modal-title" hidden>
-  <div class="dtf-modal__backdrop"></div>
-  <div class="dtf-modal__container">
-    <header class="dtf-modal__header">
-      <button class="dtf-btn dtf-btn--primary dtf-modal__uploads-btn" type="button">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        Uploads
-      </button>
-      <button class="dtf-modal__close" type="button" aria-label="Close">✕</button>
-    </header>
-    <div class="dtf-modal__body" id="dtf-modal-body"></div>
-    <footer class="dtf-modal__footer">
-      <button class="dtf-btn dtf-btn--primary dtf-btn--lg dtf-modal__add-to-cart" type="button" disabled>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-        Add To Cart
-      </button>
-    </footer>
-  </div>
-</div>
-
-{% comment %} Polaris-style product listing {% endcomment %}
+<div id="dtf-upload-root" style="display:none;" data-product-id="{{ product.id }}" data-product-title="{{ product.title | escape }}" data-shop-domain="{{ shop.permanent_domain }}" data-api-base="/apps/customizer" data-max-width="{{ max_w }}" data-max-height="{{ max_h }}" data-min-width="{{ min_w }}" data-min-height="{{ min_h }}" data-max-file-mb="{{ max_file_mb }}" data-formats="{{ formats | escape }}" data-tiers="{{ dtf_tiers | escape }}" data-currency="{{ cart.currency.iso_code }}" data-enable-fitcheck="true"><div class="dtf-dropzone" id="dtf-trigger-zone" style="display:none;"><button class="dtf-upload-trigger" type="button" style="display:none;">U</button><p class="dtf-upload-trigger__hint" style="display:none;"></p></div></div>
+<div id="dtf-modal" class="dtf-modal" role="dialog" aria-modal="true" hidden><div class="dtf-modal__backdrop"></div><div class="dtf-modal__container"><header class="dtf-modal__header"><button class="dtf-btn dtf-btn--primary dtf-modal__uploads-btn" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Uploads</button><button class="dtf-modal__close" type="button" aria-label="Close">✕</button></header><div class="dtf-modal__body" id="dtf-modal-body"></div><footer class="dtf-modal__footer"><button class="dtf-btn dtf-btn--primary dtf-btn--lg dtf-modal__add-to-cart" type="button" disabled><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg> Add To Cart</button></footer></div></div>
 <div class="dtf-listing" id="dtf-listing-root" data-shop-domain="{{ shop.permanent_domain }}">
-
-  {% if block.settings.heading != blank %}
-  <div class="dtf-listing__header">
-    <h2 class="dtf-listing__title">{{ block.settings.heading }}</h2>
-    {% if block.settings.subheading != blank %}
-    <p class="dtf-listing__subtitle">{{ block.settings.subheading }}</p>
-    {% endif %}
-  </div>
-  {% endif %}
-
-  <div class="dtf-listing__grid">
-    {% assign listing_collection = collections[block.settings.collection] %}
-    {% assign max_products = block.settings.max_products | default: 8 %}
-
-    {% if listing_collection.products.size > 0 %}
-      {% for item in listing_collection.products limit: max_products %}
-      <div class="dtf-listing__card" data-product-handle="{{ item.handle }}">
-        <div class="dtf-listing__card-media">
-          {% if item.featured_image %}
-          <img
-            src="{{ item.featured_image | image_url: width: 480 }}"
-            alt="{{ item.title | escape }}"
-            loading="lazy"
-            width="240"
-            height="240"
-          />
-          {% else %}
-          <div class="dtf-listing__card-placeholder">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-              <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
-            </svg>
-          </div>
-          {% endif %}
-        </div>
-        <div class="dtf-listing__card-body">
-          <h3 class="dtf-listing__card-title">{{ item.title }}</h3>
-          <p class="dtf-listing__card-price">{{ item.price | money_without_trailing_zeros }}</p>
-          <button
-            type="button"
-            class="dtf-listing__upload-btn"
-            data-product-id="{{ item.id }}"
-            data-product-title="{{ item.title | escape }}"
-            data-product-handle="{{ item.handle }}"
-            data-product-price="{{ item.price }}"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="17 8 12 3 7 8"/>
-              <line x1="12" y1="3" x2="12" y2="15"/>
-            </svg>
-            Upload Design
-          </button>
-        </div>
-      </div>
-      {% endfor %}
-    {% else %}
-      <div class="dtf-listing__empty">
-        <p>No products found. Select a collection in the block settings.</p>
-      </div>
-    {% endif %}
-  </div>
-</div>
-
+{% if block.settings.heading != blank %}<div class="dtf-listing__header"><h2 class="dtf-listing__title">{{ block.settings.heading }}</h2>{% if block.settings.subheading != blank %}<p class="dtf-listing__subtitle">{{ block.settings.subheading }}</p>{% endif %}</div>{% endif %}
+<div class="dtf-listing__grid">
+{% assign listing_collection = collections[block.settings.collection] %}{% assign max_products = block.settings.max_products | default: 8 %}
+{% if listing_collection.products.size > 0 %}{% for item in listing_collection.products limit: max_products %}<div class="dtf-listing__card" data-product-handle="{{ item.handle }}"><div class="dtf-listing__card-media">{% if item.featured_image %}<img src="{{ item.featured_image | image_url: width: 480 }}" alt="{{ item.title | escape }}" loading="lazy" width="240" height="240"/>{% else %}<div class="dtf-listing__card-placeholder"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></div>{% endif %}</div><div class="dtf-listing__card-body"><h3 class="dtf-listing__card-title">{{ item.title }}</h3><p class="dtf-listing__card-price">{{ item.price | money_without_trailing_zeros }}</p><button type="button" class="dtf-listing__upload-btn" data-product-id="{{ item.id }}" data-product-title="{{ item.title | escape }}" data-product-handle="{{ item.handle }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload Design</button></div></div>{% endfor %}
+{% else %}<div class="dtf-listing__empty"><p>No products found. Select a collection in the block settings.</p></div>{% endif %}
+</div></div>
 {% schema %}
-{
-  "name": "DTF Product Listing",
-  "target": "section",
-  "templates": ["product", "collection", "index", "page"],
-  "settings": [
-    {
-      "type": "text",
-      "id": "heading",
-      "label": "Heading",
-      "default": "Custom DTF Transfers"
-    },
-    {
-      "type": "text",
-      "id": "subheading",
-      "label": "Subheading",
-      "default": "Upload your design to any product"
-    },
-    {
-      "type": "collection",
-      "id": "collection",
-      "label": "Collection"
-    },
-    {
-      "type": "range",
-      "id": "max_products",
-      "label": "Max products to show",
-      "min": 2,
-      "max": 12,
-      "step": 1,
-      "default": 8
-    },
-    {
-      "type": "range",
-      "id": "columns",
-      "label": "Columns",
-      "min": 2,
-      "max": 4,
-      "step": 1,
-      "default": 4
-    }
-  ]
-}
+{"name":"DTF Product Listing","target":"section","templates":["product","collection","index","page"],"settings":[{"type":"text","id":"heading","label":"Heading","default":"Custom DTF Transfers"},{"type":"text","id":"subheading","label":"Subheading","default":"Upload your design to any product"},{"type":"collection","id":"collection","label":"Collection"},{"type":"range","id":"max_products","label":"Max products","min":2,"max":12,"step":1,"default":8}]}
 {% endschema %}
