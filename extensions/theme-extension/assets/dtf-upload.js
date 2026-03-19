@@ -907,8 +907,9 @@
     this.addToCartBtn.disabled = true;
     this.addToCartBtn.innerHTML = 'Adding...';
 
-    // Find variant ID from page
-    var variantId = this.findVariantId();
+    // Find variant ID per file (based on dimensions)
+    var firstFile = readyFiles[0];
+    var variantId = this.findVariantId(firstFile.widthIn, firstFile.heightIn);
     if (!variantId) {
       alert('Could not determine product variant. Please refresh the page.');
       this.addToCartBtn.disabled = false;
@@ -917,8 +918,10 @@
     }
 
     var items = readyFiles.map(function(item) {
+      // Per-file variant matching
+      var itemVariantId = self.findVariantId(item.widthIn, item.heightIn) || variantId;
       return {
-        id: variantId,
+        id: itemVariantId,
         quantity: item.quantity,
         properties: {
           '_file_url': item.cdnUrl || '',
@@ -963,8 +966,71 @@
     });
   };
 
-  DtfUploadBlock.prototype.findVariantId = function() {
-    // 1. Product JSON on page
+  DtfUploadBlock.prototype.findVariantId = function(widthIn, heightIn) {
+    // Get all variants from product JSON on page
+    var variants = this._getProductVariants();
+    if (!variants || variants.length === 0) return null;
+
+    // If only 1 variant, use it
+    if (variants.length === 1) return variants[0].id;
+
+    // Parse variant titles to extract W×H (supports: "10in x 10in", "10 x 10", "10x10", etc.)
+    var parsed = [];
+    for (var i = 0; i < variants.length; i++) {
+      var v = variants[i];
+      var title = (v.title || v.option1 || '').toLowerCase().replace(/\s+/g, '');
+      // Match patterns: "10inx10in", "10x10in", "10x10", "10.5inx12.3in"
+      var match = title.match(/^([\d.]+)(?:in)?x([\d.]+)(?:in)?$/);
+      if (match) {
+        parsed.push({
+          id: v.id,
+          price: v.price,
+          w: parseFloat(match[1]),
+          h: parseFloat(match[2]),
+          title: v.title
+        });
+      }
+    }
+
+    if (parsed.length === 0) {
+      // No parseable variants — fallback to URL param or first variant
+      var urlVariant = new URLSearchParams(window.location.search).get('variant');
+      if (urlVariant) {
+        for (var j = 0; j < variants.length; j++) {
+          if (String(variants[j].id) === urlVariant) return variants[j].id;
+        }
+      }
+      return variants[0].id;
+    }
+
+    // Try exact match first (within 0.01in tolerance)
+    for (var k = 0; k < parsed.length; k++) {
+      if (Math.abs(parsed[k].w - widthIn) < 0.01 && Math.abs(parsed[k].h - heightIn) < 0.01) {
+        console.log('[DTF] Exact variant match:', parsed[k].title);
+        return parsed[k].id;
+      }
+    }
+
+    // No exact match — find closest by area difference
+    var targetArea = widthIn * heightIn;
+    var bestIdx = 0;
+    var bestDiff = Infinity;
+    for (var n = 0; n < parsed.length; n++) {
+      var area = parsed[n].w * parsed[n].h;
+      var diff = Math.abs(area - targetArea);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        bestIdx = n;
+      }
+    }
+    console.log('[DTF] Closest variant match:', parsed[bestIdx].title, '(target:', widthIn + 'x' + heightIn + ')');
+    return parsed[bestIdx].id;
+  };
+
+  // Cache product variants from page JSON
+  DtfUploadBlock.prototype._getProductVariants = function() {
+    if (this._cachedVariants) return this._cachedVariants;
+
     var jsonEl = document.querySelector(
       '[data-product-json], script[type="application/json"][data-product-json], ' +
       'script#ProductJson-product-template'
@@ -973,34 +1039,22 @@
       try {
         var data = JSON.parse(jsonEl.textContent);
         var product = data.product || data;
-        var variants = product.variants || [];
-        if (variants.length > 0) {
-          // Check URL param
-          var urlVariant = new URLSearchParams(window.location.search).get('variant');
-          if (urlVariant) {
-            for (var i = 0; i < variants.length; i++) {
-              if (String(variants[i].id) === urlVariant) return variants[i].id;
-            }
-          }
-          return variants[0].id;
-        }
+        this._cachedVariants = product.variants || [];
+        return this._cachedVariants;
       } catch(e) {}
     }
 
-    // 2. Hidden form input
+    // Fallback: hidden form input
     var hiddenInput = document.querySelector(
       'form[action*="/cart/add"] input[name="id"][type="hidden"], ' +
       'form[action*="/cart/add"] select[name="id"]'
     );
     if (hiddenInput && hiddenInput.value) {
-      return parseInt(hiddenInput.value, 10);
+      this._cachedVariants = [{ id: parseInt(hiddenInput.value, 10), title: '' }];
+      return this._cachedVariants;
     }
 
-    // 3. URL parameter
-    var urlParam = new URLSearchParams(window.location.search).get('variant');
-    if (urlParam) return parseInt(urlParam, 10);
-
-    return null;
+    return [];
   };
 
   /* ─────────────────────────────────────────────
