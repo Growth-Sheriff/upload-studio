@@ -488,10 +488,7 @@
 
             console.log('[DTF Upload] Preflight done:', fileEntry.widthIn + 'x' + fileEntry.heightIn + 'in @' + fileEntry.dpi + 'DPI');
 
-            // Step 5: Trigger server-side mockup generation
-            if (fileEntry.cdnUrl && fileEntry.uploadId) {
-              self.requestMockups(fileEntry);
-            }
+            // Mockup generation disabled — FitCheck uses client-side PNG overlay
           }
         })
         .catch(function() { /* ignore poll errors */ });
@@ -659,29 +656,7 @@
         var mockup = FITCHECK_MOCKUPS[m];
         var serverMatch = serverMockupMap[mockup.id];
 
-        if (serverMatch && serverMatch.url) {
-          // ═══ SERVER MOCKUP (real composite from worker) ═══
-          mockupCards +=
-            '<div class="dtf-mockup-card dtf-mockup-card--server">' +
-              '<div class="dtf-mockup-image-container">' +
-                '<img src="' + serverMatch.url + '" ' +
-                     'alt="' + mockup.name + ' mockup" ' +
-                     'class="dtf-mockup-server-img" ' +
-                     'loading="lazy" ' +
-                     'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\';" />' +
-                // Hidden PNG fallback (shows if server img fails)
-                '<div class="dtf-mockup-base" style="display:none;">' +
-                  '<img src="' + self.mockupAssetBase + mockup.imgFile + '" alt="' + mockup.name + '" style="width:100%;height:100%;object-fit:contain;" />' +
-                '</div>' +
-              '</div>' +
-              '<div class="dtf-mockup-info">' +
-                '<h4>' + mockup.name + '</h4>' +
-                '<p>' + mockup.placement + '</p>' +
-                '<div class="dtf-mockup-dims">' + file.widthIn + 'in \u00D7 ' + file.heightIn + 'in</div>' +
-                '<span class="dtf-mockup-badge-server">HD</span>' +
-              '</div>' +
-            '</div>';
-        } else {
+        {
           // ═══ PNG FALLBACK (garment photo + artwork overlay) ═══
           var artworkWidth = Math.min((file.widthIn / mockup.printArea.maxInches) * 100, 100);
           mockupCards +=
@@ -915,17 +890,7 @@
 
     // Regenerate mockups button
     var regenBtn = document.getElementById('dtf-regen-mockups');
-    if (regenBtn) {
-      regenBtn.addEventListener('click', function() {
-        var file = self.files[self.activeFileIndex];
-        if (file) {
-          file._serverMockups = null;
-          file._mockupJobId = null;
-          self.requestMockups(file);
-          self.renderEditor();
-        }
-      });
-    }
+    // Regenerate button removed — FitCheck is fully client-side
   };
 
   /* ─────────────────────────────────────────────
