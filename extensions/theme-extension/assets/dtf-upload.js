@@ -163,6 +163,44 @@
     document.body.style.overflow = '';
   };
 
+  DtfUploadBlock.prototype.renderState = function() {
+    if (this.state === 'UPLOADING') {
+      this.modalBody.innerHTML =
+        '<div class="dtf-uploading">' +
+          '<div class="dtf-uploading-box">' +
+            '<p style="font-size:48px;margin:0 0 16px 0;">⬆️</p>' +
+            '<h3 style="margin:0 0 8px 0;">Uploading your file...</h3>' +
+            '<p id="dtf-progress-pct" style="margin:0 0 16px 0;color:var(--dtf-color-text-subdued);">0%</p>' +
+            '<div class="dtf-progress"><div class="dtf-progress-bar" id="dtf-progress-bar"></div></div>' +
+          '</div>' +
+        '</div>';
+      this.addToCartBtn.disabled = true;
+    } else if (this.state === 'EDITOR' && this.files.length > 0) {
+      this.renderEditor();
+    } else {
+      this.modalBody.innerHTML =
+        '<div class="dtf-uploading">' +
+          '<div class="dtf-uploading-box">' +
+            '<p style="font-size:48px;margin:0 0 16px 0;">📁</p>' +
+            '<h3 style="margin:0 0 8px 0;">Upload a file to get started</h3>' +
+            '<p style="margin:0;color:var(--dtf-color-text-subdued);">Drag & drop or click to upload</p>' +
+          '</div>' +
+        '</div>';
+    }
+  };
+
+  DtfUploadBlock.prototype.renderToggle = function(label, key, checked) {
+    var id = 'dtf-toggle-' + key;
+    return '<div class="dtf-toggle">' +
+      '<span class="dtf-toggle__label">' + label + '</span>' +
+      '<label class="dtf-toggle__switch">' +
+        '<input type="checkbox" id="' + id + '" data-key="' + key + '"' + (checked ? ' checked' : '') + '>' +
+        '<span class="dtf-toggle__track"></span>' +
+        '<span class="dtf-toggle__thumb"></span>' +
+      '</label>' +
+    '</div>';
+  };
+
   /* ─────────────────────────────────────────────
      File Handling — REAL upload pipeline
      Uses: api.upload.intent → signed URL PUT → api.upload.complete → poll status
