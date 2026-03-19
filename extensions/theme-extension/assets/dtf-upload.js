@@ -17,32 +17,32 @@
     {
       id: 'tshirt', name: 'T-Shirt', placement: 'Full Front',
       imgFile: 'mockup-tshirt.png',
-      printArea: { top: 25, left: 50, width: 35, maxInches: 12 }
+      printArea: { top: 28, left: 48, width: 30, maxInches: 12 }
     },
     {
       id: 'hat', name: 'Hat', placement: 'Front Panel',
       imgFile: 'mockup-hat.png',
-      printArea: { top: 35, left: 50, width: 25, maxInches: 5 }
+      printArea: { top: 30, left: 50, width: 34, maxInches: 5 }
     },
     {
       id: 'polo', name: 'Polo', placement: 'Left Chest',
       imgFile: 'mockup-polo.png',
-      printArea: { top: 30, left: 65, width: 15, maxInches: 4 }
+      printArea: { top: 32, left: 55, width: 18, maxInches: 4 }
     },
     {
       id: 'tote', name: 'Tote Bag', placement: 'Center',
       imgFile: 'mockup-totebag.png',
-      printArea: { top: 45, left: 50, width: 40, maxInches: 10 }
+      printArea: { top: 42, left: 50, width: 44, maxInches: 10 }
     },
     {
       id: 'hoodie', name: 'Hoodie', placement: 'Full Front',
       imgFile: 'mockup-hoodie.png',
-      printArea: { top: 35, left: 50, width: 30, maxInches: 12 }
+      printArea: { top: 34, left: 50, width: 32, maxInches: 12 }
     },
     {
       id: 'apron', name: 'Apron', placement: 'Center',
       imgFile: 'mockup-apron.png',
-      printArea: { top: 40, left: 50, width: 35, maxInches: 10 }
+      printArea: { top: 32, left: 50, width: 38, maxInches: 10 }
     }
   ];
 
