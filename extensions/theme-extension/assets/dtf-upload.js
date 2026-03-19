@@ -857,10 +857,10 @@
     }
 
     // Toggles
-    var toggles = this.modalBody.querySelectorAll('input[type="checkbox"]');
+    var toggles = this.modalBody.querySelectorAll('input[type="checkbox"][data-key]');
     for (var t = 0; t < toggles.length; t++) {
       toggles[t].addEventListener('change', function(e) {
-        var key = e.target.getAttribute('data-toggle');
+        var key = e.target.getAttribute('data-key');
         file[key] = e.target.checked;
         if (key === 'keepRatio' && file.keepRatio && file.widthIn > 0 && file.heightIn > 0) {
           file.ratio = file.widthIn / file.heightIn;
