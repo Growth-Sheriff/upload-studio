@@ -817,30 +817,38 @@
     var file = this.files[this.activeFileIndex];
     if (!file) return;
 
-    // Width/Height/Quantity inputs
+    // Width/Height/Quantity inputs — debounced re-render
     var inputW = document.getElementById('dtf-input-w');
     var inputH = document.getElementById('dtf-input-h');
     var inputQ = document.getElementById('dtf-input-q');
+    var renderTimeout = null;
+
+    function debouncedRender() {
+      if (renderTimeout) clearTimeout(renderTimeout);
+      renderTimeout = setTimeout(function() { self.renderEditor(); }, 300);
+    }
 
     if (inputW) inputW.addEventListener('input', function(e) {
       file.widthIn = parseFloat(e.target.value) || 0;
       if (file.keepRatio && file.ratio > 0) {
         file.heightIn = parseFloat((file.widthIn / file.ratio).toFixed(2));
+        if (inputH) inputH.value = file.heightIn;
       }
-      self.renderEditor();
+      debouncedRender();
     });
 
     if (inputH) inputH.addEventListener('input', function(e) {
       file.heightIn = parseFloat(e.target.value) || 0;
       if (file.keepRatio && file.ratio > 0) {
         file.widthIn = parseFloat((file.heightIn * file.ratio).toFixed(2));
+        if (inputW) inputW.value = file.widthIn;
       }
-      self.renderEditor();
+      debouncedRender();
     });
 
     if (inputQ) inputQ.addEventListener('input', function(e) {
       file.quantity = parseInt(e.target.value, 10) || 1;
-      self.renderEditor();
+      debouncedRender();
     });
 
     // Tab switching
