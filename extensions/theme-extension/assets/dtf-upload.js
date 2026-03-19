@@ -332,13 +332,18 @@
     xhr.addEventListener('load', function() {
       if (xhr.status >= 200 && xhr.status < 400) {
         // Step 3: Notify server upload is complete
-        fetch(apiBase + '/api/upload/complete', {
+        fetch(apiBase + '/api/upload/complete?shop=' + encodeURIComponent(self.config.shopDomain), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            shopDomain: self.config.shopDomain,
             uploadId: intent.uploadId,
-            itemId: intent.itemId,
-            key: intent.key
+            items: [{
+              itemId: intent.itemId,
+              storageProvider: 'r2',
+              fileUrl: intent.publicUrl || '',
+              fileSize: file.size
+            }]
           })
         })
         .then(function() {
