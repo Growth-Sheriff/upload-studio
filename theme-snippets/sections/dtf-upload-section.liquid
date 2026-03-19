@@ -25,7 +25,11 @@
 {%- liquid
   assign heading    = section.settings.heading
   assign subheading = section.settings.subheading
-  assign asset_base = 'https://eagledtfprint.uploadstudio.app.techifyboost.com/api/ext-assets/'
+  assign tenant_url = section.settings.asset_url | default: ''
+  if tenant_url == blank
+    assign tenant_url = 'https://eagledtfprint.uploadstudio.app.techifyboost.com'
+  endif
+  assign asset_base = tenant_url | append: '/api/ext-assets/'
 -%}
 
 {% comment %} ══════════ ASSET LOADING ══════════ {% endcomment %}
@@ -618,7 +622,14 @@
   "settings": [
     {
       "type": "paragraph",
-      "content": "Upload Studio — DTF Product Listing. Her ürüne farklı upload modu atayın. Asset'ler sunucudan otomatik yüklenir."
+      "content": "Upload Studio — DTF Product Listing. Her ürüne farklı upload modu atayın. Asset'ler tenant sunucusundan otomatik yüklenir."
+    },
+    {
+      "type": "text",
+      "id": "asset_url",
+      "label": "Upload Studio URL",
+      "info": "Tenant URL (e.g. https://yourtenant.uploadstudio.app.techifyboost.com). Leave empty for default.",
+      "placeholder": "https://yourtenant.uploadstudio.app.techifyboost.com"
     },
     {
       "type": "text",
