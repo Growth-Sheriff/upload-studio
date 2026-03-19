@@ -202,10 +202,13 @@
     <div class="dtf-modal__backdrop"></div>
     <div class="dtf-modal__container">
       <header class="dtf-modal__header">
-        <button class="dtf-btn dtf-btn--primary dtf-modal__uploads-btn" type="button">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          Uploads
-        </button>
+        <div style="display:flex;align-items:center;gap:12px;flex:1;">
+          <button class="dtf-btn dtf-btn--primary dtf-modal__uploads-btn" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Uploads
+          </button>
+          <span id="dtf-modal-product-title" style="font-size:14px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></span>
+        </div>
         <button class="dtf-modal__close" type="button" aria-label="Close">&#x2715;</button>
       </header>
       <div class="dtf-modal__body" id="dtf-modal-body"></div>
@@ -493,6 +496,10 @@
       uploadRoot.setAttribute('data-product-title', productTitle || '');
       uploadRoot.removeAttribute('data-initialized');
 
+      // Set product title in modal header
+      var dtfModalTitle = document.getElementById('dtf-modal-product-title');
+      if (dtfModalTitle) dtfModalTitle.textContent = productTitle || '';
+
       // Product-specific metafields
       if (productData && productData.metafields) {
         uploadRoot.setAttribute('data-max-width', String(productData.metafields.max_width || 22));
@@ -542,6 +549,11 @@
     if (mode === 'auto_sheet') {
       // Auto Sheet Calculator
       if (typeof window.ULAutoSheet !== 'undefined') {
+        // Force-enable Auto Sheet if not already initialized
+        if (!window.ULAutoSheet.isEnabled()) {
+          window.ULAutoSheet.init({ enabled: true });
+        }
+
         // Create a temporary file input and trigger it
         var fileInput = document.createElement('input');
         fileInput.type = 'file';
