@@ -688,12 +688,20 @@
       return;
     }
 
+    var fitCount = 0;
+    for (var fc = 0; fc < state.sheets.length; fc++) {
+      var fcResult = engine.nestDesigns(design, state.sheets[fc], config);
+      if (fcResult.designsPerSheet > 0) fitCount++;
+    }
+
     var html = [
       '<div class="ul-sheet-section" style="margin-top:12px;">',
       '  <div class="ul-sheet-section-title">',
       '    <span class="ul-sheet-badge">📋</span>',
       '    Available Sheets',
+      '    <span style="margin-left:auto;font-size:11px;font-weight:500;color:#64748b;background:#f1f5f9;padding:2px 8px;border-radius:10px;">' + fitCount + ' fit / ' + state.sheets.length + ' total</span>',
       '  </div>',
+      '  <div class="ul-sheet-all-items-scroll" style="max-height:260px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#e2e8f0 transparent;">',
     ];
 
     for (var i = 0; i < state.sheets.length; i++) {
@@ -730,6 +738,7 @@
       );
     }
 
+    html.push('  </div>'); // close scroll wrapper
     html.push('</div>');
     container.innerHTML = html.join('\n');
     container.style.display = 'block';

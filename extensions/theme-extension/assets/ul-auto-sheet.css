@@ -80,7 +80,7 @@
   background: var(--ul-sheet-bg);
   border-radius: var(--ul-sheet-radius);
   width: 92vw;
-  max-width: 960px;
+  max-width: 1600px;
   max-height: 92vh;
   overflow: hidden;
   box-shadow: var(--ul-sheet-shadow-xl);
@@ -651,7 +651,37 @@
 /* ── Alternatives List ── */
 .ul-sheet-alternatives {
   margin-top: 12px;
+  max-height: 280px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ul-sheet-border) transparent;
 }
+.ul-sheet-alternatives::-webkit-scrollbar { width: 5px; }
+.ul-sheet-alternatives::-webkit-scrollbar-track { background: transparent; }
+.ul-sheet-alternatives::-webkit-scrollbar-thumb { background: var(--ul-sheet-border); border-radius: 3px; }
+
+/* ── All Sheets List (scroll container, max ~5 items visible) ── */
+#ul-sheet-all-sheets .ul-sheet-section {
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ul-sheet-border) transparent;
+}
+#ul-sheet-all-sheets .ul-sheet-section::-webkit-scrollbar { width: 5px; }
+#ul-sheet-all-sheets .ul-sheet-section::-webkit-scrollbar-track { background: transparent; }
+#ul-sheet-all-sheets .ul-sheet-section::-webkit-scrollbar-thumb { background: var(--ul-sheet-border); border-radius: 3px; }
+
+/* ── Comparison table scroll ── */
+#ul-sheet-comparison .ul-sheet-section {
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+#ul-sheet-comparison .ul-sheet-section::-webkit-scrollbar { width: 5px; }
+#ul-sheet-comparison .ul-sheet-section::-webkit-scrollbar-track { background: transparent; }
+#ul-sheet-comparison .ul-sheet-section::-webkit-scrollbar-thumb { background: var(--ul-sheet-border); border-radius: 3px; }
 
 .ul-sheet-alternatives-title {
   font-size: 12px;
