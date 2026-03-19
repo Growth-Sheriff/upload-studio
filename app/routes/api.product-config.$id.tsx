@@ -85,16 +85,50 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         extraQuestions: [],
         tshirtEnabled: false,
         tshirtConfig: null,
+        // DTF By Size defaults
+        builderConfig: {
+          maxWidthIn: 21.75,
+          maxHeightIn: 35.75,
+          minWidthIn: 1,
+          minHeightIn: 1,
+          colorProfile: "CMYK",
+          maxFileSizeMb: 500,
+          supportedFormats: ["PNG","JPG","JPEG","SVG","PSD","AI","EPS","PDF"],
+          volumeDiscountTiers: [
+            { min_qty: 1, max_qty: 9, price_per_sqin: 0.06 },
+            { min_qty: 10, max_qty: 49, price_per_sqin: 0.054 },
+            { min_qty: 50, max_qty: 99, price_per_sqin: 0.051 },
+            { min_qty: 100, max_qty: null, price_per_sqin: 0.0492 }
+          ]
+        },
       }, request);
     }
 
-    // Return config
+    // Parse builderConfig from DB (JSON field)
+    const builderConfig = (config.builderConfig as Record<string, any>) || {};
+
+    // Return config with DTF By Size settings
     return cachedCorsJson({
       productId: productGid,
       uploadEnabled: config.uploadEnabled,
       extraQuestions: config.extraQuestions || [],
       tshirtEnabled: config.tshirtEnabled,
       tshirtConfig: config.tshirtConfig || null,
+      builderConfig: {
+        maxWidthIn: builderConfig.maxWidthIn ?? 21.75,
+        maxHeightIn: builderConfig.maxHeightIn ?? 35.75,
+        minWidthIn: builderConfig.minWidthIn ?? 1,
+        minHeightIn: builderConfig.minHeightIn ?? 1,
+        colorProfile: builderConfig.colorProfile ?? "CMYK",
+        maxFileSizeMb: builderConfig.maxFileSizeMb ?? 500,
+        supportedFormats: builderConfig.supportedFormats ?? ["PNG","JPG","JPEG","SVG","PSD","AI","EPS","PDF"],
+        volumeDiscountTiers: builderConfig.volumeDiscountTiers ?? [
+          { min_qty: 1, max_qty: 9, price_per_sqin: 0.06 },
+          { min_qty: 10, max_qty: 49, price_per_sqin: 0.054 },
+          { min_qty: 50, max_qty: 99, price_per_sqin: 0.051 },
+          { min_qty: 100, max_qty: null, price_per_sqin: 0.0492 }
+        ]
+      },
     }, request);
 
   } catch (error) {

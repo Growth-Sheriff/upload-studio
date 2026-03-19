@@ -37,11 +37,15 @@ const DEFAULT_PRICING = {
 };
 
 interface PricingRequest {
-  mode: 'dtf_only' | 'tshirt_included';
+  mode: 'dtf_only' | 'tshirt_included' | 'dtf_by_size';
   locations: string[];
   quantity: number;
   size?: string;
   shopDomain?: string;
+  // DTF By Size fields
+  widthIn?: number;
+  heightIn?: number;
+  tiers?: Array<{ min_qty: number; max_qty: number | null; price_per_sqin: number }>;
 }
 
 interface PricingResponse {
@@ -109,6 +113,50 @@ export async function action({ request }: ActionFunctionArgs) {
     const body: PricingRequest = await request.json();
     const { mode, locations = [], quantity = 1, size, shopDomain } = body;
 
+    // ═══════════════════════════════════════════════════════
+    // DTF BY SIZE MODE — Width × Height × Qty × $/in²
+    // ═══════════════════════════════════════════════════════
+    if (mode === 'dtf_by_size') {
+      const { widthIn = 0, heightIn = 0, tiers = [] } = body;
+      const area = widthIn * heightIn;
+
+      // Find active tier based on quantity
+      const defaultTiers = [
+        { min_qty: 1, max_qty: 9, price_per_sqin: 0.06 },
+        { min_qty: 10, max_qty: 49, price_per_sqin: 0.054 },
+        { min_qty: 50, max_qty: 99, price_per_sqin: 0.051 },
+        { min_qty: 100, max_qty: null, price_per_sqin: 0.0492 }
+      ];
+      const activeTiers = tiers.length > 0 ? tiers : defaultTiers;
+      const activeTier = activeTiers.find(t =>
+        quantity >= t.min_qty && (t.max_qty === null || quantity <= t.max_qty)
+      ) || activeTiers[0];
+
+      const pricePerSqIn = activeTier.price_per_sqin;
+      const subtotal = area * pricePerSqIn;
+      const total = subtotal * quantity;
+
+      return corsJson({
+        mode: 'dtf_by_size',
+        breakdown: {
+          widthIn,
+          heightIn,
+          area: Math.round(area * 100) / 100,
+          pricePerSqIn,
+          subtotalPerUnit: Math.round(subtotal * 100) / 100,
+          quantity,
+          total: Math.round(total * 100) / 100,
+        },
+        unitPrice: Math.round(subtotal * 100) / 100,
+        totalPrice: Math.round(total * 100) / 100,
+        formattedTotal: `$${(Math.round(total * 100) / 100).toFixed(2)}`,
+        formula: `${area.toFixed(2)} in² × ${quantity} × $${pricePerSqIn} /in² = $${total.toFixed(2)}`,
+      }, request);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // EXISTING MODES — dtf_only / tshirt_included
+    // ═══════════════════════════════════════════════════════
     // TODO: Load shop-specific pricing from metafields if shopDomain provided
     const pricing = DEFAULT_PRICING;
 

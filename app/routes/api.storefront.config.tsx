@@ -118,6 +118,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   // Build product config
+  const builderConfigRaw = productConfig
+    ? (productConfig.builderConfig as Record<string, any>) || {}
+    : {};
+
   const product = productConfig
     ? {
         enabled: productConfig.enabled,
@@ -127,6 +131,22 @@ export async function loader({ request }: LoaderFunctionArgs) {
         sizes: (productConfig.tshirtConfig as any)?.sizes || [],
         extraQuestions: productConfig.extraQuestions || [],
         pricing: (productConfig.tshirtConfig as any)?.pricing || {},
+        // DTF By Size config
+        builderConfig: {
+          maxWidthIn: builderConfigRaw.maxWidthIn ?? 21.75,
+          maxHeightIn: builderConfigRaw.maxHeightIn ?? 35.75,
+          minWidthIn: builderConfigRaw.minWidthIn ?? 1,
+          minHeightIn: builderConfigRaw.minHeightIn ?? 1,
+          colorProfile: builderConfigRaw.colorProfile ?? "CMYK",
+          maxFileSizeMb: builderConfigRaw.maxFileSizeMb ?? 500,
+          supportedFormats: builderConfigRaw.supportedFormats ?? ["PNG","JPG","JPEG","SVG","PSD","AI","EPS","PDF"],
+          volumeDiscountTiers: builderConfigRaw.volumeDiscountTiers ?? [
+            { min_qty: 1, max_qty: 9, price_per_sqin: 0.06 },
+            { min_qty: 10, max_qty: 49, price_per_sqin: 0.054 },
+            { min_qty: 50, max_qty: 99, price_per_sqin: 0.051 },
+            { min_qty: 100, max_qty: null, price_per_sqin: 0.0492 }
+          ]
+        },
       }
     : null;
 

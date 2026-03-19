@@ -1,0 +1,24 @@
+[Unit]
+Description=Upload Studio Mockup Worker (Isolated from GSB)
+After=network.target
+
+[Service]
+Type=simple
+User=AvrasyaKreatif
+WorkingDirectory=/home/AvrasyaKreatif/us-mockup-worker
+EnvironmentFile=/home/AvrasyaKreatif/us-mockup-worker/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/tsx src/index.ts
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=us-mockup-worker
+
+# Resource limits (isolated from GSB)
+LimitNOFILE=65536
+MemoryMax=4G
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target
