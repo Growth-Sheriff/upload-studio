@@ -542,7 +542,7 @@
         return;
       }
 
-      fetch(apiBase + '/api/upload/status/' + file.uploadId)
+      fetch(apiBase + '/api/upload/status/' + file.uploadId + '?shopDomain=' + encodeURIComponent(self.config.shopDomain))
         .then(function(res) { return res.json(); })
         .then(function(data) {
           if (data && data.preflightSummary && data.preflightSummary.mockups) {

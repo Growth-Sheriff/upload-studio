@@ -133,13 +133,31 @@ export class MockupWorker {
 
     await job.updateProgress(5);
 
-    // 1. Download customer artwork from R2
+    // 1. Download customer artwork
+    // Primary: HTTP from CDN (Bunny/R2 public URL)
+    // Fallback: R2 direct download via artworkKey
+    const artworkUrl = job.data.artworkUrl;
     let artworkBuffer: Buffer;
     try {
-      artworkBuffer = await downloadFromR2(artworkKey);
-      console.log(
-        `[us-mockup] Downloaded artwork: ${artworkKey} (${(artworkBuffer.length / 1024).toFixed(1)}KB)`
-      );
+      if (artworkUrl && artworkUrl.startsWith('http')) {
+        // Download via HTTP (works with Bunny CDN, R2 public, any CDN)
+        console.log(`[us-mockup] Downloading artwork via HTTP: ${artworkUrl.substring(0, 100)}`);
+        const resp = await fetch(artworkUrl);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+        const arrayBuf = await resp.arrayBuffer();
+        artworkBuffer = Buffer.from(arrayBuf);
+        console.log(
+          `[us-mockup] Downloaded artwork via HTTP (${(artworkBuffer.length / 1024).toFixed(1)}KB)`
+        );
+      } else if (artworkKey) {
+        // Fallback: R2 direct download
+        artworkBuffer = await downloadFromR2(artworkKey);
+        console.log(
+          `[us-mockup] Downloaded artwork from R2: ${artworkKey} (${(artworkBuffer.length / 1024).toFixed(1)}KB)`
+        );
+      } else {
+        throw new Error('No artworkUrl or artworkKey provided');
+      }
     } catch (err) {
       throw new Error(`Failed to download artwork: ${(err as Error).message}`);
     }
