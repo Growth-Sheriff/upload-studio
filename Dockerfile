@@ -65,6 +65,9 @@ COPY --from=build /app/app ./app
 # Copy workers
 COPY --from=build /app/workers ./workers
 
+# Copy extension assets (for /api/ext-assets endpoint)
+COPY --from=build /app/extensions/theme-extension/assets ./extensions/theme-extension/assets
+
 # Copy entrypoint
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
