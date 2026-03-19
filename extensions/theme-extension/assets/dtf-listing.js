@@ -2,10 +2,11 @@
  * DTF Product Listing — Controller
  * ==================================
  * Handles "Upload Design" button clicks on the product listing grid.
- * When clicked, updates the dtf-upload-root data attributes for the
- * selected product, then re-initializes DtfUploadBlock and opens the modal.
+ * Supports two upload modes per product:
+ *   - dtf_by_size: Opens the DTF By Size modal (DtfUploadBlock)
+ *   - dtf: Redirects to the product page (inline uploader)
  *
- * Version: 1.0.0
+ * Version: 1.1.0
  */
 ;(function() {
   'use strict';
@@ -27,13 +28,23 @@
     var btn = e.currentTarget;
     var productId = btn.getAttribute('data-product-id');
     var productTitle = btn.getAttribute('data-product-title');
+    var productHandle = btn.getAttribute('data-product-handle');
+    var uploadMode = btn.getAttribute('data-upload-mode') || 'dtf_by_size';
 
+    // Mode: dtf → redirect to product page
+    if (uploadMode === 'dtf') {
+      window.location.href = '/products/' + productHandle;
+      return;
+    }
+
+    // Mode: dtf_by_size → open modal
     // Highlight active card
     var allCards = document.querySelectorAll('.dtf-listing__card');
     for (var c = 0; c < allCards.length; c++) {
       allCards[c].classList.remove('dtf-listing__card--active');
     }
-    btn.closest('.dtf-listing__card').classList.add('dtf-listing__card--active');
+    var card = btn.closest('.dtf-listing__card');
+    if (card) card.classList.add('dtf-listing__card--active');
 
     // Update dtf-upload-root with selected product's data
     var root = document.getElementById('dtf-upload-root');
@@ -41,12 +52,10 @@
 
     root.setAttribute('data-product-id', productId);
     root.setAttribute('data-product-title', productTitle || '');
-    // Clear previous initialized flag so dtf-upload.js re-inits
     root.removeAttribute('data-initialized');
 
     // Destroy existing instance if any
     if (window.dtfBlock) {
-      // Reset state
       window.dtfBlock.files = [];
       window.dtfBlock.activeFileIndex = -1;
       window.dtfBlock.state = 'IDLE';
@@ -71,11 +80,10 @@
       enableFitcheck: root.getAttribute('data-enable-fitcheck') !== 'false'
     };
 
-    // DtfUploadBlock is defined in dtf-upload.js global scope
-    if (typeof DtfUploadBlock !== 'undefined') {
-      window.dtfBlock = new DtfUploadBlock(config);
+    if (typeof window.DtfUploadBlock !== 'undefined') {
+      window.dtfBlock = new window.DtfUploadBlock(config);
       window.dtfBlock.fetchConfigFallback();
-      // Directly trigger file input (user clicked "Upload Design")
+      // Open file picker immediately
       if (window.dtfBlock.fileInput) {
         window.dtfBlock.fileInput.click();
       }
