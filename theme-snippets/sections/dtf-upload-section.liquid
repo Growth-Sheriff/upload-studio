@@ -219,17 +219,33 @@
   </div>
 {% endif %}
 
-{% comment %} ── Upload Studio: DTF Uploader root ── {% endcomment %}
+{% comment %} ── Upload Studio: Modal Wrapper ── {% endcomment %}
 {% if has_upload_studio %}
-  {%- comment -%}
-    Upload Studio renders its own DOM via dtf-uploader.js.
-    The root div and product config are set per-product when the button is clicked.
-  {%- endcomment -%}
-  <div id="ul-dtf-root" style="display:none"
-    data-shop-domain="{{ shop.permanent_domain }}"
-    data-api-base="/apps/customizer"
-    data-asset-base="{{ asset_base }}"
-  ></div>
+  <style>
+    .ul-studio-modal { position:fixed; inset:0; z-index:999999; display:none; align-items:center; justify-content:center; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+    .ul-studio-modal.active { display:flex; }
+    .ul-studio-modal__backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); }
+    .ul-studio-modal__container { position:relative; width:95vw; max-width:680px; max-height:90vh; background:#fff; border-radius:12px; box-shadow:0 25px 60px rgba(0,0,0,0.3); display:flex; flex-direction:column; overflow:hidden; }
+    .ul-studio-modal__header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid #e5e7eb; }
+    .ul-studio-modal__title { font-size:16px; font-weight:600; margin:0; }
+    .ul-studio-modal__close { background:none; border:none; font-size:22px; cursor:pointer; padding:4px 8px; color:#6b7280; border-radius:6px; }
+    .ul-studio-modal__close:hover { background:#f3f4f6; color:#111827; }
+    .ul-studio-modal__body { flex:1; overflow-y:auto; padding:0; }
+    .ul-studio-modal__body .ul-dtf-uploader { padding:20px; }
+  </style>
+
+  <div id="ul-studio-modal" class="ul-studio-modal">
+    <div class="ul-studio-modal__backdrop" id="ul-studio-backdrop"></div>
+    <div class="ul-studio-modal__container">
+      <div class="ul-studio-modal__header">
+        <h3 class="ul-studio-modal__title" id="ul-studio-modal-title">Upload Your Design</h3>
+        <button class="ul-studio-modal__close" id="ul-studio-modal-close" type="button" aria-label="Close">&#x2715;</button>
+      </div>
+      <div class="ul-studio-modal__body" id="ul-studio-modal-body">
+        <!-- Dynamic ULDTFUploader container will be inserted here -->
+      </div>
+    </div>
+  </div>
 {% endif %}
 
 {% comment %} ── Auto Sheet Calculator: will be rendered per-product ── {% endcomment %}
@@ -322,6 +338,10 @@
         // Remove existing container if any
         var existingContainer = document.getElementById('ul-dtf-' + productId);
         if (existingContainer) existingContainer.remove();
+
+        // Clear modal body
+        var modalBody = document.getElementById('ul-studio-modal-body');
+        if (modalBody) modalBody.innerHTML = '';
 
         // Build the full DOM container that ULDTFUploader expects
         var variants = productData ? productData.variants : [];
@@ -425,11 +445,37 @@
           '<input type="hidden" id="ul-thumbnail-url-' + productId + '" value="">' +
         '</div>';
 
-        // Insert container into page
-        document.body.insertAdjacentHTML('beforeend', containerHtml);
+        // Insert container into modal body (not document.body)
+        if (modalBody) {
+          modalBody.innerHTML = containerHtml;
+        } else {
+          document.body.insertAdjacentHTML('beforeend', containerHtml);
+        }
 
         // Init ULDTFUploader
         window.ULDTFUploader.init(productId);
+
+        // Open the modal
+        var studioModal = document.getElementById('ul-studio-modal');
+        var modalTitle = document.getElementById('ul-studio-modal-title');
+        if (studioModal) {
+          studioModal.classList.add('active');
+          document.body.style.overflow = 'hidden';
+          if (modalTitle) modalTitle.textContent = productTitle || 'Upload Your Design';
+        }
+
+        // Close handlers
+        function closeStudioModal() {
+          if (studioModal) {
+            studioModal.classList.remove('active');
+            document.body.style.overflow = '';
+          }
+        }
+        var closeBtn = document.getElementById('ul-studio-modal-close');
+        var backdrop = document.getElementById('ul-studio-backdrop');
+        if (closeBtn) closeBtn.onclick = closeStudioModal;
+        if (backdrop) backdrop.onclick = closeStudioModal;
+
       } else {
         // Fallback: redirect to product page
         window.location.href = '/products/' + productHandle;
