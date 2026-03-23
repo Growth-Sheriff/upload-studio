@@ -57,10 +57,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Get product config if productId provided
   let productConfig = null;
   if (productId) {
+    const normalizedProductId = productId.startsWith("gid://")
+      ? productId
+      : `gid://shopify/Product/${productId}`;
     productConfig = await prisma.productConfig.findFirst({
       where: {
         shopId: shop.id,
-        productId: productId,
+        OR: [
+          { productId },
+          { productId: normalizedProductId },
+        ],
       },
     });
   }
@@ -135,6 +141,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         builderConfig: {
           pricingMode: builderConfigRaw.pricingMode === "sheet" ? "sheet" : "area",
           sheetOptionName: builderConfigRaw.sheetOptionName ?? null,
+          widthOptionName: builderConfigRaw.widthOptionName ?? null,
+          heightOptionName: builderConfigRaw.heightOptionName ?? null,
           modalOptionNames: Array.isArray(builderConfigRaw.modalOptionNames) ? builderConfigRaw.modalOptionNames : [],
           artboardMarginIn: Math.max(0.125, Number(builderConfigRaw.artboardMarginIn ?? 0.125)),
           imageMarginIn: Math.max(0.125, Number(builderConfigRaw.imageMarginIn ?? 0.125)),

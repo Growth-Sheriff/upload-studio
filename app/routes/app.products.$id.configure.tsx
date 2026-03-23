@@ -82,6 +82,8 @@ interface TshirtConfig {
 interface BuilderConfig {
   pricingMode: "area" | "sheet";
   sheetOptionName: string | null;
+  widthOptionName: string | null;
+  heightOptionName: string | null;
   modalOptionNames: string[];
   artboardMarginIn: number;
   imageMarginIn: number;
@@ -102,6 +104,8 @@ interface BuilderConfig {
 const DEFAULT_BUILDER_CONFIG: BuilderConfig = {
   pricingMode: "area",
   sheetOptionName: null,
+  widthOptionName: null,
+  heightOptionName: null,
   modalOptionNames: [],
   artboardMarginIn: 0.125,
   imageMarginIn: 0.125,
@@ -129,6 +133,8 @@ const VolumeDiscountTierSchema = z.object({
 const BuilderConfigSchema = z.object({
   pricingMode: z.enum(["area", "sheet"]).default("area"),
   sheetOptionName: z.string().max(100).nullable().optional(),
+  widthOptionName: z.string().max(100).nullable().optional(),
+  heightOptionName: z.string().max(100).nullable().optional(),
   modalOptionNames: z.array(z.string().max(100)).max(10).default([]),
   artboardMarginIn: z.number().min(0.125).max(5).default(0.125),
   imageMarginIn: z.number().min(0.125).max(5).default(0.125),
@@ -427,8 +433,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
           artboardMarginIn: Math.max(0.125, validationResult.data.artboardMarginIn ?? DEFAULT_BUILDER_CONFIG.artboardMarginIn),
           imageMarginIn: Math.max(0.125, validationResult.data.imageMarginIn ?? DEFAULT_BUILDER_CONFIG.imageMarginIn),
           sheetOptionName: validationResult.data.sheetOptionName || null,
+          widthOptionName: validationResult.data.widthOptionName || null,
+          heightOptionName: validationResult.data.heightOptionName || null,
           modalOptionNames: Array.isArray(validationResult.data.modalOptionNames)
-            ? validationResult.data.modalOptionNames
+            ? validationResult.data.modalOptionNames.filter((name) => {
+                return name !== validationResult.data.sheetOptionName &&
+                  name !== validationResult.data.widthOptionName &&
+                  name !== validationResult.data.heightOptionName;
+              })
             : [],
         };
       }
@@ -710,11 +722,56 @@ export default function ProductConfigurePage() {
                     helpText='Choose the Shopify option that contains values like "22x24", "22x36", "22x48".'
                   />
 
+                  <FormLayout.Group>
+                    <Select
+                      label="Width Option"
+                      options={[
+                        { label: "Auto Detect", value: "" },
+                        ...product.options.map((option: any) => ({
+                          label: option.name,
+                          value: option.name,
+                        })),
+                      ]}
+                      value={builderConfig.widthOptionName || ""}
+                      onChange={(value) => {
+                        setBuilderConfig((prev) => ({
+                          ...prev,
+                          widthOptionName: value || null,
+                          modalOptionNames: prev.modalOptionNames.filter((name) => name !== value),
+                        }));
+                      }}
+                      helpText='Use for split-size products where width and height are separate Shopify options.'
+                    />
+                    <Select
+                      label="Height Option"
+                      options={[
+                        { label: "Auto Detect", value: "" },
+                        ...product.options.map((option: any) => ({
+                          label: option.name,
+                          value: option.name,
+                        })),
+                      ]}
+                      value={builderConfig.heightOptionName || ""}
+                      onChange={(value) => {
+                        setBuilderConfig((prev) => ({
+                          ...prev,
+                          heightOptionName: value || null,
+                          modalOptionNames: prev.modalOptionNames.filter((name) => name !== value),
+                        }));
+                      }}
+                      helpText='Use for split-size products like "Transfer Width" + "Transfer Height".'
+                    />
+                  </FormLayout.Group>
+
                   <ChoiceList
                     title="Modal Options"
                     allowMultiple
                     choices={product.options
-                      .filter((option: any) => option.name !== builderConfig.sheetOptionName)
+                      .filter((option: any) =>
+                        option.name !== builderConfig.sheetOptionName &&
+                        option.name !== builderConfig.widthOptionName &&
+                        option.name !== builderConfig.heightOptionName
+                      )
                       .map((option: any) => ({
                         label: option.name,
                         value: option.name,

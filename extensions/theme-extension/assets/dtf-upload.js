@@ -72,6 +72,19 @@
     return String(value || '').trim().toLowerCase();
   }
 
+  function parseMeasurementValue(value) {
+    if (value == null || value === '') return null;
+    var cleaned = String(value)
+      .replace(/["""''′″]/g, '')
+      .replace(/\binch(es)?\b/gi, '')
+      .replace(/\bin\b/gi, '')
+      .trim();
+    var match = cleaned.match(/-?\d+(?:\.\d+)?/);
+    if (!match) return null;
+    var parsed = parseFloat(match[0]);
+    return isNaN(parsed) ? null : parsed;
+  }
+
   function escapeHtml(value) {
     return String(value == null ? '' : value)
       .replace(/&/g, '&amp;')
@@ -100,6 +113,8 @@
     this.config = config || {};
     this.config.pricingMode = this.config.pricingMode === 'sheet' ? 'sheet' : 'area';
     this.config.sheetOptionName = this.config.sheetOptionName || null;
+    this.config.widthOptionName = this.config.widthOptionName || null;
+    this.config.heightOptionName = this.config.heightOptionName || null;
     this.config.modalOptionNames = Array.isArray(this.config.modalOptionNames) ? this.config.modalOptionNames : [];
     this.config.artboardMarginIn = normalizeMarginIn(this.config.artboardMarginIn);
     this.config.imageMarginIn = normalizeMarginIn(this.config.imageMarginIn);
@@ -635,6 +650,8 @@
 
     this.config.pricingMode = builderConfig.pricingMode === 'sheet' ? 'sheet' : 'area';
     this.config.sheetOptionName = builderConfig.sheetOptionName || null;
+    this.config.widthOptionName = builderConfig.widthOptionName || null;
+    this.config.heightOptionName = builderConfig.heightOptionName || null;
     this.config.modalOptionNames = Array.isArray(builderConfig.modalOptionNames) ? builderConfig.modalOptionNames : [];
     this.config.artboardMarginIn = normalizeMarginIn(builderConfig.artboardMarginIn);
     this.config.imageMarginIn = normalizeMarginIn(builderConfig.imageMarginIn);
@@ -669,6 +686,17 @@
       return variant.options[optionIndex];
     }
     return '';
+  };
+
+  DtfUploadBlock.prototype.getEffectiveColorProfile = function() {
+    for (var optionName in this.selectedServiceOptions) {
+      if (!Object.prototype.hasOwnProperty.call(this.selectedServiceOptions, optionName)) continue;
+      var normalized = normalizeOptionName(optionName);
+      if (normalized.indexOf('color') >= 0 || normalized.indexOf('profile') >= 0) {
+        return this.selectedServiceOptions[optionName];
+      }
+    }
+    return this.config.colorProfile || 'CMYK';
   };
 
   DtfUploadBlock.prototype.getProductOptions = function() {
@@ -739,31 +767,192 @@
     return null;
   };
 
-  DtfUploadBlock.prototype.detectSheetOptionIndex = function(optionDefs) {
-    var configuredName = normalizeOptionName(this.config.sheetOptionName);
-    if (configuredName) {
-      for (var c = 0; c < optionDefs.length; c++) {
-        if (normalizeOptionName(optionDefs[c].name) === configuredName) {
-          return c;
-        }
+  DtfUploadBlock.prototype.findOptionIndexByName = function(optionDefs, optionName) {
+    var normalizedName = normalizeOptionName(optionName);
+    if (!normalizedName) return -1;
+    for (var i = 0; i < optionDefs.length; i++) {
+      if (normalizeOptionName(optionDefs[i].name) === normalizedName) {
+        return i;
       }
+    }
+    return -1;
+  };
+
+  DtfUploadBlock.prototype.getOptionValueStats = function(optionDef, index) {
+    var values = Array.isArray(optionDef && optionDef.values) ? optionDef.values : [];
+    var parseableCount = 0;
+    var sheetSizeCount = 0;
+    var distinctValues = {};
+
+    for (var i = 0; i < values.length; i++) {
+      var measurement = parseMeasurementValue(values[i]);
+      if (measurement != null) {
+        parseableCount++;
+        distinctValues[String(measurement)] = true;
+      }
+      if (this.parseSheetSize(values[i])) {
+        sheetSizeCount++;
+      }
+    }
+
+    return {
+      index: index,
+      name: optionDef && optionDef.name ? optionDef.name : ('Option ' + (index + 1)),
+      parseableCount: parseableCount,
+      sheetSizeCount: sheetSizeCount,
+      distinctCount: Object.keys(distinctValues).length,
+      totalValues: values.length,
+    };
+  };
+
+  DtfUploadBlock.prototype.getDimensionNameScore = function(optionName, role) {
+    var normalized = normalizeOptionName(optionName);
+    if (!normalized) return 0;
+
+    var score = 0;
+    if (role === 'width') {
+      if (normalized.indexOf('width') >= 0) score += 20;
+      if (normalized.indexOf('wide') >= 0) score += 8;
+      if (normalized.indexOf('sheet') >= 0) score += 2;
+    } else {
+      if (normalized.indexOf('height') >= 0) score += 20;
+      if (normalized.indexOf('length') >= 0) score += 16;
+      if (normalized.indexOf('long') >= 0) score += 8;
+      if (normalized.indexOf('sheet') >= 0) score += 2;
+    }
+    if (normalized.indexOf('size') >= 0) score += 2;
+    return score;
+  };
+
+  DtfUploadBlock.prototype.detectCombinedDimensionOptionIndex = function(optionDefs) {
+    var configuredIndex = this.findOptionIndexByName(optionDefs, this.config.sheetOptionName);
+    if (configuredIndex >= 0) {
+      var configuredStats = this.getOptionValueStats(optionDefs[configuredIndex], configuredIndex);
+      if (configuredStats.sheetSizeCount > 0) return configuredIndex;
     }
 
     var bestIndex = -1;
     var bestScore = -1;
     for (var i = 0; i < optionDefs.length; i++) {
-      var values = Array.isArray(optionDefs[i].values) ? optionDefs[i].values : [];
-      var parseable = 0;
-      for (var v = 0; v < values.length; v++) {
-        if (this.parseSheetSize(values[v])) parseable++;
-      }
-      if (parseable > bestScore) {
-        bestScore = parseable;
+      var stats = this.getOptionValueStats(optionDefs[i], i);
+      if (stats.sheetSizeCount <= 0) continue;
+      var score = stats.sheetSizeCount * 10 + stats.distinctCount;
+      if (score > bestScore) {
+        bestScore = score;
         bestIndex = i;
       }
     }
 
-    return bestScore > 0 ? bestIndex : -1;
+    return bestIndex;
+  };
+
+  DtfUploadBlock.prototype.detectSplitDimensionOptionIndexes = function(optionDefs) {
+    var metas = [];
+    for (var i = 0; i < optionDefs.length; i++) {
+      var meta = this.getOptionValueStats(optionDefs[i], i);
+      if (meta.parseableCount > 0) metas.push(meta);
+    }
+    if (metas.length < 2) return null;
+
+    var configuredWidthIndex = this.findOptionIndexByName(optionDefs, this.config.widthOptionName);
+    var configuredHeightIndex = this.findOptionIndexByName(optionDefs, this.config.heightOptionName);
+    var widthMeta = null;
+    var heightMeta = null;
+    var m;
+
+    if (configuredWidthIndex >= 0) {
+      for (m = 0; m < metas.length; m++) {
+        if (metas[m].index === configuredWidthIndex) {
+          widthMeta = metas[m];
+          break;
+        }
+      }
+    }
+
+    if (configuredHeightIndex >= 0) {
+      for (m = 0; m < metas.length; m++) {
+        if (metas[m].index === configuredHeightIndex) {
+          heightMeta = metas[m];
+          break;
+        }
+      }
+    }
+
+    if (!widthMeta) {
+      var widthCandidates = metas.slice().sort(function(a, b) {
+        var scoreA = this.getDimensionNameScore(a.name, 'width') * 100 + (100 - a.distinctCount) + a.parseableCount;
+        var scoreB = this.getDimensionNameScore(b.name, 'width') * 100 + (100 - b.distinctCount) + b.parseableCount;
+        return scoreB - scoreA;
+      }.bind(this));
+      widthMeta = widthCandidates[0];
+    }
+
+    if (!heightMeta) {
+      var remaining = metas.filter(function(meta) {
+        return !widthMeta || meta.index !== widthMeta.index;
+      });
+      if (!remaining.length) return null;
+      remaining.sort(function(a, b) {
+        var scoreA = this.getDimensionNameScore(a.name, 'height') * 100 + a.distinctCount * 10 + a.parseableCount;
+        var scoreB = this.getDimensionNameScore(b.name, 'height') * 100 + b.distinctCount * 10 + b.parseableCount;
+        return scoreB - scoreA;
+      }.bind(this));
+      heightMeta = remaining[0];
+    }
+
+    if (!widthMeta || !heightMeta || widthMeta.index === heightMeta.index) {
+      return null;
+    }
+
+    return {
+      widthIndex: widthMeta.index,
+      heightIndex: heightMeta.index,
+    };
+  };
+
+  DtfUploadBlock.prototype.detectDimensionConfig = function(optionDefs) {
+    var configuredCombinedIndex = this.findOptionIndexByName(optionDefs, this.config.sheetOptionName);
+    if (configuredCombinedIndex >= 0) {
+      var configuredStats = this.getOptionValueStats(optionDefs[configuredCombinedIndex], configuredCombinedIndex);
+      if (configuredStats.sheetSizeCount > 0) {
+        return {
+          mode: 'combined',
+          indexes: [configuredCombinedIndex],
+          combinedIndex: configuredCombinedIndex,
+        };
+      }
+    }
+
+    var configuredSplit = this.detectSplitDimensionOptionIndexes(optionDefs);
+    if (configuredSplit && (this.config.widthOptionName || this.config.heightOptionName)) {
+      return {
+        mode: 'split',
+        indexes: [configuredSplit.widthIndex, configuredSplit.heightIndex],
+        widthIndex: configuredSplit.widthIndex,
+        heightIndex: configuredSplit.heightIndex,
+      };
+    }
+
+    var combinedIndex = this.detectCombinedDimensionOptionIndex(optionDefs);
+    if (combinedIndex >= 0) {
+      return {
+        mode: 'combined',
+        indexes: [combinedIndex],
+        combinedIndex: combinedIndex,
+      };
+    }
+
+    var splitIndexes = this.detectSplitDimensionOptionIndexes(optionDefs);
+    if (splitIndexes) {
+      return {
+        mode: 'split',
+        indexes: [splitIndexes.widthIndex, splitIndexes.heightIndex],
+        widthIndex: splitIndexes.widthIndex,
+        heightIndex: splitIndexes.heightIndex,
+      };
+    }
+
+    return null;
   };
 
   DtfUploadBlock.prototype.buildVariantMatrix = function() {
@@ -775,8 +964,8 @@
       return null;
     }
 
-    var sheetOptionIndex = this.detectSheetOptionIndex(optionDefs);
-    if (sheetOptionIndex < 0) {
+    var dimensionConfig = this.detectDimensionConfig(optionDefs);
+    if (!dimensionConfig || !dimensionConfig.indexes || !dimensionConfig.indexes.length) {
       return null;
     }
 
@@ -786,7 +975,7 @@
 
     var serviceOptionIndexes = [];
     for (var i = 0; i < optionDefs.length; i++) {
-      if (i === sheetOptionIndex) continue;
+      if (dimensionConfig.indexes.indexOf(i) >= 0) continue;
       if (!configuredModalNames.length || configuredModalNames.indexOf(normalizeOptionName(optionDefs[i].name)) >= 0) {
         serviceOptionIndexes.push(i);
       }
@@ -797,18 +986,43 @@
       var variant = variants[vi];
       if (variant && variant.available === false) continue;
 
-      var sheetValue = this.getOptionValue(variant, sheetOptionIndex);
-      var dims = this.parseSheetSize(sheetValue);
-      if (!dims || dims.widthInch < 1 || dims.heightInch < 1) continue;
+      var dims = null;
+      var familyLabel = '';
+      var optionValuesByIndex = {};
+
+      if (dimensionConfig.mode === 'combined') {
+        var sheetValue = this.getOptionValue(variant, dimensionConfig.combinedIndex);
+        dims = this.parseSheetSize(sheetValue);
+        if (dims) {
+          optionValuesByIndex[dimensionConfig.combinedIndex] = sheetValue;
+          familyLabel = sheetValue || (dims.widthInch + '" × ' + dims.heightInch + '"');
+        }
+      } else {
+        var widthValue = this.getOptionValue(variant, dimensionConfig.widthIndex);
+        var heightValue = this.getOptionValue(variant, dimensionConfig.heightIndex);
+        var widthInch = parseMeasurementValue(widthValue);
+        var heightInch = parseMeasurementValue(heightValue);
+        if (widthInch != null && heightInch != null) {
+          dims = {
+            widthInch: widthInch,
+            heightInch: heightInch,
+          };
+          optionValuesByIndex[dimensionConfig.widthIndex] = widthValue;
+          optionValuesByIndex[dimensionConfig.heightIndex] = heightValue;
+          familyLabel = (widthValue || widthInch + '"') + ' × ' + (heightValue || heightInch + '"');
+        }
+      }
+      if (!dims || dims.widthInch < 0.01 || dims.heightInch < 0.01) continue;
 
       var familyKey = String(dims.widthInch) + 'x' + String(dims.heightInch);
       if (!familiesByKey[familyKey]) {
         familiesByKey[familyKey] = {
           key: familyKey,
-          sheetValue: sheetValue,
-          displayName: dims.widthInch + '" × ' + dims.heightInch + '"',
+          sheetValue: familyLabel,
+          displayName: familyLabel || (dims.widthInch + '" x ' + dims.heightInch + '"'),
           widthInch: dims.widthInch,
           heightInch: dims.heightInch,
+          optionValuesByIndex: optionValuesByIndex,
           variants: [],
         };
       }
@@ -817,7 +1031,11 @@
 
     var matrix = {
       optionDefs: optionDefs,
-      sheetOptionIndex: sheetOptionIndex,
+      dimensionMode: dimensionConfig.mode,
+      dimensionOptionIndexes: dimensionConfig.indexes.slice(),
+      sheetOptionIndex: dimensionConfig.mode === 'combined' ? dimensionConfig.combinedIndex : null,
+      widthOptionIndex: dimensionConfig.mode === 'split' ? dimensionConfig.widthIndex : null,
+      heightOptionIndex: dimensionConfig.mode === 'split' ? dimensionConfig.heightIndex : null,
       serviceOptionIndexes: serviceOptionIndexes,
       serviceOptions: serviceOptionIndexes.map(function(index) {
         var def = optionDefs[index] || {};
@@ -843,7 +1061,15 @@
       var option = matrix.serviceOptions[i];
       if (!option.values || !option.values.length) continue;
       if (option.values.indexOf(this.selectedServiceOptions[option.name]) === -1) {
-        this.selectedServiceOptions[option.name] = option.values[0];
+        var preferredValue = option.values[0];
+        if (
+          this.config.colorProfile &&
+          option.values.indexOf(this.config.colorProfile) >= 0 &&
+          (normalizeOptionName(option.name).indexOf('color') >= 0 || normalizeOptionName(option.name).indexOf('profile') >= 0)
+        ) {
+          preferredValue = this.config.colorProfile;
+        }
+        this.selectedServiceOptions[option.name] = preferredValue;
       }
     }
   };
@@ -1111,6 +1337,84 @@
     };
   };
 
+  DtfUploadBlock.prototype.resolveAreaVariantSelection = function(widthIn, heightIn) {
+    var matrix = this.buildVariantMatrix();
+    if (!matrix || !matrix.sheetFamilies || !matrix.sheetFamilies.length) return null;
+
+    var candidates = [];
+    for (var i = 0; i < matrix.sheetFamilies.length; i++) {
+      var family = matrix.sheetFamilies[i];
+      var variant = this.resolveVariantForFamily(family, matrix);
+      if (!variant) continue;
+
+      var fits = family.widthInch + 0.01 >= widthIn && family.heightInch + 0.01 >= heightIn;
+      var areaDiff = Math.abs((family.widthInch * family.heightInch) - (widthIn * heightIn));
+      var overflowPenalty = fits ? 0 : Math.abs(widthIn - family.widthInch) + Math.abs(heightIn - family.heightIn) + 1000;
+
+      candidates.push({
+        family: family,
+        variant: variant,
+        fits: fits,
+        areaDiff: areaDiff,
+        overflowPenalty: overflowPenalty,
+      });
+    }
+
+    if (!candidates.length) return null;
+
+    candidates.sort(function(a, b) {
+      if (a.fits !== b.fits) return a.fits ? -1 : 1;
+      if (a.overflowPenalty !== b.overflowPenalty) return a.overflowPenalty - b.overflowPenalty;
+      if (a.areaDiff !== b.areaDiff) return a.areaDiff - b.areaDiff;
+      return normalizeVariantPriceToDollars(a.variant.price) - normalizeVariantPriceToDollars(b.variant.price);
+    });
+
+    return {
+      matrix: matrix,
+      family: candidates[0].family,
+      variant: candidates[0].variant,
+      fits: candidates[0].fits,
+    };
+  };
+
+  DtfUploadBlock.prototype.getAreaVariantPricing = function(file) {
+    if (!file) return null;
+    var resolved = this.resolveAreaVariantSelection(file.widthIn, file.heightIn);
+    if (!resolved || !resolved.variant) return null;
+
+    var unitPrice = normalizeVariantPriceToDollars(resolved.variant.price);
+    var quantity = Math.max(1, parseInt(file.quantity, 10) || 1);
+    return {
+      matrix: resolved.matrix,
+      family: resolved.family,
+      variant: resolved.variant,
+      fits: resolved.fits,
+      unitPrice: unitPrice,
+      total: parseFloat((unitPrice * quantity).toFixed(2)),
+    };
+  };
+
+  DtfUploadBlock.prototype.getVariantDimensionBounds = function(matrix) {
+    if (!matrix || !matrix.sheetFamilies || !matrix.sheetFamilies.length) return null;
+
+    var bounds = {
+      minWidth: matrix.sheetFamilies[0].widthInch,
+      maxWidth: matrix.sheetFamilies[0].widthInch,
+      minHeight: matrix.sheetFamilies[0].heightInch,
+      maxHeight: matrix.sheetFamilies[0].heightInch,
+    };
+
+    for (var i = 1; i < matrix.sheetFamilies.length; i++) {
+      var family = matrix.sheetFamilies[i];
+      if (family.widthInch < bounds.minWidth) bounds.minWidth = family.widthInch;
+      if (family.widthInch > bounds.maxWidth) bounds.maxWidth = family.widthInch;
+      if (family.heightInch < bounds.minHeight) bounds.minHeight = family.heightInch;
+      if (family.heightInch > bounds.maxHeight) bounds.maxHeight = family.heightInch;
+    }
+
+    return bounds;
+  };
+
   DtfUploadBlock.prototype.getFileDisplayPrice = function(file) {
     if (this.isSheetPricingEnabled()) {
       var pricing = this.calculateSheetPricing(file);
@@ -1125,11 +1429,18 @@
         total: '0.00',
       };
     }
+    var areaVariantPricing = this.getAreaVariantPricing(file);
+    if (areaVariantPricing) {
+      return {
+        subtotal: areaVariantPricing.total.toFixed(2),
+        total: areaVariantPricing.total.toFixed(2),
+      };
+    }
     return this.calculatePrice(file.widthIn, file.heightIn, file.quantity);
   };
 
-  DtfUploadBlock.prototype.renderSheetPricingControls = function(pricing) {
-    if (!pricing || !pricing.matrix || !pricing.matrix.serviceOptions.length) return '';
+  DtfUploadBlock.prototype.renderServiceOptionControls = function(matrix) {
+    if (!matrix || !matrix.serviceOptions || !matrix.serviceOptions.length) return '';
 
     var html = [
       '<div class="dtf-sheet-config">',
@@ -1137,8 +1448,8 @@
       '  <div class="dtf-sheet-config__grid">'
     ];
 
-    for (var i = 0; i < pricing.matrix.serviceOptions.length; i++) {
-      var option = pricing.matrix.serviceOptions[i];
+    for (var i = 0; i < matrix.serviceOptions.length; i++) {
+      var option = matrix.serviceOptions[i];
       html.push(
         '    <div class="dtf-input-group">',
         '      <label>' + escapeHtml(option.name) + '</label>',
@@ -1246,6 +1557,27 @@
     ].join('');
   };
 
+  DtfUploadBlock.prototype.renderAreaPricingSummary = function(file, priceData, areaVariantPricing) {
+    if (!areaVariantPricing || !areaVariantPricing.variant) {
+      return '<div class="dtf-price-calc">' +
+        '<div class="dtf-price-row"><span>Price / in\u00B2:</span> <span>$' + priceData.unitPrice + '</span></div>' +
+        '<div class="dtf-price-row"><span>Total Area:</span> <span>' + priceData.area + ' in\u00B2</span></div>' +
+        '<div class="dtf-price-row"><span>Price:</span> <span>' + priceData.formula + '</span></div>' +
+        '<div class="dtf-price-divider"></div>' +
+        '<div class="dtf-price-row dtf-price-total"><span>Total Price:</span> <span>$' + priceData.total + '</span></div>' +
+      '</div>';
+    }
+
+    return '<div class="dtf-price-calc">' +
+      '<div class="dtf-price-row"><span>Artwork Area:</span><span>' + priceData.area + ' in\u00B2</span></div>' +
+      '<div class="dtf-price-row"><span>Matched Variant:</span><span>' + escapeHtml(areaVariantPricing.variant.title || areaVariantPricing.family.displayName) + '</span></div>' +
+      '<div class="dtf-price-row"><span>Variant Price:</span><span>$' + areaVariantPricing.unitPrice.toFixed(2) + '</span></div>' +
+      '<div class="dtf-price-row"><span>Quantity:</span><span>' + file.quantity + '</span></div>' +
+      '<div class="dtf-price-divider"></div>' +
+      '<div class="dtf-price-row dtf-price-total"><span>Total Price:</span><span>$' + areaVariantPricing.total.toFixed(2) + '</span></div>' +
+    '</div>';
+  };
+
   /* ─────────────────────────────────────────────
      Pricing — from taslak (client-side, no API)
      ───────────────────────────────────────────── */
@@ -1297,12 +1629,17 @@
     if (!file) return;
 
     var priceData = this.calculatePrice(file.widthIn, file.heightIn, file.quantity);
+    var variantMatrix = this.buildVariantMatrix();
+    var variantBounds = this.getVariantDimensionBounds(variantMatrix);
     var sheetPricing = this.isSheetPricingEnabled() ? this.calculateSheetPricing(file) : null;
+    var areaVariantPricing = !this.isSheetPricingEnabled() ? this.getAreaVariantPricing(file) : null;
+    var maxWidthLimit = variantBounds ? Math.max(this.config.maxWidth, variantBounds.maxWidth) : this.config.maxWidth;
+    var maxHeightLimit = variantBounds ? Math.max(this.config.maxHeight, variantBounds.maxHeight) : this.config.maxHeight;
 
     // Validation
     var errors = [];
-    if (file.widthIn > this.config.maxWidth) errors.push('Width should be less than ' + this.config.maxWidth + 'in');
-    if (file.heightIn > this.config.maxHeight) errors.push('Height should be less than ' + this.config.maxHeight + 'in');
+    if (file.widthIn > maxWidthLimit) errors.push('Width should be less than ' + maxWidthLimit + 'in');
+    if (file.heightIn > maxHeightLimit) errors.push('Height should be less than ' + maxHeightLimit + 'in');
     if (file.widthIn < this.config.minWidth) errors.push('Width should be at least ' + this.config.minWidth + 'in');
     if (file.heightIn < this.config.minHeight) errors.push('Height should be at least ' + this.config.minHeight + 'in');
 
@@ -1312,6 +1649,8 @@
       } else if (!sheetPricing.validResults.length) {
         errors.push('No valid sheet variant matches the current design and production options.');
       }
+    } else if (variantMatrix && variantMatrix.sheetFamilies && variantMatrix.sheetFamilies.length && !areaVariantPricing) {
+      errors.push('No product variant matches the current dimensions and production options.');
     }
 
     this.addToCartBtn.disabled = errors.length > 0 || (this.isSheetPricingEnabled() && (!sheetPricing || !sheetPricing.selected));
@@ -1448,33 +1787,25 @@
           '<div class="dtf-inputs">' +
             '<div class="dtf-input-group">' +
               '<label>WIDTH (IN)</label>' +
-              '<input type="number" id="dtf-input-w" value="' + file.widthIn + '" step="0.01"' + (file.widthIn > this.config.maxWidth ? ' class="error"' : '') + '>' +
-              '<span class="dtf-hint">Max is ' + this.config.maxWidth + ' in</span>' +
+              '<input type="number" id="dtf-input-w" value="' + file.widthIn + '" step="0.01"' + (file.widthIn > maxWidthLimit ? ' class="error"' : '') + '>' +
+              '<span class="dtf-hint">Max is ' + maxWidthLimit + ' in</span>' +
             '</div>' +
             '<div class="dtf-input-group">' +
               '<label>HEIGHT (IN)</label>' +
-              '<input type="number" id="dtf-input-h" value="' + file.heightIn + '" step="0.01"' + (file.heightIn > this.config.maxHeight ? ' class="error"' : '') + '>' +
-              '<span class="dtf-hint">Max is ' + this.config.maxHeight + ' in</span>' +
+              '<input type="number" id="dtf-input-h" value="' + file.heightIn + '" step="0.01"' + (file.heightIn > maxHeightLimit ? ' class="error"' : '') + '>' +
+              '<span class="dtf-hint">Max is ' + maxHeightLimit + ' in</span>' +
             '</div>' +
             '<div class="dtf-input-group">' +
               '<label>QUANTITY</label>' +
               '<input type="number" id="dtf-input-q" value="' + file.quantity + '" min="1" step="1">' +
             '</div>' +
           '</div>' +
-          (this.isSheetPricingEnabled()
-            ? this.renderSheetPricingControls(sheetPricing)
-            : '') +
+          this.renderServiceOptionControls((sheetPricing && sheetPricing.matrix) || variantMatrix) +
           '<div class="dtf-errors">' + errorHtml + '</div>' +
           '<div class="dtf-thumbnails">' + thumbsHtml + '</div>' +
           (this.isSheetPricingEnabled()
             ? this.renderSheetPricingRows(sheetPricing) + this.renderSheetPricingSummary(file, sheetPricing)
-            : '<div class="dtf-price-calc">' +
-                '<div class="dtf-price-row"><span>Price / in\u00B2:</span> <span>$' + priceData.unitPrice + '</span></div>' +
-                '<div class="dtf-price-row"><span>Total Area:</span> <span>' + priceData.area + ' in\u00B2</span></div>' +
-                '<div class="dtf-price-row"><span>Price:</span> <span>' + priceData.formula + '</span></div>' +
-                '<div class="dtf-price-divider"></div>' +
-                '<div class="dtf-price-row dtf-price-total"><span>Total Price:</span> <span>$' + priceData.total + '</span></div>' +
-              '</div>') +
+            : this.renderAreaPricingSummary(file, priceData, areaVariantPricing)) +
         '</div>' +
       '</div>';
 
@@ -1649,7 +1980,7 @@
           '_remove_background': String(readyFile.removeBg),
           '_upscale_quality': String(readyFile.upscale),
           '_halftone': String(readyFile.halftone),
-          '_color_profile': self.config.colorProfile || 'CMYK',
+          '_color_profile': self.getEffectiveColorProfile(),
           '_resolution_dpi': String(readyFile.dpi || 300),
           '_upload_id': readyFile.uploadId || '',
           '_mode': 'dtf_by_size_sheet',
@@ -1714,7 +2045,7 @@
     var items = readyFiles.map(function(item) {
       // Per-file variant matching
       var itemVariantId = self.findVariantId(item.widthIn, item.heightIn) || variantId;
-      return {
+      var lineItem = {
         id: itemVariantId,
         quantity: item.quantity,
         properties: {
@@ -1727,12 +2058,18 @@
           '_remove_background': String(item.removeBg),
           '_upscale_quality': String(item.upscale),
           '_halftone': String(item.halftone),
-          '_color_profile': self.config.colorProfile || 'CMYK',
+          '_color_profile': self.getEffectiveColorProfile(),
           '_resolution_dpi': String(item.dpi || 300),
           '_upload_id': item.uploadId || '',
           '_mode': 'dtf_by_size'
         }
       };
+      for (var optionName in self.selectedServiceOptions) {
+        if (Object.prototype.hasOwnProperty.call(self.selectedServiceOptions, optionName)) {
+          lineItem.properties[optionName] = self.selectedServiceOptions[optionName];
+        }
+      }
+      return lineItem;
     });
 
     fetch('/cart/add.js', {
@@ -1761,6 +2098,11 @@
   };
 
   DtfUploadBlock.prototype.findVariantId = function(widthIn, heightIn) {
+    var resolvedSelection = this.resolveAreaVariantSelection(widthIn, heightIn);
+    if (resolvedSelection && resolvedSelection.variant) {
+      return resolvedSelection.variant.id;
+    }
+
     // Get all variants from product JSON on page
     var variants = this._getProductVariants();
     if (!variants || variants.length === 0) return null;
@@ -1964,6 +2306,8 @@
     var hasSheetConfig =
       this.config.pricingMode === 'sheet' ||
       !!this.config.sheetOptionName ||
+      !!this.config.widthOptionName ||
+      !!this.config.heightOptionName ||
       (Array.isArray(this.config.modalOptionNames) && this.config.modalOptionNames.length > 0);
 
     if (hasTiers && hasSheetConfig) {
@@ -2030,6 +2374,8 @@
         productOptions: safeJsonParse(root.dataset.productOptions || '[]', []),
         pricingMode: root.dataset.pricingMode || 'area',
         sheetOptionName: root.dataset.sheetOptionName || null,
+        widthOptionName: root.dataset.widthOptionName || null,
+        heightOptionName: root.dataset.heightOptionName || null,
         modalOptionNames: safeJsonParse(root.dataset.modalOptionNames || '[]', []),
         artboardMarginIn: normalizeMarginIn(root.dataset.artboardMarginIn),
         imageMarginIn: normalizeMarginIn(root.dataset.imageMarginIn),
