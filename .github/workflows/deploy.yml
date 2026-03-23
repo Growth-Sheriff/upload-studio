@@ -19,9 +19,12 @@ jobs:
           command_timeout: 30m
           script: |
             set -e
-            echo "=== [1/4] Git Pull ==="
+            echo "=== [1/4] Sync Git Checkout ==="
             cd /opt/apps/custom/customizerapp/upload-studio/src
-            git pull origin main
+            git fetch --prune origin main
+            git checkout -f main
+            git reset --hard origin/main
+            echo "Deployed commit: $(git rev-parse HEAD)"
 
             echo "=== [2/4] Docker Build ==="
             sudo docker build -t upload-studio:latest .
