@@ -87,6 +87,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         tshirtConfig: null,
         // DTF By Size defaults
         builderConfig: {
+          pricingMode: "area",
+          sheetOptionName: null,
+          modalOptionNames: [],
+          artboardMarginIn: 0.125,
+          imageMarginIn: 0.125,
           maxWidthIn: 21.75,
           maxHeightIn: 35.75,
           minWidthIn: 1,
@@ -115,6 +120,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       tshirtEnabled: config.tshirtEnabled,
       tshirtConfig: config.tshirtConfig || null,
       builderConfig: {
+        pricingMode: builderConfig.pricingMode === "sheet" ? "sheet" : "area",
+        sheetOptionName: builderConfig.sheetOptionName ?? null,
+        modalOptionNames: Array.isArray(builderConfig.modalOptionNames) ? builderConfig.modalOptionNames : [],
+        artboardMarginIn: Math.max(0.125, Number(builderConfig.artboardMarginIn ?? 0.125)),
+        imageMarginIn: Math.max(0.125, Number(builderConfig.imageMarginIn ?? 0.125)),
         maxWidthIn: builderConfig.maxWidthIn ?? 21.75,
         maxHeightIn: builderConfig.maxHeightIn ?? 35.75,
         minWidthIn: builderConfig.minWidthIn ?? 1,

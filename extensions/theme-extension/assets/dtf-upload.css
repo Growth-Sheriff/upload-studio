@@ -533,7 +533,18 @@
   font-size: 14px;
   outline: none;
 }
+.dtf-input-group select {
+  padding: 8px 12px;
+  border: 1px solid var(--dtf-color-border);
+  border-radius: var(--dtf-radius-sm);
+  font-size: 14px;
+  outline: none;
+  background: #fff;
+}
 .dtf-input-group input:focus {
+  border-color: var(--dtf-color-success);
+}
+.dtf-input-group select:focus {
   border-color: var(--dtf-color-success);
 }
 .dtf-input-group input.error {
@@ -631,6 +642,89 @@
 .dtf-price-total {
   font-size: 16px;
   font-weight: bold;
+}
+.dtf-sheet-config {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dtf-sheet-config__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--dtf-color-text);
+}
+.dtf-sheet-config__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.dtf-sheet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dtf-sheet-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid var(--dtf-color-border);
+  border-radius: var(--dtf-radius-sm);
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+.dtf-sheet-choice:hover:not(:disabled) {
+  border-color: var(--dtf-color-success);
+}
+.dtf-sheet-choice:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.dtf-sheet-choice.is-selected {
+  border-color: var(--dtf-color-success);
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.18);
+}
+.dtf-sheet-choice__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.dtf-sheet-choice__name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--dtf-color-text);
+}
+.dtf-sheet-choice__detail {
+  font-size: 12px;
+  color: var(--dtf-color-text-subdued);
+}
+.dtf-sheet-choice__price {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--dtf-color-text);
+  white-space: nowrap;
+}
+.dtf-sheet-choice__badge {
+  display: inline-flex;
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #166534;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.dtf-sheet-list-empty {
+  padding: 12px;
+  border: 1px dashed var(--dtf-color-border);
+  border-radius: var(--dtf-radius-sm);
+  font-size: 13px;
+  color: var(--dtf-color-text-subdued);
 }
 
 /* Uploading State */

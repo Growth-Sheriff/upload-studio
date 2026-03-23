@@ -271,6 +271,7 @@
   "handle": "{{ item.handle }}",
   "title": {{ item.title | json }},
   "price": {{ item.price }},
+  "options": {{ item.options_with_values | json }},
   "variants": {{ item.variants | json }},
   "mode": {{ block.settings.upload_mode | json }},
   "metafields": {
@@ -498,6 +499,8 @@
 
       uploadRoot.setAttribute('data-product-id', productId);
       uploadRoot.setAttribute('data-product-title', productTitle || '');
+      uploadRoot.setAttribute('data-product-variants', JSON.stringify((productData && productData.variants) || []));
+      uploadRoot.setAttribute('data-product-options', JSON.stringify((productData && productData.options) || []));
       uploadRoot.removeAttribute('data-initialized');
 
       // Set product title in modal header
@@ -534,6 +537,8 @@
         maxFileMb: parseInt(uploadRoot.getAttribute('data-max-file-mb'), 10) || 500,
         formats: uploadRoot.getAttribute('data-formats'),
         tiers: uploadRoot.getAttribute('data-tiers'),
+        productVariants: (productData && productData.variants) || [],
+        productOptions: (productData && productData.options) || [],
         currency: uploadRoot.getAttribute('data-currency') || 'USD',
         enableFitcheck: uploadRoot.getAttribute('data-enable-fitcheck') !== 'false'
       };

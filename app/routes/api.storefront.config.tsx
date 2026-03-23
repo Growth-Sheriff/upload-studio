@@ -133,6 +133,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
         pricing: (productConfig.tshirtConfig as any)?.pricing || {},
         // DTF By Size config
         builderConfig: {
+          pricingMode: builderConfigRaw.pricingMode === "sheet" ? "sheet" : "area",
+          sheetOptionName: builderConfigRaw.sheetOptionName ?? null,
+          modalOptionNames: Array.isArray(builderConfigRaw.modalOptionNames) ? builderConfigRaw.modalOptionNames : [],
+          artboardMarginIn: Math.max(0.125, Number(builderConfigRaw.artboardMarginIn ?? 0.125)),
+          imageMarginIn: Math.max(0.125, Number(builderConfigRaw.imageMarginIn ?? 0.125)),
           maxWidthIn: builderConfigRaw.maxWidthIn ?? 21.75,
           maxHeightIn: builderConfigRaw.maxHeightIn ?? 35.75,
           minWidthIn: builderConfigRaw.minWidthIn ?? 1,

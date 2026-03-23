@@ -79,6 +79,69 @@ interface TshirtConfig {
   positions: string[];
 }
 
+interface BuilderConfig {
+  pricingMode: "area" | "sheet";
+  sheetOptionName: string | null;
+  modalOptionNames: string[];
+  artboardMarginIn: number;
+  imageMarginIn: number;
+  maxWidthIn: number;
+  maxHeightIn: number;
+  minWidthIn: number;
+  minHeightIn: number;
+  colorProfile: string;
+  maxFileSizeMb: number;
+  supportedFormats: string[];
+  volumeDiscountTiers: Array<{
+    min_qty: number;
+    max_qty: number | null;
+    price_per_sqin: number;
+  }>;
+}
+
+const DEFAULT_BUILDER_CONFIG: BuilderConfig = {
+  pricingMode: "area",
+  sheetOptionName: null,
+  modalOptionNames: [],
+  artboardMarginIn: 0.125,
+  imageMarginIn: 0.125,
+  maxWidthIn: 21.75,
+  maxHeightIn: 35.75,
+  minWidthIn: 1,
+  minHeightIn: 1,
+  colorProfile: "CMYK",
+  maxFileSizeMb: 500,
+  supportedFormats: ["PNG", "JPG", "JPEG", "SVG", "PSD", "AI", "EPS", "PDF"],
+  volumeDiscountTiers: [
+    { min_qty: 1, max_qty: 9, price_per_sqin: 0.06 },
+    { min_qty: 10, max_qty: 49, price_per_sqin: 0.054 },
+    { min_qty: 50, max_qty: 99, price_per_sqin: 0.051 },
+    { min_qty: 100, max_qty: null, price_per_sqin: 0.0492 },
+  ],
+};
+
+const VolumeDiscountTierSchema = z.object({
+  min_qty: z.number(),
+  max_qty: z.number().nullable(),
+  price_per_sqin: z.number(),
+});
+
+const BuilderConfigSchema = z.object({
+  pricingMode: z.enum(["area", "sheet"]).default("area"),
+  sheetOptionName: z.string().max(100).nullable().optional(),
+  modalOptionNames: z.array(z.string().max(100)).max(10).default([]),
+  artboardMarginIn: z.number().min(0.125).max(5).default(0.125),
+  imageMarginIn: z.number().min(0.125).max(5).default(0.125),
+  maxWidthIn: z.number().min(0.1).max(999).default(DEFAULT_BUILDER_CONFIG.maxWidthIn),
+  maxHeightIn: z.number().min(0.1).max(999).default(DEFAULT_BUILDER_CONFIG.maxHeightIn),
+  minWidthIn: z.number().min(0.1).max(999).default(DEFAULT_BUILDER_CONFIG.minWidthIn),
+  minHeightIn: z.number().min(0.1).max(999).default(DEFAULT_BUILDER_CONFIG.minHeightIn),
+  colorProfile: z.string().max(50).default(DEFAULT_BUILDER_CONFIG.colorProfile),
+  maxFileSizeMb: z.number().min(1).max(10240).default(DEFAULT_BUILDER_CONFIG.maxFileSizeMb),
+  supportedFormats: z.array(z.string().max(20)).max(20).default(DEFAULT_BUILDER_CONFIG.supportedFormats),
+  volumeDiscountTiers: z.array(VolumeDiscountTierSchema).default(DEFAULT_BUILDER_CONFIG.volumeDiscountTiers),
+});
+
 // Fetch product details from Shopify
 const PRODUCT_QUERY = `
   query getProduct($id: ID!) {
@@ -266,12 +329,25 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       extraQuestions: (config.extraQuestions as ExtraQuestion[]) || [],
       tshirtEnabled: config.tshirtEnabled ?? false,
       tshirtConfig: (config.tshirtConfig as TshirtConfig) || null,
+      builderConfig: {
+        ...DEFAULT_BUILDER_CONFIG,
+        ...((config.builderConfig as BuilderConfig | null) || {}),
+        artboardMarginIn: Math.max(
+          0.125,
+          Number((config.builderConfig as BuilderConfig | null)?.artboardMarginIn ?? DEFAULT_BUILDER_CONFIG.artboardMarginIn)
+        ),
+        imageMarginIn: Math.max(
+          0.125,
+          Number((config.builderConfig as BuilderConfig | null)?.imageMarginIn ?? DEFAULT_BUILDER_CONFIG.imageMarginIn)
+        ),
+      },
     } : {
       mode: "dtf",
       uploadEnabled: true,
       extraQuestions: [] as ExtraQuestion[],
       tshirtEnabled: false,
       tshirtConfig: null as TshirtConfig | null,
+      builderConfig: DEFAULT_BUILDER_CONFIG,
     },
   });
 }
@@ -306,9 +382,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const tshirtEnabled = formData.get("tshirtEnabled") === "true";
     const extraQuestionsJson = formData.get("extraQuestions") as string;
     const tshirtConfigJson = formData.get("tshirtConfig") as string;
+    const builderConfigJson = formData.get("builderConfig") as string;
 
     let extraQuestions: ExtraQuestion[] = [];
     let tshirtConfig: TshirtConfig | null = null;
+    let builderConfig: BuilderConfig = DEFAULT_BUILDER_CONFIG;
 
     // FAZ 1 - ADM-003: Validate and sanitize input with Zod
     try {
@@ -334,6 +412,26 @@ export async function action({ request, params }: ActionFunctionArgs) {
         }
         tshirtConfig = validationResult.data;
       }
+      if (builderConfigJson) {
+        const parsed = JSON.parse(builderConfigJson);
+        const validationResult = BuilderConfigSchema.safeParse(parsed);
+        if (!validationResult.success) {
+          console.error("[ADM-003] BuilderConfig validation failed:", validationResult.error.errors);
+          return json({
+            error: "Invalid DTF sheet pricing configuration: " + validationResult.error.errors[0]?.message
+          }, { status: 400 });
+        }
+        builderConfig = {
+          ...DEFAULT_BUILDER_CONFIG,
+          ...validationResult.data,
+          artboardMarginIn: Math.max(0.125, validationResult.data.artboardMarginIn ?? DEFAULT_BUILDER_CONFIG.artboardMarginIn),
+          imageMarginIn: Math.max(0.125, validationResult.data.imageMarginIn ?? DEFAULT_BUILDER_CONFIG.imageMarginIn),
+          sheetOptionName: validationResult.data.sheetOptionName || null,
+          modalOptionNames: Array.isArray(validationResult.data.modalOptionNames)
+            ? validationResult.data.modalOptionNames
+            : [],
+        };
+      }
     } catch (e) {
       console.error("[ADM-003] JSON parse error:", e);
       return json({ error: "Invalid JSON data" }, { status: 400 });
@@ -347,6 +445,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       extraQuestions: extraQuestions as any,
       tshirtEnabled,
       tshirtConfig: tshirtConfig as any,
+      builderConfig: builderConfig as any,
       updatedAt: new Date(),
     };
     
@@ -359,6 +458,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       extraQuestions: extraQuestions as any,
       tshirtEnabled,
       tshirtConfig: tshirtConfig as any,
+      builderConfig: builderConfig as any,
     };
 
     await (prisma.productConfig as any).upsert({
@@ -403,6 +503,12 @@ export default function ProductConfigurePage() {
       positions: ["front", "back"],
     }
   );
+  const [builderConfig, setBuilderConfig] = useState<BuilderConfig>({
+    ...DEFAULT_BUILDER_CONFIG,
+    ...(config.builderConfig || {}),
+    artboardMarginIn: Math.max(0.125, Number(config.builderConfig?.artboardMarginIn ?? DEFAULT_BUILDER_CONFIG.artboardMarginIn)),
+    imageMarginIn: Math.max(0.125, Number(config.builderConfig?.imageMarginIn ?? DEFAULT_BUILDER_CONFIG.imageMarginIn)),
+  });
 
   // Question modal state
   const [showQuestionModal, setShowQuestionModal] = useState(false);
@@ -515,6 +621,7 @@ export default function ProductConfigurePage() {
           <input type="hidden" name="tshirtEnabled" value={tshirtEnabled.toString()} />
           <input type="hidden" name="extraQuestions" value={JSON.stringify(extraQuestions)} />
           <input type="hidden" name="tshirtConfig" value={JSON.stringify(tshirtConfig)} />
+          <input type="hidden" name="builderConfig" value={JSON.stringify(builderConfig)} />
 
           {/* Mode Selection */}
           <Layout.Section>
@@ -553,6 +660,119 @@ export default function ProductConfigurePage() {
                   checked={uploadEnabled}
                   onChange={setUploadEnabled}
                 />
+              </BlockStack>
+            </Card>
+          </Layout.Section>
+
+          <Layout.Section>
+            <Card>
+              <BlockStack gap="400">
+                <Text as="h2" variant="headingMd">DTF Sheet Pricing</Text>
+                <Text as="p" tone="subdued">
+                  Keep existing products on legacy area pricing, or enable sheet-based pricing for products
+                  that should calculate required sheet count from product variants.
+                </Text>
+
+                <Select
+                  label="Pricing Mode"
+                  options={[
+                    { label: "Legacy Area Pricing (safe default)", value: "area" },
+                    { label: "Sheet Pricing from Variants", value: "sheet" },
+                  ]}
+                  value={builderConfig.pricingMode}
+                  onChange={(value) => {
+                    setBuilderConfig((prev) => ({
+                      ...prev,
+                      pricingMode: value as BuilderConfig["pricingMode"],
+                    }));
+                  }}
+                  helpText="Default remains area pricing so existing tenant flows do not change until you enable sheet pricing per product."
+                />
+
+                <FormLayout>
+                  <Select
+                    label="Sheet Size Option"
+                    options={[
+                      { label: "Auto Detect", value: "" },
+                      ...product.options.map((option: any) => ({
+                        label: option.name,
+                        value: option.name,
+                      })),
+                    ]}
+                    value={builderConfig.sheetOptionName || ""}
+                    onChange={(value) => {
+                      setBuilderConfig((prev) => ({
+                        ...prev,
+                        sheetOptionName: value || null,
+                        modalOptionNames: prev.modalOptionNames.filter((name) => name !== value),
+                      }));
+                    }}
+                    helpText='Choose the Shopify option that contains values like "22x24", "22x36", "22x48".'
+                  />
+
+                  <ChoiceList
+                    title="Modal Options"
+                    allowMultiple
+                    choices={product.options
+                      .filter((option: any) => option.name !== builderConfig.sheetOptionName)
+                      .map((option: any) => ({
+                        label: option.name,
+                        value: option.name,
+                      }))}
+                    selected={builderConfig.modalOptionNames}
+                    onChange={(selected) => {
+                      setBuilderConfig((prev) => ({
+                        ...prev,
+                        modalOptionNames: selected,
+                      }));
+                    }}
+                  />
+                </FormLayout>
+
+                <FormLayout>
+                  <FormLayout.Group>
+                    <TextField
+                      label="Artboard Margin (in)"
+                      type="number"
+                      value={builderConfig.artboardMarginIn.toString()}
+                      onChange={(value) => {
+                        const next = parseFloat(value);
+                        setBuilderConfig((prev) => ({
+                          ...prev,
+                          artboardMarginIn: !isNaN(next) ? Math.max(0.125, next) : 0.125,
+                        }));
+                      }}
+                      autoComplete="off"
+                      step={0.001}
+                      min={0.125}
+                      helpText="Outer sheet border. Minimum is always 0.125 in."
+                    />
+                    <TextField
+                      label="Image Margin (in)"
+                      type="number"
+                      value={builderConfig.imageMarginIn.toString()}
+                      onChange={(value) => {
+                        const next = parseFloat(value);
+                        setBuilderConfig((prev) => ({
+                          ...prev,
+                          imageMarginIn: !isNaN(next) ? Math.max(0.125, next) : 0.125,
+                        }));
+                      }}
+                      autoComplete="off"
+                      step={0.001}
+                      min={0.125}
+                      helpText="Gap between repeated artworks. Minimum is always 0.125 in."
+                    />
+                  </FormLayout.Group>
+                </FormLayout>
+
+                <Banner tone={builderConfig.pricingMode === "sheet" ? "success" : "info"}>
+                  <p>
+                    {builderConfig.pricingMode === "sheet"
+                      ? "Sheet pricing is enabled for this product. Storefront will resolve exact Shopify variants from sheet size plus modal selections."
+                      : "Legacy area pricing stays active for this product. This preserves existing storefront behavior."}
+                  </p>
+                </Banner>
               </BlockStack>
             </Card>
           </Layout.Section>
