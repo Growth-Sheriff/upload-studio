@@ -191,6 +191,31 @@ interface PreflightJobData {
   storageKey: string
 }
 
+type ActualStorageProvider = 'local' | 'bunny' | 'r2'
+
+function resolveStorageProvider(
+  storageKey: string,
+  fallbackProvider: string | null | undefined
+): ActualStorageProvider {
+  if (storageKey.startsWith('bunny:') || storageKey.includes('.b-cdn.net') || storageKey.includes('bunnycdn.com')) {
+    return 'bunny'
+  }
+  if (storageKey.startsWith('r2:') || storageKey.includes('.r2.dev') || storageKey.includes('r2.cloudflarestorage.com')) {
+    return 'r2'
+  }
+  if (storageKey.startsWith('local:')) {
+    return 'local'
+  }
+  if (fallbackProvider === 'bunny' || fallbackProvider === 'r2') {
+    return fallbackProvider
+  }
+  return 'local'
+}
+
+function stripStoragePrefix(storageKey: string): string {
+  return storageKey.replace(/^(bunny|r2|local):/, '')
+}
+
 // Get S3/R2 client for remote storage
 function getStorageClient(provider: string): S3Client | null {
   if (provider === 'local') {
@@ -420,7 +445,7 @@ const preflightWorker = new Worker<PreflightJobData>(
       }
 
       const config: PreflightConfig = PLAN_CONFIGS[shop.plan] || PLAN_CONFIGS.free
-      const storageProvider = shop.storageProvider || 'local'
+      const storageProvider = resolveStorageProvider(storageKey, shop.storageProvider)
 
       // Get upload item
       const item = await prisma.uploadItem.findUnique({ where: { id: itemId } })
@@ -436,10 +461,11 @@ const preflightWorker = new Worker<PreflightJobData>(
       }
 
       await job.updateProgress(10)
+      const storageObjectKey = stripStoragePrefix(storageKey)
       console.log(`[Preflight] Downloading ${storageKey} from ${storageProvider} storage`)
 
       // Download file based on storage provider
-      const ext = path.extname(storageKey) || '.tmp'
+      const ext = path.extname(storageObjectKey) || '.tmp'
       const originalPath = path.join(tempDir, `original${ext}`)
 
       // Check for Bunny storage first (bunny: prefix or CDN URL)
@@ -452,7 +478,7 @@ const preflightWorker = new Worker<PreflightJobData>(
         if (!client) {
           throw new Error(`Cannot initialize storage client for provider: ${storageProvider}`)
         }
-        await downloadFile(client, storageKey, originalPath)
+        await downloadFile(client, storageObjectKey, originalPath)
       }
 
       await job.updateProgress(15)
@@ -503,7 +529,7 @@ const preflightWorker = new Worker<PreflightJobData>(
       let usePlaceholderThumbnail = false
 
       // Get S3 client for remote storage (reuse for uploads)
-      const client = storageProvider !== 'local' ? getStorageClient(storageProvider) : null
+      const client = storageProvider === 'r2' ? getStorageClient(storageProvider) : null
 
       if (detectedType === 'application/pdf') {
         const result = await safeConvertFile(
@@ -632,9 +658,7 @@ const preflightWorker = new Worker<PreflightJobData>(
       // Upload thumbnail - preserve bunny: prefix for proper URL generation
       // storageKey might be "bunny:path/to/file.psd" - we need "bunny:path/to/file_thumb.webp"
       const thumbnailKey = storageKey.replace(/\.[^.]+$/, '_thumb.webp')
-
-      // Determine actual upload path (strip bunny: prefix for upload)
-      const uploadPath = thumbnailKey.replace(/^bunny:/, '')
+      const uploadPath = stripStoragePrefix(thumbnailKey)
 
       // Only upload thumbnail if it was generated successfully
       if (thumbnailGenerated) {
@@ -663,13 +687,7 @@ const preflightWorker = new Worker<PreflightJobData>(
       // Determine final thumbnailKey with proper prefix for URL generation
       // If Bunny storage, ensure bunny: prefix is present
       // If thumbnail wasn't generated, set to null
-      const finalThumbnailKey = thumbnailGenerated
-        ? storageProvider === 'bunny' || storageKey.startsWith('bunny:')
-          ? thumbnailKey.startsWith('bunny:')
-            ? thumbnailKey
-            : `bunny:${uploadPath}`
-          : uploadPath
-        : null
+      const finalThumbnailKey = thumbnailGenerated ? `${storageProvider}:${uploadPath}` : null
 
       // Update database
       // IMPORTANT: previewKey = storageKey (original file) - merchant always gets original

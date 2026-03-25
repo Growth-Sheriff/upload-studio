@@ -134,11 +134,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     overallPreflight = 'warning'
   }
 
-  // Map status for widget compatibility
-  // Widget expects 'ready' or 'completed', but we store 'uploaded'
+  // Map status for widget compatibility without hiding preflight failures.
   let clientStatus = upload.status
   if (upload.status === 'uploaded') {
-    clientStatus = 'ready'
+    if (overallPreflight === 'error') {
+      clientStatus = 'error'
+    } else if (overallPreflight === 'pending') {
+      clientStatus = 'processing'
+    } else {
+      clientStatus = 'ready'
+    }
+  } else if (upload.status === 'blocked') {
+    clientStatus = 'error'
   }
 
   // Build download URLs for local storage with signed tokens (WI-004)
