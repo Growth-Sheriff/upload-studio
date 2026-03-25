@@ -1,0 +1,967 @@
+<!--
+  Exact source bundle for the product page main-product section.
+  Included exactly as pulled from the theme:
+  1. sections/main-product.liquid
+  2. CSS/Tailwind-related source from layout/theme.liquid
+  Note: layout/theme.liquid references assets/theme.css, but that file is not present in the pulled theme copy.
+-->
+
+{%- liquid
+  assign section_dom_id = 'ul-main-product-' | append: section.id
+-%}
+
+<!-- sections/main-product.liquid -->
+<div class="w-full bg-[#f3f3f3] pb-10" id="{{ section_dom_id }}" data-section-id="{{ section.id }}" data-product-id="{{ product.id }}" data-shop-domain="{{ shop.permanent_domain }}" data-api-base="/apps/customizer" data-max-upload-width="22" data-artboard-margin-in="0.125" data-image-margin-in="0.125">
+  <div class="max-w-2k w-full mx-auto px-4 py-6 font-amazon bg-white mt-4 mb-8 rounded shadow-sm">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      
+      <!-- Left Column - Images (4 cols) -->
+      <div class="lg:col-span-4">
+        <div class="aspect-square bg-gray-50 mb-4 relative border border-gray-200 p-2">
+          {% if product.featured_image %}
+            <img src="{{ product.featured_image | image_url: width: 800 }}" alt="{{ product.title | escape }}" class="ul-main-product-image w-full h-full object-contain mix-blend-multiply">
+          {% else %}
+            {% render 'placeholder-image' %}
+          {% endif %}
+          <div class="absolute top-2 left-2 bg-amazon-dark text-white text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg> Works with Any Design
+          </div>
+        </div>
+        
+        <!-- Thumbnails -->
+        <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+          {% for image in product.images %}
+            <button type="button" class="w-12 h-12 flex-shrink-0 border border-gray-300 hover:border-amazon-orange cursor-pointer js-thumb-click" data-image-url="{{ image | image_url: width: 800 }}">
+              <img src="{{ image | image_url: width: 100 }}" alt="{{ product.title | escape }}" class="w-full h-full object-cover">
+            </button>
+          {% else %}
+            {% for i in (1..4) %}
+              <div class="w-12 h-12 flex-shrink-0 border border-gray-300">
+                {% render 'placeholder-image' %}
+              </div>
+            {% endfor %}
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Middle Column - Product Info (5 cols) -->
+      <div class="lg:col-span-5">
+        <h1 class="text-2xl font-normal text-gray-900 leading-tight mb-1">
+          {{ product.title }}
+        </h1>
+        
+        {% if section.settings.show_vendor %}
+          <div class="text-sm text-amazon-link hover:text-amazon-link-hover hover:underline mb-2">
+            Visit the {{ product.vendor }} Store
+          </div>
+        {% endif %}
+        
+        <div class="flex items-center gap-4 mb-2 border-b border-gray-200 pb-2">
+          <div class="flex items-center gap-1">
+            <div class="flex text-amazon-orange text-sm">â˜…â˜…â˜…â˜…â˜…</div>
+            <span class="text-sm text-amazon-link hover:text-amazon-link-hover hover:underline cursor-pointer">
+              {{ section.settings.fake_reviews_count | default: "1,245" }} ratings
+            </span>
+          </div>
+        </div>
+
+        <div class="mb-2">
+          <span class="ul-main-product-price text-3xl font-medium text-gray-900">{{ product.price | money }}</span>
+        </div>
+        <p class="text-sm text-gray-500 mb-4">Shipping calculated at checkout.</p>
+
+        <div class="text-sm text-gray-900 mb-6">
+          {{ product.description | strip_html | truncatewords: 40 }}
+        </div>
+
+        <!-- Custom DTF Features -->
+        {% if section.settings.show_dtf_features %}
+          <div class="grid grid-cols-2 gap-y-3 gap-x-4 mb-6 text-sm text-gray-900">
+            <div class="flex items-center gap-2"><span class="w-4 h-4 bg-gray-200 rounded-sm flex items-center justify-center text-[10px]">ğŸ‘•</span> {{ section.settings.feature_1_text | escape }}</div>
+            <div class="flex items-center gap-2"><span class="w-4 h-4 bg-gradient-to-br from-red-400 via-green-400 to-blue-400 rounded-full"></span> {{ section.settings.feature_2_text | escape }}</div>
+            <div class="flex items-center gap-2"><span class="w-4 h-4 bg-orange-100 text-orange-600 rounded-sm flex items-center justify-center text-[10px]">ğŸ”¥</span> {{ section.settings.feature_3_text | escape }}</div>
+            <div class="flex items-center gap-2"><span class="w-4 h-4 bg-blue-100 text-blue-600 rounded-sm flex items-center justify-center text-[10px]">ğŸ’§</span> {{ section.settings.feature_4_text | escape }}</div>
+          </div>
+        {% endif %}
+
+        <!-- Upload Section -->
+        {% if section.settings.show_upload_section %}
+          <div class="border-2 border-dashed border-gray-300 bg-gray-50 rounded p-6 text-center mb-4 ul-main-upload-box">
+            <input type="file" class="ul-main-upload-input sr-only" accept=".png,.jpg,.jpeg,.webp,.tiff,.tif,.psd,.svg,.pdf,.ai,.eps">
+            <button type="button" class="ul-main-upload-trigger bg-amazon-yellow hover:brightness-95 text-black border border-black/20 shadow-sm font-medium py-2 px-6 rounded-full text-sm mb-2 cursor-pointer">
+              {{ section.settings.upload_button_text | escape }}
+            </button>
+            <p class="text-xs text-gray-500">or drag & drop your file here</p>
+            <div class="ul-main-upload-feedback hidden mt-4 text-left">
+              <div class="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3">
+                <img class="ul-main-upload-thumb hidden h-16 w-16 rounded object-cover border border-gray-200" alt="Upload preview">
+                <div class="min-w-0 flex-1">
+                  <div class="ul-main-upload-name truncate text-sm font-medium text-gray-900"></div>
+                  <div class="ul-main-upload-meta text-xs text-gray-500 mt-1"></div>
+                  <div class="ul-main-upload-status text-xs text-green-700 mt-1"></div>
+                </div>
+                <button type="button" class="ul-main-upload-remove rounded bg-red-500 px-3 py-2 text-xs font-semibold text-white">Remove</button>
+              </div>
+            </div>
+            <div class="ul-main-upload-loading hidden mt-4 rounded-lg border border-gray-200 bg-white px-4 py-3 text-left text-sm text-gray-700">
+              <div class="font-medium">Processing upload...</div>
+              <div class="ul-main-upload-loading-text mt-1 text-xs text-gray-500">Preparing file</div>
+              <div class="mt-3 h-2 overflow-hidden rounded-full bg-gray-200">
+                <div class="ul-main-upload-progress h-full w-[12%] rounded-full bg-amazon-orange transition-all duration-300"></div>
+              </div>
+            </div>
+            <div class="ul-main-upload-error hidden mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-left text-xs text-red-700"></div>
+            <div class="ul-main-detected hidden mt-4 rounded-lg border border-gray-200 bg-white p-4 text-left">
+              <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Detected Gang Sheet Size</div>
+              <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">Width (Inches)</label>
+                  <input type="text" class="ul-main-detected-width w-full rounded border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900" readonly>
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">Height (Inches)</label>
+                  <input type="text" class="ul-main-detected-height w-full rounded border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900" readonly>
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">Selected Variant</label>
+                  <input type="text" class="ul-main-selected-variant w-full rounded border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900" readonly>
+                </div>
+              </div>
+              <div class="ul-main-detected-note mt-2 text-xs text-gray-500"></div>
+            </div>
+          </div>
+        {% endif %}
+
+        <!-- Accordions -->
+        <div class="mt-8 border-t border-gray-200">
+          {% for block in section.blocks %}
+            <div class="border-b border-gray-200" {{ block.shopify_attributes }}>
+              <button type="button" class="js-accordion-trigger w-full py-3 flex justify-between items-center font-bold text-sm text-gray-900 hover:text-amazon-orange cursor-pointer" data-target="acc-{{ block.id }}">
+                {{ block.settings.title | escape }}
+                <svg class="w-4 h-4 js-accordion-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+              </button>
+              <div id="acc-{{ block.id }}" class="hidden pb-3 text-sm text-gray-700 prose prose-sm">
+                {{ block.settings.content }}
+              </div>
+            </div>
+          {% else %}
+            <!-- Default Accordions if no blocks added -->
+            <div class="border-b border-gray-200">
+              <button type="button" class="js-accordion-trigger w-full py-3 flex justify-between items-center font-bold text-sm text-gray-900 hover:text-amazon-orange cursor-pointer" data-target="acc-details">
+                Product Details
+                <svg class="w-4 h-4 js-accordion-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+              </button>
+              <div id="acc-details" class="hidden pb-3 text-sm text-gray-700">
+                {{ product.description }}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+
+        <!-- App Blocks -->
+      </div>
+
+      <!-- Right Column - Buy Box (3 cols) -->
+      <div class="lg:col-span-3">
+        <div class="border border-gray-200 rounded-lg p-4 bg-white mb-6">
+          <div class="ul-main-buybox-price text-2xl font-medium text-gray-900 mb-2">{{ product.price | money }}</div>
+          <div class="text-sm text-gray-500 mb-4">FREE delivery <span class="font-bold text-gray-900">Wednesday</span></div>
+          
+          <div class="text-lg text-green-700 font-medium mb-4">In Stock.</div>
+
+          <div class="ul-main-buybox-form flex flex-col gap-3" data-ul-buybox>
+            <input type="hidden" class="ul-main-variant-input" value="{{ product.selected_or_first_available_variant.id }}">
+            
+            {% unless product.has_only_default_variant %}
+              <div class="mb-4">
+                <label class="block text-sm font-bold text-gray-900 mb-1">Size / Variant</label>
+                <select class="ul-main-variant-select w-full bg-gray-100 border border-gray-300 rounded px-2 py-1.5 shadow-sm outline-none focus:ring-2 focus:ring-amazon-orange text-sm">
+                  {% for variant in product.variants %}
+                    <option 
+                      value="{{ variant.id }}" 
+                      data-price="{{ variant.price | money }}"
+                      data-image-url="{% if variant.image %}{{ variant.image | image_url: width: 800 }}{% endif %}"
+                      {% if variant == product.selected_or_first_available_variant %}selected="selected"{% endif %}
+                      {% unless variant.available %}disabled="disabled"{% endunless %}
+                    >
+                      {{ variant.title }} {% unless variant.available %} (Out of Stock){% endunless %}
+                    </option>
+                  {% endfor %}
+                </select>
+              </div>
+            {% endunless %}
+
+            <div class="flex items-center gap-2 mb-2">
+              <label class="text-sm text-gray-900">Qty:</label>
+              <select class="ul-main-quantity bg-gray-100 border border-gray-300 rounded px-2 py-1 shadow-sm outline-none focus:ring-2 focus:ring-amazon-orange text-sm">
+                {% for i in (1..10) %}
+                  <option value="{{ i }}">{{ i }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <button type="button" class="ul-main-add-to-cart w-full bg-amazon-yellow hover:brightness-95 text-black text-sm font-medium py-2 rounded-full shadow-sm border border-black/20 cursor-pointer">
+              Add to Cart
+            </button>
+            <button type="button" class="w-full bg-amazon-orange hover:brightness-95 text-black text-sm font-medium py-2 rounded-full shadow-sm border border-black/20 cursor-pointer">
+              Buy Now
+            </button>
+          </div>
+
+          <div class="mt-4 text-xs text-gray-500 space-y-1">
+            <div class="flex justify-between"><span>Ships from</span> <span>DTFPrintHome.com</span></div>
+            <div class="flex justify-between"><span>Sold by</span> <span>DTFPrintHome.com</span></div>
+            <div class="flex justify-between"><span>Returns</span> <span class="text-amazon-link hover:underline">Eligible for Return</span></div>
+          </div>
+        </div>
+
+        <!-- Pricing Table -->
+        {% if section.settings.show_pricing_table %}
+          <div class="border border-gray-200 rounded-md overflow-hidden">
+            <div class="bg-amazon-yellow px-4 py-2">
+              <h3 class="text-sm font-bold text-gray-900">{{ section.settings.pricing_table_title | escape }}</h3>
+            </div>
+            <table class="w-full text-sm text-left">
+              <thead class="bg-gray-100 text-gray-900 border-b border-gray-200">
+                <tr>
+                  <th class="px-4 py-2 font-bold text-xs">Size</th>
+                  <th class="px-4 py-2 font-bold text-xs text-right">Total Price</th>
+                </tr>
+              </thead>
+              <tbody class="ul-main-variant-table divide-y divide-gray-200 bg-white">
+                {% for variant in product.variants %}
+                  <tr class="ul-main-variant-row hover:bg-gray-50" data-variant-id="{{ variant.id }}" data-variant-title="{{ variant.title | escape }}" data-variant-price="{{ variant.price }}" {% unless variant.available %}data-variant-unavailable="true"{% endunless %}>
+                    <td class="px-4 py-1.5 text-gray-700 text-xs">{{ variant.title }}</td>
+                    <td class="px-4 py-1.5 text-right font-medium text-gray-900 text-xs">{{ variant.price | money }}</td>
+                  </tr>
+                {% else %}
+                  <tr>
+                    <td class="px-4 py-2 text-xs text-gray-500" colspan="2">No variants found for this product.</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script type="application/json" id="{{ section_dom_id }}-product-json">
+{
+  "productId": {{ product.id | json }},
+  "title": {{ product.title | json }},
+  "variants": {{ product.variants | json }},
+  "selectedVariantId": {{ product.selected_or_first_available_variant.id | json }}
+}
+</script>
+
+<script>
+  (function() {
+    var root = document.getElementById({{ section_dom_id | json }});
+    if (!root) return;
+
+    var productJsonEl = document.getElementById({{ section_dom_id | append: '-product-json' | json }});
+    var productData = productJsonEl ? JSON.parse(productJsonEl.textContent) : { variants: [] };
+    var apiBase = root.getAttribute('data-api-base') || '/apps/customizer';
+    var shopDomain = root.getAttribute('data-shop-domain') || '';
+    var maxUploadWidth = parseFloat(root.getAttribute('data-max-upload-width') || '22');
+    var artboardMarginIn = parseFloat(root.getAttribute('data-artboard-margin-in') || '0.125');
+    var imageMarginIn = parseFloat(root.getAttribute('data-image-margin-in') || '0.125');
+
+    var uploadInput = root.querySelector('.ul-main-upload-input');
+    var uploadTrigger = root.querySelector('.ul-main-upload-trigger');
+    var uploadBox = root.querySelector('.ul-main-upload-box');
+    var uploadLoading = root.querySelector('.ul-main-upload-loading');
+    var uploadLoadingText = root.querySelector('.ul-main-upload-loading-text');
+    var uploadProgress = root.querySelector('.ul-main-upload-progress');
+    var uploadFeedback = root.querySelector('.ul-main-upload-feedback');
+    var uploadThumb = root.querySelector('.ul-main-upload-thumb');
+    var uploadName = root.querySelector('.ul-main-upload-name');
+    var uploadMeta = root.querySelector('.ul-main-upload-meta');
+    var uploadStatus = root.querySelector('.ul-main-upload-status');
+    var uploadError = root.querySelector('.ul-main-upload-error');
+    var uploadRemove = root.querySelector('.ul-main-upload-remove');
+    var detectedBox = root.querySelector('.ul-main-detected');
+    var detectedWidth = root.querySelector('.ul-main-detected-width');
+    var detectedHeight = root.querySelector('.ul-main-detected-height');
+    var detectedVariant = root.querySelector('.ul-main-selected-variant');
+    var detectedNote = root.querySelector('.ul-main-detected-note');
+    var quantitySelect = root.querySelector('.ul-main-quantity');
+    var addToCartBtn = root.querySelector('.ul-main-add-to-cart');
+    var buyBoxForm = root.querySelector('.ul-main-buybox-form');
+    var hiddenVariantInput = root.querySelector('.ul-main-variant-input');
+    var variantSelect = root.querySelector('.ul-main-variant-select');
+    var productPrice = root.querySelector('.ul-main-product-price');
+    var buyBoxPrice = root.querySelector('.ul-main-buybox-price');
+    var variantRows = Array.prototype.slice.call(root.querySelectorAll('.ul-main-variant-row'));
+
+    var state = {
+      uploadId: '',
+      originalUrl: '',
+      thumbnailUrl: '',
+      fileName: '',
+      widthPx: 0,
+      heightPx: 0,
+      dpi: 0,
+      widthIn: 0,
+      heightIn: 0,
+      quantity: parseInt(quantitySelect && quantitySelect.value || '1', 10) || 1,
+      selectedVariantId: productData.selectedVariantId || null,
+      selectedResult: null,
+      lastFile: null
+    };
+    var resolveRequestToken = 0;
+
+    function moneyFromCents(cents) {
+      return '$' + ((Number(cents || 0) / 100).toFixed(2));
+    }
+
+    function parseVariantSize(variant) {
+      var candidates = [];
+      if (variant && variant.title) candidates.push(variant.title);
+      if (variant && variant.option1) candidates.push(variant.option1);
+      if (variant && variant.option2 && variant.option3) candidates.push(String(variant.option2) + ' x ' + String(variant.option3));
+      if (variant && variant.option2) candidates.push(variant.option2);
+      for (var i = 0; i < candidates.length; i++) {
+        var normalized = String(candidates[i] || '').replace(/["“”]/g, '').replace(/\s+/g, ' ').trim();
+        var match = normalized.match(/(\d+(?:\.\d+)?)\s*(?:in|inch|inches)?\s*x\s*(\d+(?:\.\d+)?)/i);
+        if (!match) continue;
+        return { widthInch: parseFloat(match[1]), heightInch: parseFloat(match[2]) };
+      }
+      return null;
+    }
+
+    var variants = (productData.variants || []).map(function(variant) {
+      var size = parseVariantSize(variant);
+      return {
+        id: variant.id,
+        title: variant.title || '',
+        price: Number(variant.price || 0),
+        available: variant.available !== false,
+        widthInch: size ? size.widthInch : null,
+        heightInch: size ? size.heightInch : null
+      };
+    }).filter(function(variant) {
+      return variant.widthInch && variant.heightInch;
+    }).sort(function(a, b) {
+      if (a.widthInch !== b.widthInch) return a.widthInch - b.widthInch;
+      return a.heightInch - b.heightInch;
+    });
+
+    function clearError() {
+      if (!uploadError) return;
+      uploadError.textContent = '';
+      uploadError.classList.add('hidden');
+    }
+
+    function showError(message) {
+      if (!uploadError) return;
+      uploadError.textContent = message;
+      uploadError.classList.remove('hidden');
+    }
+
+    function resetSelectionUI() {
+      variantRows.forEach(function(row) {
+        row.classList.remove('bg-green-100', 'ring-2', 'ring-green-500');
+      });
+    }
+
+    function setSelectedVariant(variantId) {
+      var normalizedVariantId = variantId != null && variantId !== '' ? String(variantId) : null;
+      state.selectedVariantId = normalizedVariantId;
+      if (hiddenVariantInput) hiddenVariantInput.value = normalizedVariantId || '';
+      if (variantSelect && normalizedVariantId) variantSelect.value = normalizedVariantId;
+
+      var selectedVariant = null;
+      var sourceVariants = productData.variants || [];
+      for (var i = 0; i < sourceVariants.length; i++) {
+        if (String(sourceVariants[i].id) === String(normalizedVariantId)) {
+          selectedVariant = sourceVariants[i];
+          break;
+        }
+      }
+
+      resetSelectionUI();
+      variantRows.forEach(function(row) {
+        if (String(row.getAttribute('data-variant-id')) === String(normalizedVariantId)) {
+          row.classList.add('bg-green-100', 'ring-2', 'ring-green-500');
+        }
+      });
+
+      if (selectedVariant) {
+        if (productPrice) productPrice.textContent = moneyFromCents(selectedVariant.price);
+        if (buyBoxPrice) buyBoxPrice.textContent = moneyFromCents(selectedVariant.price);
+        if (detectedVariant) detectedVariant.value = selectedVariant.title;
+      } else if (detectedVariant && !normalizedVariantId) {
+        detectedVariant.value = '';
+      }
+    }
+
+    function updateDetectedUI() {
+      if (!detectedBox) return;
+      if (!state.widthIn || !state.heightIn) {
+        detectedBox.classList.add('hidden');
+        return;
+      }
+      detectedBox.classList.remove('hidden');
+      if (detectedWidth) detectedWidth.value = state.widthIn.toFixed(2) + '"';
+      if (detectedHeight) detectedHeight.value = state.heightIn.toFixed(2) + '"';
+      if (detectedNote) {
+        var notes = [
+          'Resolved on server with artboard margin ' + artboardMarginIn.toFixed(3) + 'in and image margin ' + imageMarginIn.toFixed(3) + 'in.'
+        ];
+        if (state.selectedResult && state.selectedResult.designsPerSheet && state.selectedResult.sheetsNeeded) {
+          notes.push(
+            state.selectedResult.designsPerSheet + ' design(s) per sheet, ' +
+            state.selectedResult.sheetsNeeded + ' sheet(s) needed.'
+          );
+        }
+        detectedNote.textContent = notes.join(' ');
+      }
+    }
+
+    async function updateVariantResolution() {
+      if (!state.uploadId) {
+        state.selectedResult = null;
+        updateDetectedUI();
+        setSelectedVariant(productData.selectedVariantId || null);
+        if (addToCartBtn) addToCartBtn.disabled = true;
+        return;
+      }
+      if (!state.widthIn || !state.heightIn || !state.dpi) {
+        if (addToCartBtn) addToCartBtn.disabled = true;
+        return;
+      }
+
+      var requestToken = ++resolveRequestToken;
+      clearError();
+      if (addToCartBtn) addToCartBtn.disabled = true;
+      if (uploadStatus) uploadStatus.textContent = 'Resolving best variant...';
+
+      try {
+        var response = await fetch(apiBase + '/api/upload/resolve-product', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            shopDomain: shopDomain,
+            productId: String(productData.productId),
+            uploadId: state.uploadId,
+            quantity: state.quantity,
+            selectedVariantId: state.selectedVariantId || (hiddenVariantInput ? hiddenVariantInput.value : '') || productData.selectedVariantId || null,
+            artboardMarginIn: artboardMarginIn,
+            imageMarginIn: imageMarginIn,
+            maxUploadWidth: maxUploadWidth
+          })
+        });
+        var data = await response.json().catch(function() { return {}; });
+        if (requestToken !== resolveRequestToken) return;
+
+        if (data && data.upload) {
+          state.widthPx = Number(data.upload.widthPx || state.widthPx || 0);
+          state.heightPx = Number(data.upload.heightPx || state.heightPx || 0);
+          state.dpi = Number(data.upload.dpi || state.dpi || 0);
+          state.widthIn = Number(data.upload.widthIn || state.widthIn || 0);
+          state.heightIn = Number(data.upload.heightIn || state.heightIn || 0);
+        }
+
+        if (!response.ok) {
+          state.selectedResult = null;
+          updateDetectedUI();
+          resetSelectionUI();
+          showError(data && data.error ? data.error : 'Failed to resolve product variant.');
+          if (uploadStatus) uploadStatus.textContent = '';
+          if (addToCartBtn) addToCartBtn.disabled = true;
+          return;
+        }
+
+        state.selectedResult = data && data.resolution ? data.resolution : null;
+      } catch (error) {
+        if (requestToken !== resolveRequestToken) return;
+        state.selectedResult = null;
+        updateDetectedUI();
+        resetSelectionUI();
+        showError(error && error.message ? error.message : 'Failed to resolve product variant.');
+        if (uploadStatus) uploadStatus.textContent = '';
+        if (addToCartBtn) addToCartBtn.disabled = true;
+        return;
+      }
+
+      updateDetectedUI();
+      if (!state.selectedResult || !state.selectedResult.selectedVariantId) {
+        state.selectedResult = null;
+        resetSelectionUI();
+        showError('No product variant can fit this upload with the current quantity and margin rules.');
+        if (uploadStatus) uploadStatus.textContent = '';
+        if (addToCartBtn) addToCartBtn.disabled = true;
+        return;
+      }
+
+      clearError();
+      setSelectedVariant(state.selectedResult.selectedVariantId);
+      if (addToCartBtn) addToCartBtn.disabled = false;
+      if (uploadStatus) {
+        uploadStatus.textContent = 'Ready. Auto-selected variant: ' + (state.selectedResult.selectedVariantTitle || state.selectedResult.selectedSheetLabel || '');
+      }
+    }
+
+    function resetUploadState() {
+      resolveRequestToken += 1;
+      state.uploadId = '';
+      state.originalUrl = '';
+      state.thumbnailUrl = '';
+      state.fileName = '';
+      state.widthPx = 0;
+      state.heightPx = 0;
+      state.dpi = 0;
+      state.widthIn = 0;
+      state.heightIn = 0;
+      state.selectedResult = null;
+      state.lastFile = null;
+      if (uploadInput) uploadInput.value = '';
+      if (uploadFeedback) uploadFeedback.classList.add('hidden');
+      if (uploadLoading) uploadLoading.classList.add('hidden');
+      if (detectedBox) detectedBox.classList.add('hidden');
+      if (uploadStatus) uploadStatus.textContent = '';
+      setSelectedVariant(productData.selectedVariantId || null);
+      clearError();
+      if (addToCartBtn) addToCartBtn.disabled = true;
+    }
+
+    function updatePreview() {
+      if (!uploadFeedback) return;
+      uploadFeedback.classList.remove('hidden');
+      if (uploadName) uploadName.textContent = state.fileName;
+      var meta = [];
+      if (state.widthPx && state.heightPx) meta.push(state.widthPx + ' x ' + state.heightPx + ' px');
+      if (state.dpi) meta.push(state.dpi + ' DPI');
+      if (state.lastFile && state.lastFile.size) meta.push((state.lastFile.size / (1024 * 1024)).toFixed(1) + ' MB');
+      if (uploadMeta) uploadMeta.textContent = meta.join(' • ');
+
+      var ext = (state.fileName.split('.').pop() || '').toLowerCase();
+      var isNonBrowser = ['psd', 'pdf', 'ai', 'eps', 'tiff', 'tif'].indexOf(ext) >= 0;
+      if (state.thumbnailUrl) {
+        uploadThumb.src = state.thumbnailUrl;
+        uploadThumb.classList.remove('hidden');
+      } else if (!isNonBrowser && state.lastFile && state.lastFile.type && state.lastFile.type.indexOf('image/') === 0) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          uploadThumb.src = e.target.result;
+          uploadThumb.classList.remove('hidden');
+        };
+        reader.readAsDataURL(state.lastFile);
+      } else {
+        uploadThumb.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80"><rect width="80" height="80" rx="10" fill="#f3f4f6"/><path d="M24 16h22l10 10v38H24z" fill="#e5e7eb" stroke="#9ca3af" stroke-width="2"/><text x="40" y="48" text-anchor="middle" font-size="12" font-family="Arial" fill="#374151">' + ext.toUpperCase() + '</text></svg>');
+        uploadThumb.classList.remove('hidden');
+      }
+    }
+
+    async function pollUploadStatus(uploadId) {
+      for (var attempts = 0; attempts < 60; attempts++) {
+        var response = await fetch(apiBase + '/api/upload/status/' + encodeURIComponent(uploadId) + '?shopDomain=' + encodeURIComponent(shopDomain));
+        if (response.ok) {
+          var data = await response.json();
+          var firstItem = data.items && data.items[0] ? data.items[0] : null;
+          if (firstItem) {
+            state.thumbnailUrl = firstItem.thumbnailUrl || data.thumbnailUrl || '';
+            state.originalUrl = firstItem.originalUrl || data.downloadUrl || '';
+            state.widthPx = Number(firstItem.widthPx || 0);
+            state.heightPx = Number(firstItem.heightPx || 0);
+            state.dpi = Number(firstItem.dpi || 0);
+            if (state.widthPx > 0 && state.heightPx > 0 && state.dpi > 0) {
+              state.widthIn = Number((state.widthPx / state.dpi).toFixed(2));
+              state.heightIn = Number((state.heightPx / state.dpi).toFixed(2));
+              if (state.widthIn > maxUploadWidth + 0.001) {
+                resetUploadState();
+                showError('This file is too wide for this product. Maximum supported width is ' + maxUploadWidth.toFixed(0) + '".');
+                return;
+              }
+              if (uploadLoading) uploadLoading.classList.add('hidden');
+              updatePreview();
+              await updateVariantResolution();
+              return;
+            }
+          }
+        }
+        if (uploadLoadingText) uploadLoadingText.textContent = 'Analyzing dimensions and generating thumbnail...';
+        if (uploadProgress) uploadProgress.style.width = Math.min(92, 25 + attempts) + '%';
+        await new Promise(function(resolve) { setTimeout(resolve, 1500); });
+      }
+      if (uploadLoading) uploadLoading.classList.add('hidden');
+      showError('Upload finished but size detection timed out. Please try again.');
+    }
+
+    async function handleFile(file) {
+      if (!file) return;
+      clearError();
+      state.lastFile = file;
+      state.fileName = file.name;
+      if (uploadFeedback) uploadFeedback.classList.add('hidden');
+      if (detectedBox) detectedBox.classList.add('hidden');
+      if (uploadLoading) uploadLoading.classList.remove('hidden');
+      if (uploadLoadingText) uploadLoadingText.textContent = 'Preparing upload...';
+      if (uploadProgress) uploadProgress.style.width = '12%';
+      try {
+        var intentRes = await fetch(apiBase + '/api/upload/intent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            shopDomain: shopDomain,
+            productId: String(productData.productId),
+            mode: 'dtf',
+            fileName: file.name,
+            contentType: file.type || 'application/octet-stream',
+            fileSize: file.size
+          })
+        });
+        if (!intentRes.ok) {
+          var intentErr = await intentRes.json().catch(function() { return {}; });
+          throw new Error(intentErr.error || 'Failed to create upload intent.');
+        }
+        var intent = await intentRes.json();
+        state.uploadId = intent.uploadId;
+        if (uploadLoadingText) uploadLoadingText.textContent = 'Uploading file...';
+        if (uploadProgress) uploadProgress.style.width = '28%';
+
+        await new Promise(function(resolve, reject) {
+          var xhr = new XMLHttpRequest();
+          xhr.upload.addEventListener('progress', function(e) {
+            if (!e.lengthComputable || !uploadProgress || !uploadLoadingText) return;
+            uploadProgress.style.width = (28 + ((e.loaded / e.total) * 42)) + '%';
+            uploadLoadingText.textContent = 'Uploading ' + (e.loaded / (1024 * 1024)).toFixed(1) + ' / ' + (e.total / (1024 * 1024)).toFixed(1) + ' MB';
+          });
+          xhr.addEventListener('load', function() {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error('Upload failed with HTTP ' + xhr.status));
+          });
+          xhr.addEventListener('error', function() {
+            reject(new Error('Network error during upload.'));
+          });
+          xhr.open(intent.uploadMethod || 'PUT', intent.uploadUrl, true);
+          if ((intent.uploadMethod || 'PUT') === 'PUT') {
+            xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+          }
+          if (intent.uploadHeaders) {
+            Object.keys(intent.uploadHeaders).forEach(function(key) {
+              xhr.setRequestHeader(key, intent.uploadHeaders[key]);
+            });
+          }
+          xhr.send(file);
+        });
+
+        if (uploadLoadingText) uploadLoadingText.textContent = 'Finalizing upload...';
+        if (uploadProgress) uploadProgress.style.width = '75%';
+        var completeRes = await fetch(apiBase + '/api/upload/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            shopDomain: shopDomain,
+            uploadId: intent.uploadId,
+            items: [{
+              itemId: intent.itemId,
+              location: 'front',
+              fileUrl: intent.publicUrl || '',
+              storageProvider: intent.storageProvider || 'r2',
+              fileSize: file.size
+            }]
+          })
+        });
+        if (!completeRes.ok) {
+          var completeErr = await completeRes.json().catch(function() { return {}; });
+          throw new Error(completeErr.error || 'Failed to finalize upload.');
+        }
+
+        if (uploadLoadingText) uploadLoadingText.textContent = 'Detecting gang sheet size...';
+        if (uploadProgress) uploadProgress.style.width = '85%';
+        await pollUploadStatus(intent.uploadId);
+      } catch (error) {
+        if (uploadLoading) uploadLoading.classList.add('hidden');
+        showError(error && error.message ? error.message : 'Upload failed.');
+      }
+    }
+
+    if (uploadTrigger && uploadInput) {
+      uploadTrigger.addEventListener('click', function() {
+        uploadInput.click();
+      });
+      uploadInput.addEventListener('change', function(e) {
+        if (e.target.files && e.target.files[0]) {
+          handleFile(e.target.files[0]);
+        }
+      });
+    }
+
+    if (uploadBox) {
+      uploadBox.addEventListener('dragover', function(e) {
+        e.preventDefault();
+      });
+      uploadBox.addEventListener('drop', function(e) {
+        e.preventDefault();
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          handleFile(e.dataTransfer.files[0]);
+        }
+      });
+    }
+
+    if (uploadRemove) {
+      uploadRemove.addEventListener('click', function() {
+        resetUploadState();
+      });
+    }
+
+    if (quantitySelect) {
+      quantitySelect.addEventListener('change', function() {
+        state.quantity = parseInt(quantitySelect.value || '1', 10) || 1;
+        if (state.uploadId) {
+          updateVariantResolution();
+        }
+      });
+    }
+
+    if (variantSelect) {
+      variantSelect.addEventListener('change', function() {
+        setSelectedVariant(variantSelect.value || null);
+        if (state.uploadId) {
+          updateVariantResolution();
+        }
+      });
+    }
+
+    if (addToCartBtn) {
+      addToCartBtn.addEventListener('click', async function() {
+        if (!state.uploadId || !state.selectedVariantId) {
+          showError('Please upload your design first.');
+          return;
+        }
+        clearError();
+        addToCartBtn.disabled = true;
+        addToCartBtn.textContent = 'Adding...';
+        try {
+          var quantityValue = quantitySelect ? parseInt(quantitySelect.value || '1', 10) || 1 : 1;
+          var properties = {
+            _ul_upload_id: state.uploadId,
+            _ul_thumbnail: state.thumbnailUrl || '',
+            _ul_original_url: state.originalUrl || '',
+            _ul_file_name: state.fileName || '',
+            _ul_width_in: String(state.widthIn || 0),
+            _ul_height_in: String(state.heightIn || 0),
+            _ul_resolution_dpi: String(state.dpi || 0),
+            _ul_mode: 'main_product_sheet',
+            _ul_requested_copies: String(quantityValue),
+            _ul_artboard_margin_in: String(artboardMarginIn),
+            _ul_image_margin_in: String(imageMarginIn),
+            _ul_sheet_name: state.selectedResult ? (state.selectedResult.selectedSheetLabel || state.selectedResult.selectedVariantTitle || '') : '',
+            _ul_designs_per_sheet: state.selectedResult ? String(state.selectedResult.designsPerSheet || '') : '',
+            _ul_sheets_needed: state.selectedResult ? String(state.selectedResult.sheetsNeeded || '') : ''
+          };
+
+          var response = await fetch('/cart/add.js', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              items: [{
+                id: parseInt(state.selectedVariantId, 10),
+                quantity: state.selectedResult ? state.selectedResult.sheetsNeeded : quantityValue,
+                properties: properties
+              }]
+            })
+          });
+          if (!response.ok) {
+            var err = await response.json().catch(function() { return {}; });
+            throw new Error(err.description || 'Failed to add to cart.');
+          }
+          window.location.href = '/cart';
+        } catch (error) {
+          showError(error && error.message ? error.message : 'Failed to add to cart.');
+          addToCartBtn.disabled = false;
+          addToCartBtn.textContent = 'Add to Cart';
+        }
+      });
+    }
+
+    setSelectedVariant(productData.selectedVariantId || null);
+    if (addToCartBtn) addToCartBtn.disabled = true;
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Main Product",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Product Information"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_vendor",
+      "label": "Show Vendor",
+      "default": false
+    },
+    {
+      "type": "text",
+      "id": "fake_reviews_count",
+      "label": "Fake Reviews Count (if no real reviews)",
+      "default": "5,241"
+    },
+    {
+      "type": "header",
+      "content": "Custom DTF Features (Grid)"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_dtf_features",
+      "label": "Show DTF Features Grid",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "feature_1_text",
+      "label": "Feature 1 Text",
+      "default": "Applies to every fabric"
+    },
+    {
+      "type": "text",
+      "id": "feature_2_text",
+      "label": "Feature 2 Text",
+      "default": "Vibrant Colors"
+    },
+    {
+      "type": "text",
+      "id": "feature_3_text",
+      "label": "Feature 3 Text",
+      "default": "Hot Peel"
+    },
+    {
+      "type": "text",
+      "id": "feature_4_text",
+      "label": "Feature 4 Text",
+      "default": "Guaranteed 100 Washes"
+    },
+    {
+      "type": "header",
+      "content": "Upload Section"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_upload_section",
+      "label": "Show File Upload Box",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "upload_button_text",
+      "label": "Upload Button Text",
+      "default": "Upload Your Image"
+    },
+    {
+      "type": "header",
+      "content": "Pricing Table"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_pricing_table",
+      "label": "Show Gang Sheet Pricing Table",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "pricing_table_title",
+      "label": "Pricing Table Title",
+      "default": "DTF Gang Sheet Pricing"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "accordion",
+      "name": "Accordion Item",
+      "settings": [
+        {
+          "type": "text",
+          "id": "title",
+          "label": "Heading",
+          "default": "Product Details"
+        },
+        {
+          "type": "richtext",
+          "id": "content",
+          "label": "Content",
+          "default": "<p>Add your product details here.</p>"
+        }
+      ]
+    }
+  ]
+}
+{% endschema %}
+
+<!-- layout/theme.liquid CSS/Tailwind source -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          amazon: {
+            dark: '{{ settings.color_secondary | default: "#131921" }}',
+            light: '{{ settings.color_secondary | default: "#232f3e" }}',
+            orange: '{{ settings.color_primary | default: "#ff9900" }}',
+            yellow: '{{ settings.color_primary | default: "#febd69" }}',
+            link: '{{ settings.color_link | default: "#007185" }}',
+            'link-hover': '{{ settings.color_link | default: "#c45500" }}',
+            price: '{{ settings.color_price | default: "#B12704" }}',
+            success: '{{ settings.color_success | default: "#007600" }}',
+            error: '{{ settings.color_error | default: "#cc0c39" }}',
+            warning: '{{ settings.color_warning | default: "#e47911" }}',
+            border: '{{ settings.color_border | default: "#d5d9d9" }}'
+          }
+        },
+        fontFamily: {
+          amazon: ['{{ settings.font_body.family | default: "Arial" }}', 'sans-serif'],
+          heading: ['{{ settings.font_heading.family | default: "Arial" }}', 'sans-serif']
+        },
+        maxWidth: {
+          '2k': '2540px'
+        },
+        borderRadius: {
+          'theme': '{{ settings.border_radius | default: 4 }}px'
+        }
+      }
+    }
+  }
+</script>
+
+{%- assign body_font = settings.font_body -%}
+{%- assign heading_font = settings.font_heading -%}
+<style>
+  {{ body_font | font_face: font_display: 'swap' }}
+  {{ heading_font | font_face: font_display: 'swap' }}
+  #{{ section_dom_id }} {
+    font-family: {{ body_font.family | default: "Arial" }}, sans-serif;
+    font-size: {{ settings.font_size_base | default: 14 }}px;
+    color: {{ settings.color_text | default: "#0f1111" }};
+  }
+  #{{ section_dom_id }} h1, #{{ section_dom_id }} h2, #{{ section_dom_id }} h3, #{{ section_dom_id }} h4, #{{ section_dom_id }} h5, #{{ section_dom_id }} h6 {
+    font-family: {{ heading_font.family | default: "Arial" }}, sans-serif;
+  }
+  #{{ section_dom_id }} .hidden {
+    display: none;
+  }
+  #{{ section_dom_id }} .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  #{{ section_dom_id }} .ul-main-variant-row.bg-green-100 td {
+    background: #dcfce7;
+    color: #14532d;
+    font-weight: 700;
+  }
+</style>
