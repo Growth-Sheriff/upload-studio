@@ -4,6 +4,7 @@ import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
 import {
+  resolveSheetPricing,
   resolveSheetVariant,
   type BuilderResolveConfig,
   type ProductOptionDef,
@@ -49,7 +50,11 @@ interface ResolveRequestBody {
   productId?: string | number
   uploadId?: string
   quantity?: number | string
+  widthIn?: number | string | null
+  heightIn?: number | string | null
   selectedVariantId?: string | number | null
+  selectedSheetKey?: string | null
+  serviceOptionValues?: Record<string, string | number | boolean | null> | null
   artboardMarginIn?: number | string | null
   imageMarginIn?: number | string | null
   maxUploadWidth?: number | string | null
@@ -138,6 +143,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const productIdRaw = body.productId
     const quantity = Math.max(1, Math.floor(parsePositiveNumber(body.quantity) || 1))
     const selectedVariantId = body.selectedVariantId != null ? String(body.selectedVariantId) : null
+    const selectedSheetKey = body.selectedSheetKey != null ? String(body.selectedSheetKey) : null
 
     if (!shopDomain) {
       return corsJson({ error: 'Missing shopDomain' }, request, { status: 400 })
@@ -218,6 +224,18 @@ export async function action({ request }: ActionFunctionArgs) {
       )
     }
 
+    const requestedWidthIn = parsePositiveNumber(body.widthIn) || dimensions.widthIn
+    const requestedHeightIn = parsePositiveNumber(body.heightIn) || dimensions.heightIn
+    const serviceOptionValues =
+      body.serviceOptionValues && typeof body.serviceOptionValues === 'object'
+        ? Object.entries(body.serviceOptionValues).reduce<Record<string, string>>((acc, [key, value]) => {
+            const optionName = String(key || '').trim()
+            const optionValue = String(value || '').trim()
+            if (optionName && optionValue) acc[optionName] = optionValue
+            return acc
+          }, {})
+        : null
+
     const rawBuilderConfig = (productConfig?.builderConfig || {}) as Record<string, unknown>
     const effectiveConfig: BuilderResolveConfig & { maxWidthIn: number } = {
       sheetOptionName:
@@ -245,7 +263,7 @@ export async function action({ request }: ActionFunctionArgs) {
         DEFAULT_CONFIG.maxWidthIn,
     }
 
-    if (dimensions.widthIn > effectiveConfig.maxWidthIn + 0.001) {
+    if (requestedWidthIn > effectiveConfig.maxWidthIn + 0.001) {
       return corsJson(
         {
           error: `This file is too wide for this product. Maximum supported width is ${Math.round(
@@ -299,13 +317,26 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     })
 
-    const resolution = resolveSheetVariant({
-      widthIn: dimensions.widthIn,
-      heightIn: dimensions.heightIn,
+    const sheetPricing = resolveSheetPricing({
+      widthIn: requestedWidthIn,
+      heightIn: requestedHeightIn,
       quantity,
       variants,
       optionDefs,
       selectedVariantId,
+      selectedSheetKey,
+      serviceOptionValues,
+      config: effectiveConfig,
+    })
+    const resolution = resolveSheetVariant({
+      widthIn: requestedWidthIn,
+      heightIn: requestedHeightIn,
+      quantity,
+      variants,
+      optionDefs,
+      selectedVariantId,
+      selectedSheetKey,
+      serviceOptionValues,
       config: effectiveConfig,
     })
 
@@ -318,6 +349,7 @@ export async function action({ request }: ActionFunctionArgs) {
             fileName: firstItem?.originalName || '',
             ...dimensions,
           },
+          sheetPricing,
           config: effectiveConfig,
         },
         request,
@@ -333,6 +365,7 @@ export async function action({ request }: ActionFunctionArgs) {
           fileName: firstItem?.originalName || '',
           ...dimensions,
         },
+        sheetPricing,
         resolution,
         config: effectiveConfig,
       },
