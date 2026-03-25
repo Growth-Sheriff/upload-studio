@@ -291,7 +291,6 @@
     var detectedNote = root.querySelector('.ul-main-detected-note');
     var quantitySelect = root.querySelector('.ul-main-quantity');
     var addToCartBtn = root.querySelector('.ul-main-add-to-cart');
-    var buyBoxForm = root.querySelector('.ul-main-buybox-form');
     var hiddenVariantInput = root.querySelector('.ul-main-variant-input');
     var variantSelect = root.querySelector('.ul-main-variant-select');
     var productPrice = root.querySelector('.ul-main-product-price');
@@ -318,38 +317,6 @@
     function moneyFromCents(cents) {
       return '$' + ((Number(cents || 0) / 100).toFixed(2));
     }
-
-    function parseVariantSize(variant) {
-      var candidates = [];
-      if (variant && variant.title) candidates.push(variant.title);
-      if (variant && variant.option1) candidates.push(variant.option1);
-      if (variant && variant.option2 && variant.option3) candidates.push(String(variant.option2) + ' x ' + String(variant.option3));
-      if (variant && variant.option2) candidates.push(variant.option2);
-      for (var i = 0; i < candidates.length; i++) {
-        var normalized = String(candidates[i] || '').replace(/["“”]/g, '').replace(/\s+/g, ' ').trim();
-        var match = normalized.match(/(\d+(?:\.\d+)?)\s*(?:in|inch|inches)?\s*x\s*(\d+(?:\.\d+)?)/i);
-        if (!match) continue;
-        return { widthInch: parseFloat(match[1]), heightInch: parseFloat(match[2]) };
-      }
-      return null;
-    }
-
-    var variants = (productData.variants || []).map(function(variant) {
-      var size = parseVariantSize(variant);
-      return {
-        id: variant.id,
-        title: variant.title || '',
-        price: Number(variant.price || 0),
-        available: variant.available !== false,
-        widthInch: size ? size.widthInch : null,
-        heightInch: size ? size.heightInch : null
-      };
-    }).filter(function(variant) {
-      return variant.widthInch && variant.heightInch;
-    }).sort(function(a, b) {
-      if (a.widthInch !== b.widthInch) return a.widthInch - b.widthInch;
-      return a.heightInch - b.heightInch;
-    });
 
     function clearError() {
       if (!uploadError) return;
@@ -527,7 +494,10 @@
       if (uploadStatus) uploadStatus.textContent = '';
       setSelectedVariant(productData.selectedVariantId || null);
       clearError();
-      if (addToCartBtn) addToCartBtn.disabled = true;
+      if (addToCartBtn) {
+        addToCartBtn.disabled = true;
+        addToCartBtn.textContent = 'Add to Cart';
+      }
     }
 
     function updatePreview() {
