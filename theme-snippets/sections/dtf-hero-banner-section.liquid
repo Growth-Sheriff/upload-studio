@@ -1,0 +1,1775 @@
+{% comment %}
+  DTF Hero Banner Section
+  ------------------------------------------------------------------
+  Manual theme section that combines:
+  - Background image or background video
+  - Heading/subheading content inside the banner area
+  - Up to 4 foreground cards
+  - Each card can represent a product or a collection
+  - Each card can dispatch a different upload mode
+
+  Notes:
+  - Product cards use the selected product directly.
+  - Collection cards display the collection, but upload flows target:
+      1. linked_product, or
+      2. first product in the collection
+  - Assets are loaded from the app proxy, same approach as dtf-upload-section.
+{% endcomment %}
+
+{%- liquid
+  assign heading = section.settings.heading
+  assign subheading = section.settings.subheading
+  assign eyebrow = section.settings.eyebrow
+  assign asset_base = '/apps/customizer/api/ext-assets/'
+
+  assign has_upload_studio = false
+  assign has_dtf_by_size = false
+  assign has_auto_sheet = false
+  assign slide_count = 0
+  assign card_count = 0
+
+  for block in section.blocks
+    if block.type == 'banner_slide'
+      assign slide_count = slide_count | plus: 1
+    elsif block.type == 'hero_card'
+      assign card_count = card_count | plus: 1
+      if block.settings.upload_mode == 'upload_studio'
+        assign has_upload_studio = true
+      elsif block.settings.upload_mode == 'dtf_by_size'
+        assign has_dtf_by_size = true
+      elsif block.settings.upload_mode == 'auto_sheet'
+        assign has_auto_sheet = true
+      endif
+    endif
+  endfor
+
+  assign overlay_alpha = section.settings.overlay_opacity | times: 0.01
+  assign auto_rotate = section.settings.auto_rotate
+  assign rotate_speed = section.settings.rotate_speed | default: 5
+-%}
+
+{% comment %} Shared assets {% endcomment %}
+<link rel="stylesheet" href="{{ asset_base }}ul-common.css">
+
+{% if has_upload_studio %}
+  <link rel="stylesheet" href="{{ asset_base }}dtf-uploader.css">
+  <link rel="stylesheet" href="{{ asset_base }}ul-hide-defaults.css">
+  <link rel="stylesheet" href="{{ asset_base }}tshirt-modal.css">
+  <link rel="stylesheet" href="{{ asset_base }}confirmation-screen.css">
+{% endif %}
+
+{% if has_dtf_by_size %}
+  <link rel="stylesheet" href="{{ asset_base }}dtf-upload.css">
+{% endif %}
+
+{% if has_auto_sheet %}
+  <link rel="stylesheet" href="{{ asset_base }}ul-auto-sheet.css">
+{% endif %}
+
+<script>
+  window.ULCustomer = window.ULCustomer || {
+    id: {{ customer.id | default: 'null' }},
+    email: {{ customer.email | json | default: 'null' }}
+  };
+</script>
+<script src="{{ asset_base }}ul-state.js" defer></script>
+<script src="{{ asset_base }}ul-visitor.js" defer data-shop-domain="{{ shop.permanent_domain }}"></script>
+
+{% if has_upload_studio %}
+  <script src="{{ asset_base }}ul-remote-logger.js" defer></script>
+  <script src="{{ asset_base }}ul-hide-defaults.js" defer></script>
+  <script src="{{ asset_base }}ul-analytics.js" defer></script>
+  <script src="{{ asset_base }}ul-error-handler.js" defer></script>
+  <script src="{{ asset_base }}dtf-uploader.js" defer></script>
+  <script src="{{ asset_base }}tshirt-modal.js" defer></script>
+{% endif %}
+
+{% if has_dtf_by_size %}
+  <script src="{{ asset_base }}dtf-upload.js" defer></script>
+{% endif %}
+
+{% if has_auto_sheet %}
+  <script src="{{ asset_base }}ul-dimension-reader.js" defer></script>
+  <script src="{{ asset_base }}ul-nesting-engine.js" defer></script>
+  <script src="{{ asset_base }}ul-sheet-optimizer.js" defer></script>
+  <script src="{{ asset_base }}ul-sheet-simulator.js" defer></script>
+  <script src="{{ asset_base }}ul-auto-sheet.js" defer></script>
+{% endif %}
+
+<style>
+  #ul-hero-banner-{{ section.id }} {
+    --ul-hero-radius: 28px;
+    --ul-hero-shadow: 0 22px 70px rgba(15, 23, 42, 0.18);
+    --ul-card-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+    --ul-card-border: rgba(255, 255, 255, 0.28);
+    --ul-card-surface: rgba(255, 255, 255, 0.92);
+    --ul-card-text: #101828;
+    --ul-card-sub: #475467;
+    --ul-button-bg: linear-gradient(135deg, #111827 0%, #1f2937 100%);
+    --ul-button-hover: linear-gradient(135deg, #0f172a 0%, #111827 100%);
+    --ul-min-height: {{ section.settings.min_height }}px;
+
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 0 20px;
+    box-sizing: border-box;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__frame {
+    position: relative;
+    min-height: var(--ul-min-height);
+    border-radius: var(--ul-hero-radius);
+    overflow: hidden;
+    box-shadow: var(--ul-hero-shadow);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background:
+      radial-gradient(circle at top left, rgba(255, 255, 255, 0.16), transparent 36%),
+      linear-gradient(135deg, #0f172a 0%, #111827 55%, #1f2937 100%);
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__media,
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__overlay {
+    position: absolute;
+    inset: 0;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__picture {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__media img,
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__media picture img,
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__media video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__overlay {
+    background:
+      linear-gradient(180deg, rgba(15, 23, 42, 0.12) 0%, rgba(15, 23, 42, 0.45) 65%, rgba(15, 23, 42, 0.72) 100%),
+      {{ section.settings.overlay_color | color_modify: 'alpha', overlay_alpha }};
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__inner {
+    position: relative;
+    z-index: 1;
+    min-height: var(--ul-min-height);
+    padding: clamp(28px, 4vw, 44px);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 28px;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__intro {
+    max-width: 760px;
+    color: #ffffff;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    margin-bottom: 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(10px);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__title {
+    margin: 0;
+    font-size: clamp(30px, 4vw, 58px);
+    line-height: 0.98;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    text-wrap: balance;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__subtitle {
+    margin: 12px 0 0;
+    max-width: 62ch;
+    font-size: clamp(15px, 1.5vw, 19px);
+    line-height: 1.55;
+    color: rgba(255, 255, 255, 0.84);
+  }
+
+  /* ── Banner Slideshow ── */
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slides {
+    position: absolute;
+    inset: 0;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 0.8s ease;
+    pointer-events: none;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide--active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide-media {
+    position: absolute;
+    inset: 0;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__media-asset--mobile {
+    display: none;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide-media img,
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide-media picture img,
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide-media video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide-overlay {
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(180deg, rgba(15, 23, 42, 0.12) 0%, rgba(15, 23, 42, 0.45) 65%, rgba(15, 23, 42, 0.72) 100%),
+      {{ section.settings.overlay_color | color_modify: 'alpha', overlay_alpha }};
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide-content {
+    position: relative;
+    z-index: 1;
+    max-width: 760px;
+    color: #ffffff;
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: clamp(28px, 4vw, 44px);
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__dots {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    padding: 14px 0 0;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__spacer {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.6);
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+    transition: background 0.25s, border-color 0.25s, transform 0.25s;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__dot:hover {
+    border-color: #fff;
+    transform: scale(1.2);
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__dot--active {
+    background: #ffffff;
+    border-color: #ffffff;
+  }
+
+  /* ── Card Slider ── */
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slider-wrap {
+    position: relative;
+    transition: opacity 0.5s ease;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__grid {
+    display: flex;
+    gap: 18px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__grid::-webkit-scrollbar {
+    display: none;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__grid > * {
+    scroll-snap-align: start;
+    flex: 0 0 280px;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slider-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 3;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.92);
+    color: #111827;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, transform 0.2s, opacity 0.2s;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slider-wrap:hover .ul-hero-banner__slider-btn {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slider-btn:hover {
+    background: #ffffff;
+    transform: translateY(-50%) scale(1.08);
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slider-btn--prev {
+    left: -16px;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slider-btn--next {
+    right: -16px;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slider-btn[disabled] {
+    opacity: 0 !important;
+    pointer-events: none;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 308px;
+    min-width: 280px;
+    border-radius: 22px;
+    overflow: hidden;
+    background: var(--ul-card-surface);
+    border: 1px solid var(--ul-card-border);
+    box-shadow: var(--ul-card-shadow);
+    backdrop-filter: blur(16px);
+    transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease;
+    user-select: none;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__card--active {
+    border-color: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.45), 0 18px 40px rgba(15, 23, 42, 0.2);
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__card-media {
+    position: relative;
+    aspect-ratio: 4 / 3;
+    background: rgba(15, 23, 42, 0.12);
+    overflow: hidden;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__card-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.45s ease;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__card:hover .ul-hero-banner__card-media img {
+    transform: scale(1.06);
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(15, 23, 42, 0.26);
+    background:
+      linear-gradient(135deg, rgba(148, 163, 184, 0.16), rgba(255, 255, 255, 0.6));
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__card-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 10px;
+    padding: 18px 18px 18px;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__badge {
+    display: inline-flex;
+    width: fit-content;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.06);
+    color: var(--ul-card-sub);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__card-title {
+    margin: 0;
+    color: var(--ul-card-text);
+    font-size: 22px;
+    line-height: 1.04;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__card-copy {
+    margin: 0;
+    color: var(--ul-card-sub);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__meta {
+    margin-top: auto;
+    color: var(--ul-card-text);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    margin-top: 2px;
+    padding: 13px 16px;
+    border: none;
+    border-radius: 14px;
+    background: var(--ul-button-bg);
+    color: #ffffff;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    transition: background 0.25s ease, transform 0.2s ease, opacity 0.2s ease;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__action:hover:not(:disabled) {
+    background: var(--ul-button-hover);
+    transform: translateY(-1px);
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__action:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__empty {
+    flex: 0 0 100%;
+    padding: 34px 20px;
+    border-radius: 20px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.9);
+    background: rgba(15, 23, 42, 0.28);
+    border: 1px dashed rgba(255, 255, 255, 0.22);
+    backdrop-filter: blur(10px);
+  }
+
+  @media (max-width: 1100px) {
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__grid > * {
+      flex: 0 0 260px;
+    }
+  }
+
+  @media (max-width: 640px) {
+    #ul-hero-banner-{{ section.id }} {
+      padding: 0 12px;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__frame {
+      min-height: 420px;
+      border-radius: 24px;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__media-asset--desktop {
+      display: none;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__media-asset--mobile {
+      display: block;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__inner {
+      min-height: 420px;
+      padding: 14px 12px 12px;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__spacer {
+      flex: 0 0 88px;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__intro {
+      max-width: 84%;
+      margin-bottom: 0;
+      padding-top: 0;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide-content {
+      max-width: 84%;
+      justify-content: flex-start;
+      padding: 44px 16px 108px;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__eyebrow {
+      margin-bottom: 10px;
+      padding: 6px 12px;
+      font-size: 11px;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__title {
+      font-size: clamp(24px, 8vw, 36px);
+      line-height: 1.02;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__subtitle {
+      margin-top: 10px;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__grid {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      overflow: visible;
+      scroll-snap-type: none;
+      padding-bottom: 0;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__grid > * {
+      flex: 0 0 auto;
+      width: 100%;
+      min-width: 0;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__card {
+      min-height: 0;
+      min-width: 0;
+      flex-direction: row;
+      align-items: center;
+      border-radius: 18px;
+      backdrop-filter: blur(12px);
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__card-media {
+      display: none;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__card-body {
+      display: grid;
+      width: 100%;
+      grid-template-columns: minmax(0, 1fr) auto;
+      column-gap: 12px;
+      row-gap: 4px;
+      align-items: center;
+      padding: 12px 14px;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__badge,
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__card-copy,
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__meta {
+      display: none;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__card-title {
+      font-size: 16px;
+      line-height: 1.15;
+      grid-column: 1;
+      align-self: center;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__action {
+      grid-column: 2;
+      width: auto;
+      margin: 0;
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__action svg {
+      display: none;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__dots {
+      justify-content: flex-start;
+      padding: 0 0 2px;
+    }
+
+    #ul-hero-banner-{{ section.id }} .ul-hero-banner__slider-btn {
+      display: none;
+    }
+  }
+</style>
+
+<section id="ul-hero-banner-{{ section.id }}">
+  <div class="ul-hero-banner__frame">
+
+    {% if slide_count > 0 %}
+      {%- comment -%} Multi-slide mode {%- endcomment -%}
+      <div class="ul-hero-banner__slides">
+        {%- assign slide_idx = 0 -%}
+        {% for block in section.blocks %}
+          {% if block.type == 'banner_slide' %}
+          <div class="ul-hero-banner__slide{% if slide_idx == 0 %} ul-hero-banner__slide--active{% endif %}" data-slide-index="{{ slide_idx }}" {{ block.shopify_attributes }}>
+            <div class="ul-hero-banner__slide-media" aria-hidden="true">
+              {% if block.settings.slide_mode == 'video' and block.settings.slide_video_url != blank %}
+                <video class="ul-hero-banner__media-asset--desktop" autoplay muted loop playsinline preload="metadata"
+                  {% if block.settings.slide_poster != blank %}poster="{{ block.settings.slide_poster | image_url: width: 2000 }}"{% endif %}
+                >
+                  <source src="{{ block.settings.slide_video_url }}" type="video/mp4">
+                </video>
+                {% if block.settings.slide_mobile_image != blank %}
+                  <img
+                    class="ul-hero-banner__media-asset--mobile"
+                    src="{{ block.settings.slide_mobile_image | image_url: width: 900 }}"
+                    alt="{{ block.settings.slide_heading | escape }}"
+                    loading="{% if slide_idx == 0 %}eager{% else %}lazy{% endif %}"
+                    width="900"
+                    height="1200"
+                  >
+                {% endif %}
+              {% elsif block.settings.slide_image != blank or block.settings.slide_mobile_image != blank %}
+                <picture class="ul-hero-banner__picture">
+                  {% if block.settings.slide_mobile_image != blank %}
+                    <source media="(max-width: 640px)" srcset="{{ block.settings.slide_mobile_image | image_url: width: 900 }}">
+                  {% endif %}
+                  <img
+                    src="{% if block.settings.slide_image != blank %}{{ block.settings.slide_image | image_url: width: 2000 }}{% else %}{{ block.settings.slide_mobile_image | image_url: width: 900 }}{% endif %}"
+                    alt="{{ block.settings.slide_heading | escape }}"
+                    loading="{% if slide_idx == 0 %}eager{% else %}lazy{% endif %}"
+                    width="2000" height="1200"
+                  >
+                </picture>
+              {% endif %}
+            </div>
+            {% if block.settings.slide_image != blank or block.settings.slide_mobile_image != blank or block.settings.slide_video_url != blank %}
+              <div class="ul-hero-banner__slide-overlay"></div>
+            {% endif %}
+            <div class="ul-hero-banner__slide-content">
+              {% if block.settings.slide_eyebrow != blank %}
+                <div class="ul-hero-banner__eyebrow">{{ block.settings.slide_eyebrow }}</div>
+              {% endif %}
+              {% if block.settings.slide_heading != blank %}
+                <h2 class="ul-hero-banner__title">{{ block.settings.slide_heading }}</h2>
+              {% endif %}
+              {% if block.settings.slide_subheading != blank %}
+                <p class="ul-hero-banner__subtitle">{{ block.settings.slide_subheading }}</p>
+              {% endif %}
+            </div>
+          </div>
+          {%- assign slide_idx = slide_idx | plus: 1 -%}
+          {% endif %}
+        {% endfor %}
+      </div>
+
+    {% else %}
+      {%- comment -%} Fallback: section-level single background {%- endcomment -%}
+      <div class="ul-hero-banner__media" aria-hidden="true">
+        {% if section.settings.background_mode == 'video' and section.settings.background_video_url != blank %}
+          <video class="ul-hero-banner__media-asset--desktop" autoplay muted loop playsinline preload="metadata"
+            {% if section.settings.background_poster != blank %}poster="{{ section.settings.background_poster | image_url: width: 2000 }}"{% endif %}
+          >
+            <source src="{{ section.settings.background_video_url }}" type="video/mp4">
+          </video>
+          {% if section.settings.background_mobile_image != blank %}
+            <img
+              class="ul-hero-banner__media-asset--mobile"
+              src="{{ section.settings.background_mobile_image | image_url: width: 900 }}"
+              alt="{{ heading | escape }}"
+              loading="lazy"
+              width="900"
+              height="1200"
+            >
+          {% endif %}
+        {% elsif section.settings.background_image != blank or section.settings.background_mobile_image != blank %}
+          <picture class="ul-hero-banner__picture">
+            {% if section.settings.background_mobile_image != blank %}
+              <source media="(max-width: 640px)" srcset="{{ section.settings.background_mobile_image | image_url: width: 900 }}">
+            {% endif %}
+            <img
+              src="{% if section.settings.background_image != blank %}{{ section.settings.background_image | image_url: width: 2000 }}{% else %}{{ section.settings.background_mobile_image | image_url: width: 900 }}{% endif %}"
+              alt="{{ heading | escape }}"
+              loading="lazy"
+              width="2000" height="1200"
+            >
+          </picture>
+        {% endif %}
+      </div>
+      {% if section.settings.background_image != blank or section.settings.background_mobile_image != blank or section.settings.background_video_url != blank %}
+        <div class="ul-hero-banner__overlay"></div>
+      {% endif %}
+    {% endif %}
+
+    <div class="ul-hero-banner__inner">
+      {% if slide_count == 0 %}
+        {% if eyebrow != blank or heading != blank or subheading != blank %}
+          <div class="ul-hero-banner__intro">
+            {% if eyebrow != blank %}
+              <div class="ul-hero-banner__eyebrow">{{ eyebrow }}</div>
+            {% endif %}
+            {% if heading != blank %}
+              <h2 class="ul-hero-banner__title">{{ heading }}</h2>
+            {% endif %}
+            {% if subheading != blank %}
+              <p class="ul-hero-banner__subtitle">{{ subheading }}</p>
+            {% endif %}
+          </div>
+        {% endif %}
+      {% else %}
+        {%- comment -%} Spacer for slide content area + dots {%- endcomment -%}
+        <div class="ul-hero-banner__spacer"></div>
+        {% if slide_count > 1 %}
+          <div class="ul-hero-banner__dots">
+            {%- assign dot_idx = 0 -%}
+            {% for block in section.blocks %}
+              {% if block.type == 'banner_slide' %}
+                <button type="button" class="ul-hero-banner__dot{% if dot_idx == 0 %} ul-hero-banner__dot--active{% endif %}" data-slide-goto="{{ dot_idx }}" aria-label="Slide {{ dot_idx | plus: 1 }}"></button>
+                {%- assign dot_idx = dot_idx | plus: 1 -%}
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endif %}
+
+      <div class="ul-hero-banner__slider-wrap">
+        <button type="button" class="ul-hero-banner__slider-btn ul-hero-banner__slider-btn--prev" aria-label="Previous" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+        <button type="button" class="ul-hero-banner__slider-btn ul-hero-banner__slider-btn--next" aria-label="Next">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg>
+        </button>
+        <div class="ul-hero-banner__grid">
+        {% for block in section.blocks %}
+          {% if block.type == 'hero_card' %}
+          {%- liquid
+            assign card_type = block.settings.card_type | default: 'product'
+            assign mode = block.settings.upload_mode | default: 'upload_studio'
+            assign button_text = block.settings.button_text | default: 'Upload Design'
+
+            assign display_title = blank
+            assign display_copy = block.settings.card_copy
+            assign display_meta = blank
+            assign display_image = block.settings.card_image
+            assign target_product = blank
+            assign card_ready = true
+
+            if block.settings.product != blank
+              assign product_item = block.settings.product
+              assign target_product = product_item
+              assign display_title = product_item.title
+              assign display_meta = product_item.price | money_without_trailing_zeros
+
+              if display_image == blank and product_item.featured_image != blank
+                assign display_image = product_item.featured_image
+              endif
+            endif
+
+            if block.settings.collection != blank
+              assign collection_item = block.settings.collection
+              assign collection_first_product = collection_item.products | first
+
+              if display_title == blank
+                assign display_title = collection_item.title
+              endif
+              if display_meta == blank
+                assign display_meta = 'Collection'
+              endif
+
+              if target_product == blank
+                if block.settings.linked_product != blank
+                  assign target_product = block.settings.linked_product
+                elsif collection_first_product != blank
+                  assign target_product = collection_first_product
+                endif
+              endif
+
+              if display_image == blank and collection_item.image != blank
+                assign display_image = collection_item.image
+              elsif display_image == blank and collection_first_product != blank and collection_first_product.featured_image != blank
+                assign display_image = collection_first_product.featured_image
+              endif
+            endif
+
+            if block.settings.title_override != blank
+              assign display_title = block.settings.title_override
+            endif
+
+            if display_title == blank
+              assign display_title = 'Hero Card'
+            endif
+
+            if display_copy == blank
+              if card_type == 'product'
+                assign display_copy = 'Choose this product and start your upload flow directly from the banner.'
+              else
+                assign display_copy = 'Display a collection card and route uploads through its linked product.'
+              endif
+            endif
+
+            assign action_disabled = false
+            if target_product == blank and mode != 'redirect' and mode != 'builder'
+              assign action_disabled = true
+            endif
+          -%}
+
+            <article class="ul-hero-banner__card" data-card-id="{{ block.id }}" {{ block.shopify_attributes }}>
+              <div class="ul-hero-banner__card-media">
+                {% if display_image != blank %}
+                  <img
+                    src="{{ display_image | image_url: width: 960 }}"
+                    alt="{{ display_title | escape }}"
+                    loading="lazy"
+                    width="960"
+                    height="720"
+                  >
+                {% else %}
+                  <div class="ul-hero-banner__placeholder">
+                    <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.25">
+                      <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                      <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                      <path d="M21 15l-5-5L5 21"></path>
+                    </svg>
+                  </div>
+                {% endif %}
+              </div>
+
+              <div class="ul-hero-banner__card-body">
+                <div class="ul-hero-banner__badge">{% if card_type == 'product' %}Product{% else %}Collection{% endif %}</div>
+                <h3 class="ul-hero-banner__card-title">{{ display_title }}</h3>
+                <p class="ul-hero-banner__card-copy">{{ display_copy }}</p>
+                <div class="ul-hero-banner__meta">{{ display_meta }}</div>
+                <button
+                  type="button"
+                  class="ul-hero-banner__action"
+                  data-slot-id="{{ block.id }}"
+                  data-upload-mode="{{ mode }}"
+                  {% if action_disabled %}disabled{% endif %}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                  </svg>
+                  <span>{{ button_text }}</span>
+                </button>
+              </div>
+            </article>
+          {% endif %}
+        {% endfor %}
+
+        {% if card_count == 0 %}
+          <div class="ul-hero-banner__empty">
+            Add Hero Card blocks from the section settings.
+          </div>
+        {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% if has_dtf_by_size %}
+  <div
+    id="dtf-upload-root"
+    style="display:none"
+    data-shop-domain="{{ shop.permanent_domain }}"
+    data-api-base="/apps/customizer"
+    data-max-width="22"
+    data-max-height="36"
+    data-min-width="1"
+    data-min-height="1"
+    data-max-file-mb="500"
+    data-formats='["PNG","JPG","JPEG","SVG","PSD","AI","EPS","PDF","TIFF","WEBP"]'
+    data-currency="{{ cart.currency.iso_code }}"
+    data-enable-fitcheck="true"
+  >
+    <div class="dtf-dropzone" id="dtf-trigger-zone" style="display:none">
+      <button class="dtf-upload-trigger" type="button" style="display:none">U</button>
+    </div>
+  </div>
+
+  <div id="dtf-modal" class="dtf-modal" role="dialog" aria-modal="true" hidden>
+    <div class="dtf-modal__backdrop"></div>
+    <div class="dtf-modal__container">
+      <header class="dtf-modal__header">
+        <div style="display:flex;align-items:center;gap:12px;flex:1;">
+          <button class="dtf-btn dtf-btn--primary dtf-modal__uploads-btn" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            Uploads
+          </button>
+          <span id="dtf-modal-product-title" style="font-size:14px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></span>
+        </div>
+        <button class="dtf-modal__close" type="button" aria-label="Close">&#x2715;</button>
+      </header>
+      <div class="dtf-modal__body" id="dtf-modal-body"></div>
+      <footer class="dtf-modal__footer">
+        <button class="dtf-btn dtf-btn--primary dtf-btn--lg dtf-modal__add-to-cart" type="button" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="9" cy="21" r="1"></circle>
+            <circle cx="20" cy="21" r="1"></circle>
+            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+          </svg>
+          Add To Cart
+        </button>
+      </footer>
+    </div>
+  </div>
+{% endif %}
+
+{% if has_upload_studio %}
+  <style>
+    .ul-studio-modal { position:fixed; inset:0; z-index:999999; display:none; align-items:center; justify-content:center; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+    .ul-studio-modal.active { display:flex; }
+    .ul-studio-modal__backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); }
+    .ul-studio-modal__container { position:relative; width:95vw; max-width:680px; max-height:90vh; background:#fff; border-radius:12px; box-shadow:0 25px 60px rgba(0,0,0,0.3); display:flex; flex-direction:column; overflow:hidden; }
+    .ul-studio-modal__header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid #e5e7eb; }
+    .ul-studio-modal__title { font-size:16px; font-weight:600; margin:0; }
+    .ul-studio-modal__close { background:none; border:none; font-size:22px; cursor:pointer; padding:4px 8px; color:#6b7280; border-radius:6px; }
+    .ul-studio-modal__close:hover { background:#f3f4f6; color:#111827; }
+    .ul-studio-modal__body { flex:1; overflow-y:auto; padding:0; }
+    .ul-studio-modal__body .ul-dtf-uploader { padding:20px; }
+  </style>
+
+  <div id="ul-studio-modal" class="ul-studio-modal">
+    <div class="ul-studio-modal__backdrop" id="ul-studio-backdrop"></div>
+    <div class="ul-studio-modal__container">
+      <div class="ul-studio-modal__header">
+        <h3 class="ul-studio-modal__title" id="ul-studio-modal-title">Upload Your Design</h3>
+        <button class="ul-studio-modal__close" id="ul-studio-modal-close" type="button" aria-label="Close">&#x2715;</button>
+      </div>
+      <div class="ul-studio-modal__body" id="ul-studio-modal-body"></div>
+    </div>
+  </div>
+{% endif %}
+
+{% if has_auto_sheet %}
+  <div id="ul-auto-sheet-root" style="display:none"
+    data-shop-domain="{{ shop.permanent_domain }}"
+    data-asset-base="{{ asset_base }}"
+  ></div>
+{% endif %}
+
+<script type="application/json" id="ul-hero-slot-data-{{ section.id }}">
+[
+{%- assign first_slot_json = true -%}
+{% for block in section.blocks %}
+{% if block.type == 'hero_card' %}
+  {%- liquid
+    assign card_type = block.settings.card_type | default: 'product'
+    assign mode = block.settings.upload_mode | default: 'upload_studio'
+    assign slot_url = blank
+    assign target_product = blank
+    assign slot_valid = false
+
+    if block.settings.product != blank
+      assign product_item = block.settings.product
+      assign target_product = product_item
+      assign slot_url = product_item.url
+      assign slot_valid = true
+    endif
+
+    if block.settings.collection != blank
+      assign collection_item = block.settings.collection
+      assign collection_first_product = collection_item.products | first
+      assign slot_valid = true
+
+      if slot_url == blank
+        assign slot_url = collection_item.url
+      endif
+
+      if target_product == blank
+        if block.settings.linked_product != blank
+          assign target_product = block.settings.linked_product
+        elsif collection_first_product != blank
+          assign target_product = collection_first_product
+        endif
+      endif
+    endif
+  -%}
+
+  {% if slot_valid %}
+    {% unless first_slot_json %},{% endunless %}
+    {
+      "id": {{ block.id | json }},
+      "entityType": {{ card_type | json }},
+      "mode": {{ mode | json }},
+      "fallbackUrl": {{ slot_url | json }},
+      "target": {% if target_product != blank %}{
+        "id": {{ target_product.id }},
+        "handle": {{ target_product.handle | json }},
+        "title": {{ target_product.title | json }},
+        "url": {{ target_product.url | json }},
+        "options": {{ target_product.options_with_values | json }},
+        "variants": {{ target_product.variants | json }},
+        "metafields": {
+          "tiers": {{ target_product.metafields.dtf_app.volume_discount_tiers.value | json | default: 'null' }},
+          "max_width": {{ target_product.metafields.dtf_app.max_width_in.value | default: 22 }},
+          "max_height": {{ target_product.metafields.dtf_app.max_height_in.value | default: 36 }}
+        }
+      }{% else %}null{% endif %}
+    }
+    {%- assign first_slot_json = false -%}
+  {% endif %}
+{% endif %}
+{% endfor %}
+]
+</script>
+
+<script>
+;(function() {
+  'use strict';
+
+  var sectionId = {{ section.id | json }};
+  var root = document.getElementById('ul-hero-banner-' + sectionId);
+  if (!root) return;
+
+  var SHOP_DOMAIN = {{ shop.permanent_domain | json }};
+  var API_BASE = '/apps/customizer';
+
+  function getSlots() {
+    try {
+      var el = document.getElementById('ul-hero-slot-data-' + sectionId);
+      return el ? JSON.parse(el.textContent) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function getSlot(slotId) {
+    var slots = getSlots();
+    for (var i = 0; i < slots.length; i++) {
+      if (String(slots[i].id) === String(slotId)) return slots[i];
+    }
+    return null;
+  }
+
+  function highlightCard(slotId) {
+    var cards = root.querySelectorAll('.ul-hero-banner__card');
+    for (var i = 0; i < cards.length; i++) {
+      cards[i].classList.remove('ul-hero-banner__card--active');
+    }
+
+    var activeCard = root.querySelector('[data-card-id="' + slotId + '"]');
+    if (activeCard) activeCard.classList.add('ul-hero-banner__card--active');
+  }
+
+  function openUploadStudio(target, fallbackUrl) {
+    if (!target || !target.id) {
+      if (fallbackUrl) window.location.href = fallbackUrl;
+      return;
+    }
+
+    if (typeof window.ULDTFUploader === 'undefined') {
+      window.location.href = target.url || ('/products/' + target.handle);
+      return;
+    }
+
+    var productId = target.id;
+    var productTitle = target.title || '';
+    var variants = target.variants || [];
+    var variantJson = JSON.stringify(variants);
+    var firstVariant = variants.length ? variants[0] : { id: '', title: '-', price: 0 };
+
+    var existingContainer = document.getElementById('ul-dtf-' + productId);
+    if (existingContainer) existingContainer.remove();
+
+    var modalBody = document.getElementById('ul-studio-modal-body');
+    if (modalBody) modalBody.innerHTML = '';
+
+    var containerHtml = '' +
+      '<div id="ul-dtf-' + productId + '" class="ul-dtf-uploader"' +
+      ' data-api-base="/apps/customizer"' +
+      ' data-shop-domain="' + SHOP_DOMAIN + '"' +
+      ' data-product-id="' + productId + '"' +
+      ' data-product-title="' + (productTitle || '').replace(/"/g, '&quot;') + '">' +
+      '<div class="ul-loading active" id="ul-loading-' + productId + '"><div class="ul-loading-spinner"></div><div>Loading configuration...</div></div>' +
+      '<div class="ul-error" id="ul-error-' + productId + '">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>' +
+        '<span id="ul-error-text-' + productId + '"></span>' +
+      '</div>' +
+      '<div id="ul-content-' + productId + '" style="display:none;">' +
+        '<div class="ul-section" id="ul-upload-section-' + productId + '">' +
+          '<div class="ul-section-header ul-section-header--centered">' +
+            '<span class="ul-step-badge ul-step-badge--glow" id="ul-step-1-' + productId + '">1</span>' +
+            '<span class="ul-section-title ul-section-title--hero">Upload Your Design</span>' +
+          '</div>' +
+          '<div class="ul-dropzone" id="ul-dropzone-' + productId + '">' +
+            '<input type="file" id="ul-file-input-' + productId + '" accept=".png,.jpg,.jpeg,.webp,.tiff,.tif,.psd,.svg,.pdf,.ai,.eps">' +
+            '<svg class="ul-dropzone-icon ul-bounce-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4m0 0L8 8m4-4l4 4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+            '<div class="ul-dropzone-text ul-pulse-text">Drag & drop your design here</div>' +
+            '<div class="ul-dropzone-hint">or click to browse - PNG, JPG, WEBP, TIFF, PSD, PDF, AI, EPS</div>' +
+          '</div>' +
+          '<div class="ul-upload-progress" id="ul-progress-' + productId + '">' +
+            '<div class="ul-progress-bar"><div class="ul-progress-fill" id="ul-progress-fill-' + productId + '"></div></div>' +
+            '<div class="ul-progress-info"><div class="ul-progress-text" id="ul-progress-text-' + productId + '">Uploading...</div>' +
+              '<button type="button" class="ul-cancel-upload" id="ul-cancel-upload-' + productId + '" title="Cancel Upload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M18 6L6 18M6 6l12 12" stroke-linecap="round"/></svg>Cancel</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="ul-file-preview" id="ul-preview-' + productId + '">' +
+            '<img class="ul-file-thumb" id="ul-thumb-' + productId + '" src="" alt="Preview" width="72" height="72">' +
+            '<div class="ul-file-info">' +
+              '<div class="ul-file-name" id="ul-filename-' + productId + '"></div>' +
+              '<div class="ul-file-meta" id="ul-filemeta-' + productId + '"></div>' +
+              '<div class="ul-file-status" id="ul-filestatus-' + productId + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Ready</span></div>' +
+            '</div>' +
+            '<button type="button" class="ul-file-remove" id="ul-remove-' + productId + '" aria-label="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12" stroke-linecap="round"/></svg></button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="ul-section" id="ul-options-section-' + productId + '">' +
+          '<div class="ul-section-header"><span class="ul-step-badge" id="ul-step-2-' + productId + '">2</span><span class="ul-section-title">Select Options</span></div>' +
+          '<div class="ul-selected-variant-display" id="ul-selected-variant-' + productId + '">' +
+            '<span class="ul-variant-name-display" id="ul-variant-name-' + productId + '">' + (firstVariant.title || '-') + '</span>' +
+            '<span class="ul-variant-price-display" id="ul-variant-price-' + productId + '"></span>' +
+          '</div>' +
+          '<input type="hidden" id="ul-size-select-' + productId + '" value="' + (firstVariant.id || '') + '" data-price-raw="' + (firstVariant.price || 0) + '">' +
+        '</div>' +
+        '<script type="application/json" id="ul-variants-json-' + productId + '">' + variantJson + '<\/script>' +
+        '<div class="ul-section" id="ul-qty-section-' + productId + '">' +
+          '<div class="ul-section-header"><span class="ul-step-badge" id="ul-step-3-' + productId + '">3</span><span class="ul-section-title">Quantity</span></div>' +
+          '<div class="ul-quantity-row"><div class="ul-quantity-control">' +
+            '<button type="button" class="ul-qty-btn" id="ul-qty-minus-' + productId + '">-</button>' +
+            '<input type="number" class="ul-qty-input" id="ul-qty-input-' + productId + '" value="1" min="1" max="999">' +
+            '<button type="button" class="ul-qty-btn" id="ul-qty-plus-' + productId + '">+</button>' +
+          '</div><div class="ul-bulk-hint" id="ul-bulk-hint-' + productId + '" style="display:none;"><span>Bulk discount!</span></div></div>' +
+        '</div>' +
+        '<div class="ul-section" id="ul-questions-section-' + productId + '" style="display:none;">' +
+          '<div class="ul-section-header"><span class="ul-step-badge" id="ul-step-4-' + productId + '">4</span><span class="ul-section-title">Additional Options</span></div>' +
+          '<div class="ul-questions-container" id="ul-questions-' + productId + '"></div>' +
+        '</div>' +
+        '<div class="ul-divider"></div>' +
+        '<div class="ul-price-summary" id="ul-price-summary-' + productId + '">' +
+          '<div class="ul-price-row"><span class="ul-price-label">Size (<span id="ul-selected-size-' + productId + '">-</span>)</span><span class="ul-price-value" id="ul-unit-price-' + productId + '">$0.00</span></div>' +
+          '<div class="ul-price-row"><span class="ul-price-label">Quantity</span><span class="ul-price-value">x <span id="ul-qty-display-' + productId + '">1</span></span></div>' +
+          '<div class="ul-price-row ul-price-total"><span class="ul-price-label">Total</span><span class="ul-price-value ul-price-total" id="ul-total-price-' + productId + '">$0.00</span></div>' +
+        '</div>' +
+        '<div class="ul-buttons-stack">' +
+          '<button type="button" class="ul-btn ul-btn-secondary" id="ul-tshirt-btn-' + productId + '" style="display:none;" disabled><span>I want this on a T-Shirt too!</span></button>' +
+          '<button type="button" class="ul-btn ul-btn-primary" id="ul-add-cart-' + productId + '" disabled>' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>' +
+            '<span class="ul-btn-text">Add to Cart</span><span class="ul-btn-price" id="ul-btn-price-' + productId + '"></span>' +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+      '<input type="hidden" id="ul-upload-id-' + productId + '" value="">' +
+      '<input type="hidden" id="ul-upload-url-' + productId + '" value="">' +
+      '<input type="hidden" id="ul-thumbnail-url-' + productId + '" value="">' +
+    '</div>';
+
+    if (modalBody) {
+      modalBody.innerHTML = containerHtml;
+    } else {
+      document.body.insertAdjacentHTML('beforeend', containerHtml);
+    }
+
+    window.ULDTFUploader.init(productId);
+
+    var studioModal = document.getElementById('ul-studio-modal');
+    var modalTitle = document.getElementById('ul-studio-modal-title');
+    if (studioModal) {
+      studioModal.classList.add('active');
+      document.body.style.overflow = 'hidden';
+      if (modalTitle) modalTitle.textContent = productTitle || 'Upload Your Design';
+    }
+
+    function closeStudioModal() {
+      if (studioModal) {
+        studioModal.classList.remove('active');
+        document.body.style.overflow = '';
+      }
+    }
+
+    var closeBtn = document.getElementById('ul-studio-modal-close');
+    var backdrop = document.getElementById('ul-studio-backdrop');
+    if (closeBtn) closeBtn.onclick = closeStudioModal;
+    if (backdrop) backdrop.onclick = closeStudioModal;
+  }
+
+  function openDtfBySize(target, fallbackUrl) {
+    if (!target || !target.id) {
+      if (fallbackUrl) window.location.href = fallbackUrl;
+      return;
+    }
+
+    var uploadRoot = document.getElementById('dtf-upload-root');
+    if (!uploadRoot) {
+      window.location.href = target.url || ('/products/' + target.handle);
+      return;
+    }
+
+    uploadRoot.setAttribute('data-product-id', target.id);
+    uploadRoot.setAttribute('data-product-title', target.title || '');
+    uploadRoot.setAttribute('data-product-variants', JSON.stringify(target.variants || []));
+    uploadRoot.setAttribute('data-product-options', JSON.stringify(target.options || []));
+    uploadRoot.removeAttribute('data-initialized');
+
+    var dtfModalTitle = document.getElementById('dtf-modal-product-title');
+    if (dtfModalTitle) dtfModalTitle.textContent = target.title || '';
+
+    if (target.metafields) {
+      uploadRoot.setAttribute('data-max-width', String(target.metafields.max_width || 22));
+      uploadRoot.setAttribute('data-max-height', String(target.metafields.max_height || 36));
+      if (target.metafields.tiers) {
+        uploadRoot.setAttribute('data-tiers', JSON.stringify(target.metafields.tiers));
+      }
+    }
+
+    if (window.dtfBlock) {
+      window.dtfBlock.files = [];
+      window.dtfBlock.activeFileIndex = -1;
+      window.dtfBlock.state = 'IDLE';
+      window.dtfBlock = null;
+    }
+
+    var config = {
+      productId: target.id,
+      productTitle: target.title || '',
+      shopDomain: SHOP_DOMAIN,
+      apiBase: API_BASE,
+      maxWidth: parseFloat(uploadRoot.getAttribute('data-max-width')) || 22,
+      maxHeight: parseFloat(uploadRoot.getAttribute('data-max-height')) || 36,
+      minWidth: parseFloat(uploadRoot.getAttribute('data-min-width')) || 1,
+      minHeight: parseFloat(uploadRoot.getAttribute('data-min-height')) || 1,
+      maxFileMb: parseInt(uploadRoot.getAttribute('data-max-file-mb'), 10) || 500,
+      formats: uploadRoot.getAttribute('data-formats'),
+      tiers: uploadRoot.getAttribute('data-tiers'),
+      productVariants: target.variants || [],
+      productOptions: target.options || [],
+      currency: uploadRoot.getAttribute('data-currency') || 'USD',
+      enableFitcheck: uploadRoot.getAttribute('data-enable-fitcheck') !== 'false'
+    };
+
+    if (typeof window.DtfUploadBlock !== 'undefined') {
+      window.dtfBlock = new window.DtfUploadBlock(config);
+      window.dtfBlock.fetchConfigFallback();
+      if (window.dtfBlock.fileInput) {
+        window.dtfBlock.fileInput.click();
+      }
+      return;
+    }
+
+    window.location.href = target.url || ('/products/' + target.handle);
+  }
+
+  function openAutoSheet(target, fallbackUrl) {
+    if (!target || !target.id) {
+      if (fallbackUrl) window.location.href = fallbackUrl;
+      return;
+    }
+
+    if (typeof window.ULAutoSheet === 'undefined') {
+      window.location.href = target.url || ('/products/' + target.handle);
+      return;
+    }
+
+    if (!window.ULAutoSheet.isEnabled()) {
+      window.ULAutoSheet.init({ enabled: true });
+    }
+
+    var fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.png,.jpg,.jpeg,.webp,.tiff,.tif,.psd,.pdf,.ai,.eps';
+    fileInput.style.display = 'none';
+    document.body.appendChild(fileInput);
+
+    fileInput.addEventListener('change', function() {
+      if (!fileInput.files || !fileInput.files[0]) return;
+
+      var variants = target.variants || [];
+      window.ULAutoSheet.openModal({
+        file: fileInput.files[0],
+        variants: variants,
+        productId: target.id,
+        shopDomain: SHOP_DOMAIN,
+        quantity: 1,
+        onSelect: function(result) {
+          if (result && result.variantId) {
+            fetch('/cart/add.js', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: result.variantId,
+                quantity: result.sheetsNeeded || 1
+              })
+            }).then(function() {
+              window.location.href = '/cart';
+            });
+          }
+        }
+      });
+
+      document.body.removeChild(fileInput);
+    });
+
+    fileInput.click();
+  }
+
+  function handleClick(e) {
+    e.preventDefault();
+
+    var btn = e.currentTarget;
+    var slotId = btn.getAttribute('data-slot-id');
+    var slot = getSlot(slotId);
+    if (!slot) return;
+
+    highlightCard(slotId);
+
+    var mode = slot.mode || btn.getAttribute('data-upload-mode') || 'upload_studio';
+    var fallbackUrl = slot.fallbackUrl || '/';
+    var target = slot.target;
+
+    if (mode === 'redirect') {
+      window.location.href = slot.entityType === 'collection' ? fallbackUrl : (target && target.url ? target.url : fallbackUrl);
+      return;
+    }
+
+    if (mode === 'builder') {
+      window.location.href = target && target.url ? target.url : fallbackUrl;
+      return;
+    }
+
+    if (!target || !target.id) {
+      if (fallbackUrl) {
+        window.location.href = fallbackUrl;
+      } else {
+        alert('Please configure a linked product for this card.');
+      }
+      return;
+    }
+
+    if (mode === 'upload_studio') {
+      openUploadStudio(target, fallbackUrl);
+      return;
+    }
+
+    if (mode === 'dtf_by_size') {
+      openDtfBySize(target, fallbackUrl);
+      return;
+    }
+
+    if (mode === 'auto_sheet') {
+      openAutoSheet(target, fallbackUrl);
+    }
+  }
+
+  function initSlider() {
+    var wrap = root.querySelector('.ul-hero-banner__slider-wrap');
+    if (!wrap) return;
+
+    var track = wrap.querySelector('.ul-hero-banner__grid');
+    var prevBtn = wrap.querySelector('.ul-hero-banner__slider-btn--prev');
+    var nextBtn = wrap.querySelector('.ul-hero-banner__slider-btn--next');
+    if (!track) return;
+
+    function updateArrows() {
+      if (!prevBtn || !nextBtn) return;
+      var sl = track.scrollLeft;
+      var maxScroll = track.scrollWidth - track.clientWidth;
+      prevBtn.disabled = sl <= 2;
+      nextBtn.disabled = sl >= maxScroll - 2;
+    }
+
+    function scrollBy(dir) {
+      var cardW = 298;
+      track.scrollBy({ left: dir * cardW, behavior: 'smooth' });
+    }
+
+    if (prevBtn) prevBtn.addEventListener('click', function() { scrollBy(-1); });
+    if (nextBtn) nextBtn.addEventListener('click', function() { scrollBy(1); });
+    track.addEventListener('scroll', updateArrows, { passive: true });
+
+    var isDragging = false;
+    var startX = 0;
+    var scrollStart = 0;
+
+    track.addEventListener('mousedown', function(e) {
+      isDragging = true;
+      startX = e.pageX;
+      scrollStart = track.scrollLeft;
+      track.style.cursor = 'grabbing';
+      track.style.scrollBehavior = 'auto';
+    });
+
+    document.addEventListener('mousemove', function(e) {
+      if (!isDragging) return;
+      e.preventDefault();
+      var dx = e.pageX - startX;
+      track.scrollLeft = scrollStart - dx;
+    });
+
+    document.addEventListener('mouseup', function() {
+      if (!isDragging) return;
+      isDragging = false;
+      track.style.cursor = '';
+      track.style.scrollBehavior = 'smooth';
+    });
+
+    setTimeout(updateArrows, 200);
+  }
+
+  function initSlideshow() {
+    var slides = root.querySelectorAll('.ul-hero-banner__slide');
+    var dots = root.querySelectorAll('.ul-hero-banner__dot');
+    if (slides.length < 2) return;
+
+    var current = 0;
+    var total = slides.length;
+    var autoRotate = {{ auto_rotate | json }};
+    var rotateMs = {{ rotate_speed }} * 1000;
+    var timer = null;
+    var sliderWrap = root.querySelector('.ul-hero-banner__slider-wrap');
+
+    function goTo(idx) {
+      if (idx < 0) idx = total - 1;
+      if (idx >= total) idx = 0;
+      for (var i = 0; i < total; i++) {
+        slides[i].classList.toggle('ul-hero-banner__slide--active', i === idx);
+        if (dots[i]) dots[i].classList.toggle('ul-hero-banner__dot--active', i === idx);
+      }
+      current = idx;
+      if (sliderWrap) {
+        sliderWrap.style.opacity = idx === 0 ? '1' : '0';
+        sliderWrap.style.pointerEvents = idx === 0 ? '' : 'none';
+      }
+    }
+
+    for (var d = 0; d < dots.length; d++) {
+      (function(idx) {
+        dots[idx].addEventListener('click', function() {
+          goTo(idx);
+          resetTimer();
+        });
+      })(d);
+    }
+
+    function resetTimer() {
+      if (timer) clearInterval(timer);
+      if (autoRotate) {
+        timer = setInterval(function() { goTo(current + 1); }, rotateMs);
+      }
+    }
+
+    var touchStartX = 0;
+    var frame = root.querySelector('.ul-hero-banner__frame');
+    if (frame) {
+      frame.addEventListener('touchstart', function(e) {
+        touchStartX = e.touches[0].clientX;
+      }, { passive: true });
+      frame.addEventListener('touchend', function(e) {
+        var dx = e.changedTouches[0].clientX - touchStartX;
+        if (Math.abs(dx) > 50) {
+          goTo(current + (dx < 0 ? 1 : -1));
+          resetTimer();
+        }
+      }, { passive: true });
+    }
+
+    resetTimer();
+  }
+
+  function init() {
+    var buttons = root.querySelectorAll('.ul-hero-banner__action');
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].addEventListener('click', handleClick);
+    }
+
+    initSlider();
+    initSlideshow();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    setTimeout(init, 150);
+  }
+})();
+</script>
+
+{% schema %}
+{
+  "name": "DTF Hero Banner",
+  "class": "dtf-hero-banner-section",
+  "tag": "section",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Background media plus 4 mixed cards. Each card can be a product or a collection and can run a different upload mode."
+    },
+    {
+      "type": "text",
+      "id": "eyebrow",
+      "label": "Eyebrow",
+      "default": "Custom DTF Uploads"
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Upload from a hero banner with mixed product and collection cards"
+    },
+    {
+      "type": "textarea",
+      "id": "subheading",
+      "label": "Subheading",
+      "default": "Use a normal image or a normal video as the background, then route each card to a different upload flow."
+    },
+    {
+      "type": "select",
+      "id": "background_mode",
+      "label": "Background Mode",
+      "options": [
+        { "value": "image", "label": "Image" },
+        { "value": "video", "label": "Video" }
+      ],
+      "default": "image"
+    },
+    {
+      "type": "image_picker",
+      "id": "background_image",
+      "label": "Background Image"
+    },
+    {
+      "type": "image_picker",
+      "id": "background_mobile_image",
+      "label": "Background Image Mobile"
+    },
+    {
+      "type": "text",
+      "id": "background_video_url",
+      "label": "Background Video URL",
+      "info": "Direct MP4 or WebM URL."
+    },
+    {
+      "type": "image_picker",
+      "id": "background_poster",
+      "label": "Video Poster Image"
+    },
+    {
+      "type": "color",
+      "id": "overlay_color",
+      "label": "Overlay Color",
+      "default": "#0f172a"
+    },
+    {
+      "type": "range",
+      "id": "overlay_opacity",
+      "label": "Overlay Opacity",
+      "min": 0,
+      "max": 90,
+      "step": 5,
+      "unit": "%",
+      "default": 35
+    },
+    {
+      "type": "range",
+      "id": "min_height",
+      "label": "Banner Min Height",
+      "min": 420,
+      "max": 900,
+      "step": 20,
+      "unit": "px",
+      "default": 680
+    },
+    {
+      "type": "checkbox",
+      "id": "auto_rotate",
+      "label": "Auto-Rotate Slides",
+      "default": true
+    },
+    {
+      "type": "range",
+      "id": "rotate_speed",
+      "label": "Slide Duration (seconds)",
+      "min": 3,
+      "max": 12,
+      "step": 1,
+      "unit": "s",
+      "default": 5
+    }
+  ],
+  "blocks": [
+    {
+      "type": "banner_slide",
+      "name": "Banner Slide",
+      "limit": 6,
+      "settings": [
+        {
+          "type": "select",
+          "id": "slide_mode",
+          "label": "Media Type",
+          "options": [
+            { "value": "image", "label": "Image" },
+            { "value": "video", "label": "Video" }
+          ],
+          "default": "image"
+        },
+        {
+          "type": "image_picker",
+          "id": "slide_image",
+          "label": "Slide Image"
+        },
+        {
+          "type": "image_picker",
+          "id": "slide_mobile_image",
+          "label": "Slide Image Mobile"
+        },
+        {
+          "type": "text",
+          "id": "slide_video_url",
+          "label": "Slide Video URL",
+          "info": "Direct MP4 or WebM URL."
+        },
+        {
+          "type": "image_picker",
+          "id": "slide_poster",
+          "label": "Video Poster Image"
+        },
+        {
+          "type": "text",
+          "id": "slide_eyebrow",
+          "label": "Eyebrow Text"
+        },
+        {
+          "type": "text",
+          "id": "slide_heading",
+          "label": "Heading"
+        },
+        {
+          "type": "textarea",
+          "id": "slide_subheading",
+          "label": "Subheading"
+        }
+      ]
+    },
+    {
+      "type": "hero_card",
+      "name": "Hero Card",
+      "limit": 4,
+      "settings": [
+        {
+          "type": "select",
+          "id": "card_type",
+          "label": "Card Type",
+          "options": [
+            { "value": "product", "label": "Product" },
+            { "value": "collection", "label": "Collection" }
+          ],
+          "default": "product"
+        },
+        {
+          "type": "product",
+          "id": "product",
+          "label": "Product"
+        },
+        {
+          "type": "collection",
+          "id": "collection",
+          "label": "Collection"
+        },
+        {
+          "type": "product",
+          "id": "linked_product",
+          "label": "Linked Upload Product",
+          "info": "Used for collection cards when the selected upload mode needs a product ID."
+        },
+        {
+          "type": "image_picker",
+          "id": "card_image",
+          "label": "Card Image Override"
+        },
+        {
+          "type": "text",
+          "id": "title_override",
+          "label": "Title Override"
+        },
+        {
+          "type": "textarea",
+          "id": "card_copy",
+          "label": "Card Copy"
+        },
+        {
+          "type": "select",
+          "id": "upload_mode",
+          "label": "Upload Mode",
+          "options": [
+            { "value": "upload_studio", "label": "Upload Studio (Gang Sheet Uploader)" },
+            { "value": "dtf_by_size", "label": "DTF Transfer By Size" },
+            { "value": "auto_sheet", "label": "Auto Sheet Calculator" },
+            { "value": "builder", "label": "Builder Redirect" },
+            { "value": "redirect", "label": "Direct Redirect" }
+          ],
+          "default": "upload_studio"
+        },
+        {
+          "type": "text",
+          "id": "button_text",
+          "label": "Button Text",
+          "default": "Upload Design"
+        }
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "name": "DTF Hero Banner",
+      "category": "Custom",
+      "blocks": [
+        { "type": "banner_slide" },
+        { "type": "hero_card" },
+        { "type": "hero_card" },
+        { "type": "hero_card" },
+        { "type": "hero_card" }
+      ]
+    }
+  ]
+}
+{% endschema %}

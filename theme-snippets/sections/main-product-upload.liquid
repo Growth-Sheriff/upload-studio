@@ -8,10 +8,11 @@
 
 {%- liquid
   assign section_dom_id = 'ul-main-product-' | append: section.id
+  assign upload_input_id = section_dom_id | append: '-upload-input'
 -%}
 
 <!-- sections/main-product.liquid -->
-<div class="w-full bg-[#f3f3f3] pb-10" id="{{ section_dom_id }}" data-section-id="{{ section.id }}" data-product-id="{{ product.id }}" data-shop-domain="{{ shop.permanent_domain }}" data-api-base="/apps/customizer" data-max-upload-width="22" data-artboard-margin-in="0.125" data-image-margin-in="0.125">
+<div class="w-full bg-[#f3f3f3] pb-10" id="{{ section_dom_id }}" data-section-id="{{ section.id }}" data-product-id="{{ product.id }}" data-shop-domain="{{ shop.permanent_domain }}" data-api-base="/apps/customizer">
   <div class="max-w-2k w-full mx-auto px-4 py-6 font-amazon bg-white mt-4 mb-8 rounded shadow-sm">
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
       
@@ -31,7 +32,7 @@
         <!-- Thumbnails -->
         <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
           {% for image in product.images %}
-            <button type="button" class="w-12 h-12 flex-shrink-0 border border-gray-300 hover:border-amazon-orange cursor-pointer js-thumb-click" data-image-url="{{ image | image_url: width: 800 }}">
+            <button type="button" class="ul-main-thumb w-12 h-12 flex-shrink-0 border border-gray-300 hover:border-amazon-orange cursor-pointer js-thumb-click" data-image-url="{{ image | image_url: width: 800 }}" aria-label="Show product image {{ forloop.index }}">
               <img src="{{ image | image_url: width: 100 }}" alt="{{ product.title | escape }}" class="w-full h-full object-cover">
             </button>
           {% else %}
@@ -55,10 +56,10 @@
             Visit the {{ product.vendor }} Store
           </div>
         {% endif %}
-        
+
         <div class="flex items-center gap-4 mb-2 border-b border-gray-200 pb-2">
           <div class="flex items-center gap-1">
-            <div class="flex text-amazon-orange text-sm">â˜…â˜…â˜…â˜…â˜…</div>
+            <div class="flex text-amazon-orange text-sm" aria-hidden="true">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
             <span class="text-sm text-amazon-link hover:text-amazon-link-hover hover:underline cursor-pointer">
               {{ section.settings.fake_reviews_count | default: "1,245" }} ratings
             </span>
@@ -77,20 +78,20 @@
         <!-- Custom DTF Features -->
         {% if section.settings.show_dtf_features %}
           <div class="grid grid-cols-2 gap-y-3 gap-x-4 mb-6 text-sm text-gray-900">
-            <div class="flex items-center gap-2"><span class="w-4 h-4 bg-gray-200 rounded-sm flex items-center justify-center text-[10px]">ğŸ‘•</span> {{ section.settings.feature_1_text | escape }}</div>
+            <div class="flex items-center gap-2"><span class="w-4 h-4 bg-gray-200 rounded-sm flex items-center justify-center text-[10px] font-semibold">A</span> {{ section.settings.feature_1_text | escape }}</div>
             <div class="flex items-center gap-2"><span class="w-4 h-4 bg-gradient-to-br from-red-400 via-green-400 to-blue-400 rounded-full"></span> {{ section.settings.feature_2_text | escape }}</div>
-            <div class="flex items-center gap-2"><span class="w-4 h-4 bg-orange-100 text-orange-600 rounded-sm flex items-center justify-center text-[10px]">ğŸ”¥</span> {{ section.settings.feature_3_text | escape }}</div>
-            <div class="flex items-center gap-2"><span class="w-4 h-4 bg-blue-100 text-blue-600 rounded-sm flex items-center justify-center text-[10px]">ğŸ’§</span> {{ section.settings.feature_4_text | escape }}</div>
+            <div class="flex items-center gap-2"><span class="w-4 h-4 bg-orange-100 text-orange-600 rounded-sm flex items-center justify-center text-[10px] font-semibold">H</span> {{ section.settings.feature_3_text | escape }}</div>
+            <div class="flex items-center gap-2"><span class="w-4 h-4 bg-blue-100 text-blue-600 rounded-sm flex items-center justify-center text-[10px] font-semibold">W</span> {{ section.settings.feature_4_text | escape }}</div>
           </div>
         {% endif %}
 
         <!-- Upload Section -->
         {% if section.settings.show_upload_section %}
           <div class="border-2 border-dashed border-gray-300 bg-gray-50 rounded p-6 text-center mb-4 ul-main-upload-box">
-            <input type="file" class="ul-main-upload-input sr-only" accept=".png,.jpg,.jpeg,.webp,.tiff,.tif,.psd,.svg,.pdf,.ai,.eps">
-            <button type="button" class="ul-main-upload-trigger bg-amazon-yellow hover:brightness-95 text-black border border-black/20 shadow-sm font-medium py-2 px-6 rounded-full text-sm mb-2 cursor-pointer">
+            <input id="{{ upload_input_id }}" type="file" class="ul-main-upload-input sr-only" accept=".png,.jpg,.jpeg,.webp,.tiff,.tif,.psd,.svg,.pdf,.ai,.eps">
+            <label for="{{ upload_input_id }}" class="ul-main-upload-trigger inline-flex items-center justify-center bg-amazon-yellow hover:brightness-95 text-black border border-black/20 shadow-sm font-medium py-2 px-6 rounded-full text-sm mb-2 cursor-pointer" tabindex="0" role="button">
               {{ section.settings.upload_button_text | escape }}
-            </button>
+            </label>
             <p class="text-xs text-gray-500">or drag & drop your file here</p>
             <div class="ul-main-upload-feedback hidden mt-4 text-left">
               <div class="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3">
@@ -136,7 +137,7 @@
         <div class="mt-8 border-t border-gray-200">
           {% for block in section.blocks %}
             <div class="border-b border-gray-200" {{ block.shopify_attributes }}>
-              <button type="button" class="js-accordion-trigger w-full py-3 flex justify-between items-center font-bold text-sm text-gray-900 hover:text-amazon-orange cursor-pointer" data-target="acc-{{ block.id }}">
+              <button type="button" class="js-accordion-trigger w-full py-3 flex justify-between items-center font-bold text-sm text-gray-900 hover:text-amazon-orange cursor-pointer" data-target="acc-{{ block.id }}" aria-expanded="false" aria-controls="acc-{{ block.id }}">
                 {{ block.settings.title | escape }}
                 <svg class="w-4 h-4 js-accordion-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
               </button>
@@ -147,7 +148,7 @@
           {% else %}
             <!-- Default Accordions if no blocks added -->
             <div class="border-b border-gray-200">
-              <button type="button" class="js-accordion-trigger w-full py-3 flex justify-between items-center font-bold text-sm text-gray-900 hover:text-amazon-orange cursor-pointer" data-target="acc-details">
+              <button type="button" class="js-accordion-trigger w-full py-3 flex justify-between items-center font-bold text-sm text-gray-900 hover:text-amazon-orange cursor-pointer" data-target="acc-details" aria-expanded="false" aria-controls="acc-details">
                 Product Details
                 <svg class="w-4 h-4 js-accordion-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
               </button>
@@ -203,7 +204,7 @@
             <button type="button" class="ul-main-add-to-cart w-full bg-amazon-yellow hover:brightness-95 text-black text-sm font-medium py-2 rounded-full shadow-sm border border-black/20 cursor-pointer">
               Add to Cart
             </button>
-            <button type="button" class="w-full bg-amazon-orange hover:brightness-95 text-black text-sm font-medium py-2 rounded-full shadow-sm border border-black/20 cursor-pointer">
+            <button type="button" class="ul-main-buy-now w-full bg-amazon-orange hover:brightness-95 text-black text-sm font-medium py-2 rounded-full shadow-sm border border-black/20 cursor-pointer">
               Buy Now
             </button>
           </div>
@@ -261,15 +262,23 @@
 <script>
   (function() {
     var root = document.getElementById({{ section_dom_id | json }});
-    if (!root) return;
+    if (!root || root.getAttribute('data-ul-main-product-bound') === 'true') return;
+    root.setAttribute('data-ul-main-product-bound', 'true');
+
+    function parseOptionalPositiveNumber(value) {
+      var parsed = Number(value);
+      return isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
 
     var productJsonEl = document.getElementById({{ section_dom_id | append: '-product-json' | json }});
     var productData = productJsonEl ? JSON.parse(productJsonEl.textContent) : { variants: [] };
     var apiBase = root.getAttribute('data-api-base') || '/apps/customizer';
     var shopDomain = root.getAttribute('data-shop-domain') || '';
-    var maxUploadWidth = parseFloat(root.getAttribute('data-max-upload-width') || '22');
-    var artboardMarginIn = parseFloat(root.getAttribute('data-artboard-margin-in') || '0.125');
-    var imageMarginIn = parseFloat(root.getAttribute('data-image-margin-in') || '0.125');
+    var effectiveRules = {
+      maxUploadWidth: parseOptionalPositiveNumber(root.getAttribute('data-max-upload-width')),
+      artboardMarginIn: parseOptionalPositiveNumber(root.getAttribute('data-artboard-margin-in')),
+      imageMarginIn: parseOptionalPositiveNumber(root.getAttribute('data-image-margin-in'))
+    };
 
     var uploadInput = root.querySelector('.ul-main-upload-input');
     var uploadTrigger = root.querySelector('.ul-main-upload-trigger');
@@ -291,11 +300,18 @@
     var detectedNote = root.querySelector('.ul-main-detected-note');
     var quantitySelect = root.querySelector('.ul-main-quantity');
     var addToCartBtn = root.querySelector('.ul-main-add-to-cart');
+    var buyNowBtn = root.querySelector('.ul-main-buy-now');
     var hiddenVariantInput = root.querySelector('.ul-main-variant-input');
     var variantSelect = root.querySelector('.ul-main-variant-select');
     var productPrice = root.querySelector('.ul-main-product-price');
     var buyBoxPrice = root.querySelector('.ul-main-buybox-price');
+    var productImage = root.querySelector('.ul-main-product-image');
+    var thumbButtons = Array.prototype.slice.call(root.querySelectorAll('.js-thumb-click'));
+    var accordionTriggers = Array.prototype.slice.call(root.querySelectorAll('.js-accordion-trigger'));
     var variantRows = Array.prototype.slice.call(root.querySelectorAll('.ul-main-variant-row'));
+    var uploadRequired = Boolean(uploadInput && uploadBox);
+    var addToCartLabel = addToCartBtn ? addToCartBtn.textContent : 'Add to Cart';
+    var buyNowLabel = buyNowBtn ? buyNowBtn.textContent : 'Buy Now';
 
     var state = {
       uploadId: '',
@@ -308,11 +324,13 @@
       widthIn: 0,
       heightIn: 0,
       quantity: parseInt(quantitySelect && quantitySelect.value || '1', 10) || 1,
+      preferredVariantId: productData.selectedVariantId || null,
       selectedVariantId: productData.selectedVariantId || null,
       selectedResult: null,
       lastFile: null
     };
     var resolveRequestToken = 0;
+    var uploadFlowToken = 0;
 
     function moneyFromCents(cents) {
       return '$' + ((Number(cents || 0) / 100).toFixed(2));
@@ -336,11 +354,54 @@
       });
     }
 
+    function getFallbackVariantId() {
+      return state.preferredVariantId || productData.selectedVariantId || null;
+    }
+
+    function resetActionLabels() {
+      if (addToCartBtn) addToCartBtn.textContent = addToCartLabel;
+      if (buyNowBtn) buyNowBtn.textContent = buyNowLabel;
+    }
+
+    function setPurchaseButtonsDisabled(disabled) {
+      if (addToCartBtn) addToCartBtn.disabled = disabled;
+      if (buyNowBtn) buyNowBtn.disabled = disabled;
+    }
+
+    function syncPurchaseButtonsForCurrentState() {
+      if (uploadRequired) {
+        setPurchaseButtonsDisabled(!(state.uploadId && state.selectedResult && state.selectedVariantId));
+        return;
+      }
+      setPurchaseButtonsDisabled(!state.selectedVariantId);
+    }
+
+    function syncEffectiveRules(config) {
+      if (!config) return;
+      effectiveRules.maxUploadWidth =
+        parseOptionalPositiveNumber(config.maxWidthIn) || effectiveRules.maxUploadWidth;
+      effectiveRules.artboardMarginIn =
+        parseOptionalPositiveNumber(config.artboardMarginIn) || effectiveRules.artboardMarginIn;
+      effectiveRules.imageMarginIn =
+        parseOptionalPositiveNumber(config.imageMarginIn) || effectiveRules.imageMarginIn;
+    }
+
+    function setMainProductImage(imageUrl) {
+      if (!productImage || !imageUrl) return;
+      productImage.src = imageUrl;
+    }
+
     function setSelectedVariant(variantId) {
       var normalizedVariantId = variantId != null && variantId !== '' ? String(variantId) : null;
       state.selectedVariantId = normalizedVariantId;
       if (hiddenVariantInput) hiddenVariantInput.value = normalizedVariantId || '';
-      if (variantSelect && normalizedVariantId) variantSelect.value = normalizedVariantId;
+      if (variantSelect && normalizedVariantId) {
+        variantSelect.value = normalizedVariantId;
+        var selectedOption = variantSelect.options[variantSelect.selectedIndex];
+        if (selectedOption && selectedOption.getAttribute('data-image-url')) {
+          setMainProductImage(selectedOption.getAttribute('data-image-url'));
+        }
+      }
 
       var selectedVariant = null;
       var sourceVariants = productData.variants || [];
@@ -377,9 +438,15 @@
       if (detectedWidth) detectedWidth.value = state.widthIn.toFixed(2) + '"';
       if (detectedHeight) detectedHeight.value = state.heightIn.toFixed(2) + '"';
       if (detectedNote) {
-        var notes = [
-          'Resolved on server with artboard margin ' + artboardMarginIn.toFixed(3) + 'in and image margin ' + imageMarginIn.toFixed(3) + 'in.'
-        ];
+        var notes = ['Resolved on server using the saved product sheet rules.'];
+        if (effectiveRules.artboardMarginIn && effectiveRules.imageMarginIn) {
+          notes[0] =
+            'Resolved on server with artboard margin ' +
+            effectiveRules.artboardMarginIn.toFixed(3) +
+            'in and image margin ' +
+            effectiveRules.imageMarginIn.toFixed(3) +
+            'in.';
+        }
         if (state.selectedResult && state.selectedResult.designsPerSheet && state.selectedResult.sheetsNeeded) {
           notes.push(
             state.selectedResult.designsPerSheet + ' design(s) per sheet, ' +
@@ -394,18 +461,18 @@
       if (!state.uploadId) {
         state.selectedResult = null;
         updateDetectedUI();
-        setSelectedVariant(productData.selectedVariantId || null);
-        if (addToCartBtn) addToCartBtn.disabled = true;
+        setSelectedVariant(getFallbackVariantId());
+        syncPurchaseButtonsForCurrentState();
         return;
       }
       if (!state.widthIn || !state.heightIn || !state.dpi) {
-        if (addToCartBtn) addToCartBtn.disabled = true;
+        syncPurchaseButtonsForCurrentState();
         return;
       }
 
       var requestToken = ++resolveRequestToken;
       clearError();
-      if (addToCartBtn) addToCartBtn.disabled = true;
+      setPurchaseButtonsDisabled(true);
       if (uploadStatus) uploadStatus.textContent = 'Resolving best variant...';
 
       try {
@@ -417,14 +484,19 @@
             productId: String(productData.productId),
             uploadId: state.uploadId,
             quantity: state.quantity,
-            selectedVariantId: state.selectedVariantId || (hiddenVariantInput ? hiddenVariantInput.value : '') || productData.selectedVariantId || null,
-            artboardMarginIn: artboardMarginIn,
-            imageMarginIn: imageMarginIn,
-            maxUploadWidth: maxUploadWidth
+            selectedVariantId:
+              getFallbackVariantId() ||
+              state.selectedVariantId ||
+              (hiddenVariantInput ? hiddenVariantInput.value : '') ||
+              null,
+            artboardMarginIn: effectiveRules.artboardMarginIn,
+            imageMarginIn: effectiveRules.imageMarginIn,
+            maxUploadWidth: effectiveRules.maxUploadWidth
           })
         });
         var data = await response.json().catch(function() { return {}; });
         if (requestToken !== resolveRequestToken) return;
+        syncEffectiveRules(data && data.config ? data.config : null);
 
         if (data && data.upload) {
           state.widthPx = Number(data.upload.widthPx || state.widthPx || 0);
@@ -437,10 +509,10 @@
         if (!response.ok) {
           state.selectedResult = null;
           updateDetectedUI();
-          resetSelectionUI();
+          setSelectedVariant(getFallbackVariantId());
           showError(data && data.error ? data.error : 'Failed to resolve product variant.');
           if (uploadStatus) uploadStatus.textContent = '';
-          if (addToCartBtn) addToCartBtn.disabled = true;
+          syncPurchaseButtonsForCurrentState();
           return;
         }
 
@@ -449,26 +521,26 @@
         if (requestToken !== resolveRequestToken) return;
         state.selectedResult = null;
         updateDetectedUI();
-        resetSelectionUI();
+        setSelectedVariant(getFallbackVariantId());
         showError(error && error.message ? error.message : 'Failed to resolve product variant.');
         if (uploadStatus) uploadStatus.textContent = '';
-        if (addToCartBtn) addToCartBtn.disabled = true;
+        syncPurchaseButtonsForCurrentState();
         return;
       }
 
       updateDetectedUI();
       if (!state.selectedResult || !state.selectedResult.selectedVariantId) {
         state.selectedResult = null;
-        resetSelectionUI();
+        setSelectedVariant(getFallbackVariantId());
         showError('No product variant can fit this upload with the current quantity and margin rules.');
         if (uploadStatus) uploadStatus.textContent = '';
-        if (addToCartBtn) addToCartBtn.disabled = true;
+        syncPurchaseButtonsForCurrentState();
         return;
       }
 
       clearError();
       setSelectedVariant(state.selectedResult.selectedVariantId);
-      if (addToCartBtn) addToCartBtn.disabled = false;
+      syncPurchaseButtonsForCurrentState();
       if (uploadStatus) {
         uploadStatus.textContent = 'Ready. Auto-selected variant: ' + (state.selectedResult.selectedVariantTitle || state.selectedResult.selectedSheetLabel || '');
       }
@@ -476,6 +548,7 @@
 
     function resetUploadState() {
       resolveRequestToken += 1;
+      uploadFlowToken += 1;
       state.uploadId = '';
       state.originalUrl = '';
       state.thumbnailUrl = '';
@@ -491,13 +564,15 @@
       if (uploadFeedback) uploadFeedback.classList.add('hidden');
       if (uploadLoading) uploadLoading.classList.add('hidden');
       if (detectedBox) detectedBox.classList.add('hidden');
-      if (uploadStatus) uploadStatus.textContent = '';
-      setSelectedVariant(productData.selectedVariantId || null);
-      clearError();
-      if (addToCartBtn) {
-        addToCartBtn.disabled = true;
-        addToCartBtn.textContent = 'Add to Cart';
+      if (uploadThumb) {
+        uploadThumb.removeAttribute('src');
+        uploadThumb.classList.add('hidden');
       }
+      if (uploadStatus) uploadStatus.textContent = '';
+      setSelectedVariant(getFallbackVariantId());
+      clearError();
+      resetActionLabels();
+      syncPurchaseButtonsForCurrentState();
     }
 
     function updatePreview() {
@@ -508,7 +583,7 @@
       if (state.widthPx && state.heightPx) meta.push(state.widthPx + ' x ' + state.heightPx + ' px');
       if (state.dpi) meta.push(state.dpi + ' DPI');
       if (state.lastFile && state.lastFile.size) meta.push((state.lastFile.size / (1024 * 1024)).toFixed(1) + ' MB');
-      if (uploadMeta) uploadMeta.textContent = meta.join(' • ');
+      if (uploadMeta) uploadMeta.textContent = meta.join(' | ');
 
       var ext = (state.fileName.split('.').pop() || '').toLowerCase();
       var isNonBrowser = ['psd', 'pdf', 'ai', 'eps', 'tiff', 'tif'].indexOf(ext) >= 0;
@@ -528,11 +603,56 @@
       }
     }
 
-    async function pollUploadStatus(uploadId) {
+    function isAcceptedFile(file) {
+      if (!uploadInput || !uploadInput.accept) return true;
+      var acceptedValues = uploadInput.accept.split(',').map(function(value) {
+        return String(value || '').trim().toLowerCase();
+      }).filter(Boolean);
+      if (!acceptedValues.length) return true;
+
+      var fileName = String(file && file.name || '').toLowerCase();
+      var mimeType = String(file && file.type || '').toLowerCase();
+      for (var i = 0; i < acceptedValues.length; i++) {
+        var acceptedValue = acceptedValues[i];
+        if (acceptedValue.charAt(0) === '.' && fileName.slice(-acceptedValue.length) === acceptedValue) {
+          return true;
+        }
+        if (acceptedValue.indexOf('/') > 0 && mimeType === acceptedValue) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function getPreflightErrorMessage(statusPayload, item) {
+      var checks =
+        item &&
+        item.preflightResult &&
+        item.preflightResult.checks &&
+        item.preflightResult.checks.length
+          ? item.preflightResult.checks
+          : [];
+
+      for (var i = 0; i < checks.length; i++) {
+        if (checks[i] && checks[i].status === 'error' && checks[i].message) {
+          return checks[i].message;
+        }
+      }
+
+      if (statusPayload && statusPayload.error) {
+        return statusPayload.error;
+      }
+
+      return 'Upload processing failed on the server. Please try another file or contact support.';
+    }
+
+    async function pollUploadStatus(uploadId, uploadToken) {
       for (var attempts = 0; attempts < 60; attempts++) {
+        if (uploadToken !== uploadFlowToken) return false;
         var response = await fetch(apiBase + '/api/upload/status/' + encodeURIComponent(uploadId) + '?shopDomain=' + encodeURIComponent(shopDomain));
         if (response.ok) {
           var data = await response.json();
+          if (uploadToken !== uploadFlowToken) return false;
           var firstItem = data.items && data.items[0] ? data.items[0] : null;
           if (firstItem) {
             state.thumbnailUrl = firstItem.thumbnailUrl || data.thumbnailUrl || '';
@@ -540,18 +660,26 @@
             state.widthPx = Number(firstItem.widthPx || 0);
             state.heightPx = Number(firstItem.heightPx || 0);
             state.dpi = Number(firstItem.dpi || 0);
+            if (data.overallPreflight === 'error' || firstItem.preflightStatus === 'error' || data.status === 'error') {
+              if (uploadLoading) uploadLoading.classList.add('hidden');
+              if (uploadStatus) uploadStatus.textContent = '';
+              state.selectedResult = null;
+              syncPurchaseButtonsForCurrentState();
+              showError(getPreflightErrorMessage(data, firstItem));
+              return false;
+            }
             if (state.widthPx > 0 && state.heightPx > 0 && state.dpi > 0) {
               state.widthIn = Number((state.widthPx / state.dpi).toFixed(2));
               state.heightIn = Number((state.heightPx / state.dpi).toFixed(2));
-              if (state.widthIn > maxUploadWidth + 0.001) {
+              if (effectiveRules.maxUploadWidth && state.widthIn > effectiveRules.maxUploadWidth + 0.001) {
                 resetUploadState();
-                showError('This file is too wide for this product. Maximum supported width is ' + maxUploadWidth.toFixed(0) + '".');
-                return;
+                showError('This file is too wide for this product. Maximum supported width is ' + effectiveRules.maxUploadWidth.toFixed(0) + '".');
+                return false;
               }
               if (uploadLoading) uploadLoading.classList.add('hidden');
               updatePreview();
               await updateVariantResolution();
-              return;
+              return true;
             }
           }
         }
@@ -561,18 +689,43 @@
       }
       if (uploadLoading) uploadLoading.classList.add('hidden');
       showError('Upload finished but size detection timed out. Please try again.');
+      return false;
     }
 
     async function handleFile(file) {
       if (!file) return;
+      if (!isAcceptedFile(file)) {
+        showError('Unsupported file format. Please upload PNG, JPG, WEBP, TIFF, PSD, SVG, PDF, AI, or EPS.');
+        return;
+      }
+
+      var uploadToken = ++uploadFlowToken;
+      resolveRequestToken += 1;
       clearError();
+      state.uploadId = '';
+      state.originalUrl = '';
+      state.thumbnailUrl = '';
       state.lastFile = file;
       state.fileName = file.name;
+      state.widthPx = 0;
+      state.heightPx = 0;
+      state.dpi = 0;
+      state.widthIn = 0;
+      state.heightIn = 0;
+      state.selectedResult = null;
       if (uploadFeedback) uploadFeedback.classList.add('hidden');
       if (detectedBox) detectedBox.classList.add('hidden');
+      if (uploadThumb) {
+        uploadThumb.removeAttribute('src');
+        uploadThumb.classList.add('hidden');
+      }
       if (uploadLoading) uploadLoading.classList.remove('hidden');
       if (uploadLoadingText) uploadLoadingText.textContent = 'Preparing upload...';
       if (uploadProgress) uploadProgress.style.width = '12%';
+      if (uploadStatus) uploadStatus.textContent = '';
+      resetActionLabels();
+      setSelectedVariant(getFallbackVariantId());
+      syncPurchaseButtonsForCurrentState();
       try {
         var intentRes = await fetch(apiBase + '/api/upload/intent', {
           method: 'POST',
@@ -591,14 +744,16 @@
           throw new Error(intentErr.error || 'Failed to create upload intent.');
         }
         var intent = await intentRes.json();
+        if (uploadToken !== uploadFlowToken) return;
         state.uploadId = intent.uploadId;
         if (uploadLoadingText) uploadLoadingText.textContent = 'Uploading file...';
         if (uploadProgress) uploadProgress.style.width = '28%';
+        var uploadStartedAt = Date.now();
 
         await new Promise(function(resolve, reject) {
           var xhr = new XMLHttpRequest();
           xhr.upload.addEventListener('progress', function(e) {
-            if (!e.lengthComputable || !uploadProgress || !uploadLoadingText) return;
+            if (uploadToken !== uploadFlowToken || !e.lengthComputable || !uploadProgress || !uploadLoadingText) return;
             uploadProgress.style.width = (28 + ((e.loaded / e.total) * 42)) + '%';
             uploadLoadingText.textContent = 'Uploading ' + (e.loaded / (1024 * 1024)).toFixed(1) + ' / ' + (e.total / (1024 * 1024)).toFixed(1) + ' MB';
           });
@@ -609,17 +764,29 @@
           xhr.addEventListener('error', function() {
             reject(new Error('Network error during upload.'));
           });
-          xhr.open(intent.uploadMethod || 'PUT', intent.uploadUrl, true);
-          if ((intent.uploadMethod || 'PUT') === 'PUT') {
+          var storageProvider = intent.storageProvider || 'local';
+          var uploadMethod = intent.uploadMethod || (storageProvider === 'local' ? 'POST' : 'PUT');
+          xhr.open(uploadMethod, intent.uploadUrl, true);
+          if (uploadMethod === 'PUT') {
             xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
           }
-          if (intent.uploadHeaders) {
+          if (uploadMethod === 'PUT' && intent.uploadHeaders) {
             Object.keys(intent.uploadHeaders).forEach(function(key) {
               xhr.setRequestHeader(key, intent.uploadHeaders[key]);
             });
           }
+          if (uploadMethod === 'POST') {
+            var formData = new FormData();
+            formData.append('file', file);
+            formData.append('key', intent.key || '');
+            formData.append('uploadId', intent.uploadId || '');
+            formData.append('itemId', intent.itemId || '');
+            xhr.send(formData);
+            return;
+          }
           xhr.send(file);
         });
+        if (uploadToken !== uploadFlowToken) return;
 
         if (uploadLoadingText) uploadLoadingText.textContent = 'Finalizing upload...';
         if (uploadProgress) uploadProgress.style.width = '75%';
@@ -632,9 +799,10 @@
             items: [{
               itemId: intent.itemId,
               location: 'front',
-              fileUrl: intent.publicUrl || '',
-              storageProvider: intent.storageProvider || 'r2',
-              fileSize: file.size
+              fileUrl: intent.publicUrl || null,
+              storageProvider: intent.storageProvider || 'local',
+              fileSize: file.size,
+              uploadDurationMs: Date.now() - uploadStartedAt
             }]
           })
         });
@@ -642,23 +810,103 @@
           var completeErr = await completeRes.json().catch(function() { return {}; });
           throw new Error(completeErr.error || 'Failed to finalize upload.');
         }
+        if (uploadToken !== uploadFlowToken) return;
 
         if (uploadLoadingText) uploadLoadingText.textContent = 'Detecting gang sheet size...';
         if (uploadProgress) uploadProgress.style.width = '85%';
-        await pollUploadStatus(intent.uploadId);
+        await pollUploadStatus(intent.uploadId, uploadToken);
       } catch (error) {
+        if (uploadToken !== uploadFlowToken) return;
+        state.uploadId = '';
+        state.originalUrl = '';
+        state.thumbnailUrl = '';
+        state.selectedResult = null;
         if (uploadLoading) uploadLoading.classList.add('hidden');
+        syncPurchaseButtonsForCurrentState();
         showError(error && error.message ? error.message : 'Upload failed.');
       }
     }
 
-    if (uploadTrigger && uploadInput) {
-      uploadTrigger.addEventListener('click', function() {
-        uploadInput.click();
+    function setActiveThumbnail(button) {
+      thumbButtons.forEach(function(item) {
+        item.classList.remove('is-active');
       });
+      if (button) button.classList.add('is-active');
+    }
+
+    async function addConfiguredItem(redirectPath, triggerButton) {
+      var variantId = state.selectedVariantId || (hiddenVariantInput ? hiddenVariantInput.value : '') || getFallbackVariantId();
+      if (!variantId) {
+        showError('Please select a product variant first.');
+        return;
+      }
+      if (uploadRequired && (!state.uploadId || !state.selectedResult)) {
+        showError('Please upload your design first.');
+        return;
+      }
+
+      clearError();
+      setPurchaseButtonsDisabled(true);
+      resetActionLabels();
+      if (triggerButton) {
+        triggerButton.textContent = redirectPath === '/checkout' ? 'Buying...' : 'Adding...';
+      }
+
+      try {
+        var quantityValue = quantitySelect ? parseInt(quantitySelect.value || '1', 10) || 1 : 1;
+        var properties = uploadRequired ? {
+          _ul_upload_id: state.uploadId,
+          _ul_thumbnail: state.thumbnailUrl || '',
+          _ul_original_url: state.originalUrl || '',
+          _ul_file_name: state.fileName || '',
+          _ul_width_in: String(state.widthIn || 0),
+          _ul_height_in: String(state.heightIn || 0),
+          _ul_resolution_dpi: String(state.dpi || 0),
+          _ul_mode: 'main_product_sheet',
+          _ul_requested_copies: String(quantityValue),
+          _ul_artboard_margin_in: String(effectiveRules.artboardMarginIn || ''),
+          _ul_image_margin_in: String(effectiveRules.imageMarginIn || ''),
+          _ul_sheet_name: state.selectedResult ? (state.selectedResult.selectedSheetLabel || state.selectedResult.selectedVariantTitle || '') : '',
+          _ul_designs_per_sheet: state.selectedResult ? String(state.selectedResult.designsPerSheet || '') : '',
+          _ul_sheets_needed: state.selectedResult ? String(state.selectedResult.sheetsNeeded || '') : ''
+        } : {};
+
+        var response = await fetch('/cart/add.js', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: [{
+              id: parseInt(variantId, 10),
+              quantity: state.selectedResult ? state.selectedResult.sheetsNeeded : quantityValue,
+              properties: properties
+            }]
+          })
+        });
+        if (!response.ok) {
+          var err = await response.json().catch(function() { return {}; });
+          throw new Error(err.description || 'Failed to add to cart.');
+        }
+        window.location.href = redirectPath;
+      } catch (error) {
+        showError(error && error.message ? error.message : 'Failed to add to cart.');
+        resetActionLabels();
+        syncPurchaseButtonsForCurrentState();
+      }
+    }
+
+    if (uploadInput) {
       uploadInput.addEventListener('change', function(e) {
         if (e.target.files && e.target.files[0]) {
           handleFile(e.target.files[0]);
+        }
+      });
+    }
+
+    if (uploadTrigger && uploadInput) {
+      uploadTrigger.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          uploadInput.click();
         }
       });
     }
@@ -692,67 +940,61 @@
 
     if (variantSelect) {
       variantSelect.addEventListener('change', function() {
-        setSelectedVariant(variantSelect.value || null);
+        state.preferredVariantId = variantSelect.value || null;
+        setSelectedVariant(state.preferredVariantId);
         if (state.uploadId) {
           updateVariantResolution();
+        } else {
+          syncPurchaseButtonsForCurrentState();
         }
       });
     }
+
+    thumbButtons.forEach(function(button, index) {
+      if (index === 0) setActiveThumbnail(button);
+      button.addEventListener('click', function() {
+        setActiveThumbnail(button);
+        setMainProductImage(button.getAttribute('data-image-url'));
+      });
+    });
+
+    accordionTriggers.forEach(function(trigger) {
+      trigger.addEventListener('click', function() {
+        var targetId = trigger.getAttribute('data-target');
+        if (!targetId) return;
+        var target = document.getElementById(targetId);
+        var willOpen = target ? target.classList.contains('hidden') : false;
+
+        accordionTriggers.forEach(function(otherTrigger) {
+          var otherTargetId = otherTrigger.getAttribute('data-target');
+          var otherTarget = otherTargetId ? document.getElementById(otherTargetId) : null;
+          var otherIcon = otherTrigger.querySelector('.js-accordion-icon');
+          if (otherTarget) otherTarget.classList.add('hidden');
+          otherTrigger.setAttribute('aria-expanded', 'false');
+          if (otherIcon) otherIcon.classList.remove('is-open');
+        });
+
+        if (target && willOpen) target.classList.remove('hidden');
+        trigger.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        var icon = trigger.querySelector('.js-accordion-icon');
+        if (icon && willOpen) icon.classList.add('is-open');
+      });
+    });
 
     if (addToCartBtn) {
-      addToCartBtn.addEventListener('click', async function() {
-        if (!state.uploadId || !state.selectedVariantId) {
-          showError('Please upload your design first.');
-          return;
-        }
-        clearError();
-        addToCartBtn.disabled = true;
-        addToCartBtn.textContent = 'Adding...';
-        try {
-          var quantityValue = quantitySelect ? parseInt(quantitySelect.value || '1', 10) || 1 : 1;
-          var properties = {
-            _ul_upload_id: state.uploadId,
-            _ul_thumbnail: state.thumbnailUrl || '',
-            _ul_original_url: state.originalUrl || '',
-            _ul_file_name: state.fileName || '',
-            _ul_width_in: String(state.widthIn || 0),
-            _ul_height_in: String(state.heightIn || 0),
-            _ul_resolution_dpi: String(state.dpi || 0),
-            _ul_mode: 'main_product_sheet',
-            _ul_requested_copies: String(quantityValue),
-            _ul_artboard_margin_in: String(artboardMarginIn),
-            _ul_image_margin_in: String(imageMarginIn),
-            _ul_sheet_name: state.selectedResult ? (state.selectedResult.selectedSheetLabel || state.selectedResult.selectedVariantTitle || '') : '',
-            _ul_designs_per_sheet: state.selectedResult ? String(state.selectedResult.designsPerSheet || '') : '',
-            _ul_sheets_needed: state.selectedResult ? String(state.selectedResult.sheetsNeeded || '') : ''
-          };
-
-          var response = await fetch('/cart/add.js', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              items: [{
-                id: parseInt(state.selectedVariantId, 10),
-                quantity: state.selectedResult ? state.selectedResult.sheetsNeeded : quantityValue,
-                properties: properties
-              }]
-            })
-          });
-          if (!response.ok) {
-            var err = await response.json().catch(function() { return {}; });
-            throw new Error(err.description || 'Failed to add to cart.');
-          }
-          window.location.href = '/cart';
-        } catch (error) {
-          showError(error && error.message ? error.message : 'Failed to add to cart.');
-          addToCartBtn.disabled = false;
-          addToCartBtn.textContent = 'Add to Cart';
-        }
+      addToCartBtn.addEventListener('click', function() {
+        addConfiguredItem('/cart', addToCartBtn);
       });
     }
 
-    setSelectedVariant(productData.selectedVariantId || null);
-    if (addToCartBtn) addToCartBtn.disabled = true;
+    if (buyNowBtn) {
+      buyNowBtn.addEventListener('click', function() {
+        addConfiguredItem('/checkout', buyNowBtn);
+      });
+    }
+
+    setSelectedVariant(getFallbackVariantId());
+    syncPurchaseButtonsForCurrentState();
   })();
 </script>
 
@@ -933,5 +1175,15 @@
     background: #dcfce7;
     color: #14532d;
     font-weight: 700;
+  }
+  #{{ section_dom_id }} .ul-main-thumb.is-active {
+    border-color: {{ settings.color_primary | default: "#ff9900" }};
+    box-shadow: 0 0 0 1px {{ settings.color_primary | default: "#ff9900" }};
+  }
+  #{{ section_dom_id }} .js-accordion-icon {
+    transition: transform 0.2s ease;
+  }
+  #{{ section_dom_id }} .js-accordion-icon.is-open {
+    transform: rotate(180deg);
   }
 </style>
