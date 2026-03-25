@@ -65,34 +65,11 @@ export interface SheetVariantResolution {
   selectedVariantId: string
   selectedVariantTitle: string
   selectedSheetLabel: string
-  selectedSheetKey: string
   designsPerSheet: number
   sheetsNeeded: number
   requestedQuantity: number
   widthIn: number
   heightIn: number
-}
-
-export interface SheetPricingResult {
-  sheetKey: string
-  sheetName: string
-  sheetValue: string
-  variantId: string | null
-  variantTitle: string
-  variantPrice: number
-  sheetsNeeded: number
-  designsPerSheet: number
-  totalCost: number
-  efficiency: number
-  wastePercent: number
-  error?: string
-}
-
-export interface SheetPricingResolution {
-  results: SheetPricingResult[]
-  validResults: SheetPricingResult[]
-  recommended: SheetPricingResult | null
-  selected: SheetPricingResult | null
 }
 
 function normalizeMarginIn(value: number | null | undefined): number {
@@ -434,40 +411,18 @@ function buildVariantMatrix(
 function getSelectedServiceOptionValues(
   matrix: VariantMatrix,
   variants: ProductVariantDef[],
-  selectedVariantId?: string | null,
-  serviceOptionValues?: Record<string, string> | null
+  selectedVariantId?: string | null
 ): Record<number, string> {
   const values: Record<number, string> = {}
   const selectedVariant = selectedVariantId
     ? variants.find((variant) => String(variant.id) === String(selectedVariantId))
     : null
 
-  if (selectedVariant) {
-    for (const optionIndex of matrix.serviceOptionIndexes) {
-      const optionValue = getOptionValue(selectedVariant, optionIndex)
-      if (optionValue) values[optionIndex] = optionValue
-    }
-  }
+  if (!selectedVariant) return values
 
-  if (serviceOptionValues && typeof serviceOptionValues === 'object') {
-    const normalizedOverrides = Object.entries(serviceOptionValues).reduce<Record<string, string>>(
-      (acc, [key, value]) => {
-        const normalizedKey = normalizeOptionName(key)
-        const normalizedValue = String(value || '').trim()
-        if (normalizedKey && normalizedValue) acc[normalizedKey] = normalizedValue
-        return acc
-      },
-      {}
-    )
-
-    for (const optionIndex of matrix.serviceOptionIndexes) {
-      const optionDef = matrix.optionDefs[optionIndex]
-      const overrideValue = normalizedOverrides[normalizeOptionName(optionDef?.name)]
-      if (!overrideValue) continue
-      if (Array.isArray(optionDef?.values) && optionDef.values.includes(overrideValue)) {
-        values[optionIndex] = overrideValue
-      }
-    }
+  for (const optionIndex of matrix.serviceOptionIndexes) {
+    const optionValue = getOptionValue(selectedVariant, optionIndex)
+    if (optionValue) values[optionIndex] = optionValue
   }
 
   return values
@@ -590,107 +545,6 @@ function calculateGridFit(
   return { count, efficiency }
 }
 
-export function resolveSheetPricing({
-  widthIn,
-  heightIn,
-  quantity,
-  variants,
-  optionDefs,
-  selectedVariantId,
-  selectedSheetKey,
-  serviceOptionValues,
-  config,
-}: {
-  widthIn: number
-  heightIn: number
-  quantity: number
-  variants: ProductVariantDef[]
-  optionDefs: ProductOptionDef[]
-  selectedVariantId?: string | null
-  selectedSheetKey?: string | null
-  serviceOptionValues?: Record<string, string> | null
-  config: BuilderResolveConfig
-}): SheetPricingResolution | null {
-  if (!(widthIn > 0) || !(heightIn > 0) || !(quantity > 0)) return null
-
-  const matrix = buildVariantMatrix(variants, optionDefs, config)
-  if (!matrix || !matrix.sheetFamilies.length) return null
-
-  const selectedServiceValues = getSelectedServiceOptionValues(
-    matrix,
-    variants,
-    selectedVariantId,
-    serviceOptionValues
-  )
-  const design = { widthInch: widthIn, heightInch: heightIn }
-  const requestedQuantity = Math.max(1, Math.floor(quantity))
-
-  const results = matrix.sheetFamilies
-    .map((family) => {
-      const variant = resolveVariantForFamily(family, matrix, selectedServiceValues)
-      const gridFit = calculateGridFit(design, family, config)
-      if (gridFit.count <= 0) {
-        return {
-          sheetKey: family.key,
-          sheetName: family.displayName,
-          sheetValue: family.sheetValue,
-          variantId: variant ? variant.id : null,
-          variantTitle: variant ? variant.title : '',
-          variantPrice: variant ? normalizeVariantPriceToDollars(variant.price) : 0,
-          sheetsNeeded: 0,
-          designsPerSheet: 0,
-          totalCost: 0,
-          efficiency: 0,
-          wastePercent: 100,
-          error: 'Design too large for this sheet',
-        }
-      }
-
-      const sheetsNeeded = Math.ceil(requestedQuantity / gridFit.count)
-      const variantPrice = variant ? normalizeVariantPriceToDollars(variant.price) : 0
-      const totalCost = sheetsNeeded * variantPrice
-      const efficiencyPercent = gridFit.efficiency * 100
-      return {
-        sheetKey: family.key,
-        sheetName: family.displayName,
-        sheetValue: family.sheetValue,
-        variantId: variant ? variant.id : null,
-        variantTitle: variant ? variant.title : '',
-        variantPrice,
-        designsPerSheet: gridFit.count,
-        sheetsNeeded,
-        totalCost,
-        efficiency: Number(efficiencyPercent.toFixed(1)),
-        wastePercent: Number((100 - efficiencyPercent).toFixed(1)),
-        error: variant ? undefined : 'No matching variant for selected production options',
-      }
-    })
-    .sort((a, b) => {
-      const aValid = a.designsPerSheet > 0 && !!a.variantId
-      const bValid = b.designsPerSheet > 0 && !!b.variantId
-      if (aValid !== bValid) return aValid ? -1 : 1
-      if (a.totalCost !== b.totalCost) return a.totalCost - b.totalCost
-      if (a.sheetsNeeded !== b.sheetsNeeded) return a.sheetsNeeded - b.sheetsNeeded
-      return b.efficiency - a.efficiency
-    })
-
-  const validResults = results.filter((result) => result.designsPerSheet > 0 && !!result.variantId)
-
-  let selected =
-    selectedSheetKey != null && selectedSheetKey !== ''
-      ? validResults.find((result) => result.sheetKey === selectedSheetKey) || null
-      : null
-  const recommended = validResults.length ? validResults[0] : null
-  if (!selected) selected = recommended
-
-  return {
-    results,
-    validResults,
-    recommended,
-    selected,
-  }
-}
-
 export function resolveSheetVariant({
   widthIn,
   heightIn,
@@ -698,8 +552,6 @@ export function resolveSheetVariant({
   variants,
   optionDefs,
   selectedVariantId,
-  selectedSheetKey,
-  serviceOptionValues,
   config,
 }: {
   widthIn: number
@@ -708,32 +560,55 @@ export function resolveSheetVariant({
   variants: ProductVariantDef[]
   optionDefs: ProductOptionDef[]
   selectedVariantId?: string | null
-  selectedSheetKey?: string | null
-  serviceOptionValues?: Record<string, string> | null
   config: BuilderResolveConfig
 }): SheetVariantResolution | null {
-  const pricing = resolveSheetPricing({
-    widthIn,
-    heightIn,
-    quantity,
-    variants,
-    optionDefs,
-    selectedVariantId,
-    selectedSheetKey,
-    serviceOptionValues,
-    config,
-  })
+  if (!(widthIn > 0) || !(heightIn > 0) || !(quantity > 0)) return null
 
-  if (!pricing?.selected) return null
+  const matrix = buildVariantMatrix(variants, optionDefs, config)
+  if (!matrix || !matrix.sheetFamilies.length) return null
 
+  const selectedServiceValues = getSelectedServiceOptionValues(matrix, variants, selectedVariantId)
+  const design = { widthInch: widthIn, heightInch: heightIn }
+  const requestedQuantity = Math.max(1, Math.floor(quantity))
+
+  const validResults = matrix.sheetFamilies
+    .map((family) => {
+      const variant = resolveVariantForFamily(family, matrix, selectedServiceValues)
+      if (!variant) return null
+
+      const gridFit = calculateGridFit(design, family, config)
+      if (gridFit.count <= 0) return null
+
+      const sheetsNeeded = Math.ceil(requestedQuantity / gridFit.count)
+      const variantPrice = normalizeVariantPriceToDollars(variant.price)
+      const totalCost = sheetsNeeded * variantPrice
+
+      return {
+        family,
+        variant,
+        designsPerSheet: gridFit.count,
+        sheetsNeeded,
+        totalCost,
+        efficiency: gridFit.efficiency,
+      }
+    })
+    .filter((result): result is NonNullable<typeof result> => Boolean(result))
+    .sort((a, b) => {
+      if (a.totalCost !== b.totalCost) return a.totalCost - b.totalCost
+      if (a.sheetsNeeded !== b.sheetsNeeded) return a.sheetsNeeded - b.sheetsNeeded
+      return b.efficiency - a.efficiency
+    })
+
+  if (!validResults.length) return null
+
+  const selected = validResults[0]
   return {
-    selectedVariantId: pricing.selected.variantId || '',
-    selectedVariantTitle: pricing.selected.variantTitle,
-    selectedSheetLabel: pricing.selected.sheetName,
-    selectedSheetKey: pricing.selected.sheetKey,
-    designsPerSheet: pricing.selected.designsPerSheet,
-    sheetsNeeded: pricing.selected.sheetsNeeded,
-    requestedQuantity: Math.max(1, Math.floor(quantity)),
+    selectedVariantId: selected.variant.id,
+    selectedVariantTitle: selected.variant.title,
+    selectedSheetLabel: selected.family.displayName,
+    designsPerSheet: selected.designsPerSheet,
+    sheetsNeeded: selected.sheetsNeeded,
+    requestedQuantity,
     widthIn,
     heightIn,
   }

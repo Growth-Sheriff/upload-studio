@@ -120,7 +120,6 @@
     this.config.imageMarginIn = normalizeMarginIn(this.config.imageMarginIn);
     this.config.productVariants = Array.isArray(this.config.productVariants) ? this.config.productVariants : [];
     this.config.productOptions = Array.isArray(this.config.productOptions) ? this.config.productOptions : [];
-    this.config.selectedVariantId = this.config.selectedVariantId || null;
     this.state = 'IDLE';
     this.files = [];
     this.activeFileIndex = -1;
@@ -445,11 +444,7 @@
             upscale: false,
             halftone: false,
             keepRatio: true,
-            ratio: ratio || 1.57,
-            _preflightReady: false,
-            _sheetPricingPending: self.isSheetPricingEnabled(),
-            _sheetPricingError: '',
-            _sheetPricing: null
+            ratio: ratio || 1.57
           });
           self.activeFileIndex = self.files.length - 1;
           self.state = 'EDITOR';
@@ -468,11 +463,7 @@
             widthPx: dims.widthPx, heightPx: dims.heightPx, dpi: dims.dpi,
             widthIn: dims.widthIn || 12.5, heightIn: dims.heightIn || 7.94,
             quantity: 1, removeBg: false, upscale: false, halftone: false,
-            keepRatio: true, ratio: (dims.widthIn / dims.heightIn) || 1.57,
-            _preflightReady: false,
-            _sheetPricingPending: self.isSheetPricingEnabled(),
-            _sheetPricingError: '',
-            _sheetPricing: null
+            keepRatio: true, ratio: (dims.widthIn / dims.heightIn) || 1.57
           });
           self.activeFileIndex = self.files.length - 1;
           self.state = 'EDITOR';
@@ -542,7 +533,6 @@
           // Update with server data if available
           if (item.preflightStatus && item.preflightStatus !== 'pending') {
             clearInterval(interval);
-            fileEntry._preflightReady = true;
 
             // Update dimensions from preflight
             if (item.widthPx && item.widthPx > 0) fileEntry.widthPx = item.widthPx;
@@ -561,9 +551,7 @@
             if (item.originalUrl) fileEntry.cdnUrl = item.originalUrl;
 
             // Re-render if this file is currently selected
-            if (self.isSheetPricingEnabled()) {
-              self.resolveSheetPricingOnServer(fileEntry);
-            } else if (self.activeFileIndex === fileIndex && self.state === 'EDITOR') {
+            if (self.activeFileIndex === fileIndex && self.state === 'EDITOR') {
               self.renderEditor();
             }
 
@@ -685,10 +673,6 @@
 
     this._cachedOptions = null;
     this._variantMatrix = null;
-
-    if (this.isSheetPricingEnabled() && this.files.length) {
-      this.scheduleAllSheetPricingResolutions(0);
-    }
   };
 
   DtfUploadBlock.prototype.getOptionValue = function(variant, optionIndex) {
@@ -713,159 +697,6 @@
       }
     }
     return this.config.colorProfile || 'CMYK';
-  };
-
-  DtfUploadBlock.prototype.buildEmptySheetPricingState = function(file) {
-    return {
-      results: [],
-      validResults: [],
-      recommended: null,
-      selected: null,
-      pending: !!(file && file._sheetPricingPending),
-      error: file && file._sheetPricingError ? String(file._sheetPricingError) : ''
-    };
-  };
-
-  DtfUploadBlock.prototype.getCurrentServiceOptionValues = function(matrix) {
-    var values = {};
-    if (!matrix || !matrix.serviceOptions) return values;
-
-    for (var i = 0; i < matrix.serviceOptions.length; i++) {
-      var option = matrix.serviceOptions[i];
-      var selectedValue = this.selectedServiceOptions[option.name];
-      if (selectedValue) {
-        values[option.name] = selectedValue;
-      }
-    }
-
-    return values;
-  };
-
-  DtfUploadBlock.prototype.getSheetPricingState = function(file) {
-    if (!file) return null;
-    if (file._sheetPricing) {
-      return Object.assign({}, file._sheetPricing, {
-        pending: !!file._sheetPricingPending,
-        error: file._sheetPricingError ? String(file._sheetPricingError) : ''
-      });
-    }
-    return this.buildEmptySheetPricingState(file);
-  };
-
-  DtfUploadBlock.prototype.scheduleSheetPricingResolution = function(file, delayMs) {
-    if (!this.isSheetPricingEnabled() || !file || !file.uploadId) return;
-    if (file._sheetResolveTimer) clearTimeout(file._sheetResolveTimer);
-
-    file._sheetPricingPending = true;
-    file._sheetPricingError = '';
-
-    var self = this;
-    file._sheetResolveTimer = setTimeout(function() {
-      file._sheetResolveTimer = null;
-      self.resolveSheetPricingOnServer(file);
-    }, typeof delayMs === 'number' ? delayMs : 150);
-  };
-
-  DtfUploadBlock.prototype.scheduleAllSheetPricingResolutions = function(delayMs) {
-    if (!this.isSheetPricingEnabled()) return;
-    for (var i = 0; i < this.files.length; i++) {
-      var file = this.files[i];
-      if (file && file.uploadId && file._preflightReady) {
-        this.scheduleSheetPricingResolution(file, delayMs);
-      }
-    }
-  };
-
-  DtfUploadBlock.prototype.resolveSheetPricingOnServer = function(file) {
-    if (!this.isSheetPricingEnabled() || !file || !file.uploadId || !file._preflightReady) {
-      return Promise.resolve(null);
-    }
-
-    if (!(file.widthIn > 0) || !(file.heightIn > 0)) {
-      return Promise.resolve(null);
-    }
-
-    var apiBase = this.config.apiBase || '/apps/customizer';
-    var matrix = this.buildVariantMatrix();
-    var requestToken = (file._sheetResolveToken || 0) + 1;
-    var self = this;
-
-    file._sheetResolveToken = requestToken;
-    file._sheetPricingPending = true;
-    file._sheetPricingError = '';
-
-    if (this.activeFileIndex >= 0 && this.files[this.activeFileIndex] === file && this.state === 'EDITOR') {
-      this.renderEditor();
-    }
-
-    return fetch(apiBase + '/api/upload/resolve-product', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        shopDomain: this.config.shopDomain,
-        productId: String(this.config.productId),
-        uploadId: file.uploadId,
-        quantity: file.quantity,
-        widthIn: file.widthIn,
-        heightIn: file.heightIn,
-        selectedVariantId: this.config.selectedVariantId || null,
-        selectedSheetKey: file.selectedSheetKey || null,
-        serviceOptionValues: this.getCurrentServiceOptionValues(matrix),
-        artboardMarginIn: normalizeMarginIn(this.config.artboardMarginIn),
-        imageMarginIn: normalizeMarginIn(this.config.imageMarginIn),
-        maxUploadWidth: this.config.maxWidth
-      })
-    })
-      .then(function(res) {
-        return res.json().catch(function() { return {}; }).then(function(data) {
-          return { ok: res.ok, data: data };
-        });
-      })
-      .then(function(result) {
-        if (file._sheetResolveToken !== requestToken) return null;
-        if (!result.ok) {
-          var responseError = result.data && result.data.error ? result.data.error : 'Failed to resolve sheet pricing.';
-          if (result.data && result.data.sheetPricing) {
-            file._sheetPricing = result.data.sheetPricing;
-          }
-          throw new Error(responseError);
-        }
-
-        var sheetPricing = result.data && result.data.sheetPricing ? result.data.sheetPricing : null;
-        if (!sheetPricing || !sheetPricing.selected) {
-          throw new Error('No product variant can fit this upload with the current quantity and production options.');
-        }
-
-        sheetPricing.pending = false;
-        sheetPricing.error = '';
-        file._sheetPricingPending = false;
-        file._sheetPricingError = '';
-        file._sheetPricing = sheetPricing;
-        file.selectedSheetKey = sheetPricing.selected.sheetKey;
-
-        if (self.activeFileIndex >= 0 && self.files[self.activeFileIndex] === file && self.state === 'EDITOR') {
-          self.renderEditor();
-        }
-
-        return sheetPricing;
-      })
-      .catch(function(error) {
-        if (file._sheetResolveToken !== requestToken) return null;
-
-        file._sheetPricingPending = false;
-        file._sheetPricingError = error && error.message ? error.message : 'Failed to resolve sheet pricing.';
-        if (!file._sheetPricing) {
-          file._sheetPricing = self.buildEmptySheetPricingState(file);
-        }
-        file._sheetPricing.pending = false;
-        file._sheetPricing.error = file._sheetPricingError;
-
-        if (self.activeFileIndex >= 0 && self.files[self.activeFileIndex] === file && self.state === 'EDITOR') {
-          self.renderEditor();
-        }
-
-        return null;
-      });
   };
 
   DtfUploadBlock.prototype.getProductOptions = function() {
@@ -1226,28 +1057,11 @@
 
   DtfUploadBlock.prototype.ensureServiceOptionSelections = function(matrix) {
     if (!matrix || !matrix.serviceOptions) return;
-    var selectedVariant = null;
-    if (this.config.selectedVariantId) {
-      var variants = this._getProductVariants();
-      for (var vi = 0; vi < variants.length; vi++) {
-        if (String(variants[vi].id) === String(this.config.selectedVariantId)) {
-          selectedVariant = variants[vi];
-          break;
-        }
-      }
-    }
-
     for (var i = 0; i < matrix.serviceOptions.length; i++) {
       var option = matrix.serviceOptions[i];
       if (!option.values || !option.values.length) continue;
       if (option.values.indexOf(this.selectedServiceOptions[option.name]) === -1) {
         var preferredValue = option.values[0];
-        if (selectedVariant) {
-          var selectedVariantValue = this.getOptionValue(selectedVariant, option.index);
-          if (selectedVariantValue && option.values.indexOf(selectedVariantValue) >= 0) {
-            preferredValue = selectedVariantValue;
-          }
-        }
         if (
           this.config.colorProfile &&
           option.values.indexOf(this.config.colorProfile) >= 0 &&
@@ -1603,7 +1417,7 @@
 
   DtfUploadBlock.prototype.getFileDisplayPrice = function(file) {
     if (this.isSheetPricingEnabled()) {
-      var pricing = this.getSheetPricingState(file);
+      var pricing = this.calculateSheetPricing(file);
       if (pricing && pricing.selected) {
         return {
           subtotal: pricing.selected.totalCost.toFixed(2),
@@ -1666,14 +1480,6 @@
   };
 
   DtfUploadBlock.prototype.renderSheetPricingRows = function(pricing) {
-    if (pricing && pricing.pending) {
-      return '<div class="dtf-sheet-list-empty">Resolving best sheet variant on server...</div>';
-    }
-
-    if (pricing && pricing.error && (!pricing.results || !pricing.results.length)) {
-      return '<div class="dtf-sheet-list-empty">' + escapeHtml(pricing.error) + '</div>';
-    }
-
     if (!pricing || !pricing.results || !pricing.results.length) {
       return '<div class="dtf-sheet-list-empty">No sheet variants were found for this product.</div>';
     }
@@ -1727,22 +1533,6 @@
   };
 
   DtfUploadBlock.prototype.renderSheetPricingSummary = function(file, pricing) {
-    if (pricing && pricing.pending) {
-      return [
-        '<div class="dtf-price-calc">',
-        '  <div class="dtf-price-row"><span>Status:</span><span>Resolving on server...</span></div>',
-        '</div>'
-      ].join('');
-    }
-
-    if (pricing && pricing.error && !pricing.selected) {
-      return [
-        '<div class="dtf-price-calc">',
-        '  <div class="dtf-price-row"><span>Status:</span><span>' + escapeHtml(pricing.error) + '</span></div>',
-        '</div>'
-      ].join('');
-    }
-
     if (!pricing || !pricing.selected) {
       return [
         '<div class="dtf-price-calc">',
@@ -1841,7 +1631,7 @@
     var priceData = this.calculatePrice(file.widthIn, file.heightIn, file.quantity);
     var variantMatrix = this.buildVariantMatrix();
     var variantBounds = this.getVariantDimensionBounds(variantMatrix);
-    var sheetPricing = this.isSheetPricingEnabled() ? this.getSheetPricingState(file) : null;
+    var sheetPricing = this.isSheetPricingEnabled() ? this.calculateSheetPricing(file) : null;
     var areaVariantPricing = !this.isSheetPricingEnabled() ? this.getAreaVariantPricing(file) : null;
     var maxWidthLimit = variantBounds ? Math.max(this.config.maxWidth, variantBounds.maxWidth) : this.config.maxWidth;
     var maxHeightLimit = variantBounds ? Math.max(this.config.maxHeight, variantBounds.maxHeight) : this.config.maxHeight;
@@ -1854,12 +1644,8 @@
     if (file.heightIn < this.config.minHeight) errors.push('Height should be at least ' + this.config.minHeight + 'in');
 
     if (this.isSheetPricingEnabled()) {
-      if (sheetPricing && sheetPricing.pending) {
-        // Wait for server resolution before enabling add to cart.
-      } else if (sheetPricing && sheetPricing.error) {
-        errors.push(sheetPricing.error);
-      } else if (!sheetPricing) {
-        errors.push('Sheet pricing is enabled, but server resolution has not started yet.');
+      if (!sheetPricing) {
+        errors.push('Sheet pricing is enabled, but no sheet-sized variants could be analyzed.');
       } else if (!sheetPricing.validResults.length) {
         errors.push('No valid sheet variant matches the current design and production options.');
       }
@@ -1867,10 +1653,7 @@
       errors.push('No product variant matches the current dimensions and production options.');
     }
 
-    this.addToCartBtn.disabled =
-      errors.length > 0 ||
-      (this.isSheetPricingEnabled() &&
-        (!sheetPricing || sheetPricing.pending || !sheetPricing.selected));
+    this.addToCartBtn.disabled = errors.length > 0 || (this.isSheetPricingEnabled() && (!sheetPricing || !sheetPricing.selected));
 
     // Build HTML
     var leftContent = '';
@@ -2056,12 +1839,7 @@
 
     function debouncedRender() {
       if (renderTimeout) clearTimeout(renderTimeout);
-      renderTimeout = setTimeout(function() {
-        if (self.isSheetPricingEnabled()) {
-          self.scheduleSheetPricingResolution(file, 150);
-        }
-        self.renderEditor();
-      }, 300);
+      renderTimeout = setTimeout(function() { self.renderEditor(); }, 300);
     }
 
     if (inputW) inputW.addEventListener('input', function(e) {
@@ -2093,8 +1871,7 @@
         var optionName = e.target.getAttribute('data-option-name');
         if (optionName) {
           self.selectedServiceOptions[optionName] = e.target.value;
-          self.scheduleAllSheetPricingResolutions(150);
-          self.renderEditor();
+          debouncedRender();
         }
       });
     }
@@ -2186,7 +1963,7 @@
       var sheetItems = [];
       for (var sf = 0; sf < readyFiles.length; sf++) {
         var readyFile = readyFiles[sf];
-        var sheetPricing = this.getSheetPricingState(readyFile);
+        var sheetPricing = this.calculateSheetPricing(readyFile);
         if (!sheetPricing || !sheetPricing.selected || !sheetPricing.selected.variantId) {
           alert('Could not resolve a sheet-priced variant for one of the uploaded files.');
           this.addToCartBtn.disabled = false;
@@ -2595,7 +2372,6 @@
         tiers: root.dataset.tiers,
         productVariants: safeJsonParse(root.dataset.productVariants || '[]', []),
         productOptions: safeJsonParse(root.dataset.productOptions || '[]', []),
-        selectedVariantId: root.dataset.selectedVariantId || null,
         pricingMode: root.dataset.pricingMode || 'area',
         sheetOptionName: root.dataset.sheetOptionName || null,
         widthOptionName: root.dataset.widthOptionName || null,
