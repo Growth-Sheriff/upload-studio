@@ -336,15 +336,28 @@ async function uploadToBunny(
   console.log(`[Preflight] Uploading to Bunny storage: ${url}`)
 
   const content = await fs.readFile(localPath)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 15000)
 
-  const response = await fetch(url, {
-    method: 'PUT',
-    headers: {
-      AccessKey: apiKey,
-      'Content-Type': contentType,
-    },
-    body: content,
-  })
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        AccessKey: apiKey,
+        'Content-Type': contentType,
+      },
+      body: content,
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Bunny upload timed out after 15000ms')
+    }
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => '')
@@ -661,6 +674,8 @@ const preflightWorker = new Worker<PreflightJobData>(
       const uploadPath = stripStoragePrefix(thumbnailKey)
 
       // Only upload thumbnail if it was generated successfully
+      let thumbnailUploaded = false
+
       if (thumbnailGenerated) {
         try {
           if (storageProvider === 'bunny' || storageKey.startsWith('bunny:')) {
@@ -670,6 +685,7 @@ const preflightWorker = new Worker<PreflightJobData>(
           } else if (client) {
             await uploadFile(client, uploadPath, thumbnailPath, 'image/webp')
           }
+          thumbnailUploaded = true
           workerLog.info('THUMBNAIL_UPLOADED', { uploadPath: uploadPath.substring(0, 60) })
         } catch (uploadError) {
           workerLog.error('THUMBNAIL_UPLOAD_FAILED', {
@@ -687,7 +703,8 @@ const preflightWorker = new Worker<PreflightJobData>(
       // Determine final thumbnailKey with proper prefix for URL generation
       // If Bunny storage, ensure bunny: prefix is present
       // If thumbnail wasn't generated, set to null
-      const finalThumbnailKey = thumbnailGenerated ? `${storageProvider}:${uploadPath}` : null
+      const finalThumbnailKey =
+        thumbnailGenerated && thumbnailUploaded ? `${storageProvider}:${uploadPath}` : null
 
       // Update database
       // IMPORTANT: previewKey = storageKey (original file) - merchant always gets original
