@@ -6,6 +6,176 @@ import { promisify } from 'util'
 
 const execAsync = promisify(exec)
 
+function parsePngInfo(buffer: Buffer) {
+  if (buffer.length < 24) return null
+  const width = buffer.readUInt32BE(16)
+  const height = buffer.readUInt32BE(20)
+  let dpi = 72
+  let hasAlpha = false
+
+  const colorType = buffer[25]
+  hasAlpha = colorType === 4 || colorType === 6
+
+  let offset = 8
+  while (offset + 8 <= buffer.length) {
+    const length = buffer.readUInt32BE(offset)
+    const chunkType = buffer.toString('ascii', offset + 4, offset + 8)
+    const dataOffset = offset + 8
+
+    if (chunkType === 'pHYs' && dataOffset + 9 <= buffer.length) {
+      const pixelsPerUnitX = buffer.readUInt32BE(dataOffset)
+      const pixelsPerUnitY = buffer.readUInt32BE(dataOffset + 4)
+      const unitSpecifier = buffer[dataOffset + 8]
+      if (unitSpecifier === 1 && pixelsPerUnitX > 0 && pixelsPerUnitY > 0) {
+        const dpiX = pixelsPerUnitX * 0.0254
+        const dpiY = pixelsPerUnitY * 0.0254
+        dpi = Math.round((dpiX + dpiY) / 2)
+      }
+    }
+
+    offset += 12 + length
+    if (chunkType === 'IEND') break
+  }
+
+  return {
+    width,
+    height,
+    dpi,
+    colorspace: 'sRGB',
+    hasAlpha,
+    format: 'PNG',
+  }
+}
+
+function parseJpegInfo(buffer: Buffer) {
+  if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) return null
+
+  let dpi = 72
+  let offset = 2
+  while (offset + 4 <= buffer.length) {
+    if (buffer[offset] !== 0xff) {
+      offset += 1
+      continue
+    }
+
+    const marker = buffer[offset + 1]
+    if (marker === 0xd8 || marker === 0xd9) {
+      offset += 2
+      continue
+    }
+
+    const segmentLength = buffer.readUInt16BE(offset + 2)
+    if (segmentLength < 2 || offset + 2 + segmentLength > buffer.length) break
+
+    if (marker === 0xe0 && buffer.toString('ascii', offset + 4, offset + 9) === 'JFIF\0') {
+      const units = buffer[offset + 11]
+      const xDensity = buffer.readUInt16BE(offset + 12)
+      const yDensity = buffer.readUInt16BE(offset + 14)
+      if (units === 1 && xDensity > 0 && yDensity > 0) {
+        dpi = Math.round((xDensity + yDensity) / 2)
+      } else if (units === 2 && xDensity > 0 && yDensity > 0) {
+        dpi = Math.round(((xDensity * 2.54) + (yDensity * 2.54)) / 2)
+      }
+    }
+
+    if ((marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) || (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf)) {
+      const height = buffer.readUInt16BE(offset + 5)
+      const width = buffer.readUInt16BE(offset + 7)
+      return {
+        width,
+        height,
+        dpi,
+        colorspace: 'sRGB',
+        hasAlpha: false,
+        format: 'JPEG',
+      }
+    }
+
+    offset += 2 + segmentLength
+  }
+
+  return null
+}
+
+function parseWebpInfo(buffer: Buffer) {
+  if (buffer.length < 30) return null
+  if (buffer.toString('ascii', 0, 4) !== 'RIFF' || buffer.toString('ascii', 8, 12) !== 'WEBP') {
+    return null
+  }
+
+  const chunkType = buffer.toString('ascii', 12, 16)
+  if (chunkType === 'VP8 ') {
+    const width = buffer.readUInt16LE(26) & 0x3fff
+    const height = buffer.readUInt16LE(28) & 0x3fff
+    return { width, height, dpi: 72, colorspace: 'sRGB', hasAlpha: false, format: 'WEBP' }
+  }
+
+  if (chunkType === 'VP8L') {
+    const bits = buffer.readUInt32LE(21)
+    const width = (bits & 0x3fff) + 1
+    const height = ((bits >> 14) & 0x3fff) + 1
+    const alpha = (bits >> 28) & 0x1
+    return { width, height, dpi: 72, colorspace: 'sRGB', hasAlpha: alpha === 1, format: 'WEBP' }
+  }
+
+  if (chunkType === 'VP8X' && buffer.length >= 30) {
+    const width = 1 + buffer.readUIntLE(24, 3)
+    const height = 1 + buffer.readUIntLE(27, 3)
+    const flags = buffer[20]
+    return {
+      width,
+      height,
+      dpi: 72,
+      colorspace: 'sRGB',
+      hasAlpha: (flags & 0x10) !== 0,
+      format: 'WEBP',
+    }
+  }
+
+  return null
+}
+
+function parseSvgLength(rawValue: string | undefined, fallback: number): number {
+  if (!rawValue) return fallback
+  const numeric = parseFloat(rawValue)
+  return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : fallback
+}
+
+async function getImageInfoWithoutImagemagick(filePath: string, mimeType: string) {
+  const buffer = await fs.readFile(filePath)
+
+  if (mimeType === 'image/png') {
+    return parsePngInfo(buffer)
+  }
+
+  if (mimeType === 'image/jpeg') {
+    return parseJpegInfo(buffer)
+  }
+
+  if (mimeType === 'image/webp') {
+    return parseWebpInfo(buffer)
+  }
+
+  if (mimeType === 'image/svg+xml') {
+    const source = buffer.toString('utf8')
+    const widthMatch = source.match(/\bwidth="([^"]+)"/i)
+    const heightMatch = source.match(/\bheight="([^"]+)"/i)
+    const viewBoxMatch = source.match(/\bviewBox="[^"]*?(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)"/i)
+    const fallbackWidth = viewBoxMatch ? parseFloat(viewBoxMatch[1]) : 0
+    const fallbackHeight = viewBoxMatch ? parseFloat(viewBoxMatch[2]) : 0
+    return {
+      width: parseSvgLength(widthMatch?.[1], fallbackWidth),
+      height: parseSvgLength(heightMatch?.[1], fallbackHeight),
+      dpi: 72,
+      colorspace: 'sRGB',
+      hasAlpha: true,
+      format: 'SVG',
+    }
+  }
+
+  return null
+}
+
 // Preflight check result types
 export interface PreflightCheck {
   name: string
@@ -159,6 +329,8 @@ export async function getImageInfo(filePath: string): Promise<{
   hasAlpha: boolean
   format: string
 }> {
+  const detectedType = await detectFileType(filePath)
+
   try {
     // v4.5.0: No timeout - large files (10GB+) need unlimited time
     const { stdout } = await execAsync(
@@ -184,6 +356,15 @@ export async function getImageInfo(filePath: string): Promise<{
     return { width, height, dpi, colorspace, hasAlpha, format }
   } catch (error) {
     console.error('[Preflight] ImageMagick identify failed:', error)
+
+    if (detectedType) {
+      const fallbackInfo = await getImageInfoWithoutImagemagick(filePath, detectedType)
+      if (fallbackInfo && fallbackInfo.width > 0 && fallbackInfo.height > 0) {
+        console.warn('[Preflight] Falling back to native image metadata parser:', detectedType)
+        return fallbackInfo
+      }
+    }
+
     throw new Error('Failed to analyze image')
   }
 }
