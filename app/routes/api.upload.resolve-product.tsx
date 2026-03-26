@@ -93,28 +93,63 @@ function extractUploadDimensions(preflightResult: unknown) {
   let widthPx = 0
   let heightPx = 0
   let dpi = 0
+  let trimmedWidthPx = 0
+  let trimmedHeightPx = 0
+  let measurementWidthPx = 0
+  let measurementHeightPx = 0
+  let effectiveDpi = 300
+  let measurementMode = 'full'
+  let widthIn = 0
+  let heightIn = 0
 
   for (const check of checks) {
     if (check.name === 'dimensions' && check.details) {
-      const details = check.details as Record<string, number>
+      const details = check.details as Record<string, unknown>
       widthPx = Number(details.width || 0)
       heightPx = Number(details.height || 0)
+      trimmedWidthPx = Number(details.trimmedWidth || 0)
+      trimmedHeightPx = Number(details.trimmedHeight || 0)
+      measurementWidthPx = Number(details.measurementWidth || 0)
+      measurementHeightPx = Number(details.measurementHeight || 0)
+      effectiveDpi = Number(details.effectiveDpi || effectiveDpi || 300)
+      widthIn = Number(details.widthIn || 0)
+      heightIn = Number(details.heightIn || 0)
+      measurementMode =
+        typeof details.measurementMode === 'string' && details.measurementMode
+          ? String(details.measurementMode)
+          : measurementMode
     }
     if (check.name === 'dpi' && typeof check.value === 'number') {
       dpi = Number(check.value || 0)
     }
   }
 
-  if (!(widthPx > 0) || !(heightPx > 0) || !(dpi > 0)) {
+  if (!(widthPx > 0) || !(heightPx > 0)) {
     return null
+  }
+
+  if (!(measurementWidthPx > 0) || !(measurementHeightPx > 0)) {
+    measurementWidthPx = widthPx
+    measurementHeightPx = heightPx
+  }
+  if (!(widthIn > 0) || !(heightIn > 0) || !(effectiveDpi > 0)) {
+    effectiveDpi = effectiveDpi > 0 ? effectiveDpi : 300
+    widthIn = Number((measurementWidthPx / effectiveDpi).toFixed(2))
+    heightIn = Number((measurementHeightPx / effectiveDpi).toFixed(2))
   }
 
   return {
     widthPx,
     heightPx,
     dpi,
-    widthIn: Number((widthPx / dpi).toFixed(2)),
-    heightIn: Number((heightPx / dpi).toFixed(2)),
+    trimmedWidthPx,
+    trimmedHeightPx,
+    measurementWidthPx,
+    measurementHeightPx,
+    effectiveDpi,
+    measurementMode,
+    widthIn,
+    heightIn,
   }
 }
 

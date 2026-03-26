@@ -149,4 +149,31 @@ describe('resolveSheetVariant', () => {
 
     expect(result).toBeNull()
   })
+
+  it('uses quantity to prefer a larger sheet when it reduces total cost', () => {
+    const optionDefs: ProductOptionDef[] = [{ name: 'Size', values: ['22 x 12', '22 x 24'] }]
+    const variants: ProductVariantDef[] = [
+      buildVariant('401', '22 x 12', '12.00', [{ name: 'Size', value: '22 x 12' }]),
+      buildVariant('402', '22 x 24', '16.00', [{ name: 'Size', value: '22 x 24' }]),
+    ]
+
+    const result = resolveSheetVariant({
+      widthIn: 6.47,
+      heightIn: 5.18,
+      quantity: 10,
+      variants,
+      optionDefs,
+      selectedVariantId: '401',
+      config: {
+        sheetOptionName: 'Size',
+        artboardMarginIn: 0.125,
+        imageMarginIn: 0.125,
+      },
+    })
+
+    expect(result).not.toBeNull()
+    expect(result?.selectedVariantId).toBe('402')
+    expect(result?.designsPerSheet).toBeGreaterThan(2)
+    expect(result?.sheetsNeeded).toBeLessThanOrEqual(2)
+  })
 })

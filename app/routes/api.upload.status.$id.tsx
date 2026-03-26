@@ -312,16 +312,44 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     let widthPx = 0
     let heightPx = 0
     let dpi = 0
+    let trimmedWidthPx = 0
+    let trimmedHeightPx = 0
+    let measurementWidthPx = 0
+    let measurementHeightPx = 0
+    let effectiveDpi = 300
+    let widthIn = 0
+    let heightIn = 0
+    let measurementMode: string | null = null
 
     for (const check of checks) {
       if (check.name === 'dimensions' && check.details) {
-        const details = check.details as Record<string, number>
-        widthPx = details.width || 0
-        heightPx = details.height || 0
+        const details = check.details as Record<string, unknown>
+        widthPx = Number(details.width || 0)
+        heightPx = Number(details.height || 0)
+        trimmedWidthPx = Number(details.trimmedWidth || 0)
+        trimmedHeightPx = Number(details.trimmedHeight || 0)
+        measurementWidthPx = Number(details.measurementWidth || 0)
+        measurementHeightPx = Number(details.measurementHeight || 0)
+        effectiveDpi = Number(details.effectiveDpi || 300)
+        widthIn = Number(details.widthIn || 0)
+        heightIn = Number(details.heightIn || 0)
+        measurementMode =
+          typeof details.measurementMode === 'string' && details.measurementMode
+            ? String(details.measurementMode)
+            : null
       }
       if (check.name === 'dpi' && typeof check.value === 'number') {
         dpi = check.value
       }
+    }
+
+    if (!(measurementWidthPx > 0) || !(measurementHeightPx > 0)) {
+      measurementWidthPx = widthPx
+      measurementHeightPx = heightPx
+    }
+    if (!(widthIn > 0) || !(heightIn > 0)) {
+      widthIn = effectiveDpi > 0 ? Number((measurementWidthPx / effectiveDpi).toFixed(2)) : 0
+      heightIn = effectiveDpi > 0 ? Number((measurementHeightPx / effectiveDpi).toFixed(2)) : 0
     }
 
     // v1.1.0: Compute per-item thumbnail URL
@@ -382,6 +410,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       widthPx,
       heightPx,
       dpi,
+      trimmedWidthPx,
+      trimmedHeightPx,
+      measurementWidthPx,
+      measurementHeightPx,
+      effectiveDpi,
+      widthIn,
+      heightIn,
+      measurementMode,
       thumbnailUrl: itemThumbnailUrl,
       originalUrl: itemOriginalUrl,
     }

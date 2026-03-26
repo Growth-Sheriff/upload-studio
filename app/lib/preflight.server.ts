@@ -5,6 +5,7 @@ import path from 'path'
 import { promisify } from 'util'
 
 const execAsync = promisify(exec)
+const PRODUCTION_DPI = 300
 
 function parsePngInfo(buffer: Buffer) {
   if (buffer.length < 24) return null
@@ -192,6 +193,21 @@ export interface PreflightResult {
   convertedPath?: string
 }
 
+interface MeasuredImageInfo {
+  width: number
+  height: number
+  dpi: number
+  colorspace: string
+  hasAlpha: boolean
+  format: string
+  trimmedWidth?: number
+  trimmedHeight?: number
+  effectiveDpi?: number
+  measurementWidth?: number
+  measurementHeight?: number
+  measurementMode?: 'trimmed' | 'full'
+}
+
 // Plan-based configuration
 export interface PreflightConfig {
   maxFileSizeMB: number
@@ -328,7 +344,7 @@ export async function getImageInfo(filePath: string): Promise<{
   colorspace: string
   hasAlpha: boolean
   format: string
-}> {
+} & Partial<MeasuredImageInfo>> {
   const detectedType = await detectFileType(filePath)
 
   try {
@@ -366,6 +382,45 @@ export async function getImageInfo(filePath: string): Promise<{
     }
 
     throw new Error('Failed to analyze image')
+  }
+}
+
+async function getTrimmedImageBounds(
+  filePath: string,
+  imageInfo: Pick<MeasuredImageInfo, 'width' | 'height' | 'hasAlpha'>
+): Promise<{ trimmedWidth: number; trimmedHeight: number; measurementMode: 'trimmed' | 'full' }> {
+  if (!imageInfo.hasAlpha) {
+    return {
+      trimmedWidth: imageInfo.width,
+      trimmedHeight: imageInfo.height,
+      measurementMode: 'full',
+    }
+  }
+
+  try {
+    const { stdout } = await execAsync(
+      `convert "${filePath}[0]" -alpha extract -auto-level -threshold 0 -trim -format "%w|%h" info:`
+    )
+    const parts = stdout.trim().split('|')
+    const trimmedWidth = parseInt(parts[0], 10)
+    const trimmedHeight = parseInt(parts[1], 10)
+
+    if (trimmedWidth > 0 && trimmedHeight > 0) {
+      return {
+        trimmedWidth,
+        trimmedHeight,
+        measurementMode:
+          trimmedWidth !== imageInfo.width || trimmedHeight !== imageInfo.height ? 'trimmed' : 'full',
+      }
+    }
+  } catch (error) {
+    console.warn('[Preflight] Transparent trim analysis failed:', error)
+  }
+
+  return {
+    trimmedWidth: imageInfo.width,
+    trimmedHeight: imageInfo.height,
+    measurementMode: 'full',
   }
 }
 
@@ -652,22 +707,26 @@ export async function runPreflightChecks(
   // 4. Image info checks (DPI, dimensions, transparency, color)
   try {
     const imageInfo = await getImageInfo(filePath)
+    const trimmedBounds = await getTrimmedImageBounds(filePath, imageInfo)
+    const effectiveDpi = PRODUCTION_DPI
+    const measurementWidth = trimmedBounds.trimmedWidth > 0 ? trimmedBounds.trimmedWidth : imageInfo.width
+    const measurementHeight =
+      trimmedBounds.trimmedHeight > 0 ? trimmedBounds.trimmedHeight : imageInfo.height
 
     // DPI check
-    if (imageInfo.dpi < config.minDPI * 0.7) {
+    if (imageInfo.dpi <= 0) {
       checks.push({
         name: 'dpi',
-        status: 'error',
+        status: 'warning',
         value: imageInfo.dpi,
-        message: `DPI (${imageInfo.dpi}) is too low. Minimum: ${config.minDPI}`,
+        message: `Embedded DPI metadata is missing. Production sizing uses ${effectiveDpi} DPI.`,
       })
-      overall = 'error'
     } else if (imageInfo.dpi < config.requiredDPI) {
       checks.push({
         name: 'dpi',
         status: 'warning',
         value: imageInfo.dpi,
-        message: `DPI (${imageInfo.dpi}) is below recommended (${config.requiredDPI})`,
+        message: `Embedded DPI (${imageInfo.dpi}) is below recommended (${config.requiredDPI}). Production sizing uses ${effectiveDpi} DPI.`,
       })
       if (overall === 'ok') overall = 'warning'
     } else {
@@ -685,7 +744,18 @@ export async function runPreflightChecks(
       status: 'ok',
       value: `${imageInfo.width}x${imageInfo.height}`,
       message: `Dimensions: ${imageInfo.width} x ${imageInfo.height} px`,
-      details: { width: imageInfo.width, height: imageInfo.height },
+      details: {
+        width: imageInfo.width,
+        height: imageInfo.height,
+        trimmedWidth: trimmedBounds.trimmedWidth,
+        trimmedHeight: trimmedBounds.trimmedHeight,
+        measurementWidth,
+        measurementHeight,
+        effectiveDpi,
+        measurementMode: trimmedBounds.measurementMode,
+        widthIn: Number((measurementWidth / effectiveDpi).toFixed(2)),
+        heightIn: Number((measurementHeight / effectiveDpi).toFixed(2)),
+      },
     })
 
     // Transparency check

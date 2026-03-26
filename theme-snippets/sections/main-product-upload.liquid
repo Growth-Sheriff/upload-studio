@@ -164,6 +164,35 @@
 
       <!-- Right Column - Buy Box (3 cols) -->
       <div class="lg:col-span-3">
+        <!-- Pricing Table -->
+        {% if section.settings.show_pricing_table %}
+          <div class="border border-gray-200 rounded-md overflow-hidden mb-6">
+            <div class="bg-amazon-yellow px-4 py-2">
+              <h3 class="text-sm font-bold text-gray-900">{{ section.settings.pricing_table_title | escape }}</h3>
+            </div>
+            <table class="w-full text-sm text-left">
+              <thead class="bg-gray-100 text-gray-900 border-b border-gray-200">
+                <tr>
+                  <th class="px-4 py-2 font-bold text-xs">Size</th>
+                  <th class="px-4 py-2 font-bold text-xs text-right">Total Price</th>
+                </tr>
+              </thead>
+              <tbody class="ul-main-variant-table divide-y divide-gray-200 bg-white">
+                {% for variant in product.variants %}
+                  <tr class="ul-main-variant-row hover:bg-gray-50" data-variant-id="{{ variant.id }}" data-variant-title="{{ variant.title | escape }}" data-variant-price="{{ variant.price }}" {% unless variant.available %}data-variant-unavailable="true"{% endunless %}>
+                    <td class="px-4 py-1.5 text-gray-700 text-xs">{{ variant.title }}</td>
+                    <td class="px-4 py-1.5 text-right font-medium text-gray-900 text-xs">{{ variant.price | money }}</td>
+                  </tr>
+                {% else %}
+                  <tr>
+                    <td class="px-4 py-2 text-xs text-gray-500" colspan="2">No variants found for this product.</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+
         <div class="border border-gray-200 rounded-lg p-4 bg-white mb-6">
           <div class="ul-main-buybox-price text-2xl font-medium text-gray-900 mb-2">{{ product.price | money }}</div>
           <div class="text-sm text-gray-500 mb-4">FREE delivery <span class="font-bold text-gray-900">Wednesday</span></div>
@@ -176,7 +205,7 @@
             {% unless product.has_only_default_variant %}
               <div class="mb-4">
                 <label class="block text-sm font-bold text-gray-900 mb-1">Size / Variant</label>
-                <select class="ul-main-variant-select w-full bg-gray-100 border border-gray-300 rounded px-2 py-1.5 shadow-sm outline-none focus:ring-2 focus:ring-amazon-orange text-sm">
+                <select class="ul-main-variant-select w-full bg-gray-100 border border-gray-300 rounded px-2 py-1.5 shadow-sm outline-none focus:ring-2 focus:ring-amazon-orange text-sm cursor-not-allowed opacity-70" disabled="disabled" aria-disabled="true">
                   {% for variant in product.variants %}
                     <option 
                       value="{{ variant.id }}" 
@@ -215,35 +244,6 @@
             <div class="flex justify-between"><span>Returns</span> <span class="text-amazon-link hover:underline">Eligible for Return</span></div>
           </div>
         </div>
-
-        <!-- Pricing Table -->
-        {% if section.settings.show_pricing_table %}
-          <div class="border border-gray-200 rounded-md overflow-hidden">
-            <div class="bg-amazon-yellow px-4 py-2">
-              <h3 class="text-sm font-bold text-gray-900">{{ section.settings.pricing_table_title | escape }}</h3>
-            </div>
-            <table class="w-full text-sm text-left">
-              <thead class="bg-gray-100 text-gray-900 border-b border-gray-200">
-                <tr>
-                  <th class="px-4 py-2 font-bold text-xs">Size</th>
-                  <th class="px-4 py-2 font-bold text-xs text-right">Total Price</th>
-                </tr>
-              </thead>
-              <tbody class="ul-main-variant-table divide-y divide-gray-200 bg-white">
-                {% for variant in product.variants %}
-                  <tr class="ul-main-variant-row hover:bg-gray-50" data-variant-id="{{ variant.id }}" data-variant-title="{{ variant.title | escape }}" data-variant-price="{{ variant.price }}" {% unless variant.available %}data-variant-unavailable="true"{% endunless %}>
-                    <td class="px-4 py-1.5 text-gray-700 text-xs">{{ variant.title }}</td>
-                    <td class="px-4 py-1.5 text-right font-medium text-gray-900 text-xs">{{ variant.price | money }}</td>
-                  </tr>
-                {% else %}
-                  <tr>
-                    <td class="px-4 py-2 text-xs text-gray-500" colspan="2">No variants found for this product.</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% endif %}
       </div>
 
     </div>
@@ -268,6 +268,27 @@
     function parseOptionalPositiveNumber(value) {
       var parsed = Number(value);
       return isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+
+    function getPreferredUploadInches(payload) {
+      if (!payload) return null;
+      var widthIn = parseOptionalPositiveNumber(payload.widthIn);
+      var heightIn = parseOptionalPositiveNumber(payload.heightIn);
+      if (widthIn && heightIn) {
+        return { widthIn: widthIn, heightIn: heightIn };
+      }
+
+      var measurementWidthPx = parseOptionalPositiveNumber(payload.measurementWidthPx) || parseOptionalPositiveNumber(payload.trimmedWidthPx) || parseOptionalPositiveNumber(payload.widthPx);
+      var measurementHeightPx = parseOptionalPositiveNumber(payload.measurementHeightPx) || parseOptionalPositiveNumber(payload.trimmedHeightPx) || parseOptionalPositiveNumber(payload.heightPx);
+      var effectiveDpi = parseOptionalPositiveNumber(payload.effectiveDpi) || 300;
+      if (measurementWidthPx && measurementHeightPx && effectiveDpi) {
+        return {
+          widthIn: Number((measurementWidthPx / effectiveDpi).toFixed(2)),
+          heightIn: Number((measurementHeightPx / effectiveDpi).toFixed(2))
+        };
+      }
+
+      return null;
     }
 
     var productJsonEl = document.getElementById({{ section_dom_id | append: '-product-json' | json }});
@@ -498,12 +519,13 @@
         if (requestToken !== resolveRequestToken) return;
         syncEffectiveRules(data && data.config ? data.config : null);
 
-        if (data && data.upload) {
+      if (data && data.upload) {
           state.widthPx = Number(data.upload.widthPx || state.widthPx || 0);
           state.heightPx = Number(data.upload.heightPx || state.heightPx || 0);
-          state.dpi = Number(data.upload.dpi || state.dpi || 0);
-          state.widthIn = Number(data.upload.widthIn || state.widthIn || 0);
-          state.heightIn = Number(data.upload.heightIn || state.heightIn || 0);
+          state.dpi = Number(data.upload.effectiveDpi || data.upload.dpi || state.dpi || 0);
+          var preferredUploadInches = getPreferredUploadInches(data.upload);
+          state.widthIn = Number(preferredUploadInches && preferredUploadInches.widthIn || state.widthIn || 0);
+          state.heightIn = Number(preferredUploadInches && preferredUploadInches.heightIn || state.heightIn || 0);
         }
 
         if (!response.ok) {
@@ -659,7 +681,7 @@
             state.originalUrl = firstItem.originalUrl || data.downloadUrl || '';
             state.widthPx = Number(firstItem.widthPx || 0);
             state.heightPx = Number(firstItem.heightPx || 0);
-            state.dpi = Number(firstItem.dpi || 0);
+            state.dpi = Number(firstItem.effectiveDpi || firstItem.dpi || 0);
             if (data.overallPreflight === 'error' || firstItem.preflightStatus === 'error' || data.status === 'error') {
               if (uploadLoading) uploadLoading.classList.add('hidden');
               if (uploadStatus) uploadStatus.textContent = '';
@@ -668,9 +690,10 @@
               showError(getPreflightErrorMessage(data, firstItem));
               return false;
             }
-            if (state.widthPx > 0 && state.heightPx > 0 && state.dpi > 0) {
-              state.widthIn = Number((state.widthPx / state.dpi).toFixed(2));
-              state.heightIn = Number((state.heightPx / state.dpi).toFixed(2));
+            var preferredInches = getPreferredUploadInches(firstItem);
+            if (preferredInches) {
+              state.widthIn = preferredInches.widthIn;
+              state.heightIn = preferredInches.heightIn;
               if (effectiveRules.maxUploadWidth && state.widthIn > effectiveRules.maxUploadWidth + 0.001) {
                 resetUploadState();
                 showError('This file is too wide for this product. Maximum supported width is ' + effectiveRules.maxUploadWidth.toFixed(0) + '".');
