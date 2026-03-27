@@ -439,6 +439,7 @@
             dpi: dims.dpi,
             widthIn: dims.widthIn || 12.5,
             heightIn: dims.heightIn || 7.94,
+            measurementStatus: 'pending',
             quantity: 1,
             removeBg: false,
             upscale: false,
@@ -462,6 +463,7 @@
             itemId: intent.itemId,
             widthPx: dims.widthPx, heightPx: dims.heightPx, dpi: dims.dpi,
             widthIn: dims.widthIn || 12.5, heightIn: dims.heightIn || 7.94,
+            measurementStatus: 'pending',
             quantity: 1, removeBg: false, upscale: false, halftone: false,
             keepRatio: true, ratio: (dims.widthIn / dims.heightIn) || 1.57
           });
@@ -530,19 +532,32 @@
           var fileEntry = self.files[fileIndex];
           if (!fileEntry) { clearInterval(interval); return; }
 
-          // Update with server data if available
-          if (item.preflightStatus && item.preflightStatus !== 'pending') {
+          // Update with server data if measurement metadata is available
+          if ((item.measurementStatus && item.measurementStatus !== 'pending') ||
+              (item.preflightStatus && item.preflightStatus !== 'pending')) {
             clearInterval(interval);
+            fileEntry.measurementStatus =
+              item.measurementStatus ||
+              (item.preflightStatus === 'error' ? 'error' : 'ready');
+            fileEntry._measurementError =
+              (item.errors && item.errors[0]) ||
+              (item.problems && item.problems[0] && item.problems[0].message) ||
+              (data.errors && data.errors[0]) ||
+              (data.problems && data.problems[0] && data.problems[0].message) ||
+              '';
 
             // Update dimensions from preflight
             if (item.widthPx && item.widthPx > 0) fileEntry.widthPx = item.widthPx;
             if (item.heightPx && item.heightPx > 0) fileEntry.heightPx = item.heightPx;
-            if (item.dpi && item.dpi > 0) fileEntry.dpi = item.dpi;
+            if (item.effectiveDpi && item.effectiveDpi > 0) fileEntry.dpi = item.effectiveDpi;
+            else if (item.dpi && item.dpi > 0) fileEntry.dpi = item.dpi;
 
-            // Recalculate inch dimensions with real DPI
-            if (fileEntry.widthPx > 0 && fileEntry.dpi > 0) {
-              fileEntry.widthIn = parseFloat((fileEntry.widthPx / fileEntry.dpi).toFixed(2));
-              fileEntry.heightIn = parseFloat((fileEntry.heightPx / fileEntry.dpi).toFixed(2));
+            // Recalculate inch dimensions with server-side measurement metadata
+            var measurementWidthPx = item.measurementWidthPx && item.measurementWidthPx > 0 ? item.measurementWidthPx : fileEntry.widthPx;
+            var measurementHeightPx = item.measurementHeightPx && item.measurementHeightPx > 0 ? item.measurementHeightPx : fileEntry.heightPx;
+            if (measurementWidthPx > 0 && measurementHeightPx > 0 && fileEntry.dpi > 0) {
+              fileEntry.widthIn = parseFloat((measurementWidthPx / fileEntry.dpi).toFixed(2));
+              fileEntry.heightIn = parseFloat((measurementHeightPx / fileEntry.dpi).toFixed(2));
               fileEntry.ratio = fileEntry.widthIn / fileEntry.heightIn;
             }
 
@@ -553,6 +568,11 @@
             // Re-render if this file is currently selected
             if (self.activeFileIndex === fileIndex && self.state === 'EDITOR') {
               self.renderEditor();
+            }
+
+            if (fileEntry.measurementStatus === 'error') {
+              self.showToast(fileEntry._measurementError || 'Upload measurement failed.', 'error');
+              return;
             }
 
             console.log('[DTF Upload] Preflight done:', fileEntry.widthIn + 'x' + fileEntry.heightIn + 'in @' + fileEntry.dpi + 'DPI');
@@ -1951,10 +1971,20 @@
      ───────────────────────────────────────────── */
   DtfUploadBlock.prototype.addToCart = function() {
     var self = this;
-    var readyFiles = this.files.filter(function(f) {
-      return f.widthIn > 0 && f.heightIn > 0;
+    var failedFiles = this.files.filter(function(f) {
+      return f.measurementStatus === 'error';
     });
-    if (readyFiles.length === 0) return;
+    var readyFiles = this.files.filter(function(f) {
+      return f.measurementStatus === 'ready' && f.widthIn > 0 && f.heightIn > 0;
+    });
+    if (readyFiles.length === 0) {
+      if (failedFiles.length > 0) {
+        alert(failedFiles[0]._measurementError || 'One of the uploaded files failed server measurement.');
+        return;
+      }
+      alert('Upload measurement is not ready yet. Please wait for server sizing to complete.');
+      return;
+    }
 
     this.addToCartBtn.disabled = true;
     this.addToCartBtn.innerHTML = 'Adding...';

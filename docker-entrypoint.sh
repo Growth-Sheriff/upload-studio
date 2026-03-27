@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================
 # Upload Studio - Docker Entrypoint
-# Starts Remix app + 5 background workers
+# Starts Remix app + 6 background workers
 # ============================================
 set -e
 
@@ -29,8 +29,11 @@ start_worker() {
 }
 
 # Start workers in background
-start_worker "preflight" tsx workers/preflight.worker.ts &
-PREFLIGHT_PID=$!
+start_worker "measure-preflight" tsx workers/measure-preflight.worker.ts &
+MEASURE_PREFLIGHT_PID=$!
+
+start_worker "preview-render" tsx workers/preview-render.worker.ts &
+PREVIEW_RENDER_PID=$!
 
 start_worker "export" tsx workers/export.worker.ts &
 EXPORT_PID=$!
@@ -44,13 +47,13 @@ COMMISSION_PID=$!
 start_worker "telemetry" tsx workers/telemetry.worker.ts &
 TELEMETRY_PID=$!
 
-echo "[App:${TENANT_SLUG}] Workers started (PIDs: ${PREFLIGHT_PID}, ${EXPORT_PID}, ${FLOW_PID}, ${COMMISSION_PID}, ${TELEMETRY_PID})"
+echo "[App:${TENANT_SLUG}] Workers started (PIDs: ${MEASURE_PREFLIGHT_PID}, ${PREVIEW_RENDER_PID}, ${EXPORT_PID}, ${FLOW_PID}, ${COMMISSION_PID}, ${TELEMETRY_PID})"
 
 # Graceful shutdown
 cleanup() {
   echo "[App:${TENANT_SLUG}] Shutting down..."
-  kill $PREFLIGHT_PID $EXPORT_PID $FLOW_PID $COMMISSION_PID $TELEMETRY_PID 2>/dev/null || true
-  wait $PREFLIGHT_PID $EXPORT_PID $FLOW_PID $COMMISSION_PID $TELEMETRY_PID 2>/dev/null || true
+  kill $MEASURE_PREFLIGHT_PID $PREVIEW_RENDER_PID $EXPORT_PID $FLOW_PID $COMMISSION_PID $TELEMETRY_PID 2>/dev/null || true
+  wait $MEASURE_PREFLIGHT_PID $PREVIEW_RENDER_PID $EXPORT_PID $FLOW_PID $COMMISSION_PID $TELEMETRY_PID 2>/dev/null || true
   echo "[App:${TENANT_SLUG}] All processes stopped."
   exit 0
 }

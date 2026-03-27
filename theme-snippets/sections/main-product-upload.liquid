@@ -223,11 +223,14 @@
 
             <div class="flex items-center gap-2 mb-2">
               <label class="text-sm text-gray-900">Qty:</label>
-              <select class="ul-main-quantity bg-gray-100 border border-gray-300 rounded px-2 py-1 shadow-sm outline-none focus:ring-2 focus:ring-amazon-orange text-sm">
-                {% for i in (1..10) %}
-                  <option value="{{ i }}">{{ i }}</option>
-                {% endfor %}
-              </select>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value="1"
+                inputmode="numeric"
+                class="ul-main-quantity w-20 bg-gray-100 border border-gray-300 rounded px-2 py-1 shadow-sm outline-none focus:ring-2 focus:ring-amazon-orange text-sm"
+              >
             </div>
 
             <button type="button" class="ul-main-add-to-cart w-full bg-amazon-yellow hover:brightness-95 text-black text-sm font-medium py-2 rounded-full shadow-sm border border-black/20 cursor-pointer">
@@ -647,6 +650,19 @@
     }
 
     function getPreflightErrorMessage(statusPayload, item) {
+      var lifecycleProblems =
+        item && item.problems && item.problems.length
+          ? item.problems
+          : statusPayload && statusPayload.problems && statusPayload.problems.length
+            ? statusPayload.problems
+            : [];
+
+      for (var j = 0; j < lifecycleProblems.length; j++) {
+        if (lifecycleProblems[j] && lifecycleProblems[j].severity === 'error' && lifecycleProblems[j].message) {
+          return lifecycleProblems[j].message;
+        }
+      }
+
       var checks =
         item &&
         item.preflightResult &&
@@ -677,12 +693,14 @@
           if (uploadToken !== uploadFlowToken) return false;
           var firstItem = data.items && data.items[0] ? data.items[0] : null;
           if (firstItem) {
+            var measurementStatus = firstItem.measurementStatus || 'pending';
+            var orderabilityStatus = data.orderabilityStatus || '';
             state.thumbnailUrl = firstItem.thumbnailUrl || data.thumbnailUrl || '';
             state.originalUrl = firstItem.originalUrl || data.downloadUrl || '';
             state.widthPx = Number(firstItem.widthPx || 0);
             state.heightPx = Number(firstItem.heightPx || 0);
             state.dpi = Number(firstItem.effectiveDpi || firstItem.dpi || 0);
-            if (data.overallPreflight === 'error' || firstItem.preflightStatus === 'error' || data.status === 'error') {
+            if (measurementStatus === 'error' || orderabilityStatus === 'blocked' || data.status === 'error') {
               if (uploadLoading) uploadLoading.classList.add('hidden');
               if (uploadStatus) uploadStatus.textContent = '';
               state.selectedResult = null;
@@ -953,12 +971,18 @@
     }
 
     if (quantitySelect) {
-      quantitySelect.addEventListener('change', function() {
-        state.quantity = parseInt(quantitySelect.value || '1', 10) || 1;
+      function syncQuantityValue() {
+        var nextQuantity = parseInt(quantitySelect.value || '1', 10) || 1;
+        if (nextQuantity < 1) nextQuantity = 1;
+        quantitySelect.value = String(nextQuantity);
+        state.quantity = nextQuantity;
         if (state.uploadId) {
           updateVariantResolution();
         }
-      });
+      }
+
+      quantitySelect.addEventListener('change', syncQuantityValue);
+      quantitySelect.addEventListener('input', syncQuantityValue);
     }
 
     if (variantSelect) {

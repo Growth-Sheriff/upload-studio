@@ -8,6 +8,11 @@ import {
   getThumbnailUrl,
   isBunnyUrl,
 } from '~/lib/storage.server'
+import {
+  deriveUploadClientStatus,
+  deriveUploadItemLifecycle,
+  deriveUploadOrderabilityStatus,
+} from '~/lib/uploadLifecycle.server'
 
 // Shopify File Query - Get file URL by ID
 const FILE_QUERY = `
@@ -122,7 +127,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return corsJson({ error: 'Upload not found' }, request, { status: 404 })
   }
 
-  // Determine overall status based on items
+  // Determine overall status based on legacy preflight statuses
   const itemStatuses = upload.items.map((i) => i.preflightStatus)
   let overallPreflight: 'pending' | 'ok' | 'warning' | 'error' = 'pending'
 
@@ -132,20 +137,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     overallPreflight = 'error'
   } else if (itemStatuses.some((s) => s === 'warning')) {
     overallPreflight = 'warning'
-  }
-
-  // Map status for widget compatibility without hiding preflight failures.
-  let clientStatus = upload.status
-  if (upload.status === 'uploaded') {
-    if (overallPreflight === 'error') {
-      clientStatus = 'error'
-    } else if (overallPreflight === 'pending') {
-      clientStatus = 'processing'
-    } else {
-      clientStatus = 'ready'
-    }
-  } else if (upload.status === 'blocked') {
-    clientStatus = 'error'
   }
 
   // Build download URLs for local storage with signed tokens (WI-004)
@@ -302,55 +293,20 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // This allows the widget to show spinner and poll for thumbnail
   // Old code returned downloadUrl which made hasThumbnail always true for PSD/PDF etc.
 
-  // Extract dimension/DPI data from preflightResult checks so clients
-  // can access widthPx, heightPx, dpi without parsing the checks array
-  // v1.1.0: Also compute per-item thumbnailUrl and originalUrl
-  const enrichedItems = upload.items.map((item) => {
-    const pf = item.preflightResult as Record<string, unknown> | null
-    const checks = Array.isArray(pf?.checks) ? (pf.checks as Array<Record<string, unknown>>) : []
+  // Extract canonical metadata plus per-item URLs for storefront consumers.
+  const lifecycleItems = upload.items.map((item) =>
+    deriveUploadItemLifecycle({
+      preflightStatus: item.preflightStatus,
+      preflightResult: item.preflightResult,
+      thumbnailKey: item.thumbnailKey,
+    })
+  )
+  const clientStatus = deriveUploadClientStatus(upload.status, lifecycleItems)
+  const orderabilityStatus = deriveUploadOrderabilityStatus(lifecycleItems)
 
-    let widthPx = 0
-    let heightPx = 0
-    let dpi = 0
-    let trimmedWidthPx = 0
-    let trimmedHeightPx = 0
-    let measurementWidthPx = 0
-    let measurementHeightPx = 0
-    let effectiveDpi = 300
-    let widthIn = 0
-    let heightIn = 0
-    let measurementMode: string | null = null
-
-    for (const check of checks) {
-      if (check.name === 'dimensions' && check.details) {
-        const details = check.details as Record<string, unknown>
-        widthPx = Number(details.width || 0)
-        heightPx = Number(details.height || 0)
-        trimmedWidthPx = Number(details.trimmedWidth || 0)
-        trimmedHeightPx = Number(details.trimmedHeight || 0)
-        measurementWidthPx = Number(details.measurementWidth || 0)
-        measurementHeightPx = Number(details.measurementHeight || 0)
-        effectiveDpi = Number(details.effectiveDpi || 300)
-        widthIn = Number(details.widthIn || 0)
-        heightIn = Number(details.heightIn || 0)
-        measurementMode =
-          typeof details.measurementMode === 'string' && details.measurementMode
-            ? String(details.measurementMode)
-            : null
-      }
-      if (check.name === 'dpi' && typeof check.value === 'number') {
-        dpi = check.value
-      }
-    }
-
-    if (!(measurementWidthPx > 0) || !(measurementHeightPx > 0)) {
-      measurementWidthPx = widthPx
-      measurementHeightPx = heightPx
-    }
-    if (!(widthIn > 0) || !(heightIn > 0)) {
-      widthIn = effectiveDpi > 0 ? Number((measurementWidthPx / effectiveDpi).toFixed(2)) : 0
-      heightIn = effectiveDpi > 0 ? Number((measurementHeightPx / effectiveDpi).toFixed(2)) : 0
-    }
+  const enrichedItems = upload.items.map((item, index) => {
+    const lifecycle = lifecycleItems[index]
+    const metadata = lifecycle.metadata
 
     // v1.1.0: Compute per-item thumbnail URL
     let itemThumbnailUrl: string | null = null
@@ -407,21 +363,66 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
     return {
       ...item,
-      widthPx,
-      heightPx,
-      dpi,
-      trimmedWidthPx,
-      trimmedHeightPx,
-      measurementWidthPx,
-      measurementHeightPx,
-      effectiveDpi,
-      widthIn,
-      heightIn,
-      measurementMode,
+      widthPx: metadata?.widthPx || 0,
+      heightPx: metadata?.heightPx || 0,
+      dpi: metadata?.dpi || 0,
+      trimmedWidthPx: metadata?.trimmedWidthPx || 0,
+      trimmedHeightPx: metadata?.trimmedHeightPx || 0,
+      measurementWidthPx: metadata?.measurementWidthPx || 0,
+      measurementHeightPx: metadata?.measurementHeightPx || 0,
+      effectiveDpi: metadata?.effectiveDpi || 0,
+      widthIn: metadata?.widthIn || 0,
+      heightIn: metadata?.heightIn || 0,
+      measurementMode: metadata?.measurementMode || null,
+      measurementStatus: lifecycle.measurementStatus,
+      previewStatus: lifecycle.previewStatus,
+      orderabilityStatus: lifecycle.orderabilityStatus,
+      stages: {
+        measurement: { status: lifecycle.measurementStatus },
+        preview: {
+          status: lifecycle.previewStatus,
+          hasPreview: lifecycle.hasPreview,
+        },
+        orderability: { status: lifecycle.orderabilityStatus },
+      },
+      metadata: metadata
+        ? {
+            widthPx: metadata.widthPx,
+            heightPx: metadata.heightPx,
+            dpi: metadata.dpi,
+            trimmedWidthPx: metadata.trimmedWidthPx,
+            trimmedHeightPx: metadata.trimmedHeightPx,
+            measurementWidthPx: metadata.measurementWidthPx,
+            measurementHeightPx: metadata.measurementHeightPx,
+            effectiveDpi: metadata.effectiveDpi,
+            widthIn: metadata.widthIn,
+            heightIn: metadata.heightIn,
+            measurementMode: metadata.measurementMode,
+          }
+        : null,
+      problems: lifecycle.problems,
+      warnings: lifecycle.warnings,
+      errors: lifecycle.errors,
+      capabilities: {
+        canAddToCart: lifecycle.canAddToCart,
+        canResolveProduct: lifecycle.canResolveProduct,
+        hasPreview: lifecycle.hasPreview,
+      },
       thumbnailUrl: itemThumbnailUrl,
+      previewUrl: itemThumbnailUrl,
       originalUrl: itemOriginalUrl,
     }
   })
+
+  const primaryLifecycle = lifecycleItems[0] || null
+  const primaryMetadata = primaryLifecycle?.metadata || null
+  const problems = lifecycleItems.flatMap((lifecycle) => lifecycle.problems)
+  const warnings = problems
+    .filter((problem) => problem.severity === 'warning')
+    .map((problem) => problem.message)
+  const errors = problems
+    .filter((problem) => problem.severity === 'error')
+    .map((problem) => problem.message)
 
   return corsJson(
     {
@@ -431,10 +432,54 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       productId: upload.productId,
       variantId: upload.variantId,
       overallPreflight,
+      orderabilityStatus,
+      stages: {
+        upload: { status: upload.status },
+        measurement: {
+          status: primaryLifecycle?.measurementStatus || 'pending',
+        },
+        preview: {
+          status: primaryLifecycle?.previewStatus || 'pending',
+        },
+        orderability: {
+          status: orderabilityStatus,
+        },
+      },
+      capabilities: {
+        canAddToCart:
+          lifecycleItems.length > 0 && lifecycleItems.every((lifecycle) => lifecycle.canAddToCart),
+        canResolveProduct:
+          lifecycleItems.length > 0 &&
+          lifecycleItems.every((lifecycle) => lifecycle.canResolveProduct),
+        hasPreview:
+          lifecycleItems.length > 0 && lifecycleItems.every((lifecycle) => lifecycle.hasPreview),
+      },
+      metadata: primaryMetadata
+        ? {
+            width: primaryMetadata.measurementWidthPx,
+            height: primaryMetadata.measurementHeightPx,
+            dpi: primaryMetadata.effectiveDpi,
+            widthPx: primaryMetadata.widthPx,
+            heightPx: primaryMetadata.heightPx,
+            trimmedWidthPx: primaryMetadata.trimmedWidthPx,
+            trimmedHeightPx: primaryMetadata.trimmedHeightPx,
+            measurementWidthPx: primaryMetadata.measurementWidthPx,
+            measurementHeightPx: primaryMetadata.measurementHeightPx,
+            effectiveDpi: primaryMetadata.effectiveDpi,
+            widthIn: primaryMetadata.widthIn,
+            heightIn: primaryMetadata.heightIn,
+            measurementMode: primaryMetadata.measurementMode,
+          }
+        : null,
+      problems,
+      warnings,
+      errors,
       preflightSummary: upload.preflightSummary,
       items: enrichedItems,
       downloadUrl,
+      url: downloadUrl,
       thumbnailUrl,
+      previewUrl: thumbnailUrl,
       createdAt: upload.createdAt,
       updatedAt: upload.updatedAt,
     },

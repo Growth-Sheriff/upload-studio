@@ -189,8 +189,8 @@
     const status = await getUploadStatus(uploadId, shopDomain);
     
     if (status) {
-      const statusText = getStatusText(status.status);
-      const statusClass = getStatusClass(status.status);
+      const statusText = getStatusText(status);
+      const statusClass = getStatusClass(status);
       updateStatusDisplay(element, statusClass, statusText);
       
       if (status.thumbnailUrl || status.previewUrl) {
@@ -209,22 +209,27 @@
     }
   }
 
-  function getStatusText(status) {
-    const texts = {
-      'pending': 'Ready for print',
-      'processing': 'Ready for print',
-      'ready': 'Ready for print',
-      'completed': 'Ready for print',
-      'approved': 'Approved',
-      'blocked': 'Ready for print',
-      'error': 'Ready for print'
-    };
-    return texts[status] || 'Design attached';
+  function getStatusText(statusPayload) {
+    const stageStatus = statusPayload && statusPayload.orderabilityStatus
+      ? statusPayload.orderabilityStatus
+      : statusPayload && statusPayload.status
+        ? statusPayload.status
+        : 'processing';
+
+    if (stageStatus === 'ready') return 'Ready for print';
+    if (stageStatus === 'blocked' || stageStatus === 'error') return 'Needs review';
+    return 'Processing design';
   }
 
-  function getStatusClass(status) {
-    if (['pending', 'processing'].includes(status)) return 'processing';
-    // Always show green for customer - don't scare them away
+  function getStatusClass(statusPayload) {
+    const stageStatus = statusPayload && statusPayload.orderabilityStatus
+      ? statusPayload.orderabilityStatus
+      : statusPayload && statusPayload.status
+        ? statusPayload.status
+        : 'processing';
+
+    if (stageStatus === 'blocked' || stageStatus === 'error') return 'error';
+    if (stageStatus !== 'ready') return 'processing';
     return 'ready';
   }
 

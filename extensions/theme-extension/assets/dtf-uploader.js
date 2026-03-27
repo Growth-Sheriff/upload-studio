@@ -1363,14 +1363,26 @@
             const fileExt = state.upload.file.name.split('.').pop()?.toLowerCase() || ''
             const isNonBrowserFormat = NON_BROWSER_FORMATS.includes(fileExt)
 
-            // Accept all "finished" statuses - including blocked/warning (DPI issues etc.)
-            const finishedStatuses = ['ready', 'completed', 'blocked', 'needs_review', 'uploaded']
-            const isFinished = finishedStatuses.includes(data.status)
+            const metadata = data.metadata || {}
+            const canAddToCart =
+              data.capabilities && typeof data.capabilities.canAddToCart === 'boolean'
+                ? data.capabilities.canAddToCart
+                : data.status === 'ready'
+            const isBlocked = data.orderabilityStatus === 'blocked' || data.status === 'error'
             const hasThumbnail = !!data.thumbnailUrl
 
             // v4.4.1: Proceed immediately when upload is finished
             // Thumbnail will be polled in background - don't block Add to Cart
-            const canProceed = isFinished
+            const canProceed = canAddToCart
+
+            if (isBlocked) {
+              state.upload.status = 'error'
+              state.upload.error =
+                (data.errors && data.errors[0]) ||
+                (data.problems && data.problems[0] && data.problems[0].message) ||
+                'Upload processing failed'
+              throw new Error(state.upload.error)
+            }
 
             if (canProceed) {
               // Success - upload processing complete (may have warnings)
@@ -1379,10 +1391,10 @@
               state.upload.result = {
                 thumbnailUrl: data.thumbnailUrl || '',
                 originalUrl: data.downloadUrl || data.url || '',
-                width: data.metadata?.width || 0,
-                height: data.metadata?.height || 0,
-                dpi: data.metadata?.dpi || 0,
-                colorMode: data.metadata?.colorMode || '',
+                width: metadata.measurementWidthPx || metadata.width || 0,
+                height: metadata.measurementHeightPx || metadata.height || 0,
+                dpi: metadata.effectiveDpi || metadata.dpi || 0,
+                colorMode: metadata.colorMode || '',
                 qualityScore: data.qualityScore || 100,
                 warnings: data.warnings || [],
               }

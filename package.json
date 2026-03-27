@@ -17,6 +17,10 @@
     "db:studio": "prisma studio",
     "worker:preflight": "tsx watch workers/preflight.worker.ts",
     "worker:preflight:prod": "node --import tsx workers/preflight.worker.ts",
+    "worker:measure-preflight": "tsx watch workers/measure-preflight.worker.ts",
+    "worker:measure-preflight:prod": "node --import tsx workers/measure-preflight.worker.ts",
+    "worker:preview-render": "tsx watch workers/preview-render.worker.ts",
+    "worker:preview-render:prod": "node --import tsx workers/preview-render.worker.ts",
     "worker:export": "tsx watch workers/export.worker.ts",
     "worker:export:prod": "node --import tsx workers/export.worker.ts",
     "shopify:check": "npx tsx scripts/shopify-check.ts"

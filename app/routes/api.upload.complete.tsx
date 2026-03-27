@@ -4,6 +4,10 @@ import Redis from 'ioredis'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import { triggerUploadReceived } from '~/lib/flow.server'
 import prisma from '~/lib/prisma.server'
+import {
+  MEASURE_PREFLIGHT_QUEUE_NAME,
+  PREVIEW_RENDER_QUEUE_NAME,
+} from '~/lib/uploadQueues'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
 import { uploadLogger } from '~/lib/uploadLogger.server'
 
@@ -130,8 +134,8 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    // Update upload status to "uploaded" - preflight worker will handle the rest
-    // autoApprove is read from shop.settings by the preflight worker
+    // Preserve the legacy "uploaded" handoff state so analytics/admin surfaces keep
+    // their "received" bucket until workers advance the upload lifecycle.
     await prisma.upload.update({
       where: { id: uploadId },
       data: {
@@ -219,10 +223,11 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    // Enqueue preflight job for each item
+    // Enqueue measurement and preview jobs for each item
     // FAZ 0 - API-001: Use singleton connection (don't create new connection per request)
     const connection = getRedisConnection()
-    const preflightQueue = new Queue('preflight', { connection })
+    const measureQueue = new Queue(MEASURE_PREFLIGHT_QUEUE_NAME, { connection })
+    const previewQueue = new Queue(PREVIEW_RENDER_QUEUE_NAME, { connection })
 
     // CRITICAL: Re-fetch items from DB to get UPDATED storageKey values
     // The upload.items contains STALE data from before the update loop above
@@ -233,17 +238,24 @@ export async function action({ request }: ActionFunctionArgs) {
       select: { id: true, storageKey: true },
     })
 
-    console.log(`[Upload Complete] Queueing ${updatedItems.length} items for preflight`)
+    console.log(
+      `[Upload Complete] Queueing ${updatedItems.length} items for measurement + preview`
+    )
 
     for (const uploadItem of updatedItems) {
-      console.log(`[Upload Complete] Preflight queue: itemId=${uploadItem.id}, storageKey=${uploadItem.storageKey?.substring(0, 60)}`)
-      
-      await preflightQueue.add('preflight', {
+      console.log(
+        `[Upload Complete] Measure queue: itemId=${uploadItem.id}, storageKey=${uploadItem.storageKey?.substring(0, 60)}`
+      )
+
+      const payload = {
         uploadId,
         shopId: shop.id,
         itemId: uploadItem.id,
         storageKey: uploadItem.storageKey,
-      })
+      }
+
+      await measureQueue.add('measure-preflight', payload)
+      await previewQueue.add('preview-render', payload)
     }
 
     // FAZ 0 - API-001: DON'T close singleton connection - it's reused across requests
@@ -295,7 +307,7 @@ export async function action({ request }: ActionFunctionArgs) {
         success: true,
         uploadId,
         status: 'processing',
-        message: 'Upload complete. Preflight checks started.',
+        message: 'Upload complete. Measurement and preview jobs started.',
       },
       request
     )

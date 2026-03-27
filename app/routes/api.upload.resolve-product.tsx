@@ -88,6 +88,10 @@ function normalizeProductId(productId: string | number): string {
 
 function extractUploadDimensions(preflightResult: unknown) {
   const result = (preflightResult || {}) as Record<string, unknown>
+  const metadata =
+    result.metadata && typeof result.metadata === 'object'
+      ? (result.metadata as Record<string, unknown>)
+      : null
   const checks = Array.isArray(result.checks) ? (result.checks as Array<Record<string, unknown>>) : []
 
   let widthPx = 0
@@ -101,6 +105,23 @@ function extractUploadDimensions(preflightResult: unknown) {
   let measurementMode = 'full'
   let widthIn = 0
   let heightIn = 0
+
+  if (metadata) {
+    widthPx = Number(metadata.widthPx || 0)
+    heightPx = Number(metadata.heightPx || 0)
+    dpi = Number(metadata.dpi || 0)
+    trimmedWidthPx = Number(metadata.trimmedWidthPx || 0)
+    trimmedHeightPx = Number(metadata.trimmedHeightPx || 0)
+    measurementWidthPx = Number(metadata.measurementWidthPx || 0)
+    measurementHeightPx = Number(metadata.measurementHeightPx || 0)
+    effectiveDpi = Number(metadata.effectiveDpi || effectiveDpi || 300)
+    widthIn = Number(metadata.widthIn || 0)
+    heightIn = Number(metadata.heightIn || 0)
+    measurementMode =
+      typeof metadata.measurementMode === 'string' && metadata.measurementMode
+        ? String(metadata.measurementMode)
+        : measurementMode
+  }
 
   for (const check of checks) {
     if (check.name === 'dimensions' && check.details) {
