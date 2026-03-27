@@ -136,6 +136,164 @@ function parseWebpInfo(buffer: Buffer) {
   return null
 }
 
+function parsePsdInfo(buffer: Buffer) {
+  if (buffer.length < 26) return null
+  if (buffer.toString('ascii', 0, 4) !== '8BPS') return null
+
+  const channels = buffer.readUInt16BE(12)
+  const height = buffer.readUInt32BE(14)
+  const width = buffer.readUInt32BE(18)
+
+  if (!(width > 0) || !(height > 0)) {
+    return null
+  }
+
+  return {
+    width,
+    height,
+    dpi: 0,
+    colorspace: 'PSD',
+    hasAlpha: channels >= 4,
+    format: 'PSD',
+  }
+}
+
+function readTiffUInt(
+  buffer: Buffer,
+  offset: number,
+  byteLength: 2 | 4,
+  littleEndian: boolean
+): number | null {
+  if (offset < 0 || offset + byteLength > buffer.length) return null
+  if (byteLength === 2) {
+    return littleEndian ? buffer.readUInt16LE(offset) : buffer.readUInt16BE(offset)
+  }
+  return littleEndian ? buffer.readUInt32LE(offset) : buffer.readUInt32BE(offset)
+}
+
+function readTiffRational(buffer: Buffer, offset: number, littleEndian: boolean): number | null {
+  const numerator = readTiffUInt(buffer, offset, 4, littleEndian)
+  const denominator = readTiffUInt(buffer, offset + 4, 4, littleEndian)
+  if (!(numerator != null) || !(denominator != null) || denominator === 0) {
+    return null
+  }
+  return numerator / denominator
+}
+
+function getTiffEntryScalar(
+  buffer: Buffer,
+  entryOffset: number,
+  type: number,
+  count: number,
+  valueOrOffset: number,
+  littleEndian: boolean
+): number | null {
+  if (count !== 1) return null
+
+  if (type === 3) {
+    return readTiffUInt(buffer, entryOffset + 8, 2, littleEndian)
+  }
+
+  if (type === 4) {
+    return valueOrOffset
+  }
+
+  if (type === 5) {
+    return readTiffRational(buffer, valueOrOffset, littleEndian)
+  }
+
+  return null
+}
+
+function parseTiffInfo(buffer: Buffer) {
+  if (buffer.length < 8) return null
+
+  const byteOrder = buffer.toString('ascii', 0, 2)
+  const littleEndian = byteOrder === 'II'
+  if (!littleEndian && byteOrder !== 'MM') {
+    return null
+  }
+
+  const magic = readTiffUInt(buffer, 2, 2, littleEndian)
+  if (magic !== 42) {
+    return null
+  }
+
+  const firstIfdOffset = readTiffUInt(buffer, 4, 4, littleEndian)
+  if (!(firstIfdOffset != null) || firstIfdOffset + 2 > buffer.length) {
+    return null
+  }
+
+  const entryCount = readTiffUInt(buffer, firstIfdOffset, 2, littleEndian)
+  if (!(entryCount != null)) {
+    return null
+  }
+
+  let width = 0
+  let height = 0
+  let samplesPerPixel = 0
+  let xResolution = 0
+  let yResolution = 0
+  let resolutionUnit = 2
+
+  for (let index = 0; index < entryCount; index += 1) {
+    const entryOffset = firstIfdOffset + 2 + index * 12
+    if (entryOffset + 12 > buffer.length) break
+
+    const tag = readTiffUInt(buffer, entryOffset, 2, littleEndian)
+    const type = readTiffUInt(buffer, entryOffset + 2, 2, littleEndian)
+    const count = readTiffUInt(buffer, entryOffset + 4, 4, littleEndian)
+    const valueOrOffset = readTiffUInt(buffer, entryOffset + 8, 4, littleEndian)
+
+    if (
+      tag == null ||
+      type == null ||
+      count == null ||
+      valueOrOffset == null
+    ) {
+      continue
+    }
+
+    const scalar = getTiffEntryScalar(
+      buffer,
+      entryOffset,
+      type,
+      count,
+      valueOrOffset,
+      littleEndian
+    )
+
+    if (tag === 256 && scalar) width = scalar
+    if (tag === 257 && scalar) height = scalar
+    if (tag === 277 && scalar) samplesPerPixel = scalar
+    if (tag === 282 && scalar) xResolution = scalar
+    if (tag === 283 && scalar) yResolution = scalar
+    if (tag === 296 && scalar) resolutionUnit = scalar
+  }
+
+  if (!(width > 0) || !(height > 0)) {
+    return null
+  }
+
+  let dpi = 0
+  if (xResolution > 0 && yResolution > 0) {
+    if (resolutionUnit === 3) {
+      dpi = Math.round(((xResolution * 2.54) + (yResolution * 2.54)) / 2)
+    } else {
+      dpi = Math.round((xResolution + yResolution) / 2)
+    }
+  }
+
+  return {
+    width,
+    height,
+    dpi,
+    colorspace: 'TIFF',
+    hasAlpha: samplesPerPixel >= 4,
+    format: 'TIFF',
+  }
+}
+
 function parseSvgLength(rawValue: string | undefined, fallback: number): number {
   if (!rawValue) return fallback
   const numeric = parseFloat(rawValue)
@@ -143,6 +301,49 @@ function parseSvgLength(rawValue: string | undefined, fallback: number): number 
 }
 
 async function getImageInfoWithoutImagemagick(filePath: string, mimeType: string) {
+  if (mimeType === 'application/pdf') {
+    const pdfInfo = await getPdfInfo(filePath)
+    if (pdfInfo.width > 0 && pdfInfo.height > 0) {
+      return {
+        width: pdfInfo.width,
+        height: pdfInfo.height,
+        dpi: 300,
+        colorspace: 'PDF',
+        hasAlpha: false,
+        format: 'PDF',
+      }
+    }
+    return null
+  }
+
+  if (mimeType === 'application/postscript') {
+    try {
+      const { stdout, stderr } = await execAsync(`gs -q -dNOPAUSE -dBATCH -sDEVICE=bbox "${filePath}"`)
+      const output = `${stdout}\n${stderr}`
+      const match =
+        output.match(/%%HiResBoundingBox:\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)/) ||
+        output.match(/%%BoundingBox:\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)/)
+
+      if (match) {
+        const widthPt = parseFloat(match[3]) - parseFloat(match[1])
+        const heightPt = parseFloat(match[4]) - parseFloat(match[2])
+        if (widthPt > 0 && heightPt > 0) {
+          return {
+            width: Math.round((widthPt * 300) / 72),
+            height: Math.round((heightPt * 300) / 72),
+            dpi: 300,
+            colorspace: 'PostScript',
+            hasAlpha: false,
+            format: 'EPS',
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('[Preflight] PostScript bbox fallback failed:', error)
+    }
+    return null
+  }
+
   const buffer = await fs.readFile(filePath)
 
   if (mimeType === 'image/png') {
@@ -155,6 +356,18 @@ async function getImageInfoWithoutImagemagick(filePath: string, mimeType: string
 
   if (mimeType === 'image/webp') {
     return parseWebpInfo(buffer)
+  }
+
+  if (mimeType === 'image/tiff') {
+    return parseTiffInfo(buffer)
+  }
+
+  if (
+    mimeType === 'image/vnd.adobe.photoshop' ||
+    mimeType === 'application/x-photoshop' ||
+    mimeType === 'image/x-psd'
+  ) {
+    return parsePsdInfo(buffer)
   }
 
   if (mimeType === 'image/svg+xml') {
