@@ -1364,22 +1364,41 @@
             const isNonBrowserFormat = NON_BROWSER_FORMATS.includes(fileExt)
 
             const metadata = data.metadata || {}
-            const canAddToCart =
-              data.capabilities && typeof data.capabilities.canAddToCart === 'boolean'
-                ? data.capabilities.canAddToCart
-                : data.status === 'ready'
-            const isBlocked = data.orderabilityStatus === 'blocked' || data.status === 'error'
+            const lifecycleProblems = Array.isArray(data.problems) ? data.problems : []
+            const blockingProblems = lifecycleProblems.filter(
+              (problem) =>
+                problem &&
+                problem.severity === 'error' &&
+                problem.scope !== 'measurement' &&
+                problem.scope !== 'preview'
+            )
+            const displayWarnings = lifecycleProblems
+              .filter(
+                (problem) =>
+                  problem &&
+                  problem.severity === 'warning' &&
+                  problem.scope !== 'measurement'
+              )
+              .map((problem) => problem.message)
+            const originalUrl =
+              data.downloadUrl ||
+              data.url ||
+              (data.items && data.items[0] && data.items[0].originalUrl) ||
+              ''
+            const canAddToCart = !!originalUrl && blockingProblems.length === 0
+            const isBlocked = blockingProblems.length > 0
             const hasThumbnail = !!data.thumbnailUrl
 
-            // v4.4.1: Proceed immediately when upload is finished
-            // Thumbnail will be polled in background - don't block Add to Cart
+            // This uploader does not need server-side measurement to proceed.
+            // If the original file is stored successfully, allow Add to Cart and
+            // keep thumbnail generation in the background.
             const canProceed = canAddToCart
 
             if (isBlocked) {
               state.upload.status = 'error'
               state.upload.error =
+                (blockingProblems[0] && blockingProblems[0].message) ||
                 (data.errors && data.errors[0]) ||
-                (data.problems && data.problems[0] && data.problems[0].message) ||
                 'Upload processing failed'
               throw new Error(state.upload.error)
             }
@@ -1390,13 +1409,13 @@
               state.upload.uploadId = uploadId // CRITICAL: Set uploadId for addToCart
               state.upload.result = {
                 thumbnailUrl: data.thumbnailUrl || '',
-                originalUrl: data.downloadUrl || data.url || '',
+                originalUrl: originalUrl,
                 width: metadata.measurementWidthPx || metadata.width || 0,
                 height: metadata.measurementHeightPx || metadata.height || 0,
                 dpi: metadata.effectiveDpi || metadata.dpi || 0,
                 colorMode: metadata.colorMode || '',
                 qualityScore: data.qualityScore || 100,
-                warnings: data.warnings || [],
+                warnings: displayWarnings.length ? displayWarnings : data.warnings || [],
               }
 
               // Update hidden fields
@@ -1499,7 +1518,10 @@
               // FAZ 1 - DTF-005: Resolve promise on success
               resolveAll(data)
               return
-            } else if (data.status === 'failed' || data.status === 'error') {
+            } else if (
+              (data.status === 'failed' || data.status === 'error') &&
+              blockingProblems.length > 0
+            ) {
               // FAZ 1 - DTF-005: Reject promise on error
               rejectAll(new Error(data.error || 'Processing failed'))
               return
