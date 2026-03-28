@@ -58,6 +58,64 @@ interface MonthlyBreakdown {
   pendingAmount: number
   paidAmount: number
   orders: OrderRecord[]
+  displayStatus?: 'free'
+}
+
+const FAST_SHOP_DOMAIN = 'fast-dtf-transfer.myshopify.com'
+const FAST_FREE_MONTHS = new Set(['2026-01', '2026-02'])
+const FAST_FORCE_PAID_MONTH = '2026-03'
+
+function applyFastBillingDisplayOverrides(
+  shopDomain: string,
+  summary: CommissionSummary,
+  monthlyBreakdowns: MonthlyBreakdown[]
+): { summary: CommissionSummary; monthlyBreakdowns: MonthlyBreakdown[] } {
+  if (shopDomain !== FAST_SHOP_DOMAIN) {
+    return { summary, monthlyBreakdowns }
+  }
+
+  let pendingAmountReduction = 0
+  let pendingOrdersReduction = 0
+
+  const nextMonthlyBreakdowns = monthlyBreakdowns.map((breakdown) => {
+    if (FAST_FREE_MONTHS.has(breakdown.monthKey)) {
+      return {
+        ...breakdown,
+        displayStatus: 'free' as const,
+      }
+    }
+
+    if (breakdown.monthKey === FAST_FORCE_PAID_MONTH) {
+      pendingAmountReduction += breakdown.pendingAmount
+      pendingOrdersReduction += breakdown.pendingOrders
+
+      return {
+        ...breakdown,
+        pendingAmount: 0,
+        pendingOrders: 0,
+        paidAmount: breakdown.totalAmount,
+        paidOrders: breakdown.totalOrders,
+      }
+    }
+
+    return breakdown
+  })
+
+  const nextSummary =
+    pendingAmountReduction > 0 || pendingOrdersReduction > 0
+      ? {
+          ...summary,
+          pendingAmount: Math.max(0, summary.pendingAmount - pendingAmountReduction),
+          pendingOrders: Math.max(0, summary.pendingOrders - pendingOrdersReduction),
+          paidAmount: summary.paidAmount + pendingAmountReduction,
+          paidOrders: summary.paidOrders + pendingOrdersReduction,
+        }
+      : summary
+
+  return {
+    summary: nextSummary,
+    monthlyBreakdowns: nextMonthlyBreakdowns,
+  }
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -228,11 +286,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
     paidOrders,
   }
 
-  return json({
+  const billingDisplay = applyFastBillingDisplayOverrides(
     shopDomain,
     summary,
+    monthlyBreakdowns
+  )
+
+  return json({
+    shopDomain,
+    summary: billingDisplay.summary,
     records,
-    monthlyBreakdowns,
+    monthlyBreakdowns: billingDisplay.monthlyBreakdowns,
     totalTransferGB,
     totalFiles: uploadStats._count,
     commissionRates: COMMISSION_RATES,
@@ -1051,6 +1115,9 @@ export default function BillingPage() {
                 {monthlyBreakdowns.map((mb) => {
                   const isExpanded = expandedMonths.has(mb.monthKey)
                   const isLoading = monthPaymentLoading === mb.monthKey
+                  const isFreeInvoice = mb.displayStatus === 'free'
+                  const isForcedPaidInvoice =
+                    shopDomain === FAST_SHOP_DOMAIN && mb.monthKey === FAST_FORCE_PAID_MONTH
                   const pendingOrderIds = mb.orders
                     .filter((o) => o.status === 'pending')
                     .map((o) => o.orderId)
@@ -1058,8 +1125,17 @@ export default function BillingPage() {
                   const monthRows = mb.orders.map((r) => [
                     r.orderNumber,
                     `$${r.commissionAmount.toFixed(3)}`,
-                    <Badge key={r.orderId} tone={r.status === 'paid' ? 'success' : 'warning'}>
-                      {r.status === 'paid' ? 'Paid' : 'Pending'}
+                    <Badge
+                      key={r.orderId}
+                      tone={
+                        isFreeInvoice
+                          ? 'info'
+                          : isForcedPaidInvoice || r.status === 'paid'
+                            ? 'success'
+                            : 'warning'
+                      }
+                    >
+                      {isFreeInvoice ? 'Free' : isForcedPaidInvoice || r.status === 'paid' ? 'Paid' : 'Pending'}
                     </Badge>,
                     formatDate(r.createdAt),
                     r.paidAt ? formatDate(r.paidAt) : '-',
@@ -1081,8 +1157,12 @@ export default function BillingPage() {
                             >
                               {isExpanded ? '▼' : '▶'} {mb.monthLabel}
                             </Button>
-                            <Badge tone={mb.pendingOrders === 0 ? 'success' : 'attention'}>
-                              {mb.pendingOrders === 0 ? 'Fully Paid' : `${mb.pendingOrders} pending`}
+                            <Badge
+                              tone={
+                                isFreeInvoice ? 'info' : mb.pendingOrders === 0 ? 'success' : 'attention'
+                              }
+                            >
+                              {isFreeInvoice ? 'Free' : mb.pendingOrders === 0 ? 'Fully Paid' : `${mb.pendingOrders} pending`}
                             </Badge>
                           </InlineStack>
 
@@ -1127,7 +1207,9 @@ export default function BillingPage() {
                         {/* Progress indicator */}
                         <InlineStack gap="200">
                           <Text as="p" variant="bodySm" tone="success">
-                            Paid: ${mb.paidAmount.toFixed(2)} ({mb.paidOrders})
+                            {isFreeInvoice
+                              ? `Free: $${mb.totalAmount.toFixed(2)} (${mb.totalOrders})`
+                              : `Paid: $${mb.paidAmount.toFixed(2)} (${mb.paidOrders})`}
                           </Text>
                           {mb.pendingOrders > 0 && (
                             <Text as="p" variant="bodySm" tone="critical">

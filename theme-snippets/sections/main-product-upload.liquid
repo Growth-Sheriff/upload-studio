@@ -195,31 +195,11 @@
 
         <div class="border border-gray-200 rounded-lg p-4 bg-white mb-6">
           <div class="ul-main-buybox-price text-2xl font-medium text-gray-900 mb-2">{{ product.price | money }}</div>
-          <div class="text-sm text-gray-500 mb-4">FREE delivery <span class="font-bold text-gray-900">Wednesday</span></div>
-          
+
           <div class="text-lg text-green-700 font-medium mb-4">In Stock.</div>
 
           <div class="ul-main-buybox-form flex flex-col gap-3" data-ul-buybox>
             <input type="hidden" class="ul-main-variant-input" value="{{ product.selected_or_first_available_variant.id }}">
-            
-            {% unless product.has_only_default_variant %}
-              <div class="mb-4">
-                <label class="block text-sm font-bold text-gray-900 mb-1">Size / Variant</label>
-                <select class="ul-main-variant-select w-full bg-gray-100 border border-gray-300 rounded px-2 py-1.5 shadow-sm outline-none focus:ring-2 focus:ring-amazon-orange text-sm cursor-not-allowed opacity-70" disabled="disabled" aria-disabled="true">
-                  {% for variant in product.variants %}
-                    <option 
-                      value="{{ variant.id }}" 
-                      data-price="{{ variant.price | money }}"
-                      data-image-url="{% if variant.image %}{{ variant.image | image_url: width: 800 }}{% endif %}"
-                      {% if variant == product.selected_or_first_available_variant %}selected="selected"{% endif %}
-                      {% unless variant.available %}disabled="disabled"{% endunless %}
-                    >
-                      {{ variant.title }} {% unless variant.available %} (Out of Stock){% endunless %}
-                    </option>
-                  {% endfor %}
-                </select>
-              </div>
-            {% endunless %}
 
             <div class="flex items-center gap-2 mb-2">
               <label class="text-sm text-gray-900">Qty:</label>
@@ -233,18 +213,12 @@
               >
             </div>
 
-            <button type="button" class="ul-main-add-to-cart w-full bg-amazon-yellow hover:brightness-95 text-black text-sm font-medium py-2 rounded-full shadow-sm border border-black/20 cursor-pointer">
+            <button type="button" class="ul-main-add-to-cart w-full bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-sm font-medium py-2 rounded-full shadow-sm border border-[#1e40af]/30 cursor-pointer transition-colors duration-200">
               Add to Cart
             </button>
-            <button type="button" class="ul-main-buy-now w-full bg-amazon-orange hover:brightness-95 text-black text-sm font-medium py-2 rounded-full shadow-sm border border-black/20 cursor-pointer">
+            <button type="button" class="ul-main-buy-now w-full bg-[#1e3a8a] hover:bg-[#1e40af] text-white text-sm font-medium py-2 rounded-full shadow-sm border border-[#172554]/30 cursor-pointer transition-colors duration-200">
               Buy Now
             </button>
-          </div>
-
-          <div class="mt-4 text-xs text-gray-500 space-y-1">
-            <div class="flex justify-between"><span>Ships from</span> <span>DTFPrintHome.com</span></div>
-            <div class="flex justify-between"><span>Sold by</span> <span>DTFPrintHome.com</span></div>
-            <div class="flex justify-between"><span>Returns</span> <span class="text-amazon-link hover:underline">Eligible for Return</span></div>
           </div>
         </div>
       </div>

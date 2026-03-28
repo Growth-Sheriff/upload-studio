@@ -12,6 +12,8 @@ import Stripe from 'stripe';
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 const APP_URL = process.env.SHOPIFY_APP_URL!;
+const FAST_SHOP_DOMAIN = 'fast-dtf-transfer.myshopify.com';
+const FAST_CANONICAL_APP_URL = 'https://fastdtftransfer.uploadstudio.app.techifyboost.com';
 
 // ── Stripe Client (lazy singleton) ──
 let stripeClient: Stripe | null = null;
@@ -38,12 +40,15 @@ export interface StripeCheckoutResult {
 }
 
 export interface StripeCaptureResult {
+  sessionId: string;
   paymentIntentId: string;
   status: string;
   amount: number;
   customerEmail: string | null;
   customerId: string | null;
   paymentMethodId: string | null;
+  shopDomain: string | null;
+  referenceId: string | null;
 }
 
 export interface StripeAutoChargeResult {
@@ -61,6 +66,14 @@ export function isStripeConfigured(): boolean {
   return Boolean(STRIPE_SECRET_KEY);
 }
 
+export function resolveAppUrlForShop(shopDomain?: string | null): string {
+  if (shopDomain === FAST_SHOP_DOMAIN) {
+    return FAST_CANONICAL_APP_URL;
+  }
+
+  return APP_URL;
+}
+
 /**
  * Create a Stripe Checkout Session for commission payment.
  * Uses `setup_future_usage: 'off_session'` on first payment to save the card
@@ -75,6 +88,7 @@ export async function createCheckoutSession(
 ): Promise<StripeCheckoutResult> {
   const stripe = getStripeClient();
   const amountCents = Math.round(parseFloat(amount) * 100);
+  const appUrl = resolveAppUrlForShop(shopDomain);
 
   const sessionParams: Stripe.Checkout.SessionCreateParams = {
     mode: 'payment',
@@ -92,8 +106,10 @@ export async function createCheckoutSession(
         quantity: 1,
       },
     ],
-    success_url: `${APP_URL}/app/billing?stripe=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${APP_URL}/app/billing?stripe=cancelled`,
+    success_url:
+      `${appUrl}/stripe/return?session_id={CHECKOUT_SESSION_ID}` +
+      `&shop=${encodeURIComponent(shopDomain)}`,
+    cancel_url: `${appUrl}/stripe/return?cancelled=1&shop=${encodeURIComponent(shopDomain)}`,
     metadata: {
       shopDomain,
       referenceId,
@@ -144,6 +160,7 @@ export async function retrieveCheckoutSession(
   const customer = session.customer as Stripe.Customer | null;
 
   return {
+    sessionId: session.id,
     paymentIntentId: paymentIntent.id,
     status: paymentIntent.status,
     amount: paymentIntent.amount,
@@ -152,6 +169,10 @@ export async function retrieveCheckoutSession(
     paymentMethodId: typeof paymentIntent.payment_method === 'string'
       ? paymentIntent.payment_method
       : paymentIntent.payment_method?.id || null,
+    shopDomain: session.metadata?.shopDomain || null,
+    referenceId:
+      session.metadata?.referenceId ||
+      (typeof session.client_reference_id === 'string' ? session.client_reference_id : null),
   };
 }
 

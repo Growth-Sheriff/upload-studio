@@ -18,7 +18,7 @@ import { json } from '@remix-run/node';
 import { verifyWebhookEvent } from '~/lib/stripe.server';
 import type Stripe from 'stripe';
 import prisma from '~/lib/prisma.server';
-import { calculatePendingCommissions } from '~/lib/billing.server';
+import { applySuccessfulStripeCheckout } from '~/lib/stripeCheckout.server';
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
@@ -72,103 +72,19 @@ export async function action({ request }: ActionFunctionArgs) {
  * This is the backup for the confirm-payment endpoint
  */
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session, eventId: string): Promise<void> {
-  const paymentIntentId = typeof session.payment_intent === 'string'
-    ? session.payment_intent
-    : session.payment_intent?.id;
-  const shopDomain = session.metadata?.shopDomain;
-
-  if (!paymentIntentId || !shopDomain) {
-    console.log('[Stripe Webhook] Missing paymentIntentId or shopDomain in checkout session');
+  if (!session.id) {
+    console.log('[Stripe Webhook] Missing checkout session ID');
     return;
   }
 
-  // Check if already processed by confirm-payment endpoint
-  const existingCommission = await prisma.commission.findFirst({
-    where: { paymentRef: paymentIntentId },
-  });
-
-  if (existingCommission) {
-    console.log(`[Stripe Webhook] Payment ${paymentIntentId} already processed - skipping`);
-    return;
+  try {
+    const result = await applySuccessfulStripeCheckout(session.id, 'webhook', eventId);
+    console.log(
+      `[Stripe Webhook] Checkout completed for ${result.shopDomain}: ${result.markedCount} orders marked paid`
+    );
+  } catch (error) {
+    console.error('[Stripe Webhook] checkout.session.completed processing failed:', error);
   }
-
-  // Find the shop
-  const shop = await prisma.shop.findUnique({
-    where: { shopDomain },
-  });
-
-  if (!shop) {
-    console.error(`[Stripe Webhook] Shop not found: ${shopDomain}`);
-    return;
-  }
-
-  // Get pending order IDs
-  const orderLinks = await prisma.orderLink.findMany({
-    where: { shopId: shop.id },
-    select: { orderId: true },
-  });
-
-  const allOrderIds = [...new Set(orderLinks.map((ol) => ol.orderId))];
-
-  const paidCommissions = await prisma.commission.findMany({
-    where: { shopId: shop.id, status: 'paid' },
-    select: { orderId: true },
-  });
-
-  const paidSet = new Set(paidCommissions.map((c) => c.orderId));
-  const pendingOrderIds = allOrderIds.filter((id) => !paidSet.has(id));
-
-  // Mark as paid
-  const { orderRates } = await calculatePendingCommissions(shop.id, pendingOrderIds);
-  for (const orderId of pendingOrderIds) {
-    const rate = orderRates.get(orderId) || 0.10;
-    await prisma.commission.upsert({
-      where: {
-        commission_shop_order: {
-          shopId: shop.id,
-          orderId: orderId,
-        },
-      },
-      create: {
-        shopId: shop.id,
-        orderId: orderId,
-        orderNumber: `#${orderId.slice(-6)}`,
-        orderTotal: 0,
-        orderCurrency: 'USD',
-        commissionRate: 0,
-        commissionAmount: rate,
-        status: 'paid',
-        paidAt: new Date(),
-        paymentRef: paymentIntentId,
-        paymentProvider: 'stripe',
-      },
-      update: {
-        status: 'paid',
-        paidAt: new Date(),
-        paymentRef: paymentIntentId,
-        paymentProvider: 'stripe',
-      },
-    });
-  }
-
-  // Audit log
-  await prisma.auditLog.create({
-    data: {
-      shopId: shop.id,
-      action: 'stripe_webhook_checkout_completed',
-      resourceType: 'stripe_webhook',
-      resourceId: paymentIntentId,
-      metadata: {
-        eventId,
-        paymentIntentId,
-        ordersCount: pendingOrderIds.length,
-      },
-    },
-  });
-
-  console.log(
-    `[Stripe Webhook] Checkout completed for ${shopDomain}: ${pendingOrderIds.length} orders marked paid`
-  );
 }
 
 /**
