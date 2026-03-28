@@ -9,7 +9,7 @@ import { json } from '@remix-run/node';
 import { capturePayPalOrder, isPayPalConfigured } from '~/lib/paypal.server';
 import prisma from '~/lib/prisma.server';
 import { authenticate } from '~/shopify.server';
-import { calculatePendingCommissions } from '~/lib/billing.server';
+import { getOutstandingFeeSelection } from '~/lib/billing.server';
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
@@ -98,29 +98,24 @@ export async function action({ request }: ActionFunctionArgs) {
       pendingOrderIds = metadata.orderIds || [];
     }
 
-    // If we couldn't find order IDs from audit log, get all pending ones
     if (pendingOrderIds.length === 0) {
-      const orderLinks = await prisma.orderLink.findMany({
-        where: { shopId: shop.id },
-        select: { orderId: true },
-      });
-
-      const allOrderIds = [...new Set(orderLinks.map((ol) => ol.orderId))];
-
-      const paidCommissions = await prisma.commission.findMany({
-        where: { shopId: shop.id, status: 'paid' },
-        select: { orderId: true },
-      });
-
-      const paidSet = new Set(paidCommissions.map((c) => c.orderId));
-      pendingOrderIds = allOrderIds.filter((id) => !paidSet.has(id));
+      throw new Error('Could not resolve the billed orders for this PayPal payment.');
     }
 
-    // Mark all pending commissions as paid
-    const { orderRates } = await calculatePendingCommissions(shop.id, pendingOrderIds);
+    const outstandingSelection = await getOutstandingFeeSelection(shop.id, pendingOrderIds);
+    if (outstandingSelection.orderIds.length === 0) {
+      return json({
+        success: true,
+        captureId,
+        amount: captureAmount,
+        markedCount: 0,
+        payerEmail,
+      });
+    }
+
     let markedCount = 0;
-    for (const orderId of pendingOrderIds) {
-      const rate = orderRates.get(orderId) || 0.10;
+    for (const orderId of outstandingSelection.orderIds) {
+      const rate = outstandingSelection.feeByOrderId.get(orderId) || 0.10;
       await prisma.commission.upsert({
         where: {
           commission_shop_order: {
@@ -163,7 +158,7 @@ export async function action({ request }: ActionFunctionArgs) {
           captureId,
           amount: captureAmount,
           payerEmail,
-          orderIds: pendingOrderIds,
+          orderIds: outstandingSelection.orderIds,
           markedCount,
         },
       },

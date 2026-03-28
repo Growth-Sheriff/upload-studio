@@ -9,7 +9,7 @@ import { json } from '@remix-run/node';
 import { createPayPalOrder, createPayPalOrderWithVault, isPayPalConfigured } from '~/lib/paypal.server';
 import prisma from '~/lib/prisma.server';
 import { authenticate } from '~/shopify.server';
-import { calculatePendingCommissions } from '~/lib/billing.server';
+import { getOutstandingFeeSelection } from '~/lib/billing.server';
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
@@ -46,46 +46,16 @@ export async function action({ request }: ActionFunctionArgs) {
     // No body or invalid JSON — pay all pending (default behavior)
   }
 
-  // Get all pending (unpaid) order IDs for this shop
-  const orderLinks = await prisma.orderLink.findMany({
-    where: { shopId: shop.id },
-    select: { orderId: true },
-  });
-
-  const allOrderIds = [...new Set(orderLinks.map((ol) => ol.orderId))];
-
-  // Get already paid order IDs
-  const paidCommissions = await prisma.commission.findMany({
-    where: {
-      shopId: shop.id,
-      status: 'paid',
-    },
-    select: { orderId: true },
-  });
-
-  const paidOrderIds = new Set(paidCommissions.map((c) => c.orderId));
-
-  let pendingOrderIds: string[];
-  if (requestedOrderIds) {
-    // Per-month payment: only pay the requested orders that are actually pending
-    const allOrderSet = new Set(allOrderIds);
-    pendingOrderIds = requestedOrderIds.filter(
-      (id) => allOrderSet.has(id) && !paidOrderIds.has(id)
-    );
-  } else {
-    // Default: pay all pending
-    pendingOrderIds = allOrderIds.filter((id) => !paidOrderIds.has(id));
-  }
+  const {
+    orderIds: pendingOrderIds,
+    totalAmount: total,
+    description,
+  } = await getOutstandingFeeSelection(shop.id, requestedOrderIds, monthKey);
 
   if (pendingOrderIds.length === 0) {
-    return json({ error: 'No pending commissions to pay' }, { status: 400 });
+    return json({ error: 'No outstanding order fees to pay' }, { status: 400 });
   }
 
-  const { totalAmount: total, description } = await calculatePendingCommissions(
-    shop.id,
-    pendingOrderIds,
-    monthKey
-  );
   const totalAmount = total.toFixed(2);
 
   try {

@@ -1,5 +1,5 @@
 import prisma from '~/lib/prisma.server'
-import { calculatePendingCommissions } from '~/lib/billing.server'
+import { getOutstandingFeeSelection } from '~/lib/billing.server'
 import { getOrCreateCustomer, retrieveCheckoutSession } from '~/lib/stripe.server'
 
 type StripeCheckoutSource = 'confirm' | 'return' | 'webhook'
@@ -130,12 +130,23 @@ export async function applySuccessfulStripeCheckout(
     }
   }
 
-  const { orderRates } = await calculatePendingCommissions(shop.id, orderIds)
+  const outstandingSelection = await getOutstandingFeeSelection(shop.id, orderIds)
+  if (outstandingSelection.orderIds.length === 0) {
+    return {
+      shopDomain,
+      paymentIntentId: checkout.paymentIntentId,
+      amount: checkout.amount,
+      markedCount: existingProcessedOrderIds.size,
+      orderIds,
+      alreadyProcessed: true,
+    }
+  }
+
   let markedCount = 0
   const paidAt = new Date()
 
-  for (const orderId of orderIds) {
-    const rate = orderRates.get(orderId) || 0.1
+  for (const orderId of outstandingSelection.orderIds) {
+    const rate = outstandingSelection.feeByOrderId.get(orderId) || 0.1
 
     await prisma.commission.upsert({
       where: {
@@ -184,7 +195,7 @@ export async function applySuccessfulStripeCheckout(
         customerId: checkout.customerId,
         referenceId: checkout.referenceId,
         markedCount,
-        orderIds,
+        orderIds: outstandingSelection.orderIds,
       },
     },
   })

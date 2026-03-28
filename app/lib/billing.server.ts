@@ -27,6 +27,78 @@ export function getCommissionRate(mode: string): number {
   return COMMISSION_RATES.default;
 }
 
+function buildOrderFeeDescription(
+  feeAmounts: number[],
+  monthKey?: string | null
+): string {
+  const defaultCount = feeAmounts.filter(
+    (amount) => Math.abs(amount - COMMISSION_RATES.default) < 0.0001
+  ).length;
+  const builderCount = feeAmounts.filter(
+    (amount) => Math.abs(amount - COMMISSION_RATES.builder) < 0.0001
+  ).length;
+  const customCount = feeAmounts.length - defaultCount - builderCount;
+
+  const parts: string[] = [];
+  if (defaultCount > 0) {
+    parts.push(`${defaultCount} standard orders @ $${COMMISSION_RATES.default.toFixed(2)}`);
+  }
+  if (builderCount > 0) {
+    parts.push(`${builderCount} builder orders @ $${COMMISSION_RATES.builder.toFixed(2)}`);
+  }
+  if (customCount > 0) {
+    parts.push(`${customCount} custom-fee orders`);
+  }
+
+  const appName = process.env.APP_NAME || "Upload Studio";
+  const prefix = monthKey ? `${appName} order fees (${monthKey})` : `${appName} order fees`;
+  return `${prefix}: ${parts.join(", ")}`;
+}
+
+export async function getOutstandingFeeSelection(
+  shopId: string,
+  requestedOrderIds?: string[] | null,
+  monthKey?: string | null
+): Promise<{
+  orderIds: string[];
+  feeByOrderId: Map<string, number>;
+  totalAmount: number;
+  description: string;
+}> {
+  const pendingCommissions = await prisma.commission.findMany({
+    where: {
+      shopId,
+      status: "pending",
+      ...(requestedOrderIds?.length ? { orderId: { in: requestedOrderIds } } : {}),
+    },
+    select: {
+      orderId: true,
+      commissionAmount: true,
+    },
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
+
+  const orderIds = pendingCommissions.map((commission) => commission.orderId);
+  const feeByOrderId = new Map(
+    pendingCommissions.map((commission) => [
+      commission.orderId,
+      Number(commission.commissionAmount),
+    ])
+  );
+  const feeAmounts = pendingCommissions.map((commission) => Number(commission.commissionAmount));
+  const totalAmount = feeAmounts.reduce((sum, amount) => sum + amount, 0);
+  const description = buildOrderFeeDescription(feeAmounts, monthKey);
+
+  return {
+    orderIds,
+    feeByOrderId,
+    totalAmount,
+    description,
+  };
+}
+
 /**
  * Calculate pending commissions for a set of order IDs.
  * Returns total amount and per-order rates based on upload mode.

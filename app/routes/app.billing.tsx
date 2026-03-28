@@ -25,24 +25,26 @@ import prisma from '~/lib/prisma.server'
 import { isPayPalConfigured } from '~/lib/paypal.server'
 import { isStripeConfigured } from '~/lib/stripe.server'
 import { authenticate } from '~/shopify.server'
-import { calculatePendingCommissions, getCommissionRate, COMMISSION_RATES } from '~/lib/billing.server'
+import { COMMISSION_RATES, getOutstandingFeeSelection } from '~/lib/billing.server'
 
 const PAYPAL_EMAIL = process.env.PAYPAL_EMAIL || 'billing@techifyboost.com'
 
 interface CommissionSummary {
-  totalCommission: number
+  recordedAmount: number
   pendingAmount: number
   paidAmount: number
+  waivedAmount: number
   totalOrders: number
   pendingOrders: number
   paidOrders: number
+  waivedOrders: number
 }
 
 interface OrderRecord {
   orderId: string
   orderNumber: string | null
   commissionAmount: number
-  status: string // pending or paid
+  status: string // pending, paid, waived
   createdAt: string
   paidAt: string | null
   paymentRef: string | null
@@ -54,68 +56,12 @@ interface MonthlyBreakdown {
   totalOrders: number
   pendingOrders: number
   paidOrders: number
+  waivedOrders: number
   totalAmount: number
   pendingAmount: number
   paidAmount: number
+  waivedAmount: number
   orders: OrderRecord[]
-  displayStatus?: 'free'
-}
-
-const FAST_SHOP_DOMAIN = 'fast-dtf-transfer.myshopify.com'
-const FAST_FREE_MONTHS = new Set(['2026-01', '2026-02'])
-const FAST_FORCE_PAID_MONTH = '2026-03'
-
-function applyFastBillingDisplayOverrides(
-  shopDomain: string,
-  summary: CommissionSummary,
-  monthlyBreakdowns: MonthlyBreakdown[]
-): { summary: CommissionSummary; monthlyBreakdowns: MonthlyBreakdown[] } {
-  if (shopDomain !== FAST_SHOP_DOMAIN) {
-    return { summary, monthlyBreakdowns }
-  }
-
-  let pendingAmountReduction = 0
-  let pendingOrdersReduction = 0
-
-  const nextMonthlyBreakdowns = monthlyBreakdowns.map((breakdown) => {
-    if (FAST_FREE_MONTHS.has(breakdown.monthKey)) {
-      return {
-        ...breakdown,
-        displayStatus: 'free' as const,
-      }
-    }
-
-    if (breakdown.monthKey === FAST_FORCE_PAID_MONTH) {
-      pendingAmountReduction += breakdown.pendingAmount
-      pendingOrdersReduction += breakdown.pendingOrders
-
-      return {
-        ...breakdown,
-        pendingAmount: 0,
-        pendingOrders: 0,
-        paidAmount: breakdown.totalAmount,
-        paidOrders: breakdown.totalOrders,
-      }
-    }
-
-    return breakdown
-  })
-
-  const nextSummary =
-    pendingAmountReduction > 0 || pendingOrdersReduction > 0
-      ? {
-          ...summary,
-          pendingAmount: Math.max(0, summary.pendingAmount - pendingAmountReduction),
-          pendingOrders: Math.max(0, summary.pendingOrders - pendingOrdersReduction),
-          paidAmount: summary.paidAmount + pendingAmountReduction,
-          paidOrders: summary.paidOrders + pendingOrdersReduction,
-        }
-      : summary
-
-  return {
-    summary: nextSummary,
-    monthlyBreakdowns: nextMonthlyBreakdowns,
-  }
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -139,64 +85,29 @@ export async function loader({ request }: LoaderFunctionArgs) {
     })
   }
 
-  // Get ALL unique orders from OrderLink table (this is the source of truth)
-  // Each unique orderId = 1 commission (rate depends on upload mode)
-  const orderLinks = await prisma.orderLink.findMany({
-    where: { shopId: shop.id },
-    select: {
-      orderId: true,
-      createdAt: true,
-      upload: { select: { mode: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-  })
+  const firstLinkRows = await prisma.$queryRaw<Array<{ orderId: string; orderCreatedAt: Date }>>`
+    select order_id as "orderId", min(created_at) as "orderCreatedAt"
+    from orders_link
+    where shop_id = ${shop.id}
+    group by order_id
+  `
+  const orderDateMap = new Map(
+    firstLinkRows.map((row) => [row.orderId, new Date(row.orderCreatedAt)])
+  )
 
-  // Get unique order IDs (one commission per order, not per upload)
-  const uniqueOrderIds = [...new Set(orderLinks.map((ol) => ol.orderId))]
-
-  // Create a map of orderId -> earliest createdAt
-  const orderDateMap = new Map<string, Date>()
-  // Build mode-based commission rate for each order
-  const orderRateMap = new Map<string, number>()
-  for (const ol of orderLinks) {
-    if (!orderDateMap.has(ol.orderId) || ol.createdAt < orderDateMap.get(ol.orderId)!) {
-      orderDateMap.set(ol.orderId, ol.createdAt)
-    }
-    // Use the highest commission rate across all uploads for this order
-    const mode = ol.upload?.mode || 'dtf'
-    const rate = getCommissionRate(mode)
-    const existing = orderRateMap.get(ol.orderId) || 0
-    orderRateMap.set(ol.orderId, Math.max(existing, rate))
-  }
-
-  // Get ALL commissions from Commission table (includes orderNumber)
   const allCommissions = await prisma.commission.findMany({
     where: { shopId: shop.id },
     select: {
       orderId: true,
       orderNumber: true,
+      commissionAmount: true,
       status: true,
+      createdAt: true,
       paidAt: true,
       paymentRef: true,
     },
+    orderBy: { createdAt: 'desc' },
   })
-
-  // Create maps for commission info
-  const commissionInfo = new Map(
-    allCommissions.map((c) => [
-      c.orderId,
-      {
-        orderNumber: c.orderNumber,
-        status: c.status,
-        paidAt: c.paidAt,
-        paymentRef: c.paymentRef,
-      },
-    ])
-  )
-
-  const paidOrderIds = new Set(
-    allCommissions.filter((c) => c.status === 'paid').map((c) => c.orderId)
-  )
 
   // Calculate total transfer size from uploads
   const uploadStats = await prisma.uploadItem.aggregate({
@@ -214,23 +125,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const totalTransferBytes = uploadStats._sum.fileSize || 0
   const totalTransferGB = Number(totalTransferBytes) / (1024 * 1024 * 1024) // Convert to GB
 
-  // Build records list
-  const records: OrderRecord[] = uniqueOrderIds.map((orderId) => {
-    const commission = commissionInfo.get(orderId)
-    const isPaid = paidOrderIds.has(orderId)
-    const createdAt = orderDateMap.get(orderId) || new Date()
-    const rate = orderRateMap.get(orderId) || COMMISSION_RATES.default
-
-    return {
-      orderId,
-      orderNumber: commission?.orderNumber || `#${orderId.slice(-6)}`, // Use real orderNumber from Commission
-      commissionAmount: rate,
-      status: isPaid ? 'paid' : 'pending',
-      createdAt: createdAt.toISOString(),
-      paidAt: commission?.paidAt?.toISOString() || null,
-      paymentRef: commission?.paymentRef || null,
-    }
-  })
+  const records: OrderRecord[] = allCommissions
+    .map((commission) => ({
+      orderId: commission.orderId,
+      orderNumber: commission.orderNumber || `#${commission.orderId.slice(-6)}`,
+      commissionAmount: Number(commission.commissionAmount),
+      status: commission.status,
+      createdAt: (orderDateMap.get(commission.orderId) || commission.createdAt).toISOString(),
+      paidAt: commission.paidAt?.toISOString() || null,
+      paymentRef: commission.paymentRef || null,
+    }))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
   // Group records by month
   const monthMap = new Map<string, OrderRecord[]>()
@@ -254,6 +159,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       })
       const pendingOrders = orders.filter((o) => o.status === 'pending')
       const paidOrders = orders.filter((o) => o.status === 'paid')
+      const waivedOrders = orders.filter((o) => o.status === 'waived')
 
       return {
         monthKey,
@@ -261,42 +167,42 @@ export async function loader({ request }: LoaderFunctionArgs) {
         totalOrders: orders.length,
         pendingOrders: pendingOrders.length,
         paidOrders: paidOrders.length,
+        waivedOrders: waivedOrders.length,
         totalAmount: orders.reduce((sum, o) => sum + o.commissionAmount, 0),
         pendingAmount: pendingOrders.reduce((sum, o) => sum + o.commissionAmount, 0),
         paidAmount: paidOrders.reduce((sum, o) => sum + o.commissionAmount, 0),
+        waivedAmount: waivedOrders.reduce((sum, o) => sum + o.commissionAmount, 0),
         orders,
       }
     })
 
   // Calculate summary
-  const totalOrders = uniqueOrderIds.length
-  const paidOrders = paidOrderIds.size
-  const pendingOrders = totalOrders - paidOrders
+  const totalOrders = records.length
+  const paidOrders = records.filter((r) => r.status === 'paid').length
+  const pendingOrders = records.filter((r) => r.status === 'pending').length
+  const waivedOrders = records.filter((r) => r.status === 'waived').length
 
-  const totalCommission = records.reduce((sum, r) => sum + r.commissionAmount, 0)
+  const recordedAmount = records.reduce((sum, r) => sum + r.commissionAmount, 0)
   const pendingAmount = records.filter((r) => r.status === 'pending').reduce((sum, r) => sum + r.commissionAmount, 0)
   const paidAmount = records.filter((r) => r.status === 'paid').reduce((sum, r) => sum + r.commissionAmount, 0)
+  const waivedAmount = records.filter((r) => r.status === 'waived').reduce((sum, r) => sum + r.commissionAmount, 0)
 
   const summary: CommissionSummary = {
-    totalCommission,
+    recordedAmount,
     pendingAmount,
     paidAmount,
+    waivedAmount,
     totalOrders,
     pendingOrders,
     paidOrders,
+    waivedOrders,
   }
-
-  const billingDisplay = applyFastBillingDisplayOverrides(
-    shopDomain,
-    summary,
-    monthlyBreakdowns
-  )
 
   return json({
     shopDomain,
-    summary: billingDisplay.summary,
+    summary,
     records,
-    monthlyBreakdowns: billingDisplay.monthlyBreakdowns,
+    monthlyBreakdowns,
     totalTransferGB,
     totalFiles: uploadStats._count,
     commissionRates: COMMISSION_RATES,
@@ -386,12 +292,14 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const ids = orderIds.split(',').filter(Boolean)
 
-    // Get per-order commission rates based on mode
-    const { orderRates, totalAmount: totalPaid } = await calculatePendingCommissions(shop.id, ids)
+    const outstandingSelection = await getOutstandingFeeSelection(shop.id, ids)
+    if (outstandingSelection.orderIds.length === 0) {
+      return json({ error: 'No outstanding billed orders found for this payment' }, { status: 400 })
+    }
 
     // Create or update commission records for each order
-    for (const orderId of ids) {
-      const rate = orderRates.get(orderId) || COMMISSION_RATES.default
+    for (const orderId of outstandingSelection.orderIds) {
+      const rate = outstandingSelection.feeByOrderId.get(orderId) || COMMISSION_RATES.default
       await prisma.commission.upsert({
         where: {
           commission_shop_order: {
@@ -427,15 +335,15 @@ export async function action({ request }: ActionFunctionArgs) {
         resourceType: 'commission',
         resourceId: paymentRef,
         metadata: {
-          orderIds: ids,
+          orderIds: outstandingSelection.orderIds,
           paymentRef,
-          count: ids.length,
-          totalAmount: totalPaid,
+          count: outstandingSelection.orderIds.length,
+          totalAmount: outstandingSelection.totalAmount,
         },
       },
     })
 
-    return json({ success: true, message: `${ids.length} orders marked as paid` })
+    return json({ success: true, message: `${outstandingSelection.orderIds.length} orders marked as paid` })
   }
 
   return json({ error: 'Unknown action' }, { status: 400 })
@@ -695,6 +603,41 @@ export default function BillingPage() {
     })
   }
 
+  const formatMoney = (amount: number) => `$${amount.toFixed(2)}`
+
+  const formatOrderCount = (count: number) => count.toLocaleString('en-US')
+
+  const getOrderStatusBadge = (status: string) => {
+    if (status === 'paid') {
+      return { tone: 'success', label: 'Paid' } as const
+    }
+
+    if (status === 'waived') {
+      return { tone: 'info', label: 'Waived' } as const
+    }
+
+    return { tone: 'attention', label: 'Outstanding' } as const
+  }
+
+  const getMonthStatusBadge = (month: MonthlyBreakdown) => {
+    if (month.pendingOrders > 0) {
+      return {
+        tone: 'attention',
+        label: `${formatOrderCount(month.pendingOrders)} outstanding`,
+      } as const
+    }
+
+    if (month.waivedOrders === month.totalOrders) {
+      return { tone: 'info', label: 'Waived' } as const
+    }
+
+    if (month.paidOrders === month.totalOrders) {
+      return { tone: 'success', label: 'All settled' } as const
+    }
+
+    return { tone: 'success', label: 'Settled / Waived' } as const
+  }
+
   // Get pending order IDs for payment
   const pendingOrderIds = records
     .filter((r) => r.status === 'pending')
@@ -704,23 +647,23 @@ export default function BillingPage() {
   // DataTable rows - simplified without order total
   const tableRows = records.map((r) => [
     r.orderNumber,
-    `$${r.commissionAmount.toFixed(3)}`,
-    <Badge key={r.orderId} tone={r.status === 'paid' ? 'success' : 'warning'}>
-      {r.status === 'paid' ? 'Paid' : 'Pending'}
+    formatMoney(r.commissionAmount),
+    <Badge key={r.orderId} tone={getOrderStatusBadge(r.status).tone}>
+      {getOrderStatusBadge(r.status).label}
     </Badge>,
     formatDate(r.createdAt),
-    r.paidAt ? formatDate(r.paidAt) : '-',
+    r.status === 'waived' ? 'Waived' : r.paidAt ? formatDate(r.paidAt) : '-',
   ])
 
   return (
-    <Page title="Billing & Commissions" backAction={{ content: 'Dashboard', url: '/app' }}>
+    <Page title="Billing & Order Fees" backAction={{ content: 'Dashboard', url: '/app' }}>
       <Layout>
-        {/* Commission Info */}
+        {/* Billing Info */}
         <Layout.Section>
           <Banner tone="info">
             <p>
-              <strong>Commission:</strong> ${commissionRates.default.toFixed(2)} per order (${commissionRates.builder.toFixed(2)} for Builder mode).
-              Payments are collected via Stripe (card) or PayPal.
+              <strong>App-linked orders only.</strong> This page uses Upload Studio billing records, not your store's full Shopify order count.
+              Standard order fee is ${commissionRates.default.toFixed(2)} per order (${commissionRates.builder.toFixed(2)} for Builder mode).
             </p>
           </Banner>
         </Layout.Section>
@@ -728,76 +671,81 @@ export default function BillingPage() {
         {/* Summary Cards */}
         <Layout.Section>
           <InlineStack gap="400" align="start" wrap={false}>
-            {/* Total Commission */}
+            {/* App-Linked Orders */}
             <Box width="25%">
               <Card>
                 <BlockStack gap="200">
                   <Text as="p" variant="bodySm" tone="subdued">
-                    Total Commission
+                    App-Linked Orders
                   </Text>
                   <Text as="p" variant="headingXl">
-                    ${summary.totalCommission.toFixed(2)}
+                    {formatOrderCount(summary.totalOrders)}
                   </Text>
                   <Text as="p" variant="bodySm" tone="subdued">
-                    {summary.totalOrders} orders
+                    Recorded fees: {formatMoney(summary.recordedAmount)}
                   </Text>
                 </BlockStack>
               </Card>
             </Box>
 
-            {/* Pending Payment */}
+            {/* Outstanding Balance */}
             <Box width="25%">
               <Card>
                 <BlockStack gap="200">
                   <Text as="p" variant="bodySm" tone="subdued">
-                    Pending Payment
+                    Outstanding Balance
                   </Text>
                   <Text as="p" variant="headingXl" tone="critical">
-                    ${summary.pendingAmount.toFixed(2)}
+                    {formatMoney(summary.pendingAmount)}
                   </Text>
                   <Text as="p" variant="bodySm" tone="subdued">
-                    {summary.pendingOrders} orders
+                    {formatOrderCount(summary.pendingOrders)} orders
                   </Text>
                 </BlockStack>
               </Card>
             </Box>
 
-            {/* Paid */}
+            {/* Settled Charges */}
             <Box width="25%">
               <Card>
                 <BlockStack gap="200">
                   <Text as="p" variant="bodySm" tone="subdued">
-                    Paid
+                    Settled Charges
                   </Text>
                   <Text as="p" variant="headingXl" tone="success">
-                    ${summary.paidAmount.toFixed(2)}
+                    {formatMoney(summary.paidAmount)}
                   </Text>
                   <Text as="p" variant="bodySm" tone="subdued">
-                    {summary.paidOrders} orders
+                    {formatOrderCount(summary.paidOrders)} orders
                   </Text>
                 </BlockStack>
               </Card>
             </Box>
 
-            {/* Total Transfer */}
+            {/* Waived Charges */}
             <Box width="25%">
               <Card>
                 <BlockStack gap="200">
                   <Text as="p" variant="bodySm" tone="subdued">
-                    Total Transfer
+                    Waived Charges
                   </Text>
-                  <Text as="p" variant="headingXl">
-                    {totalTransferGB >= 1
-                      ? `${totalTransferGB.toFixed(2)} GB`
-                      : `${(totalTransferGB * 1024).toFixed(0)} MB`}
+                  <Text as="p" variant="headingXl" tone="info">
+                    {formatMoney(summary.waivedAmount)}
                   </Text>
                   <Text as="p" variant="bodySm" tone="subdued">
-                    {totalFiles} files uploaded
+                    {formatOrderCount(summary.waivedOrders)} orders
                   </Text>
                 </BlockStack>
               </Card>
             </Box>
           </InlineStack>
+          <Box paddingBlockStart="300">
+            <Text as="p" variant="bodySm" tone="subdued">
+              Transfer tracked: {totalTransferGB >= 1
+                ? `${totalTransferGB.toFixed(2)} GB`
+                : `${(totalTransferGB * 1024).toFixed(0)} MB`} across {formatOrderCount(totalFiles)} uploaded files.
+            </Text>
+          </Box>
         </Layout.Section>
 
         {/* Payment Instructions */}
@@ -809,8 +757,7 @@ export default function BillingPage() {
                 {paypalSuccess && (
                   <Banner tone="success" onDismiss={() => setPaypalSuccess(false)}>
                     <p>
-                      Payment successful! Your commissions have been marked as paid. Page will
-                      refresh shortly.
+                      Payment successful. Your outstanding order fees have been updated. Page will refresh shortly.
                     </p>
                   </Banner>
                 )}
@@ -826,8 +773,7 @@ export default function BillingPage() {
                 {stripeSuccess && (
                   <Banner tone="success" onDismiss={() => setStripeSuccess(false)}>
                     <p>
-                      Stripe payment successful! Your commissions have been marked as paid. Page
-                      will refresh shortly.
+                      Stripe payment successful. Your outstanding order fees have been updated. Page will refresh shortly.
                     </p>
                   </Banner>
                 )}
@@ -842,11 +788,11 @@ export default function BillingPage() {
                 <InlineStack align="space-between">
                   <BlockStack gap="100">
                     <Text as="h2" variant="headingMd">
-                      Payment Due
+                      Outstanding Balance
                     </Text>
                     <Text as="p" variant="bodyMd">
-                      Please send <strong>${summary.pendingAmount.toFixed(2)}</strong> for{' '}
-                      {summary.pendingOrders} orders
+                      Please send <strong>{formatMoney(summary.pendingAmount)}</strong> to settle{' '}
+                      {formatOrderCount(summary.pendingOrders)} app-linked orders.
                     </Text>
                   </BlockStack>
                   <InlineStack gap="200">
@@ -938,7 +884,7 @@ export default function BillingPage() {
                         Amount:
                       </Text>
                       <Text as="p" variant="bodyMd">
-                        ${summary.pendingAmount.toFixed(2)} USD
+                        {formatMoney(summary.pendingAmount)} USD
                       </Text>
                     </InlineStack>
                     <InlineStack gap="200">
@@ -981,7 +927,7 @@ export default function BillingPage() {
                   </InlineStack>
                   <Text as="p" variant="bodySm" tone="subdued">
                     When enabled, we'll automatically charge your saved payment method when
-                    pending commissions reach ${autoChargeThreshold.toFixed(2)}.
+                    outstanding order fees reach ${autoChargeThreshold.toFixed(2)}.
                   </Text>
                 </BlockStack>
               </InlineStack>
@@ -1100,45 +1046,34 @@ export default function BillingPage() {
           </Card>
         </Layout.Section>
 
-        {/* Monthly Invoices Breakdown */}
+        {/* Monthly Billing Breakdown */}
         {monthlyBreakdowns.length > 0 && (
           <Layout.Section>
             <Card>
               <BlockStack gap="400">
                 <Text as="h2" variant="headingMd">
-                  📅 Monthly Invoices
+                  Monthly Billing
                 </Text>
                 <Text as="p" variant="bodySm" tone="subdued">
-                  View your commission breakdown by month. You can pay for a specific month individually.
+                  Grouped by the order&apos;s original app-linked date. Status remains order-based inside each month.
                 </Text>
 
                 {monthlyBreakdowns.map((mb) => {
                   const isExpanded = expandedMonths.has(mb.monthKey)
                   const isLoading = monthPaymentLoading === mb.monthKey
-                  const isFreeInvoice = mb.displayStatus === 'free'
-                  const isForcedPaidInvoice =
-                    shopDomain === FAST_SHOP_DOMAIN && mb.monthKey === FAST_FORCE_PAID_MONTH
-                  const pendingOrderIds = mb.orders
+                  const monthStatusBadge = getMonthStatusBadge(mb)
+                  const monthPendingOrderIds = mb.orders
                     .filter((o) => o.status === 'pending')
                     .map((o) => o.orderId)
 
                   const monthRows = mb.orders.map((r) => [
                     r.orderNumber,
-                    `$${r.commissionAmount.toFixed(3)}`,
-                    <Badge
-                      key={r.orderId}
-                      tone={
-                        isFreeInvoice
-                          ? 'info'
-                          : isForcedPaidInvoice || r.status === 'paid'
-                            ? 'success'
-                            : 'warning'
-                      }
-                    >
-                      {isFreeInvoice ? 'Free' : isForcedPaidInvoice || r.status === 'paid' ? 'Paid' : 'Pending'}
+                    formatMoney(r.commissionAmount),
+                    <Badge key={r.orderId} tone={getOrderStatusBadge(r.status).tone}>
+                      {getOrderStatusBadge(r.status).label}
                     </Badge>,
                     formatDate(r.createdAt),
-                    r.paidAt ? formatDate(r.paidAt) : '-',
+                    r.status === 'waived' ? 'Waived' : r.paidAt ? formatDate(r.paidAt) : '-',
                   ])
 
                   return (
@@ -1157,22 +1092,16 @@ export default function BillingPage() {
                             >
                               {isExpanded ? '▼' : '▶'} {mb.monthLabel}
                             </Button>
-                            <Badge
-                              tone={
-                                isFreeInvoice ? 'info' : mb.pendingOrders === 0 ? 'success' : 'attention'
-                              }
-                            >
-                              {isFreeInvoice ? 'Free' : mb.pendingOrders === 0 ? 'Fully Paid' : `${mb.pendingOrders} pending`}
-                            </Badge>
+                            <Badge tone={monthStatusBadge.tone}>{monthStatusBadge.label}</Badge>
                           </InlineStack>
 
                           <InlineStack gap="300" blockAlign="center">
                             <BlockStack gap="0">
                               <Text as="p" variant="bodyMd" fontWeight="semibold">
-                                ${mb.totalAmount.toFixed(2)}
+                                {formatMoney(mb.totalAmount)} total fees
                               </Text>
                               <Text as="p" variant="bodySm" tone="subdued">
-                                {mb.totalOrders} orders
+                                {formatOrderCount(mb.totalOrders)} app-linked orders
                               </Text>
                             </BlockStack>
 
@@ -1182,21 +1111,21 @@ export default function BillingPage() {
                                   <Button
                                     size="slim"
                                     variant="primary"
-                                    onClick={() => handlePayMonth(mb.monthKey, pendingOrderIds, 'stripe')}
+                                    onClick={() => handlePayMonth(mb.monthKey, monthPendingOrderIds, 'stripe')}
                                     loading={isLoading}
                                     disabled={isLoading}
                                   >
-                                    💳 Pay ${mb.pendingAmount.toFixed(2)}
+                                    Card {formatMoney(mb.pendingAmount)}
                                   </Button>
                                 )}
                                 {paypalEnabled && (
                                   <Button
                                     size="slim"
-                                    onClick={() => handlePayMonth(mb.monthKey, pendingOrderIds, 'paypal')}
+                                    onClick={() => handlePayMonth(mb.monthKey, monthPendingOrderIds, 'paypal')}
                                     loading={isLoading}
                                     disabled={isLoading}
                                   >
-                                    PayPal ${mb.pendingAmount.toFixed(2)}
+                                    PayPal {formatMoney(mb.pendingAmount)}
                                   </Button>
                                 )}
                               </InlineStack>
@@ -1206,14 +1135,19 @@ export default function BillingPage() {
 
                         {/* Progress indicator */}
                         <InlineStack gap="200">
-                          <Text as="p" variant="bodySm" tone="success">
-                            {isFreeInvoice
-                              ? `Free: $${mb.totalAmount.toFixed(2)} (${mb.totalOrders})`
-                              : `Paid: $${mb.paidAmount.toFixed(2)} (${mb.paidOrders})`}
-                          </Text>
+                          {mb.paidOrders > 0 && (
+                            <Text as="p" variant="bodySm" tone="success">
+                              Paid: {formatMoney(mb.paidAmount)} ({formatOrderCount(mb.paidOrders)})
+                            </Text>
+                          )}
+                          {mb.waivedOrders > 0 && (
+                            <Text as="p" variant="bodySm" tone="info">
+                              Waived: {formatMoney(mb.waivedAmount)} ({formatOrderCount(mb.waivedOrders)})
+                            </Text>
+                          )}
                           {mb.pendingOrders > 0 && (
                             <Text as="p" variant="bodySm" tone="critical">
-                              Pending: ${mb.pendingAmount.toFixed(2)} ({mb.pendingOrders})
+                              Outstanding: {formatMoney(mb.pendingAmount)} ({formatOrderCount(mb.pendingOrders)})
                             </Text>
                           )}
                         </InlineStack>
@@ -1222,7 +1156,7 @@ export default function BillingPage() {
                           <Box paddingBlockStart="200">
                             <DataTable
                               columnContentTypes={['text', 'text', 'text', 'text', 'text']}
-                              headings={['Order', 'Commission', 'Status', 'Order Date', 'Paid Date']}
+                              headings={['Order', 'Fee', 'Status', 'Order Date', 'Resolved']}
                               rows={monthRows}
                             />
                           </Box>
@@ -1236,27 +1170,27 @@ export default function BillingPage() {
           </Layout.Section>
         )}
 
-        {/* Commission History */}
+        {/* Order Fee History */}
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
               <Text as="h2" variant="headingMd">
-                Commission History
+                Order Fee History
               </Text>
 
               {records.length === 0 ? (
                 <EmptyState
-                  heading="No commissions yet"
+                  heading="No app-linked orders billed yet"
                   image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
                 >
                   <p>
-                    When orders with app items are placed, commissions will appear here.
+                    When orders linked to Upload Studio are created, order fees will appear here.
                   </p>
                 </EmptyState>
               ) : (
                 <DataTable
                   columnContentTypes={['text', 'text', 'text', 'text', 'text']}
-                  headings={['Order', 'Commission', 'Status', 'Order Date', 'Paid Date']}
+                  headings={['Order', 'Fee', 'Status', 'Order Date', 'Resolved']}
                   rows={tableRows}
                 />
               )}
@@ -1269,26 +1203,23 @@ export default function BillingPage() {
           <Card>
             <BlockStack gap="400">
               <Text as="h3" variant="headingMd">
-                How Commission Billing Works
+                How Billing Works
               </Text>
               <BlockStack gap="200">
                 <Text as="p" variant="bodyMd">
-                  1. <strong>Order Placed</strong> - Customer places order with app items
+                  1. <strong>App-Linked Order Created</strong> - A Shopify order appears here only when it is linked to Upload Studio.
                 </Text>
                 <Text as="p" variant="bodyMd">
-                  2. <strong>Commission Recorded</strong> - ${commissionRates.default.toFixed(2)} per order (${commissionRates.builder.toFixed(2)} for Builder mode)
+                  2. <strong>Order Fee Recorded</strong> - Standard fee is ${commissionRates.default.toFixed(2)} per order (${commissionRates.builder.toFixed(2)} for Builder mode).
                 </Text>
                 <Text as="p" variant="bodyMd">
-                  3. <strong>Pay with Stripe or PayPal</strong> - Click the payment button to pay
-                  all pending commissions securely
+                  3. <strong>Pay with Stripe or PayPal</strong> - Use the payment buttons to settle only the currently outstanding order fees.
                 </Text>
                 <Text as="p" variant="bodyMd">
-                  4. <strong>Automatic Payments</strong> - After your first payment, auto-pay kicks
-                  in when commissions reach $49.99
+                  4. <strong>Automatic Payments</strong> - After your first payment, auto-pay can charge your saved method when outstanding fees reach ${autoChargeThreshold.toFixed(2)}.
                 </Text>
                 <Text as="p" variant="bodyMd">
-                  5. <strong>Automatic Confirmation</strong> - Payment is verified and commissions
-                  are marked as paid automatically
+                  5. <strong>Status by Order</strong> - Every billed order is tracked individually as paid, outstanding, or waived.
                 </Text>
               </BlockStack>
             </BlockStack>
@@ -1304,7 +1235,7 @@ export default function BillingPage() {
       <Modal
         open={paymentModalOpen}
         onClose={handlePaymentModalClose}
-        title="Confirm Payment"
+        title="Confirm Manual Payment"
         primaryAction={{
           content: isSubmitting ? 'Submitting...' : 'Confirm Payment',
           disabled: !paymentRef || isSubmitting,
@@ -1322,21 +1253,20 @@ export default function BillingPage() {
             <BlockStack gap="400">
               <Text as="p" variant="bodyMd">
                 Enter your PayPal transaction ID to confirm payment of{' '}
-                <strong>${summary.pendingAmount.toFixed(2)}</strong> for {summary.pendingOrders}{' '}
-                orders.
+                <strong>{formatMoney(summary.pendingAmount)}</strong> for {formatOrderCount(summary.pendingOrders)} outstanding orders.
               </Text>
 
               <input type="hidden" name="_action" value="mark_paid" />
               <input type="hidden" name="orderIds" value={pendingOrderIds} />
 
               <TextField
-                label="PayPal Transaction ID"
+                label="Payment Reference"
                 name="paymentRef"
                 value={paymentRef}
                 onChange={setPaymentRef}
                 autoComplete="off"
                 placeholder="e.g., 1AB23456CD789012E"
-                helpText="Found in your PayPal transaction details"
+                helpText="Use the PayPal transaction ID or your manual payment reference"
               />
 
               {isSubmitting && (

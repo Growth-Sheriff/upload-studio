@@ -2,7 +2,7 @@
  * Stripe Server Library
  *
  * Handles Stripe Checkout Sessions, Payment Intents, webhook verification,
- * and saved payment method (auto-charge) flows for commission billing.
+ * and saved payment method (auto-charge) flows for order-fee billing.
  *
  * Mirrors paypal.server.ts structure for consistency.
  */
@@ -75,7 +75,7 @@ export function resolveAppUrlForShop(shopDomain?: string | null): string {
 }
 
 /**
- * Create a Stripe Checkout Session for commission payment.
+ * Create a Stripe Checkout Session for order-fee payment.
  * Uses `setup_future_usage: 'off_session'` on first payment to save the card
  * for future auto-charges (mirrors PayPal vault behavior).
  */
@@ -99,7 +99,7 @@ export async function createCheckoutSession(
           currency: 'usd',
           unit_amount: amountCents,
           product_data: {
-            name: `${process.env.APP_NAME || 'Upload Studio'} Commission`,
+            name: `${process.env.APP_NAME || 'Upload Studio'} Order Fees`,
             description,
           },
         },

@@ -13,7 +13,7 @@ import { json } from '@remix-run/node';
 import { chargeWithVault, isPayPalConfigured } from '~/lib/paypal.server';
 import { chargeWithSavedMethod, isStripeConfigured } from '~/lib/stripe.server';
 import prisma from '~/lib/prisma.server';
-import { calculatePendingCommissions } from '~/lib/billing.server';
+import { getOutstandingFeeSelection } from '~/lib/billing.server';
 
 const AUTO_CHARGE_THRESHOLD = 49.99;
 const CRON_SECRET = process.env.CRON_SECRET;
@@ -71,26 +71,12 @@ export async function action({ request }: ActionFunctionArgs) {
 
   for (const shop of vaultedShops) {
     try {
-      // Get all unique orders for this shop
-      const orderLinks = await prisma.orderLink.findMany({
-        where: { shopId: shop.id },
-        select: { orderId: true },
-      });
-
-      const allOrderIds = [...new Set(orderLinks.map((ol) => ol.orderId))];
-
-      // Get already paid orders
-      const paidCommissions = await prisma.commission.findMany({
-        where: { shopId: shop.id, status: 'paid' },
-        select: { orderId: true },
-      });
-
-      const paidSet = new Set(paidCommissions.map((c) => c.orderId));
-      const pendingOrderIds = allOrderIds.filter((id) => !paidSet.has(id));
-
-      // Calculate mode-aware commission amounts
-      const { totalAmount: pendingAmount, orderRates, description } =
-        await calculatePendingCommissions(shop.id, pendingOrderIds);
+      const {
+        orderIds: pendingOrderIds,
+        totalAmount: pendingAmount,
+        feeByOrderId,
+        description,
+      } = await getOutstandingFeeSelection(shop.id);
 
       // Check threshold
       if (pendingAmount < AUTO_CHARGE_THRESHOLD) {
@@ -164,7 +150,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
       // Mark all pending commissions as paid
       for (const orderId of pendingOrderIds) {
-        const rate = orderRates.get(orderId) || 0.10;
+        const rate = feeByOrderId.get(orderId) || 0.10;
         await prisma.commission.upsert({
           where: {
             commission_shop_order: {
