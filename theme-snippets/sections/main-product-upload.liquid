@@ -467,8 +467,14 @@
     }
 
     function setPurchaseButtonsDisabled(disabled) {
-      if (addToCartBtn) addToCartBtn.disabled = disabled;
-      if (buyNowBtn) buyNowBtn.disabled = disabled;
+      [addToCartBtn, buyNowBtn].forEach(function(button) {
+        if (!button) return;
+        button.disabled = disabled;
+        button.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+        button.classList.toggle('opacity-50', disabled);
+        button.classList.toggle('cursor-not-allowed', disabled);
+        button.classList.toggle('pointer-events-none', disabled);
+      });
     }
 
     function isVipPricingActive() {
@@ -728,11 +734,13 @@
       var normalizedVariantId = variantId != null && variantId !== '' ? String(variantId) : null;
       state.selectedVariantId = normalizedVariantId;
       if (hiddenVariantInput) hiddenVariantInput.value = normalizedVariantId || '';
-      if (variantSelect && normalizedVariantId) {
-        variantSelect.value = normalizedVariantId;
-        var selectedOption = variantSelect.options[variantSelect.selectedIndex];
-        if (selectedOption && selectedOption.getAttribute('data-image-url')) {
-          setMainProductImage(selectedOption.getAttribute('data-image-url'));
+      if (variantSelect) {
+        variantSelect.value = normalizedVariantId || '';
+        if (normalizedVariantId) {
+          var selectedOption = variantSelect.options[variantSelect.selectedIndex];
+          if (selectedOption && selectedOption.getAttribute('data-image-url')) {
+            setMainProductImage(selectedOption.getAttribute('data-image-url'));
+          }
         }
       }
 
@@ -759,7 +767,11 @@
           if (detectedVariant) detectedVariant.value = selectedVariant.title;
         }
       } else if (detectedVariant && !normalizedVariantId) {
-        detectedVariant.value = '';
+        detectedVariant.value = state.uploadId ? 'No matching sheet size' : '';
+        if (!isVipPricingActive() && state.uploadId) {
+          if (productPrice) productPrice.textContent = 'Unavailable';
+          if (buyBoxPrice) buyBoxPrice.textContent = 'Unavailable';
+        }
       }
     }
 
@@ -840,7 +852,7 @@
         if (!response.ok) {
           state.selectedResult = null;
           updateDetectedUI();
-          setSelectedVariant(getFallbackVariantId());
+          setSelectedVariant(null);
           showError(data && data.error ? data.error : 'Failed to resolve product variant.');
           if (uploadStatus) uploadStatus.textContent = '';
           syncPurchaseButtonsForCurrentState();
@@ -852,7 +864,7 @@
         if (requestToken !== resolveRequestToken) return;
         state.selectedResult = null;
         updateDetectedUI();
-        setSelectedVariant(getFallbackVariantId());
+        setSelectedVariant(null);
         showError(error && error.message ? error.message : 'Failed to resolve product variant.');
         if (uploadStatus) uploadStatus.textContent = '';
         syncPurchaseButtonsForCurrentState();
@@ -862,7 +874,7 @@
       updateDetectedUI();
       if (!state.selectedResult || !state.selectedResult.selectedVariantId) {
         state.selectedResult = null;
-        setSelectedVariant(getFallbackVariantId());
+        setSelectedVariant(null);
         showError('No product variant can fit this upload with the current quantity and available sheet sizes.');
         if (uploadStatus) uploadStatus.textContent = '';
         syncPurchaseButtonsForCurrentState();
@@ -1015,6 +1027,7 @@
               if (uploadLoading) uploadLoading.classList.add('hidden');
               if (uploadStatus) uploadStatus.textContent = '';
               state.selectedResult = null;
+              setSelectedVariant(null);
               syncPurchaseButtonsForCurrentState();
               showError(getPreflightErrorMessage(data, firstItem));
               return false;
