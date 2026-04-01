@@ -1,4 +1,4 @@
-const MIN_MARGIN_IN = 0.125
+const MIN_MARGIN_IN = 0
 
 export interface ProductOptionDef {
   name: string

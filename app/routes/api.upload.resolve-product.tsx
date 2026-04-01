@@ -39,8 +39,8 @@ const PRODUCT_VARIANTS_QUERY = `
 `
 
 const DEFAULT_CONFIG = {
-  artboardMarginIn: 0.125,
-  imageMarginIn: 0.125,
+  artboardMarginIn: 0,
+  imageMarginIn: 0,
   maxWidthIn: 21.75,
 }
 
@@ -50,8 +50,6 @@ interface ResolveRequestBody {
   uploadId?: string
   quantity?: number | string
   selectedVariantId?: string | number | null
-  artboardMarginIn?: number | string | null
-  imageMarginIn?: number | string | null
   maxUploadWidth?: number | string | null
 }
 
@@ -79,13 +77,6 @@ function parsePositiveNumber(value: unknown): number | null {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed <= 0) return null
   return parsed
-}
-
-function formatPrintableWidth(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return '0'
-  const rounded = Math.round(value)
-  if (Math.abs(value - rounded) < 0.001) return String(rounded)
-  return value.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')
 }
 
 function normalizeProductId(productId: string | number): string {
@@ -294,36 +285,12 @@ export async function action({ request }: ActionFunctionArgs) {
             .map((value) => String(value || '').trim())
             .filter(Boolean)
         : [],
-      artboardMarginIn:
-        parsePositiveNumber(body.artboardMarginIn) ||
-        parsePositiveNumber(rawBuilderConfig.artboardMarginIn) ||
-        DEFAULT_CONFIG.artboardMarginIn,
-      imageMarginIn:
-        parsePositiveNumber(body.imageMarginIn) ||
-        parsePositiveNumber(rawBuilderConfig.imageMarginIn) ||
-        DEFAULT_CONFIG.imageMarginIn,
+      artboardMarginIn: DEFAULT_CONFIG.artboardMarginIn,
+      imageMarginIn: DEFAULT_CONFIG.imageMarginIn,
       maxWidthIn:
         parsePositiveNumber(body.maxUploadWidth) ||
         parsePositiveNumber(rawBuilderConfig.maxWidthIn) ||
         DEFAULT_CONFIG.maxWidthIn,
-    }
-
-    if (dimensions.widthIn > effectiveConfig.maxWidthIn + 0.001) {
-      return corsJson(
-        {
-          error: `This file is too wide for this product. Maximum printable width is ${formatPrintableWidth(
-            effectiveConfig.maxWidthIn
-          )}".`,
-          upload: {
-            uploadId,
-            fileName: firstItem?.originalName || '',
-            ...dimensions,
-          },
-          config: effectiveConfig,
-        },
-        request,
-        { status: 422 }
-      )
     }
 
     if (!productData.product) {
@@ -375,7 +342,7 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!resolution) {
       return corsJson(
         {
-          error: 'No product variant can fit this upload with the current quantity and margin rules.',
+          error: 'No product variant can fit this upload with the current quantity and available sheet sizes.',
           upload: {
             uploadId,
             fileName: firstItem?.originalName || '',

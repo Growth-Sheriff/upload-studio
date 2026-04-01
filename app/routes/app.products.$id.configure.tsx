@@ -786,43 +786,6 @@ export default function ProductConfigurePage() {
                   />
                 </FormLayout>
 
-                <FormLayout>
-                  <FormLayout.Group>
-                    <TextField
-                      label="Artboard Margin (in)"
-                      type="number"
-                      value={builderConfig.artboardMarginIn.toString()}
-                      onChange={(value) => {
-                        const next = parseFloat(value);
-                        setBuilderConfig((prev) => ({
-                          ...prev,
-                          artboardMarginIn: !isNaN(next) ? Math.max(0.125, next) : 0.125,
-                        }));
-                      }}
-                      autoComplete="off"
-                      step={0.001}
-                      min={0.125}
-                      helpText="Outer sheet border. Minimum is always 0.125 in."
-                    />
-                    <TextField
-                      label="Image Margin (in)"
-                      type="number"
-                      value={builderConfig.imageMarginIn.toString()}
-                      onChange={(value) => {
-                        const next = parseFloat(value);
-                        setBuilderConfig((prev) => ({
-                          ...prev,
-                          imageMarginIn: !isNaN(next) ? Math.max(0.125, next) : 0.125,
-                        }));
-                      }}
-                      autoComplete="off"
-                      step={0.001}
-                      min={0.125}
-                      helpText="Gap between repeated artworks. Minimum is always 0.125 in."
-                    />
-                  </FormLayout.Group>
-                </FormLayout>
-
                 <Banner tone={builderConfig.pricingMode === "sheet" ? "success" : "info"}>
                   <p>
                     {builderConfig.pricingMode === "sheet"

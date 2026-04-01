@@ -247,14 +247,6 @@
       return isFinite(parsed) && parsed > 0 ? parsed : null;
     }
 
-    function formatPrintableWidth(value) {
-      var parsed = Number(value);
-      if (!isFinite(parsed) || parsed <= 0) return '0';
-      var rounded = Math.round(parsed);
-      if (Math.abs(parsed - rounded) < 0.001) return String(rounded);
-      return parsed.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
-    }
-
     function getServerConfirmedUploadInches(payload) {
       if (!payload) return null;
       var widthIn = parseOptionalPositiveNumber(payload.widthIn);
@@ -326,9 +318,7 @@
     var apiBase = root.getAttribute('data-api-base') || '/apps/customizer';
     var shopDomain = root.getAttribute('data-shop-domain') || '';
     var effectiveRules = {
-      maxUploadWidth: parseOptionalPositiveNumber(root.getAttribute('data-max-upload-width')),
-      artboardMarginIn: parseOptionalPositiveNumber(root.getAttribute('data-artboard-margin-in')),
-      imageMarginIn: parseOptionalPositiveNumber(root.getAttribute('data-image-margin-in'))
+      maxUploadWidth: parseOptionalPositiveNumber(root.getAttribute('data-max-upload-width'))
     };
 
     var uploadInput = root.querySelector('.ul-main-upload-input');
@@ -433,10 +423,6 @@
       if (!config) return;
       effectiveRules.maxUploadWidth =
         parseOptionalPositiveNumber(config.maxWidthIn) || effectiveRules.maxUploadWidth;
-      effectiveRules.artboardMarginIn =
-        parseOptionalPositiveNumber(config.artboardMarginIn) || effectiveRules.artboardMarginIn;
-      effectiveRules.imageMarginIn =
-        parseOptionalPositiveNumber(config.imageMarginIn) || effectiveRules.imageMarginIn;
     }
 
     function setMainProductImage(imageUrl) {
@@ -492,14 +478,6 @@
       if (detectedHeight) detectedHeight.value = state.heightIn.toFixed(2) + '"';
       if (detectedNote) {
         var notes = ['Resolved on server using the saved product sheet rules.'];
-        if (effectiveRules.artboardMarginIn && effectiveRules.imageMarginIn) {
-          notes[0] =
-            'Resolved on server with artboard margin ' +
-            effectiveRules.artboardMarginIn.toFixed(3) +
-            'in and image margin ' +
-            effectiveRules.imageMarginIn.toFixed(3) +
-            'in.';
-        }
         if (state.selectedResult && state.selectedResult.designsPerSheet && state.selectedResult.sheetsNeeded) {
           notes.push(
             state.selectedResult.designsPerSheet + ' design(s) per sheet, ' +
@@ -550,8 +528,6 @@
               state.selectedVariantId ||
               (hiddenVariantInput ? hiddenVariantInput.value : '') ||
               null,
-            artboardMarginIn: effectiveRules.artboardMarginIn,
-            imageMarginIn: effectiveRules.imageMarginIn,
             maxUploadWidth: effectiveRules.maxUploadWidth
           })
         });
@@ -589,7 +565,7 @@
       if (!state.selectedResult || !state.selectedResult.selectedVariantId) {
         state.selectedResult = null;
         setSelectedVariant(getFallbackVariantId());
-        showError('No product variant can fit this upload with the current quantity and margin rules.');
+        showError('No product variant can fit this upload with the current quantity and available sheet sizes.');
         if (uploadStatus) uploadStatus.textContent = '';
         syncPurchaseButtonsForCurrentState();
         return;
@@ -744,11 +720,6 @@
               return false;
             }
             if (state.widthIn && state.heightIn && (measurementStatus === 'ready' || measurementStatus === 'warning')) {
-              if (effectiveRules.maxUploadWidth && state.widthIn > effectiveRules.maxUploadWidth + 0.001) {
-                resetUploadState();
-                showError('This file is too wide for this product. Maximum printable width is ' + formatPrintableWidth(effectiveRules.maxUploadWidth) + '".');
-                return false;
-              }
               if (uploadLoading) uploadLoading.classList.add('hidden');
               updatePreview();
               await updateVariantResolution();
@@ -941,8 +912,6 @@
           _ul_measurement_mode: String(state.measurementMode || ''),
           _ul_mode: 'main_product_sheet',
           _ul_requested_copies: String(quantityValue),
-          _ul_artboard_margin_in: String(effectiveRules.artboardMarginIn || ''),
-          _ul_image_margin_in: String(effectiveRules.imageMarginIn || ''),
           _ul_sheet_name: state.selectedResult ? (state.selectedResult.selectedSheetLabel || state.selectedResult.selectedVariantTitle || '') : '',
           _ul_designs_per_sheet: state.selectedResult ? String(state.selectedResult.designsPerSheet || '') : '',
           _ul_sheets_needed: state.selectedResult ? String(state.selectedResult.sheetsNeeded || '') : ''
