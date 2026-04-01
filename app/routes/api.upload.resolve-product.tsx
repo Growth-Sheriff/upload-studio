@@ -81,6 +81,13 @@ function parsePositiveNumber(value: unknown): number | null {
   return parsed
 }
 
+function formatPrintableWidth(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0'
+  const rounded = Math.round(value)
+  if (Math.abs(value - rounded) < 0.001) return String(rounded)
+  return value.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')
+}
+
 function normalizeProductId(productId: string | number): string {
   const asString = String(productId)
   return asString.startsWith('gid://') ? asString : `gid://shopify/Product/${asString}`
@@ -304,7 +311,7 @@ export async function action({ request }: ActionFunctionArgs) {
     if (dimensions.widthIn > effectiveConfig.maxWidthIn + 0.001) {
       return corsJson(
         {
-          error: `This file is too wide for this product. Maximum supported width is ${Math.round(
+          error: `This file is too wide for this product. Maximum printable width is ${formatPrintableWidth(
             effectiveConfig.maxWidthIn
           )}".`,
           upload: {

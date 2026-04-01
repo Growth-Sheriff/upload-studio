@@ -247,6 +247,14 @@
       return isFinite(parsed) && parsed > 0 ? parsed : null;
     }
 
+    function formatPrintableWidth(value) {
+      var parsed = Number(value);
+      if (!isFinite(parsed) || parsed <= 0) return '0';
+      var rounded = Math.round(parsed);
+      if (Math.abs(parsed - rounded) < 0.001) return String(rounded);
+      return parsed.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+    }
+
     function getServerConfirmedUploadInches(payload) {
       if (!payload) return null;
       var widthIn = parseOptionalPositiveNumber(payload.widthIn);
@@ -738,7 +746,7 @@
             if (state.widthIn && state.heightIn && (measurementStatus === 'ready' || measurementStatus === 'warning')) {
               if (effectiveRules.maxUploadWidth && state.widthIn > effectiveRules.maxUploadWidth + 0.001) {
                 resetUploadState();
-                showError('This file is too wide for this product. Maximum supported width is ' + effectiveRules.maxUploadWidth.toFixed(0) + '".');
+                showError('This file is too wide for this product. Maximum printable width is ' + formatPrintableWidth(effectiveRules.maxUploadWidth) + '".');
                 return false;
               }
               if (uploadLoading) uploadLoading.classList.add('hidden');
