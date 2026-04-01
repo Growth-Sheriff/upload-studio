@@ -12,7 +12,7 @@
 -%}
 
 <!-- sections/main-product.liquid -->
-<div class="w-full bg-[#f3f3f3] pb-10" id="{{ section_dom_id }}" data-section-id="{{ section.id }}" data-product-id="{{ product.id }}" data-shop-domain="{{ shop.permanent_domain }}" data-api-base="/apps/customizer">
+<div class="w-full bg-[#f3f3f3] pb-10" id="{{ section_dom_id }}" data-section-id="{{ section.id }}" data-product-id="{{ product.id }}" data-shop-domain="{{ shop.permanent_domain }}" data-api-base="/apps/customizer" data-customer-id="{{ customer.id | default: '' }}" data-customer-email="{{ customer.email | default: '' }}" data-customer-first-name="{{ customer.first_name | default: '' }}" data-customer-last-name="{{ customer.last_name | default: '' }}" data-customer-logged-in="{% if customer %}true{% else %}false{% endif %}">
   <div class="max-w-2k w-full mx-auto px-4 py-6 font-amazon bg-white mt-4 mb-8 rounded shadow-sm">
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
       
@@ -113,7 +113,7 @@
             </div>
             <div class="ul-main-upload-error hidden mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-left text-xs text-red-700"></div>
             <div class="ul-main-detected hidden mt-4 rounded-lg border border-gray-200 bg-white p-4 text-left">
-              <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Detected Gang Sheet Size</div>
+              <div class="ul-main-detected-title text-xs font-semibold uppercase tracking-wide text-gray-500">Detected Gang Sheet Size</div>
               <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div>
                   <label class="block text-xs text-gray-500 mb-1">Width (Inches)</label>
@@ -166,7 +166,7 @@
       <div class="lg:col-span-3">
         <!-- Pricing Table -->
         {% if section.settings.show_pricing_table %}
-          <div class="border border-gray-200 rounded-md overflow-hidden mb-6">
+          <div class="ul-main-variant-pricing border border-gray-200 rounded-md overflow-hidden mb-6">
             <div class="bg-amazon-yellow px-4 py-2">
               <h3 class="text-sm font-bold text-gray-900">{{ section.settings.pricing_table_title | escape }}</h3>
             </div>
@@ -195,13 +195,19 @@
 
         <div class="border border-gray-200 rounded-lg p-4 bg-white mb-6">
           <div class="ul-main-buybox-price text-2xl font-medium text-gray-900 mb-2">{{ product.price | money }}</div>
+          <div class="ul-main-vip-pricing hidden mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+            <div class="ul-main-vip-pricing-title font-semibold"></div>
+            <div class="ul-main-vip-pricing-rate mt-1 text-xs"></div>
+            <div class="ul-main-vip-pricing-length mt-1 text-xs"></div>
+            <div class="ul-main-vip-pricing-total mt-2 font-semibold"></div>
+          </div>
 
           <div class="text-lg text-green-700 font-medium mb-4">In Stock.</div>
 
           <div class="ul-main-buybox-form flex flex-col gap-3" data-ul-buybox>
             <input type="hidden" class="ul-main-variant-input" value="{{ product.selected_or_first_available_variant.id }}">
 
-            <div class="flex items-center gap-2 mb-2">
+            <div class="ul-main-quantity-row flex items-center gap-2 mb-2">
               <label class="text-sm text-gray-900">Qty:</label>
               <input
                 type="number"
@@ -317,6 +323,7 @@
     var productData = productJsonEl ? JSON.parse(productJsonEl.textContent) : { variants: [] };
     var apiBase = root.getAttribute('data-api-base') || '/apps/customizer';
     var shopDomain = root.getAttribute('data-shop-domain') || '';
+    var customerLoggedIn = root.getAttribute('data-customer-logged-in') === 'true';
     var effectiveRules = {
       maxUploadWidth: parseOptionalPositiveNumber(root.getAttribute('data-max-upload-width'))
     };
@@ -335,17 +342,25 @@
     var uploadError = root.querySelector('.ul-main-upload-error');
     var uploadRemove = root.querySelector('.ul-main-upload-remove');
     var detectedBox = root.querySelector('.ul-main-detected');
+    var detectedTitle = root.querySelector('.ul-main-detected-title');
     var detectedWidth = root.querySelector('.ul-main-detected-width');
     var detectedHeight = root.querySelector('.ul-main-detected-height');
     var detectedVariant = root.querySelector('.ul-main-selected-variant');
     var detectedNote = root.querySelector('.ul-main-detected-note');
+    var vipPricingBox = root.querySelector('.ul-main-vip-pricing');
+    var vipPricingTitle = root.querySelector('.ul-main-vip-pricing-title');
+    var vipPricingRate = root.querySelector('.ul-main-vip-pricing-rate');
+    var vipPricingLength = root.querySelector('.ul-main-vip-pricing-length');
+    var vipPricingTotal = root.querySelector('.ul-main-vip-pricing-total');
     var quantitySelect = root.querySelector('.ul-main-quantity');
+    var quantityRow = root.querySelector('.ul-main-quantity-row');
     var addToCartBtn = root.querySelector('.ul-main-add-to-cart');
     var buyNowBtn = root.querySelector('.ul-main-buy-now');
     var hiddenVariantInput = root.querySelector('.ul-main-variant-input');
     var variantSelect = root.querySelector('.ul-main-variant-select');
     var productPrice = root.querySelector('.ul-main-product-price');
     var buyBoxPrice = root.querySelector('.ul-main-buybox-price');
+    var variantPricingTable = root.querySelector('.ul-main-variant-pricing');
     var productImage = root.querySelector('.ul-main-product-image');
     var thumbButtons = Array.prototype.slice.call(root.querySelectorAll('.js-thumb-click'));
     var accordionTriggers = Array.prototype.slice.call(root.querySelectorAll('.js-accordion-trigger'));
@@ -353,6 +368,7 @@
     var uploadRequired = Boolean(uploadInput && uploadBox);
     var addToCartLabel = addToCartBtn ? addToCartBtn.textContent : 'Add to Cart';
     var buyNowLabel = buyNowBtn ? buyNowBtn.textContent : 'Buy Now';
+    var detectedDefaultTitle = detectedTitle ? detectedTitle.textContent : 'Detected Gang Sheet Size';
 
     var state = {
       uploadId: '',
@@ -374,9 +390,48 @@
     };
     var resolveRequestToken = 0;
     var uploadFlowToken = 0;
+    var vipQuoteRequestToken = 0;
+    var customerPricingRequestToken = 0;
+    var customerPricingPromise = null;
+    var customerPricing = {
+      status: customerLoggedIn ? 'loading' : 'ready',
+      customerType: customerLoggedIn ? 'unknown' : 'guest',
+      statusKey: '',
+      statusLabel: '',
+      pricePerInch: null,
+      currency: 'USD',
+      source: 'fallback',
+      quoteStatus: 'idle',
+      quoteTotal: null,
+      quoteLengthIn: null
+    };
 
     function moneyFromCents(cents) {
       return '$' + ((Number(cents || 0) / 100).toFixed(2));
+    }
+
+    function formatMoneyValue(value, currency) {
+      var amount = Number(value);
+      if (!isFinite(amount)) amount = 0;
+      try {
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: currency || 'USD',
+        }).format(amount);
+      } catch (error) {
+        return '$' + amount.toFixed(2);
+      }
+    }
+
+    function parsePositiveNumber(value) {
+      var parsed = Number(value);
+      return isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+
+    function resetVipQuoteState() {
+      customerPricing.quoteStatus = 'idle';
+      customerPricing.quoteTotal = null;
+      customerPricing.quoteLengthIn = null;
     }
 
     function clearError() {
@@ -402,6 +457,11 @@
     }
 
     function resetActionLabels() {
+      if (isVipPricingActive()) {
+        if (addToCartBtn) addToCartBtn.textContent = 'Create VIP Checkout';
+        if (buyNowBtn) buyNowBtn.textContent = 'Create VIP Checkout';
+        return;
+      }
       if (addToCartBtn) addToCartBtn.textContent = addToCartLabel;
       if (buyNowBtn) buyNowBtn.textContent = buyNowLabel;
     }
@@ -411,18 +471,252 @@
       if (buyNowBtn) buyNowBtn.disabled = disabled;
     }
 
+    function isVipPricingActive() {
+      return customerPricing.status === 'ready' && customerPricing.customerType === 'vip';
+    }
+
+    function isCustomerPricingLoading() {
+      return customerLoggedIn && customerPricing.status === 'loading';
+    }
+
+    function getBillablePageLengthIn() {
+      if (!(state.widthIn > 0) || !(state.heightIn > 0)) return null;
+      return Math.max(state.widthIn, state.heightIn);
+    }
+
+    function getBillablePageWidthIn() {
+      if (!(state.widthIn > 0) || !(state.heightIn > 0)) return null;
+      return Math.min(state.widthIn, state.heightIn);
+    }
+
     function syncPurchaseButtonsForCurrentState() {
       if (uploadRequired) {
+        if (isCustomerPricingLoading()) {
+          setPurchaseButtonsDisabled(true);
+          return;
+        }
+        if (isVipPricingActive()) {
+          setPurchaseButtonsDisabled(!(state.uploadId && state.widthIn && state.heightIn && customerPricing.quoteStatus === 'ready' && customerPricing.quoteTotal != null));
+          return;
+        }
         setPurchaseButtonsDisabled(!(state.uploadId && state.selectedResult && state.selectedVariantId));
         return;
       }
       setPurchaseButtonsDisabled(!state.selectedVariantId);
     }
 
+    function syncPricingVisibility() {
+      if (variantPricingTable) {
+        if (isVipPricingActive()) variantPricingTable.classList.add('hidden');
+        else variantPricingTable.classList.remove('hidden');
+      }
+      if (quantityRow) {
+        if (isVipPricingActive()) quantityRow.classList.add('hidden');
+        else quantityRow.classList.remove('hidden');
+      }
+      if (buyNowBtn) {
+        if (isVipPricingActive()) buyNowBtn.classList.add('hidden');
+        else buyNowBtn.classList.remove('hidden');
+      }
+      if (vipPricingBox) {
+        if (customerLoggedIn && customerPricing.status === 'loading') {
+          vipPricingBox.classList.remove('hidden');
+        } else if (isVipPricingActive()) {
+          vipPricingBox.classList.remove('hidden');
+        } else {
+          vipPricingBox.classList.add('hidden');
+        }
+      }
+    }
+
     function syncEffectiveRules(config) {
       if (!config) return;
       effectiveRules.maxUploadWidth =
         parseOptionalPositiveNumber(config.maxWidthIn) || effectiveRules.maxUploadWidth;
+    }
+
+    function setVipPricingMessage(titleText, rateText, lengthText, totalText) {
+      if (vipPricingTitle) vipPricingTitle.textContent = titleText || '';
+      if (vipPricingRate) vipPricingRate.textContent = rateText || '';
+      if (vipPricingLength) vipPricingLength.textContent = lengthText || '';
+      if (vipPricingTotal) vipPricingTotal.textContent = totalText || '';
+    }
+
+    function updateVipPricingUI() {
+      if (!vipPricingBox) return;
+      syncPricingVisibility();
+
+      if (!isVipPricingActive()) {
+        if (vipPricingTitle) vipPricingTitle.textContent = '';
+        if (vipPricingRate) vipPricingRate.textContent = '';
+        if (vipPricingLength) vipPricingLength.textContent = '';
+        if (vipPricingTotal) vipPricingTotal.textContent = '';
+        if (detectedTitle) detectedTitle.textContent = detectedDefaultTitle;
+        return;
+      }
+
+      var billableLengthIn = customerPricing.quoteLengthIn || getBillablePageLengthIn();
+      var billableWidthIn = getBillablePageWidthIn();
+      var rateLabel = customerPricing.pricePerInch != null
+        ? 'VIP price per inch: ' + formatMoneyValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in'
+        : 'VIP price per inch is loading...';
+      var lengthLabel = billableLengthIn
+        ? 'Measured page: ' + (billableWidthIn ? billableWidthIn.toFixed(2) + '" x ' : '') + billableLengthIn.toFixed(2) + '"'
+        : 'Waiting for server-confirmed measurement...';
+      var totalLabel = customerPricing.quoteTotal != null
+        ? 'Exact total: ' + formatMoneyValue(customerPricing.quoteTotal, customerPricing.currency)
+        : 'Exact total will be returned by the server quote.';
+      var titleLabel = customerPricing.statusLabel ? 'VIP pricing: ' + customerPricing.statusLabel : 'VIP pricing active';
+
+      setVipPricingMessage(
+        titleLabel,
+        rateLabel,
+        lengthLabel,
+        totalLabel
+      );
+
+      if (customerPricing.quoteTotal != null) {
+        if (productPrice) productPrice.textContent = formatMoneyValue(customerPricing.quoteTotal, customerPricing.currency);
+        if (buyBoxPrice) buyBoxPrice.textContent = formatMoneyValue(customerPricing.quoteTotal, customerPricing.currency);
+      } else {
+        if (productPrice) productPrice.textContent = 'VIP quote pending';
+        if (buyBoxPrice) buyBoxPrice.textContent = 'VIP quote pending';
+      }
+
+      if (detectedVariant) {
+        detectedVariant.value = customerPricing.statusLabel ? customerPricing.statusLabel : 'VIP measured checkout';
+      }
+      if (detectedTitle) {
+        detectedTitle.textContent = 'Detected Measured Page';
+      }
+    }
+
+    async function loadCustomerPricingContext() {
+      var requestToken = ++customerPricingRequestToken;
+      if (!customerLoggedIn) {
+        customerPricing.status = 'ready';
+        customerPricing.customerType = 'guest';
+        customerPricing.source = 'fallback';
+        syncPricingVisibility();
+        syncPurchaseButtonsForCurrentState();
+        return customerPricing;
+      }
+
+      try {
+        var contextUrl = apiBase + '/api/vip/context?shopDomain=' + encodeURIComponent(shopDomain) + '&productId=' + encodeURIComponent(String(productData.productId));
+        var response = await fetch(contextUrl, { credentials: 'same-origin' });
+        var data = await response.json().catch(function() { return {}; });
+        if (requestToken !== customerPricingRequestToken) return customerPricing;
+
+        if (!response.ok) {
+          throw new Error(data && data.error ? data.error : 'Failed to load customer pricing context.');
+        }
+
+        customerPricing.status = 'ready';
+        customerPricing.customerType = String(
+          data.customerType || data.statusType || data.pricingMode || data.mode || 'business'
+        ).toLowerCase();
+        if (customerPricing.customerType !== 'vip') customerPricing.customerType = 'business';
+        customerPricing.statusKey = String(data.statusKey || data.customerStatusKey || '');
+        customerPricing.statusLabel = String(data.statusLabel || data.customerStatusLabel || '').trim();
+        customerPricing.pricePerInch = parsePositiveNumber(
+          data.pricePerInch != null
+            ? data.pricePerInch
+            : data.quote && data.quote.pricePerInch != null
+              ? data.quote.pricePerInch
+              : null
+        );
+        customerPricing.currency = String(data.currency || data.quote && data.quote.currency || 'USD');
+        customerPricing.source = String(data.source || 'app_proxy');
+        if (customerPricing.customerType !== 'vip') {
+          resetVipQuoteState();
+        }
+
+        syncPricingVisibility();
+        updateVipPricingUI();
+        resetActionLabels();
+        syncPurchaseButtonsForCurrentState();
+        return customerPricing;
+      } catch (error) {
+        if (requestToken !== customerPricingRequestToken) return customerPricing;
+        customerPricing.status = 'ready';
+        customerPricing.customerType = 'business';
+        customerPricing.source = 'fallback';
+        resetVipQuoteState();
+        syncPricingVisibility();
+        resetActionLabels();
+        syncPurchaseButtonsForCurrentState();
+        return customerPricing;
+      }
+    }
+
+    async function loadVipQuote() {
+      if (!isVipPricingActive()) return null;
+      if (!state.uploadId || !(state.widthIn > 0) || !(state.heightIn > 0)) return null;
+
+      var requestToken = ++vipQuoteRequestToken;
+      customerPricing.quoteStatus = 'loading';
+      updateVipPricingUI();
+      syncPurchaseButtonsForCurrentState();
+
+      try {
+        var response = await fetch(apiBase + '/api/vip/quote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            shopDomain: shopDomain,
+            productId: String(productData.productId),
+            uploadId: state.uploadId,
+            quantity: state.quantity
+          })
+        });
+        var data = await response.json().catch(function() { return {}; });
+        if (requestToken !== vipQuoteRequestToken) return null;
+
+        if (!response.ok) {
+          throw new Error(data && data.error ? data.error : 'Failed to load VIP quote.');
+        }
+
+        customerPricing.quoteStatus = 'ready';
+        customerPricing.quoteTotal = parsePositiveNumber(
+          data.totalPrice != null
+            ? data.totalPrice
+            : data.exactTotal != null
+              ? data.exactTotal
+            : data.total != null
+              ? data.total
+              : data.quote && data.quote.total != null
+                ? data.quote.total
+              : data.quote && data.quote.totalPrice != null
+                  ? data.quote.totalPrice
+                  : data.quote && data.quote.exactTotal != null
+                    ? data.quote.exactTotal
+                    : null
+        );
+        customerPricing.quoteLengthIn = parsePositiveNumber(
+          data.billableLengthIn != null
+            ? data.billableLengthIn
+            : data.pageLengthIn != null
+              ? data.pageLengthIn
+              : data.quote && data.quote.billableLengthIn != null
+                ? data.quote.billableLengthIn
+                : data.quote && data.quote.pageLengthIn != null
+                  ? data.quote.pageLengthIn
+                  : null
+        );
+        customerPricing.currency = String(data.currency || data.quote && data.quote.currency || customerPricing.currency || 'USD');
+        customerPricing.statusLabel = String(data.statusLabel || data.quote && data.quote.statusLabel || customerPricing.statusLabel || '').trim();
+        updateVipPricingUI();
+        syncPurchaseButtonsForCurrentState();
+        return data;
+      } catch (error) {
+        if (requestToken !== vipQuoteRequestToken) return null;
+        customerPricing.quoteStatus = 'error';
+        showError(error && error.message ? error.message : 'Failed to load VIP quote.');
+        syncPurchaseButtonsForCurrentState();
+        return null;
+      }
     }
 
     function setMainProductImage(imageUrl) {
@@ -459,9 +753,11 @@
       });
 
       if (selectedVariant) {
-        if (productPrice) productPrice.textContent = moneyFromCents(selectedVariant.price);
-        if (buyBoxPrice) buyBoxPrice.textContent = moneyFromCents(selectedVariant.price);
-        if (detectedVariant) detectedVariant.value = selectedVariant.title;
+        if (!isVipPricingActive()) {
+          if (productPrice) productPrice.textContent = moneyFromCents(selectedVariant.price);
+          if (buyBoxPrice) buyBoxPrice.textContent = moneyFromCents(selectedVariant.price);
+          if (detectedVariant) detectedVariant.value = selectedVariant.title;
+        }
       } else if (detectedVariant && !normalizedVariantId) {
         detectedVariant.value = '';
       }
@@ -477,8 +773,10 @@
       if (detectedWidth) detectedWidth.value = state.widthIn.toFixed(2) + '"';
       if (detectedHeight) detectedHeight.value = state.heightIn.toFixed(2) + '"';
       if (detectedNote) {
-        var notes = ['Resolved on server using the saved product sheet rules.'];
-        if (state.selectedResult && state.selectedResult.designsPerSheet && state.selectedResult.sheetsNeeded) {
+        var notes = isVipPricingActive()
+          ? ['Measured on the server and priced from the exact uploaded page length.']
+          : ['Resolved on server using the saved product sheet rules.'];
+        if (!isVipPricingActive() && state.selectedResult && state.selectedResult.designsPerSheet && state.selectedResult.sheetsNeeded) {
           notes.push(
             state.selectedResult.designsPerSheet + ' design(s) per sheet, ' +
             state.selectedResult.sheetsNeeded + ' sheet(s) needed.'
@@ -595,6 +893,7 @@
       state.heightIn = 0;
       state.selectedResult = null;
       state.lastFile = null;
+      resetVipQuoteState();
       if (uploadInput) uploadInput.value = '';
       if (uploadFeedback) uploadFeedback.classList.add('hidden');
       if (uploadLoading) uploadLoading.classList.add('hidden');
@@ -607,6 +906,7 @@
       setSelectedVariant(getFallbackVariantId());
       clearError();
       resetActionLabels();
+      updateVipPricingUI();
       syncPurchaseButtonsForCurrentState();
     }
 
@@ -722,7 +1022,14 @@
             if (state.widthIn && state.heightIn && (measurementStatus === 'ready' || measurementStatus === 'warning')) {
               if (uploadLoading) uploadLoading.classList.add('hidden');
               updatePreview();
-              await updateVariantResolution();
+              if (isVipPricingActive()) {
+                var vipQuoteData = await loadVipQuote();
+                if (!vipQuoteData || customerPricing.quoteStatus !== 'ready' || customerPricing.quoteTotal == null) {
+                  return false;
+                }
+              } else {
+                await updateVariantResolution();
+              }
               return true;
             }
           }
@@ -759,6 +1066,7 @@
       state.widthIn = 0;
       state.heightIn = 0;
       state.selectedResult = null;
+      resetVipQuoteState();
       if (uploadFeedback) uploadFeedback.classList.add('hidden');
       if (detectedBox) detectedBox.classList.add('hidden');
       if (uploadThumb) {
@@ -782,7 +1090,9 @@
             mode: 'dtf',
             fileName: file.name,
             contentType: file.type || 'application/octet-stream',
-            fileSize: file.size
+            fileSize: file.size,
+            customerId: root.getAttribute('data-customer-id') || null,
+            customerEmail: root.getAttribute('data-customer-email') || null
           })
         });
         if (!intentRes.ok) {
@@ -881,13 +1191,22 @@
     }
 
     async function addConfiguredItem(redirectPath, triggerButton) {
+      if (uploadRequired && !state.uploadId) {
+        showError('Please upload your design first.');
+        return;
+      }
+      var isVip = isVipPricingActive();
       var variantId = state.selectedVariantId || (hiddenVariantInput ? hiddenVariantInput.value : '') || getFallbackVariantId();
-      if (!variantId) {
+      if (!isVip && !variantId) {
         showError('Please select a product variant first.');
         return;
       }
-      if (uploadRequired && (!state.uploadId || !state.selectedResult)) {
+      if (!isVip && uploadRequired && !state.selectedResult) {
         showError('Please upload your design first.');
+        return;
+      }
+      if (isVip && (customerPricing.quoteStatus !== 'ready' || customerPricing.quoteTotal == null)) {
+        showError('VIP pricing is still loading. Please wait for the quote to finish.');
         return;
       }
 
@@ -899,6 +1218,41 @@
       }
 
       try {
+        if (isVip) {
+          var vipResponse = await fetch(apiBase + '/api/vip/checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+              shopDomain: shopDomain,
+              productId: String(productData.productId),
+              uploadId: state.uploadId,
+              customerId: root.getAttribute('data-customer-id') || '',
+              customerEmail: root.getAttribute('data-customer-email') || '',
+              customerType: customerPricing.customerType,
+              statusKey: customerPricing.statusKey,
+              pricePerInch: customerPricing.pricePerInch,
+              billableLengthIn: customerPricing.quoteLengthIn || getBillablePageLengthIn(),
+              quantity: 1
+            })
+          });
+          var vipData = await vipResponse.json().catch(function() { return {}; });
+          if (!vipResponse.ok) {
+            throw new Error(vipData.error || 'Failed to create VIP checkout.');
+          }
+          if (vipData.quoteTotal != null) {
+            customerPricing.quoteTotal = parsePositiveNumber(vipData.quoteTotal);
+          } else if (vipData.exactTotal != null) {
+            customerPricing.quoteTotal = parsePositiveNumber(vipData.exactTotal);
+          }
+          if (customerPricing.quoteTotal != null) {
+            customerPricing.currency = String(vipData.currency || customerPricing.currency || 'USD');
+            updateVipPricingUI();
+          }
+          window.location.href = vipData.checkoutUrl || vipData.redirectUrl || vipData.url || redirectPath;
+          return;
+        }
+
         var quantityValue = quantitySelect ? parseInt(quantitySelect.value || '1', 10) || 1 : 1;
         var properties = uploadRequired ? {
           _ul_upload_id: state.uploadId,
@@ -982,7 +1336,8 @@
         quantitySelect.value = String(nextQuantity);
         state.quantity = nextQuantity;
         if (state.uploadId) {
-          updateVariantResolution();
+          if (isVipPricingActive()) loadVipQuote();
+          else updateVariantResolution();
         }
       }
 
@@ -1045,6 +1400,7 @@
       });
     }
 
+    loadCustomerPricingContext();
     setSelectedVariant(getFallbackVariantId());
     syncPurchaseButtonsForCurrentState();
   })();

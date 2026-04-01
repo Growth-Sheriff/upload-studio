@@ -45,6 +45,7 @@ const shopify = shopifyApp({
     "read_orders",
     "write_orders",
     "read_customers",
+    "write_draft_orders",
   ],
   appUrl: process.env.SHOPIFY_APP_URL!,
   authPathPrefix: "/auth",

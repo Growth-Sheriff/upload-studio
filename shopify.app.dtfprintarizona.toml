@@ -27,7 +27,7 @@ api_version = "2025-10"
   uri = "/webhooks/products-update"
 
 [access_scopes]
-scopes = "read_customers,read_files,read_orders,read_products,write_files,write_orders,write_products"
+scopes = "read_customers,read_files,read_orders,read_products,write_draft_orders,write_files,write_orders,write_products"
 optional_scopes = [ ]
 use_legacy_install_flow = false
 

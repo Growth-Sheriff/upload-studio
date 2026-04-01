@@ -82,27 +82,22 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFram
               {
                 url: '/app/analytics',
                 label: 'Overview',
-                selected: location.pathname === '/app/analytics',
               },
               {
                 url: '/app/analytics/attribution',
                 label: 'Attribution',
-                selected: isSelected('/app/analytics/attribution'),
               },
               {
                 url: '/app/analytics/visitors',
                 label: 'Visitors',
-                selected: isSelected('/app/analytics/visitors'),
               },
               {
                 url: '/app/analytics/insights',
                 label: 'AI Insights',
-                selected: isSelected('/app/analytics/insights'),
               },
               {
                 url: '/app/analytics/cohorts',
                 label: 'Cohorts',
-                selected: isSelected('/app/analytics/cohorts'),
               },
             ],
           },
@@ -176,6 +171,12 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFram
             label: 'Billing',
             icon: CreditCardIcon,
             selected: isSelected('/app/billing'),
+          },
+          {
+            url: '/app/customer-pricing',
+            label: 'Customer Pricing',
+            icon: CreditCardIcon,
+            selected: isSelected('/app/customer-pricing'),
           },
           {
             url: '/app/white-label',
