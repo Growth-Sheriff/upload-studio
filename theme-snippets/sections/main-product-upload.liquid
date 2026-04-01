@@ -247,25 +247,70 @@
       return isFinite(parsed) && parsed > 0 ? parsed : null;
     }
 
-    function getPreferredUploadInches(payload) {
+    function getServerConfirmedUploadInches(payload) {
       if (!payload) return null;
       var widthIn = parseOptionalPositiveNumber(payload.widthIn);
       var heightIn = parseOptionalPositiveNumber(payload.heightIn);
       if (widthIn && heightIn) {
         return { widthIn: widthIn, heightIn: heightIn };
       }
+      return null;
+    }
 
-      var measurementWidthPx = parseOptionalPositiveNumber(payload.measurementWidthPx) || parseOptionalPositiveNumber(payload.trimmedWidthPx) || parseOptionalPositiveNumber(payload.widthPx);
-      var measurementHeightPx = parseOptionalPositiveNumber(payload.measurementHeightPx) || parseOptionalPositiveNumber(payload.trimmedHeightPx) || parseOptionalPositiveNumber(payload.heightPx);
-      var effectiveDpi = parseOptionalPositiveNumber(payload.effectiveDpi) || 300;
-      if (measurementWidthPx && measurementHeightPx && effectiveDpi) {
-        return {
-          widthIn: Number((measurementWidthPx / effectiveDpi).toFixed(2)),
-          heightIn: Number((measurementHeightPx / effectiveDpi).toFixed(2))
-        };
+    function getMeasurementStageStatus(payload) {
+      if (!payload || typeof payload !== 'object') return null;
+      if (
+        payload.measurementStatus === 'pending' ||
+        payload.measurementStatus === 'ready' ||
+        payload.measurementStatus === 'warning' ||
+        payload.measurementStatus === 'error'
+      ) {
+        return payload.measurementStatus;
+      }
+
+      if (
+        payload.stages &&
+        typeof payload.stages === 'object' &&
+        payload.stages.measurement &&
+        typeof payload.stages.measurement === 'object'
+      ) {
+        var stageStatus = payload.stages.measurement.status;
+        if (
+          stageStatus === 'pending' ||
+          stageStatus === 'ready' ||
+          stageStatus === 'warning' ||
+          stageStatus === 'error'
+        ) {
+          return stageStatus;
+        }
       }
 
       return null;
+    }
+
+    function applyServerMeasurement(payload) {
+      if (!payload) return false;
+
+      state.widthPx = Number(payload.widthPx || state.widthPx || 0);
+      state.heightPx = Number(payload.heightPx || state.heightPx || 0);
+      state.embeddedDpi = Number(payload.dpi || state.embeddedDpi || 0);
+      state.effectiveDpi = Number(payload.effectiveDpi || state.effectiveDpi || 0);
+      state.measurementMode =
+        typeof payload.measurementMode === 'string' && payload.measurementMode
+          ? String(payload.measurementMode)
+          : state.measurementMode;
+
+      var confirmedInches = getServerConfirmedUploadInches(payload);
+      if (!confirmedInches) return false;
+
+      var measurementStatus = getMeasurementStageStatus(payload);
+      if (measurementStatus && measurementStatus !== 'ready' && measurementStatus !== 'warning') {
+        return false;
+      }
+
+      state.widthIn = confirmedInches.widthIn;
+      state.heightIn = confirmedInches.heightIn;
+      return true;
     }
 
     var productJsonEl = document.getElementById({{ section_dom_id | append: '-product-json' | json }});
@@ -318,7 +363,9 @@
       fileName: '',
       widthPx: 0,
       heightPx: 0,
-      dpi: 0,
+      embeddedDpi: 0,
+      effectiveDpi: 0,
+      measurementMode: null,
       widthIn: 0,
       heightIn: 0,
       quantity: parseInt(quantitySelect && quantitySelect.value || '1', 10) || 1,
@@ -451,6 +498,14 @@
             state.selectedResult.sheetsNeeded + ' sheet(s) needed.'
           );
         }
+        if (state.measurementMode === 'trimmed') {
+          notes.push('Artwork bounds were trimmed on the server before sheet fitting.');
+        }
+        if (state.embeddedDpi && state.effectiveDpi && state.embeddedDpi !== state.effectiveDpi) {
+          notes.push(
+            'File DPI: ' + state.embeddedDpi + '. Production sizing baseline: ' + state.effectiveDpi + ' DPI.'
+          );
+        }
         detectedNote.textContent = notes.join(' ');
       }
     }
@@ -463,7 +518,7 @@
         syncPurchaseButtonsForCurrentState();
         return;
       }
-      if (!state.widthIn || !state.heightIn || !state.dpi) {
+      if (!state.widthIn || !state.heightIn) {
         syncPurchaseButtonsForCurrentState();
         return;
       }
@@ -497,12 +552,7 @@
         syncEffectiveRules(data && data.config ? data.config : null);
 
       if (data && data.upload) {
-          state.widthPx = Number(data.upload.widthPx || state.widthPx || 0);
-          state.heightPx = Number(data.upload.heightPx || state.heightPx || 0);
-          state.dpi = Number(data.upload.effectiveDpi || data.upload.dpi || state.dpi || 0);
-          var preferredUploadInches = getPreferredUploadInches(data.upload);
-          state.widthIn = Number(preferredUploadInches && preferredUploadInches.widthIn || state.widthIn || 0);
-          state.heightIn = Number(preferredUploadInches && preferredUploadInches.heightIn || state.heightIn || 0);
+          applyServerMeasurement(data.upload);
         }
 
         if (!response.ok) {
@@ -554,7 +604,9 @@
       state.fileName = '';
       state.widthPx = 0;
       state.heightPx = 0;
-      state.dpi = 0;
+      state.embeddedDpi = 0;
+      state.effectiveDpi = 0;
+      state.measurementMode = null;
       state.widthIn = 0;
       state.heightIn = 0;
       state.selectedResult = null;
@@ -580,7 +632,10 @@
       if (uploadName) uploadName.textContent = state.fileName;
       var meta = [];
       if (state.widthPx && state.heightPx) meta.push(state.widthPx + ' x ' + state.heightPx + ' px');
-      if (state.dpi) meta.push(state.dpi + ' DPI');
+      if (state.embeddedDpi) meta.push('File ' + state.embeddedDpi + ' DPI');
+      if (state.effectiveDpi && state.effectiveDpi !== state.embeddedDpi) {
+        meta.push('Sizing ' + state.effectiveDpi + ' DPI');
+      }
       if (state.lastFile && state.lastFile.size) meta.push((state.lastFile.size / (1024 * 1024)).toFixed(1) + ' MB');
       if (uploadMeta) uploadMeta.textContent = meta.join(' | ');
 
@@ -671,9 +726,7 @@
             var orderabilityStatus = data.orderabilityStatus || '';
             state.thumbnailUrl = firstItem.thumbnailUrl || data.thumbnailUrl || '';
             state.originalUrl = firstItem.originalUrl || data.downloadUrl || '';
-            state.widthPx = Number(firstItem.widthPx || 0);
-            state.heightPx = Number(firstItem.heightPx || 0);
-            state.dpi = Number(firstItem.effectiveDpi || firstItem.dpi || 0);
+            applyServerMeasurement(firstItem);
             if (measurementStatus === 'error' || orderabilityStatus === 'blocked' || data.status === 'error') {
               if (uploadLoading) uploadLoading.classList.add('hidden');
               if (uploadStatus) uploadStatus.textContent = '';
@@ -682,10 +735,7 @@
               showError(getPreflightErrorMessage(data, firstItem));
               return false;
             }
-            var preferredInches = getPreferredUploadInches(firstItem);
-            if (preferredInches) {
-              state.widthIn = preferredInches.widthIn;
-              state.heightIn = preferredInches.heightIn;
+            if (state.widthIn && state.heightIn && (measurementStatus === 'ready' || measurementStatus === 'warning')) {
               if (effectiveRules.maxUploadWidth && state.widthIn > effectiveRules.maxUploadWidth + 0.001) {
                 resetUploadState();
                 showError('This file is too wide for this product. Maximum supported width is ' + effectiveRules.maxUploadWidth.toFixed(0) + '".');
@@ -698,12 +748,12 @@
             }
           }
         }
-        if (uploadLoadingText) uploadLoadingText.textContent = 'Analyzing dimensions and generating thumbnail...';
+        if (uploadLoadingText) uploadLoadingText.textContent = 'Waiting for server-confirmed print size...';
         if (uploadProgress) uploadProgress.style.width = Math.min(92, 25 + attempts) + '%';
         await new Promise(function(resolve) { setTimeout(resolve, 1500); });
       }
       if (uploadLoading) uploadLoading.classList.add('hidden');
-      showError('Upload finished but size detection timed out. Please try again.');
+      showError('Upload finished, but the server did not confirm print size in time. Please try again.');
       return false;
     }
 
@@ -724,7 +774,9 @@
       state.fileName = file.name;
       state.widthPx = 0;
       state.heightPx = 0;
-      state.dpi = 0;
+      state.embeddedDpi = 0;
+      state.effectiveDpi = 0;
+      state.measurementMode = null;
       state.widthIn = 0;
       state.heightIn = 0;
       state.selectedResult = null;
@@ -876,7 +928,9 @@
           _ul_file_name: state.fileName || '',
           _ul_width_in: String(state.widthIn || 0),
           _ul_height_in: String(state.heightIn || 0),
-          _ul_resolution_dpi: String(state.dpi || 0),
+          _ul_resolution_dpi: String(state.embeddedDpi || 0),
+          _ul_effective_dpi: String(state.effectiveDpi || 0),
+          _ul_measurement_mode: String(state.measurementMode || ''),
           _ul_mode: 'main_product_sheet',
           _ul_requested_copies: String(quantityValue),
           _ul_artboard_margin_in: String(effectiveRules.artboardMarginIn || ''),
