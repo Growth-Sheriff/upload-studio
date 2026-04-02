@@ -60,7 +60,7 @@
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <span class="ul-main-customer-status-badge hidden rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-900"></span>
-              <a href="{{ routes.account_login_url }}" class="ul-main-customer-login inline-flex items-center justify-center rounded-full border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm transition-colors duration-200 hover:bg-gray-100">
+              <a href="{{ routes.storefront_login_url }}" class="ul-main-customer-login inline-flex items-center justify-center rounded-full border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm transition-colors duration-200 hover:bg-gray-100">
                 Log In
               </a>
               <a href="{{ routes.account_url }}" class="ul-main-customer-account hidden inline-flex items-center justify-center rounded-full border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm transition-colors duration-200 hover:bg-gray-100">
@@ -408,7 +408,6 @@
     var customerAccountLink = root.querySelector('.ul-main-customer-account');
     var customerLoginPopup = null;
     var customerLoginPollTimer = null;
-    var customerLoginBaseUrl = customerLoginLink ? customerLoginLink.getAttribute('href') : {{ routes.account_login_url | json }};
 
     var state = {
       uploadId: '',
@@ -517,8 +516,8 @@
       }
     }
 
-    function getCustomerLoginReturnUrl() {
-      return window.location.origin + window.location.pathname + window.location.search + '#ul-main-customer-login-popup';
+    function getCustomerLoginReturnPath() {
+      return window.location.pathname + window.location.search + '#ul-main-customer-login-popup';
     }
 
     async function maybeReloadForLoggedInCustomer() {
@@ -540,11 +539,11 @@
     function openCustomerLoginPopup() {
       var loginUrl;
       try {
-        var resolvedLoginUrl = new URL(customerLoginBaseUrl || {{ routes.account_login_url | json }}, window.location.origin);
-        resolvedLoginUrl.searchParams.set('return_url', getCustomerLoginReturnUrl());
+        var resolvedLoginUrl = new URL('/customer_authentication/login', window.location.origin);
+        resolvedLoginUrl.searchParams.set('return_to', getCustomerLoginReturnPath());
         loginUrl = resolvedLoginUrl.toString();
       } catch (error) {
-        loginUrl = {{ routes.account_login_url | json }} + '?return_url=' + encodeURIComponent(getCustomerLoginReturnUrl());
+        loginUrl = '/customer_authentication/login?return_to=' + encodeURIComponent(getCustomerLoginReturnPath());
       }
 
       clearCustomerLoginPopupWatcher();
