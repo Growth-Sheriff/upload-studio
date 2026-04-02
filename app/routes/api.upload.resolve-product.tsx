@@ -3,6 +3,7 @@ import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
+import { isDtfPrintHouseShop } from '~/lib/customerPricing.server'
 import {
   resolveSheetVariant,
   type BuilderResolveConfig,
@@ -172,6 +173,30 @@ function extractUploadDimensions(preflightResult: unknown) {
   }
 }
 
+function applyFullCanvasDimensions<T extends {
+  widthPx: number
+  heightPx: number
+  effectiveDpi: number
+  measurementWidthPx: number
+  measurementHeightPx: number
+  widthIn: number
+  heightIn: number
+  measurementMode: string
+}>(dimensions: T): T {
+  const effectiveDpi = dimensions.effectiveDpi > 0 ? dimensions.effectiveDpi : 300
+  const measurementWidthPx = dimensions.widthPx > 0 ? dimensions.widthPx : dimensions.measurementWidthPx
+  const measurementHeightPx = dimensions.heightPx > 0 ? dimensions.heightPx : dimensions.measurementHeightPx
+
+  return {
+    ...dimensions,
+    measurementWidthPx,
+    measurementHeightPx,
+    widthIn: Number((measurementWidthPx / effectiveDpi).toFixed(2)),
+    heightIn: Number((measurementHeightPx / effectiveDpi).toFixed(2)),
+    measurementMode: 'full',
+  }
+}
+
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method === 'OPTIONS') {
     return handleCorsOptions(request)
@@ -263,7 +288,11 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const firstItem = upload.items[0]
-    const dimensions = firstItem ? extractUploadDimensions(firstItem.preflightResult) : null
+    const rawDimensions = firstItem ? extractUploadDimensions(firstItem.preflightResult) : null
+    const dimensions =
+      rawDimensions && isDtfPrintHouseShop(shopDomain)
+        ? applyFullCanvasDimensions(rawDimensions)
+        : rawDimensions
     if (!dimensions) {
       return corsJson(
         { error: 'Upload metadata is not ready yet. Please retry in a moment.' },

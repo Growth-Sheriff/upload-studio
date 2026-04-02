@@ -415,6 +415,8 @@ interface MeasuredImageInfo {
   format: string
   trimmedWidth?: number
   trimmedHeight?: number
+  trimmedOffsetX?: number
+  trimmedOffsetY?: number
   effectiveDpi?: number
   measurementWidth?: number
   measurementHeight?: number
@@ -601,27 +603,39 @@ export async function getImageInfo(filePath: string): Promise<{
 async function getTrimmedImageBounds(
   filePath: string,
   imageInfo: Pick<MeasuredImageInfo, 'width' | 'height' | 'hasAlpha'>
-): Promise<{ trimmedWidth: number; trimmedHeight: number; measurementMode: 'trimmed' | 'full' }> {
+): Promise<{
+  trimmedWidth: number
+  trimmedHeight: number
+  trimmedOffsetX: number
+  trimmedOffsetY: number
+  measurementMode: 'trimmed' | 'full'
+}> {
   if (!imageInfo.hasAlpha) {
     return {
       trimmedWidth: imageInfo.width,
       trimmedHeight: imageInfo.height,
+      trimmedOffsetX: 0,
+      trimmedOffsetY: 0,
       measurementMode: 'full',
     }
   }
 
   try {
     const { stdout } = await execAsync(
-      `convert "${filePath}[0]" -alpha extract -auto-level -threshold 0 -trim -format "%w|%h" info:`
+      `convert "${filePath}[0]" -alpha extract -auto-level -threshold 0 -trim -format "%@" info:`
     )
-    const parts = stdout.trim().split('|')
-    const trimmedWidth = parseInt(parts[0], 10)
-    const trimmedHeight = parseInt(parts[1], 10)
+    const bounds = stdout.trim().match(/^(\d+)x(\d+)\+(-?\d+)\+(-?\d+)$/)
+    const trimmedWidth = bounds ? parseInt(bounds[1], 10) : 0
+    const trimmedHeight = bounds ? parseInt(bounds[2], 10) : 0
+    const trimmedOffsetX = bounds ? parseInt(bounds[3], 10) : 0
+    const trimmedOffsetY = bounds ? parseInt(bounds[4], 10) : 0
 
     if (trimmedWidth > 0 && trimmedHeight > 0) {
       return {
         trimmedWidth,
         trimmedHeight,
+        trimmedOffsetX: Math.max(0, trimmedOffsetX),
+        trimmedOffsetY: Math.max(0, trimmedOffsetY),
         measurementMode:
           trimmedWidth !== imageInfo.width || trimmedHeight !== imageInfo.height ? 'trimmed' : 'full',
       }
@@ -633,6 +647,8 @@ async function getTrimmedImageBounds(
   return {
     trimmedWidth: imageInfo.width,
     trimmedHeight: imageInfo.height,
+    trimmedOffsetX: 0,
+    trimmedOffsetY: 0,
     measurementMode: 'full',
   }
 }
@@ -922,9 +938,8 @@ export async function runPreflightChecks(
     const imageInfo = await getImageInfo(filePath)
     const trimmedBounds = await getTrimmedImageBounds(filePath, imageInfo)
     const effectiveDpi = PRODUCTION_DPI
-    const measurementWidth = trimmedBounds.trimmedWidth > 0 ? trimmedBounds.trimmedWidth : imageInfo.width
-    const measurementHeight =
-      trimmedBounds.trimmedHeight > 0 ? trimmedBounds.trimmedHeight : imageInfo.height
+    const measurementWidth = imageInfo.width
+    const measurementHeight = imageInfo.height
 
     // DPI check
     if (imageInfo.dpi <= 0) {
@@ -962,10 +977,12 @@ export async function runPreflightChecks(
         height: imageInfo.height,
         trimmedWidth: trimmedBounds.trimmedWidth,
         trimmedHeight: trimmedBounds.trimmedHeight,
+        trimmedOffsetX: trimmedBounds.trimmedOffsetX,
+        trimmedOffsetY: trimmedBounds.trimmedOffsetY,
         measurementWidth,
         measurementHeight,
         effectiveDpi,
-        measurementMode: trimmedBounds.measurementMode,
+        measurementMode: 'full',
         widthIn: Number((measurementWidth / effectiveDpi).toFixed(2)),
         heightIn: Number((measurementHeight / effectiveDpi).toFixed(2)),
       },

@@ -1,4 +1,7 @@
-import { deriveUploadItemLifecycle } from '~/lib/uploadLifecycle.server'
+import {
+  applyFullCanvasMeasurementMetadata,
+  deriveUploadItemLifecycle,
+} from '~/lib/uploadLifecycle.server'
 
 export const DTF_PRINTHOUSE_SHOP_DOMAIN = 'e3bd2d-3.myshopify.com'
 export const DTF_PRINTHOUSE_DTF_UPLOAD_PRODUCT_ID = 'gid://shopify/Product/7605186560158'
@@ -717,24 +720,30 @@ export function resolveCustomerPricingContext(
 }
 
 export function extractVipUploadMeasurement(
-  uploadItems: Array<{ preflightStatus?: string | null; preflightResult?: unknown }>
+  uploadItems: Array<{ preflightStatus?: string | null; preflightResult?: unknown }>,
+  shopDomain?: string | null
 ): VipUploadMeasurement | null {
+  const useFullCanvasMeasurement = isDtfPrintHouseShop(shopDomain)
+
   for (const item of uploadItems) {
     const lifecycle = deriveUploadItemLifecycle(item)
+    const metadata = useFullCanvasMeasurement
+      ? applyFullCanvasMeasurementMetadata(lifecycle.metadata)
+      : lifecycle.metadata
 
-    if (lifecycle.measurementStatus !== 'ready' || !lifecycle.metadata) {
+    if (lifecycle.measurementStatus !== 'ready' || !metadata) {
       continue
     }
 
     return {
-      widthPx: lifecycle.metadata.widthPx,
-      heightPx: lifecycle.metadata.heightPx,
-      measurementWidthPx: lifecycle.metadata.measurementWidthPx,
-      measurementHeightPx: lifecycle.metadata.measurementHeightPx,
-      effectiveDpi: lifecycle.metadata.effectiveDpi,
-      widthIn: lifecycle.metadata.widthIn,
-      heightIn: lifecycle.metadata.heightIn,
-      measurementMode: lifecycle.metadata.measurementMode,
+      widthPx: metadata.widthPx,
+      heightPx: metadata.heightPx,
+      measurementWidthPx: metadata.measurementWidthPx,
+      measurementHeightPx: metadata.measurementHeightPx,
+      effectiveDpi: metadata.effectiveDpi,
+      widthIn: metadata.widthIn,
+      heightIn: metadata.heightIn,
+      measurementMode: metadata.measurementMode,
     }
   }
 

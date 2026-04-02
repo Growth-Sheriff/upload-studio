@@ -246,6 +246,62 @@
             </button>
           </div>
         </div>
+
+        <div class="ul-main-vip-preview-card hidden mb-6 overflow-hidden rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-semibold text-slate-900">VIP page preview</div>
+              <div class="ul-main-vip-preview-summary mt-1 text-xs leading-5 text-slate-600">
+                Upload a PNG to see the billed page with live ruler guides.
+              </div>
+            </div>
+            <span class="rounded-full bg-slate-900 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white">
+              Ruler View
+            </span>
+          </div>
+
+          <div class="mt-3 flex flex-wrap gap-2">
+            <span class="ul-main-vip-preview-chip ul-main-vip-preview-billing-chip">Billing page pending</span>
+            <span class="ul-main-vip-preview-chip ul-main-vip-preview-artwork-chip">Artwork bounds pending</span>
+            <span class="ul-main-vip-preview-chip ul-main-vip-preview-mode-chip">Full canvas billing</span>
+          </div>
+
+          <div class="ul-main-vip-preview-empty mt-4 rounded-[22px] border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
+            <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-900 shadow-sm">
+              <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 7h10M7 12h6m-6 5h10M4 4v16m16-5V4M8 4v4m8 7v5"></path>
+              </svg>
+            </div>
+            <div class="text-sm font-semibold text-slate-900">Full-page quote preview</div>
+            <div class="mt-2 text-xs leading-5 text-slate-500">
+              We will render the uploaded page against a scrollable inch ruler. Pricing uses the full uploaded page, not trimmed artwork bounds.
+            </div>
+          </div>
+
+          <div class="ul-main-vip-preview-canvas hidden mt-4">
+            <div class="ul-main-vip-preview-ruler-shell">
+              <div class="ul-main-vip-preview-corner"></div>
+              <div class="ul-main-vip-preview-top-ruler">
+                <div class="ul-main-vip-preview-top-track"></div>
+              </div>
+              <div class="ul-main-vip-preview-left-ruler">
+                <div class="ul-main-vip-preview-left-track"></div>
+              </div>
+              <div class="ul-main-vip-preview-stage-wrap">
+                <div class="ul-main-vip-preview-stage-rail">
+                  <div class="ul-main-vip-preview-stage">
+                    <img class="ul-main-vip-preview-image hidden" alt="VIP uploaded page preview">
+                    <div class="ul-main-vip-preview-artwork hidden"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ul-main-vip-preview-footnote mt-3 text-[11px] leading-5 text-slate-500">
+            Billing uses the full uploaded page size. When detected, the dashed frame marks artwork bounds inside that page.
+          </div>
+        </div>
       </div>
 
     </div>
@@ -329,13 +385,18 @@
     function applyServerMeasurement(payload) {
       if (!payload) return false;
 
-      state.widthPx = Number(payload.widthPx || state.widthPx || 0);
-      state.heightPx = Number(payload.heightPx || state.heightPx || 0);
-      state.embeddedDpi = Number(payload.dpi || state.embeddedDpi || 0);
-      state.effectiveDpi = Number(payload.effectiveDpi || state.effectiveDpi || 0);
+      state.widthPx = parseNonNegativeNumber(getPayloadField(payload, 'widthPx')) || state.widthPx || 0;
+      state.heightPx = parseNonNegativeNumber(getPayloadField(payload, 'heightPx')) || state.heightPx || 0;
+      state.trimmedWidthPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedWidthPx')) || 0;
+      state.trimmedHeightPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedHeightPx')) || 0;
+      state.trimmedOffsetXPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedOffsetXPx')) || 0;
+      state.trimmedOffsetYPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedOffsetYPx')) || 0;
+      state.embeddedDpi = parseNonNegativeNumber(getPayloadField(payload, 'dpi')) || state.embeddedDpi || 0;
+      state.effectiveDpi = parseNonNegativeNumber(getPayloadField(payload, 'effectiveDpi')) || state.effectiveDpi || 0;
+      var nextMeasurementMode = getPayloadField(payload, 'measurementMode');
       state.measurementMode =
-        typeof payload.measurementMode === 'string' && payload.measurementMode
-          ? String(payload.measurementMode)
+        typeof nextMeasurementMode === 'string' && nextMeasurementMode
+          ? String(nextMeasurementMode)
           : state.measurementMode;
 
       var confirmedInches = getServerConfirmedUploadInches(payload);
@@ -384,6 +445,21 @@
     var vipPricingRate = root.querySelector('.ul-main-vip-pricing-rate');
     var vipPricingLength = root.querySelector('.ul-main-vip-pricing-length');
     var vipPricingTotal = root.querySelector('.ul-main-vip-pricing-total');
+    var vipPreviewCard = root.querySelector('.ul-main-vip-preview-card');
+    var vipPreviewSummary = root.querySelector('.ul-main-vip-preview-summary');
+    var vipPreviewBillingChip = root.querySelector('.ul-main-vip-preview-billing-chip');
+    var vipPreviewArtworkChip = root.querySelector('.ul-main-vip-preview-artwork-chip');
+    var vipPreviewModeChip = root.querySelector('.ul-main-vip-preview-mode-chip');
+    var vipPreviewEmpty = root.querySelector('.ul-main-vip-preview-empty');
+    var vipPreviewCanvas = root.querySelector('.ul-main-vip-preview-canvas');
+    var vipPreviewFootnote = root.querySelector('.ul-main-vip-preview-footnote');
+    var vipPreviewTopTrack = root.querySelector('.ul-main-vip-preview-top-track');
+    var vipPreviewLeftTrack = root.querySelector('.ul-main-vip-preview-left-track');
+    var vipPreviewStageWrap = root.querySelector('.ul-main-vip-preview-stage-wrap');
+    var vipPreviewStageRail = root.querySelector('.ul-main-vip-preview-stage-rail');
+    var vipPreviewStage = root.querySelector('.ul-main-vip-preview-stage');
+    var vipPreviewImage = root.querySelector('.ul-main-vip-preview-image');
+    var vipPreviewArtwork = root.querySelector('.ul-main-vip-preview-artwork');
     var quantitySelect = root.querySelector('.ul-main-quantity');
     var quantityRow = root.querySelector('.ul-main-quantity-row');
     var addToCartBtn = root.querySelector('.ul-main-add-to-cart');
@@ -416,6 +492,10 @@
       fileName: '',
       widthPx: 0,
       heightPx: 0,
+      trimmedWidthPx: 0,
+      trimmedHeightPx: 0,
+      trimmedOffsetXPx: 0,
+      trimmedOffsetYPx: 0,
       embeddedDpi: 0,
       effectiveDpi: 0,
       measurementMode: null,
@@ -662,6 +742,20 @@
       return isFinite(parsed) && parsed > 0 ? parsed : null;
     }
 
+    function parseNonNegativeNumber(value) {
+      var parsed = Number(value);
+      return isFinite(parsed) && parsed >= 0 ? parsed : 0;
+    }
+
+    function getPayloadField(payload, key) {
+      if (!payload) return null;
+      if (payload[key] != null) return payload[key];
+      if (payload.metadata && typeof payload.metadata === 'object' && payload.metadata[key] != null) {
+        return payload.metadata[key];
+      }
+      return null;
+    }
+
     function resetVipQuoteState() {
       customerPricing.quoteStatus = 'idle';
       customerPricing.quoteTotal = null;
@@ -741,6 +835,225 @@
     function getBillablePageWidthIn() {
       if (!(state.widthIn > 0) || !(state.heightIn > 0)) return null;
       return Math.min(state.widthIn, state.heightIn);
+    }
+
+    function formatInches(value) {
+      var amount = Number(value || 0);
+      if (!isFinite(amount)) amount = 0;
+      return amount.toFixed(2) + '"';
+    }
+
+    function formatRulerLabel(value) {
+      var amount = Number(value || 0);
+      if (!isFinite(amount)) amount = 0;
+      return Math.abs(amount - Math.round(amount)) < 0.01 ? String(Math.round(amount)) : amount.toFixed(1);
+    }
+
+    function clearNode(node) {
+      if (!node) return;
+      while (node.firstChild) {
+        node.removeChild(node.firstChild);
+      }
+    }
+
+    function hasArtworkBounds() {
+      return state.trimmedWidthPx > 0 && state.trimmedHeightPx > 0;
+    }
+
+    function hasSeparateArtworkBounds() {
+      if (!hasArtworkBounds() || !(state.widthPx > 0) || !(state.heightPx > 0)) return false;
+      return (
+        state.trimmedWidthPx < state.widthPx ||
+        state.trimmedHeightPx < state.heightPx ||
+        state.trimmedOffsetXPx > 0 ||
+        state.trimmedOffsetYPx > 0
+      );
+    }
+
+    function getArtworkBoundsInches() {
+      if (!hasArtworkBounds()) return null;
+      var dpi = state.effectiveDpi > 0 ? state.effectiveDpi : 300;
+      return {
+        widthIn: Number((state.trimmedWidthPx / dpi).toFixed(2)),
+        heightIn: Number((state.trimmedHeightPx / dpi).toFixed(2)),
+        offsetXIn: Number((state.trimmedOffsetXPx / dpi).toFixed(2)),
+        offsetYIn: Number((state.trimmedOffsetYPx / dpi).toFixed(2))
+      };
+    }
+
+    function chooseRulerStep(totalIn, axis) {
+      if (axis === 'x') {
+        if (totalIn <= 24) return 2;
+        if (totalIn <= 48) return 4;
+        return 6;
+      }
+
+      if (totalIn <= 48) return 4;
+      if (totalIn <= 96) return 8;
+      if (totalIn <= 180) return 12;
+      return 24;
+    }
+
+    function buildRulerMarks(track, totalIn, scale, axis, padding) {
+      if (!track) return;
+      clearNode(track);
+
+      if (!(totalIn > 0) || !(scale > 0)) {
+        if (axis === 'x') track.style.width = '0px';
+        else track.style.height = '0px';
+        return;
+      }
+
+      var paddedSize = Math.ceil((totalIn * scale) + (padding * 2));
+      if (axis === 'x') track.style.width = paddedSize + 'px';
+      else track.style.height = paddedSize + 'px';
+
+      var majorStep = chooseRulerStep(totalIn, axis);
+      var minorStep = Math.max(1, majorStep / 2);
+      var value = 0;
+      while (value <= totalIn + 0.001) {
+        var isMajor =
+          value === 0 ||
+          Math.abs((value / majorStep) - Math.round(value / majorStep)) < 0.001 ||
+          Math.abs(value - totalIn) < 0.001;
+        var mark = document.createElement('div');
+        mark.className = 'ul-main-vip-preview-tick' + (isMajor ? ' is-major' : '');
+        var position = padding + (value * scale);
+        if (axis === 'x') {
+          mark.style.left = position + 'px';
+        } else {
+          mark.style.top = position + 'px';
+        }
+        track.appendChild(mark);
+
+        if (isMajor) {
+          var label = document.createElement('span');
+          label.className = 'ul-main-vip-preview-tick-label';
+          label.textContent = formatRulerLabel(value);
+          if (axis === 'x') {
+            label.style.left = position + 'px';
+          } else {
+            label.style.top = position + 'px';
+          }
+          track.appendChild(label);
+        }
+
+        value = Number((value + minorStep).toFixed(2));
+      }
+    }
+
+    function syncVipPreviewRulers() {
+      if (!vipPreviewStageWrap) return;
+      if (vipPreviewTopTrack) {
+        vipPreviewTopTrack.style.transform = 'translateX(' + (-vipPreviewStageWrap.scrollLeft) + 'px)';
+      }
+      if (vipPreviewLeftTrack) {
+        vipPreviewLeftTrack.style.transform = 'translateY(' + (-vipPreviewStageWrap.scrollTop) + 'px)';
+      }
+    }
+
+    function updateVipPreviewUI() {
+      if (!vipPreviewCard) return;
+
+      if (!isVipPricingActive()) {
+        vipPreviewCard.classList.add('hidden');
+        return;
+      }
+
+      vipPreviewCard.classList.remove('hidden');
+
+      var billableWidthIn = getBillablePageWidthIn();
+      var billableLengthIn = getBillablePageLengthIn();
+      var imageSrc =
+        state.thumbnailUrl ||
+        state.originalUrl ||
+        (uploadThumb ? uploadThumb.getAttribute('src') || '' : '');
+
+      if (!(billableWidthIn > 0) || !(billableLengthIn > 0) || !imageSrc) {
+        if (vipPreviewCanvas) vipPreviewCanvas.classList.add('hidden');
+        if (vipPreviewEmpty) vipPreviewEmpty.classList.remove('hidden');
+        if (vipPreviewSummary) {
+          vipPreviewSummary.textContent = state.uploadId
+            ? 'Waiting for the server to confirm the full uploaded page size before pricing.'
+            : 'Upload a PNG to see the billed page with live ruler guides.';
+        }
+        if (vipPreviewBillingChip) vipPreviewBillingChip.textContent = 'Billing page pending';
+        if (vipPreviewArtworkChip) vipPreviewArtworkChip.textContent = 'Artwork bounds pending';
+        if (vipPreviewModeChip) vipPreviewModeChip.textContent = 'Full canvas billing';
+        if (vipPreviewFootnote) {
+          vipPreviewFootnote.textContent = 'Billing uses the full uploaded page size. When detected, the dashed frame marks artwork bounds inside that page.';
+        }
+        if (vipPreviewImage) {
+          vipPreviewImage.removeAttribute('src');
+          vipPreviewImage.classList.add('hidden');
+        }
+        if (vipPreviewArtwork) vipPreviewArtwork.classList.add('hidden');
+        clearNode(vipPreviewTopTrack);
+        clearNode(vipPreviewLeftTrack);
+        return;
+      }
+
+      if (vipPreviewCanvas) vipPreviewCanvas.classList.remove('hidden');
+      if (vipPreviewEmpty) vipPreviewEmpty.classList.add('hidden');
+
+      var previewPadding = 18;
+      var availableWidth = vipPreviewStageWrap && vipPreviewStageWrap.clientWidth
+        ? Math.max(190, vipPreviewStageWrap.clientWidth - (previewPadding * 2))
+        : 250;
+      var scale = Math.min(16, Math.max(9, availableWidth / Math.max(billableWidthIn, 1)));
+      var stageWidth = Math.max(180, Math.round(billableWidthIn * scale));
+      var stageHeight = Math.max(220, Math.round(billableLengthIn * scale));
+
+      if (vipPreviewStageRail) {
+        vipPreviewStageRail.style.width = (stageWidth + (previewPadding * 2)) + 'px';
+        vipPreviewStageRail.style.height = (stageHeight + (previewPadding * 2)) + 'px';
+      }
+      if (vipPreviewStage) {
+        vipPreviewStage.style.width = stageWidth + 'px';
+        vipPreviewStage.style.height = stageHeight + 'px';
+      }
+      if (vipPreviewImage) {
+        vipPreviewImage.src = imageSrc;
+        vipPreviewImage.classList.remove('hidden');
+      }
+
+      var artworkBounds = getArtworkBoundsInches();
+      if (artworkBounds && hasSeparateArtworkBounds() && vipPreviewArtwork) {
+        vipPreviewArtwork.classList.remove('hidden');
+        vipPreviewArtwork.style.left = Math.max(0, Math.round(artworkBounds.offsetXIn * scale)) + 'px';
+        vipPreviewArtwork.style.top = Math.max(0, Math.round(artworkBounds.offsetYIn * scale)) + 'px';
+        vipPreviewArtwork.style.width = Math.max(10, Math.round(artworkBounds.widthIn * scale)) + 'px';
+        vipPreviewArtwork.style.height = Math.max(10, Math.round(artworkBounds.heightIn * scale)) + 'px';
+        if (vipPreviewArtworkChip) {
+          vipPreviewArtworkChip.textContent =
+            'Artwork bounds ' + formatInches(artworkBounds.widthIn) + ' x ' + formatInches(artworkBounds.heightIn);
+        }
+      } else if (vipPreviewArtwork) {
+        vipPreviewArtwork.classList.add('hidden');
+        vipPreviewArtwork.removeAttribute('style');
+        if (vipPreviewArtworkChip) vipPreviewArtworkChip.textContent = 'Artwork matches full page';
+      }
+
+      buildRulerMarks(vipPreviewTopTrack, billableWidthIn, scale, 'x', previewPadding);
+      buildRulerMarks(vipPreviewLeftTrack, billableLengthIn, scale, 'y', previewPadding);
+      syncVipPreviewRulers();
+
+      if (vipPreviewBillingChip) {
+        vipPreviewBillingChip.textContent =
+          'Billing page ' + formatInches(billableWidthIn) + ' x ' + formatInches(billableLengthIn);
+      }
+      if (vipPreviewModeChip) vipPreviewModeChip.textContent = 'Full canvas billing';
+      if (vipPreviewSummary) {
+        vipPreviewSummary.textContent =
+          customerPricing.quoteStatus === 'ready'
+            ? 'Server confirmed the full uploaded page. Pricing uses this full page size, not trimmed artwork.'
+            : 'We are measuring the full uploaded page and drawing artwork bounds separately for reference.';
+      }
+      if (vipPreviewFootnote) {
+        vipPreviewFootnote.textContent = hasSeparateArtworkBounds()
+          ? 'The solid page frame is the billed upload size. The dashed overlay shows detected artwork bounds for visual reference only.'
+          : 'The solid page frame is the billed upload size. No separate trimmed artwork bounds were detected for this file.';
+      }
     }
 
     function syncPurchaseButtonsForCurrentState() {
@@ -836,7 +1149,7 @@
         }
       } else {
         lengthLabel = billableLengthIn
-          ? 'Measured page: ' + (billableWidthIn ? billableWidthIn.toFixed(2) + '" x ' : '') + billableLengthIn.toFixed(2) + '"'
+          ? 'Uploaded page: ' + (billableWidthIn ? billableWidthIn.toFixed(2) + '" x ' : '') + billableLengthIn.toFixed(2) + '"'
           : 'Waiting for server-confirmed measurement...';
       }
       var totalLabel = customerPricing.quoteTotal != null
@@ -869,8 +1182,9 @@
         }
       }
       if (detectedTitle) {
-        detectedTitle.textContent = isBusiness ? detectedDefaultTitle : 'Detected Measured Page';
+        detectedTitle.textContent = isBusiness ? detectedDefaultTitle : 'Detected Uploaded Page';
       }
+      updateVipPreviewUI();
     }
 
     async function loadCustomerPricingContext() {
@@ -938,6 +1252,7 @@
         resetVipQuoteState();
         updateCustomerStatusUI();
         syncPricingVisibility();
+        updateVipPreviewUI();
         resetActionLabels();
         syncPurchaseButtonsForCurrentState();
         return customerPricing;
@@ -1056,6 +1371,7 @@
         if (requestToken !== vipQuoteRequestToken) return null;
         customerPricing.quoteStatus = 'error';
         showError(error && error.message ? error.message : 'Failed to load custom quote.');
+        updateVipPricingUI();
         syncPurchaseButtonsForCurrentState();
         return null;
       }
@@ -1122,7 +1438,7 @@
       if (detectedHeight) detectedHeight.value = state.heightIn.toFixed(2) + '"';
       if (detectedNote) {
         var notes = isVipPricingActive()
-          ? ['Measured on the server and priced from the exact uploaded page length.']
+          ? ['Measured on the server. Pricing uses the full uploaded page size.']
           : isBusinessPricingActive()
             ? ['Resolved on the server using the matched sheet size. Checkout uses your assigned per-inch rate on the selected sheet length.']
             : ['Resolved on server using the saved product sheet rules.'];
@@ -1132,8 +1448,8 @@
             state.selectedResult.sheetsNeeded + ' sheet(s) needed.'
           );
         }
-        if (state.measurementMode === 'trimmed') {
-          notes.push('Artwork bounds were trimmed on the server before sheet fitting.');
+        if (hasSeparateArtworkBounds()) {
+          notes.push('Artwork bounds were also detected for preview, but billing keeps the full uploaded page size.');
         }
         if (state.embeddedDpi && state.effectiveDpi && state.embeddedDpi !== state.effectiveDpi) {
           notes.push(
@@ -1236,6 +1552,10 @@
       state.fileName = '';
       state.widthPx = 0;
       state.heightPx = 0;
+      state.trimmedWidthPx = 0;
+      state.trimmedHeightPx = 0;
+      state.trimmedOffsetXPx = 0;
+      state.trimmedOffsetYPx = 0;
       state.embeddedDpi = 0;
       state.effectiveDpi = 0;
       state.measurementMode = null;
@@ -1289,6 +1609,7 @@
         uploadThumb.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80"><rect width="80" height="80" rx="10" fill="#f3f4f6"/><path d="M24 16h22l10 10v38H24z" fill="#e5e7eb" stroke="#9ca3af" stroke-width="2"/><text x="40" y="48" text-anchor="middle" font-size="12" font-family="Arial" fill="#374151">' + ext.toUpperCase() + '</text></svg>');
         uploadThumb.classList.remove('hidden');
       }
+      updateVipPreviewUI();
     }
 
     function isAcceptedFile(file) {
@@ -1414,6 +1735,10 @@
       state.fileName = file.name;
       state.widthPx = 0;
       state.heightPx = 0;
+      state.trimmedWidthPx = 0;
+      state.trimmedHeightPx = 0;
+      state.trimmedOffsetXPx = 0;
+      state.trimmedOffsetYPx = 0;
       state.embeddedDpi = 0;
       state.effectiveDpi = 0;
       state.measurementMode = null;
@@ -1433,6 +1758,7 @@
       if (uploadStatus) uploadStatus.textContent = '';
       resetActionLabels();
       setSelectedVariant(getFallbackVariantId());
+      updateVipPreviewUI();
       syncPurchaseButtonsForCurrentState();
       try {
         var intentRes = await fetch(apiBase + '/api/upload/intent', {
@@ -1531,7 +1857,12 @@
         state.originalUrl = '';
         state.thumbnailUrl = '';
         state.selectedResult = null;
+        state.trimmedWidthPx = 0;
+        state.trimmedHeightPx = 0;
+        state.trimmedOffsetXPx = 0;
+        state.trimmedOffsetYPx = 0;
         if (uploadLoading) uploadLoading.classList.add('hidden');
+        updateVipPreviewUI();
         syncPurchaseButtonsForCurrentState();
         showError(error && error.message ? error.message : 'Upload failed.');
       }
@@ -1689,6 +2020,14 @@
       });
     }
 
+    if (vipPreviewStageWrap) {
+      vipPreviewStageWrap.addEventListener('scroll', syncVipPreviewRulers);
+    }
+
+    window.addEventListener('resize', function() {
+      updateVipPreviewUI();
+    });
+
     if (quantitySelect) {
       function syncQuantityValue() {
         var nextQuantity = parseInt(quantitySelect.value || '1', 10) || 1;
@@ -1773,6 +2112,7 @@
     updateCustomerStatusUI();
     customerPricingPromise = loadCustomerPricingContext();
     setSelectedVariant(getFallbackVariantId());
+    updateVipPreviewUI();
     syncPurchaseButtonsForCurrentState();
   })();
 </script>
@@ -1964,5 +2304,189 @@
   }
   #{{ section_dom_id }} .js-accordion-icon.is-open {
     transform: rotate(180deg);
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-card {
+    border-radius: 28px;
+    background:
+      radial-gradient(circle at top right, rgba(251, 191, 36, 0.14), transparent 34%),
+      linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-empty {
+    border-radius: 22px;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    background: rgba(255, 255, 255, 0.92);
+    padding: 0.45rem 0.85rem;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    color: #334155;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-ruler-shell {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-rows: 38px minmax(0, 520px);
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-corner {
+    grid-column: 1;
+    grid-row: 1;
+    border-right: 1px solid rgba(148, 163, 184, 0.24);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+    background:
+      linear-gradient(135deg, rgba(251, 191, 36, 0.18), rgba(255, 255, 255, 0.95)),
+      #f8fafc;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-top-ruler,
+  #{{ section_dom_id }} .ul-main-vip-preview-left-ruler {
+    position: relative;
+    overflow: hidden;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.96));
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-top-ruler {
+    grid-column: 2;
+    grid-row: 1;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-left-ruler {
+    grid-column: 1;
+    grid-row: 2;
+    border-right: 1px solid rgba(148, 163, 184, 0.24);
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-top-track,
+  #{{ section_dom_id }} .ul-main-vip-preview-left-track {
+    position: relative;
+    will-change: transform;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-top-track {
+    height: 100%;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-left-track {
+    width: 100%;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-stage-wrap {
+    grid-column: 2;
+    grid-row: 2;
+    overflow: auto;
+    background:
+      linear-gradient(180deg, rgba(248, 250, 252, 0.82), rgba(255, 255, 255, 0.96)),
+      #f8fafc;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-stage-wrap::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-stage-wrap::-webkit-scrollbar-thumb {
+    border: 2px solid rgba(255, 255, 255, 0.96);
+    border-radius: 999px;
+    background: rgba(100, 116, 139, 0.5);
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-stage-wrap::-webkit-scrollbar-track {
+    background: rgba(226, 232, 240, 0.65);
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-stage-rail {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-stage {
+    position: relative;
+    margin: 18px;
+    overflow: hidden;
+    border: 2px solid #0f172a;
+    border-radius: 18px;
+    background:
+      linear-gradient(45deg, rgba(226, 232, 240, 0.72) 25%, transparent 25%, transparent 75%, rgba(226, 232, 240, 0.72) 75%, rgba(226, 232, 240, 0.72)),
+      linear-gradient(45deg, rgba(226, 232, 240, 0.72) 25%, transparent 25%, transparent 75%, rgba(226, 232, 240, 0.72) 75%, rgba(226, 232, 240, 0.72)),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.92));
+    background-size: 22px 22px, 22px 22px, auto;
+    background-position: 0 0, 11px 11px, 0 0;
+    box-shadow:
+      0 26px 40px rgba(15, 23, 42, 0.14),
+      inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-stage::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), transparent 24%);
+    z-index: 1;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-image {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: left top;
+    z-index: 2;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-artwork {
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+    border: 2px dashed rgba(245, 158, 11, 0.95);
+    border-radius: 12px;
+    background: rgba(251, 191, 36, 0.14);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.58),
+      0 12px 18px rgba(245, 158, 11, 0.16);
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-tick {
+    position: absolute;
+    background: rgba(15, 23, 42, 0.6);
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-top-track .ul-main-vip-preview-tick {
+    bottom: 0;
+    width: 1px;
+    height: 10px;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-top-track .ul-main-vip-preview-tick.is-major {
+    height: 17px;
+    background: rgba(15, 23, 42, 0.84);
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-left-track .ul-main-vip-preview-tick {
+    right: 0;
+    width: 10px;
+    height: 1px;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-left-track .ul-main-vip-preview-tick.is-major {
+    width: 18px;
+    background: rgba(15, 23, 42, 0.84);
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-tick-label {
+    position: absolute;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #334155;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-top-track .ul-main-vip-preview-tick-label {
+    bottom: 18px;
+    transform: translateX(-50%);
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-left-track .ul-main-vip-preview-tick-label {
+    right: 20px;
+    transform: translateY(-50%);
+  }
+  @media screen and (max-width: 1023px) {
+    #{{ section_dom_id }} .ul-main-vip-preview-ruler-shell {
+      grid-template-rows: 34px minmax(0, 420px);
+    }
   }
 </style>

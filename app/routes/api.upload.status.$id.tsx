@@ -2,6 +2,7 @@ import type { LoaderFunctionArgs } from '@remix-run/node'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
+import { isDtfPrintHouseShop } from '~/lib/customerPricing.server'
 import {
   generateLocalFileToken,
   getStorageConfig,
@@ -9,6 +10,7 @@ import {
   isBunnyUrl,
 } from '~/lib/storage.server'
 import {
+  applyFullCanvasMeasurementMetadata,
   deriveUploadClientStatus,
   deriveUploadItemLifecycle,
   deriveUploadOrderabilityStatus,
@@ -301,12 +303,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       thumbnailKey: item.thumbnailKey,
     })
   )
+  const useFullCanvasMeasurement = isDtfPrintHouseShop(shop.shopDomain)
   const clientStatus = deriveUploadClientStatus(upload.status, lifecycleItems)
   const orderabilityStatus = deriveUploadOrderabilityStatus(lifecycleItems)
 
   const enrichedItems = upload.items.map((item, index) => {
     const lifecycle = lifecycleItems[index]
-    const metadata = lifecycle.metadata
+    const metadata = useFullCanvasMeasurement
+      ? applyFullCanvasMeasurementMetadata(lifecycle.metadata)
+      : lifecycle.metadata
 
     // v1.1.0: Compute per-item thumbnail URL
     let itemThumbnailUrl: string | null = null
@@ -368,6 +373,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       dpi: metadata?.dpi || 0,
       trimmedWidthPx: metadata?.trimmedWidthPx || 0,
       trimmedHeightPx: metadata?.trimmedHeightPx || 0,
+      trimmedOffsetXPx: metadata?.trimmedOffsetXPx || 0,
+      trimmedOffsetYPx: metadata?.trimmedOffsetYPx || 0,
       measurementWidthPx: metadata?.measurementWidthPx || 0,
       measurementHeightPx: metadata?.measurementHeightPx || 0,
       effectiveDpi: metadata?.effectiveDpi || 0,
@@ -392,6 +399,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
             dpi: metadata.dpi,
             trimmedWidthPx: metadata.trimmedWidthPx,
             trimmedHeightPx: metadata.trimmedHeightPx,
+            trimmedOffsetXPx: metadata.trimmedOffsetXPx,
+            trimmedOffsetYPx: metadata.trimmedOffsetYPx,
             measurementWidthPx: metadata.measurementWidthPx,
             measurementHeightPx: metadata.measurementHeightPx,
             effectiveDpi: metadata.effectiveDpi,
@@ -415,7 +424,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   })
 
   const primaryLifecycle = lifecycleItems[0] || null
-  const primaryMetadata = primaryLifecycle?.metadata || null
+  const primaryMetadata = useFullCanvasMeasurement
+    ? applyFullCanvasMeasurementMetadata(primaryLifecycle?.metadata || null)
+    : primaryLifecycle?.metadata || null
   const problems = lifecycleItems.flatMap((lifecycle) => lifecycle.problems)
   const warnings = problems
     .filter((problem) => problem.severity === 'warning')
@@ -463,6 +474,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
             heightPx: primaryMetadata.heightPx,
             trimmedWidthPx: primaryMetadata.trimmedWidthPx,
             trimmedHeightPx: primaryMetadata.trimmedHeightPx,
+            trimmedOffsetXPx: primaryMetadata.trimmedOffsetXPx,
+            trimmedOffsetYPx: primaryMetadata.trimmedOffsetYPx,
             measurementWidthPx: primaryMetadata.measurementWidthPx,
             measurementHeightPx: primaryMetadata.measurementHeightPx,
             effectiveDpi: primaryMetadata.effectiveDpi,

@@ -254,7 +254,7 @@ export async function prepareCustomPricingQuote({
     throw new Error('Custom pricing is not active for this customer and product')
   }
 
-  const measurement = extractVipUploadMeasurement(upload.items)
+  const measurement = extractVipUploadMeasurement(upload.items, shop.shopDomain)
   if (!measurement) {
     throw new Error('Upload measurement is not ready')
   }

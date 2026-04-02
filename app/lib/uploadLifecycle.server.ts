@@ -28,6 +28,8 @@ export interface UploadLifecycleMetadata {
   dpi: number
   trimmedWidthPx: number
   trimmedHeightPx: number
+  trimmedOffsetXPx: number
+  trimmedOffsetYPx: number
   measurementWidthPx: number
   measurementHeightPx: number
   effectiveDpi: number
@@ -96,6 +98,8 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
   let dpi = 0
   let trimmedWidthPx = 0
   let trimmedHeightPx = 0
+  let trimmedOffsetXPx = 0
+  let trimmedOffsetYPx = 0
   let measurementWidthPx = 0
   let measurementHeightPx = 0
   let effectiveDpi = DEFAULT_EFFECTIVE_DPI
@@ -110,6 +114,8 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
       heightPx = parsePositiveNumber(details.height)
       trimmedWidthPx = parsePositiveNumber(details.trimmedWidth)
       trimmedHeightPx = parsePositiveNumber(details.trimmedHeight)
+      trimmedOffsetXPx = parsePositiveNumber(details.trimmedOffsetX)
+      trimmedOffsetYPx = parsePositiveNumber(details.trimmedOffsetY)
       measurementWidthPx = parsePositiveNumber(details.measurementWidth)
       measurementHeightPx = parsePositiveNumber(details.measurementHeight)
       effectiveDpi = parsePositiveNumber(details.effectiveDpi) || DEFAULT_EFFECTIVE_DPI
@@ -146,6 +152,8 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
     dpi,
     trimmedWidthPx,
     trimmedHeightPx,
+    trimmedOffsetXPx,
+    trimmedOffsetYPx,
     measurementWidthPx,
     measurementHeightPx,
     effectiveDpi,
@@ -182,6 +190,8 @@ function extractMetadata(preflightResult: unknown, checks: Array<Record<string, 
         dpi: parsePositiveNumber(metadata.dpi),
         trimmedWidthPx: parsePositiveNumber(metadata.trimmedWidthPx),
         trimmedHeightPx: parsePositiveNumber(metadata.trimmedHeightPx),
+        trimmedOffsetXPx: parsePositiveNumber(metadata.trimmedOffsetXPx),
+        trimmedOffsetYPx: parsePositiveNumber(metadata.trimmedOffsetYPx),
         measurementWidthPx,
         measurementHeightPx,
         effectiveDpi,
@@ -196,6 +206,23 @@ function extractMetadata(preflightResult: unknown, checks: Array<Record<string, 
   }
 
   return extractMetadataFromChecks(checks)
+}
+
+export function applyFullCanvasMeasurementMetadata(
+  metadata: UploadLifecycleMetadata | null
+): UploadLifecycleMetadata | null {
+  if (!metadata) return null
+
+  const effectiveDpi = metadata.effectiveDpi > 0 ? metadata.effectiveDpi : DEFAULT_EFFECTIVE_DPI
+
+  return {
+    ...metadata,
+    measurementWidthPx: metadata.widthPx > 0 ? metadata.widthPx : metadata.measurementWidthPx,
+    measurementHeightPx: metadata.heightPx > 0 ? metadata.heightPx : metadata.measurementHeightPx,
+    widthIn: Number(((metadata.widthPx > 0 ? metadata.widthPx : metadata.measurementWidthPx) / effectiveDpi).toFixed(2)),
+    heightIn: Number(((metadata.heightPx > 0 ? metadata.heightPx : metadata.measurementHeightPx) / effectiveDpi).toFixed(2)),
+    measurementMode: 'full',
+  }
 }
 
 function deriveProblems(preflightResult: unknown, checks: Array<Record<string, unknown>>): UploadLifecycleProblem[] {
