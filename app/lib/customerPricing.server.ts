@@ -460,6 +460,18 @@ export function normalizeCustomerPricingSettings(rawSettings: unknown): Customer
   }
 }
 
+function coerceCustomerPricingSettings(rawSettings: unknown): CustomerPricingSettings {
+  const raw = rawSettings && typeof rawSettings === 'object' ? (rawSettings as Record<string, unknown>) : {}
+  const looksNormalized =
+    Array.isArray(raw.statuses) &&
+    Array.isArray(raw.assignments) &&
+    ('enabled' in raw || 'businessPricePerInch' in raw || 'version' in raw)
+
+  return looksNormalized
+    ? normalizeCustomerPricingSettings({ customerPricing: raw })
+    : normalizeCustomerPricingSettings(rawSettings)
+}
+
 export function applyCustomerPricingDefaultsForShop(
   shopDomain: string | null | undefined,
   rawSettings: unknown
@@ -565,7 +577,7 @@ export function resolveCustomerPricingContext(
   loggedInCustomerId: string | number | null | undefined,
   productIdInput?: string | number | null
 ): CustomerPricingContext {
-  const settings = normalizeCustomerPricingSettings(rawSettings)
+  const settings = coerceCustomerPricingSettings(rawSettings)
   const customerId = normalizeCustomerId(loggedInCustomerId)
   const productId = normalizeProductId(productIdInput)
 
