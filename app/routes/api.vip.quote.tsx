@@ -34,12 +34,15 @@ function parsePositiveInteger(value: unknown, fallback = 1): number {
 function errorStatusFromMessage(message: string): number {
   if (message === 'Shop not found') return 404
   if (message === 'Upload not found') return 404
+  if (message === 'Product not found') return 404
   if (message === 'Upload measurement is not ready') return 409
   if (message === 'Upload does not belong to the logged in customer') return 403
   if (message === 'Custom pricing is not active for this customer and product') return 403
+  if (message === 'Upload product is missing') return 422
   if (message.includes('No product variant can fit')) return 422
   if (message.includes('outside product limits')) return 422
   if (message.includes('exceeds')) return 422
+  if (message.includes('must be at least')) return 422
   return 500
 }
 
