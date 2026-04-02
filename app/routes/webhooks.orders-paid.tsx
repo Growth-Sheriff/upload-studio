@@ -12,6 +12,11 @@ function verifyWebhookSignature(body: string, hmac: string, secret: string): boo
   return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(hmac))
 }
 
+function extractVipUploadIdFromOrderNote(note: unknown): string | null {
+  const match = String(note || '').match(/VIP checkout for upload ([A-Za-z0-9_-]+)/)
+  return match?.[1] || null
+}
+
 // GraphQL mutation to write order metafield
 const ORDER_METAFIELD_MUTATION = `
   mutation orderMetafieldSet($input: OrderInput!) {
@@ -164,6 +169,74 @@ export async function action({ request }: ActionFunctionArgs) {
 
           console.log(`[Webhook] Linked upload ${uploadId} to order ${order.id}`)
         }
+      }
+    }
+
+    const vipNoteUploadId = extractVipUploadIdFromOrderNote(order.note)
+    if (vipNoteUploadId && !uploadDesigns.some((entry) => entry.uploadId === vipNoteUploadId)) {
+      const fallbackLineItem = order.line_items?.[0] || null
+      const upload = await prisma.upload.findFirst({
+        where: { id: vipNoteUploadId, shopId: shop.id },
+        include: {
+          items: {
+            select: {
+              location: true,
+              originalName: true,
+              previewKey: true,
+              thumbnailKey: true,
+              transform: true,
+              preflightStatus: true,
+            },
+          },
+        },
+      })
+
+      if (upload) {
+        const orderTotal = parseFloat(order.total_price) || 0
+        const orderCurrency = order.currency || 'USD'
+
+        await prisma.orderLink.upsert({
+          where: {
+            orderId_uploadId: {
+              orderId: String(order.id),
+              uploadId: upload.id,
+            },
+          },
+          update: {
+            lineItemId: fallbackLineItem?.id ? String(fallbackLineItem.id) : null,
+          },
+          create: {
+            shopId: shop.id,
+            orderId: String(order.id),
+            uploadId: upload.id,
+            lineItemId: fallbackLineItem?.id ? String(fallbackLineItem.id) : null,
+          },
+        })
+
+        await prisma.upload.updateMany({
+          where: { id: upload.id, shopId: shop.id },
+          data: {
+            status: 'approved',
+            orderId: String(order.id),
+            orderTotal,
+            orderCurrency,
+            orderPaidAt: new Date(),
+          },
+        })
+
+        for (const item of upload.items) {
+          uploadDesigns.push({
+            lineItemId: fallbackLineItem?.id ? String(fallbackLineItem.id) : 'vip-note-fallback',
+            uploadId: upload.id,
+            location: item.location,
+            originalFile: item.originalName || '',
+            previewUrl: item.thumbnailKey || item.previewKey || '',
+            transform: item.transform,
+            preflightStatus: item.preflightStatus,
+          })
+        }
+
+        console.log(`[Webhook] Linked VIP upload ${vipNoteUploadId} to paid order ${order.id} via note fallback`)
       }
     }
 

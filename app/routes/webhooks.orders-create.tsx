@@ -12,6 +12,11 @@ function verifyWebhookSignature(body: string, hmac: string, secret: string): boo
   return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(hmac))
 }
 
+function extractVipUploadIdFromOrderNote(note: unknown): string | null {
+  const match = String(note || '').match(/VIP checkout for upload ([A-Za-z0-9_-]+)/)
+  return match?.[1] || null
+}
+
 // POST /webhooks/orders-create
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
@@ -206,6 +211,67 @@ export async function action({ request }: ActionFunctionArgs) {
             },
           },
         })
+      }
+    }
+
+    const vipNoteUploadId = extractVipUploadIdFromOrderNote(order.note)
+    if (vipNoteUploadId && !processedUploads.includes(vipNoteUploadId)) {
+      const fallbackLineItem = order.line_items?.[0] || null
+      const upload = await prisma.upload.findFirst({
+        where: {
+          id: vipNoteUploadId,
+          shopId: shop.id,
+        },
+      })
+
+      if (upload) {
+        hasUploadLiftItems = true
+
+        await prisma.orderLink.upsert({
+          where: {
+            orderId_uploadId: {
+              orderId: String(order.id),
+              uploadId: vipNoteUploadId,
+            },
+          },
+          create: {
+            shopId: shop.id,
+            orderId: String(order.id),
+            uploadId: vipNoteUploadId,
+            lineItemId: fallbackLineItem?.id ? String(fallbackLineItem.id) : null,
+          },
+          update: {
+            lineItemId: fallbackLineItem?.id ? String(fallbackLineItem.id) : null,
+          },
+        })
+
+        await prisma.upload.updateMany({
+          where: { id: vipNoteUploadId, shopId: shop.id },
+          data: {
+            orderId: String(order.id),
+            status: upload.status === 'blocked' ? 'blocked' : 'needs_review',
+          },
+        })
+
+        await prisma.auditLog.create({
+          data: {
+            shopId: shop.id,
+            action: 'order_linked_note_fallback',
+            resourceType: 'upload',
+            resourceId: vipNoteUploadId,
+            metadata: {
+              orderId: order.id,
+              orderName: order.name,
+              lineItemId: fallbackLineItem?.id || null,
+              customerEmail: order.email,
+            },
+          },
+        })
+
+        processedUploads.push(vipNoteUploadId)
+        console.log(`[Webhook] Linked VIP upload ${vipNoteUploadId} to order ${order.id} via note fallback`)
+      } else {
+        console.warn(`[Webhook] VIP upload ${vipNoteUploadId} from order note not found for shop ${shopDomain}`)
       }
     }
 

@@ -50,6 +50,25 @@
         <h1 class="text-2xl font-normal text-gray-900 leading-tight mb-1">
           {{ product.title }}
         </h1>
+        <div class="ul-main-customer-status mb-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="ul-main-customer-status-title text-sm font-semibold text-gray-900">Customer pricing</div>
+              <div class="ul-main-customer-status-text mt-1 text-xs text-gray-600">
+                Log in to see your assigned customer status and pricing before upload.
+              </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="ul-main-customer-status-badge hidden rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-900"></span>
+              <a href="{{ routes.account_login_url }}" class="ul-main-customer-login inline-flex items-center justify-center rounded-full border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm transition-colors duration-200 hover:bg-gray-100">
+                Log In
+              </a>
+              <a href="/account" class="ul-main-customer-account hidden inline-flex items-center justify-center rounded-full border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm transition-colors duration-200 hover:bg-gray-100">
+                My Account
+              </a>
+            </div>
+          </div>
+        </div>
         
         {% if section.settings.show_vendor %}
           <div class="text-sm text-amazon-link hover:text-amazon-link-hover hover:underline mb-2">
@@ -369,6 +388,11 @@
     var addToCartLabel = addToCartBtn ? addToCartBtn.textContent : 'Add to Cart';
     var buyNowLabel = buyNowBtn ? buyNowBtn.textContent : 'Buy Now';
     var detectedDefaultTitle = detectedTitle ? detectedTitle.textContent : 'Detected Gang Sheet Size';
+    var customerStatusTitle = root.querySelector('.ul-main-customer-status-title');
+    var customerStatusText = root.querySelector('.ul-main-customer-status-text');
+    var customerStatusBadge = root.querySelector('.ul-main-customer-status-badge');
+    var customerLoginLink = root.querySelector('.ul-main-customer-login');
+    var customerAccountLink = root.querySelector('.ul-main-customer-account');
 
     var state = {
       uploadId: '',
@@ -420,6 +444,53 @@
         }).format(amount);
       } catch (error) {
         return '$' + amount.toFixed(2);
+      }
+    }
+
+    function updateCustomerStatusUI() {
+      if (!customerStatusTitle || !customerStatusText) return;
+
+      if (!customerLoggedIn) {
+        customerStatusTitle.textContent = 'Customer pricing';
+        customerStatusText.textContent = 'Log in to see your assigned customer status and pricing before upload.';
+        if (customerStatusBadge) {
+          customerStatusBadge.textContent = '';
+          customerStatusBadge.classList.add('hidden');
+        }
+        if (customerLoginLink) customerLoginLink.classList.remove('hidden');
+        if (customerAccountLink) customerAccountLink.classList.add('hidden');
+        return;
+      }
+
+      if (customerLoginLink) customerLoginLink.classList.add('hidden');
+      if (customerAccountLink) customerAccountLink.classList.remove('hidden');
+
+      if (customerPricing.status === 'loading') {
+        customerStatusTitle.textContent = 'Checking customer status';
+        customerStatusText.textContent = 'We are loading your assigned pricing profile.';
+        if (customerStatusBadge) {
+          customerStatusBadge.textContent = '';
+          customerStatusBadge.classList.add('hidden');
+        }
+        return;
+      }
+
+      var label = customerPricing.statusLabel || (customerPricing.customerType === 'vip' ? 'VIP' : 'Business');
+      var rateText = customerPricing.pricePerInch != null
+        ? 'Active rate: ' + formatMoneyValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in'
+        : 'Rate is loading from the server.';
+
+      if (customerPricing.customerType === 'vip') {
+        customerStatusTitle.textContent = 'VIP pricing active';
+        customerStatusText.textContent = label + ' account. ' + rateText;
+      } else {
+        customerStatusTitle.textContent = 'Business pricing active';
+        customerStatusText.textContent = label + ' account. Standard checkout rules apply. ' + rateText;
+      }
+
+      if (customerStatusBadge) {
+        customerStatusBadge.textContent = label;
+        customerStatusBadge.classList.remove('hidden');
       }
     }
 
@@ -603,10 +674,13 @@
         customerPricing.status = 'ready';
         customerPricing.customerType = 'guest';
         customerPricing.source = 'fallback';
+        updateCustomerStatusUI();
         syncPricingVisibility();
         syncPurchaseButtonsForCurrentState();
         return customerPricing;
       }
+
+      updateCustomerStatusUI();
 
       try {
         var contextUrl = apiBase + '/api/vip/context?shopDomain=' + encodeURIComponent(shopDomain) + '&productId=' + encodeURIComponent(String(productData.productId));
@@ -638,6 +712,7 @@
           resetVipQuoteState();
         }
 
+        updateCustomerStatusUI();
         syncPricingVisibility();
         updateVipPricingUI();
         resetActionLabels();
@@ -649,6 +724,7 @@
         customerPricing.customerType = 'business';
         customerPricing.source = 'fallback';
         resetVipQuoteState();
+        updateCustomerStatusUI();
         syncPricingVisibility();
         resetActionLabels();
         syncPurchaseButtonsForCurrentState();
@@ -1413,6 +1489,7 @@
       });
     }
 
+    updateCustomerStatusUI();
     loadCustomerPricingContext();
     setSelectedVariant(getFallbackVariantId());
     syncPurchaseButtonsForCurrentState();
