@@ -557,19 +557,47 @@
       }
 
       try {
-        customerLoginPopup.document.open();
-        customerLoginPopup.document.write(
-          '<!doctype html><html><head><meta charset="utf-8"><title>Opening login...</title><style>' +
-          'html,body{height:100%;margin:0;font-family:Arial,sans-serif;background:#f8fafc;color:#111827;}' +
-          'body{display:flex;align-items:center;justify-content:center;padding:24px;}' +
-          '.card{max-width:320px;padding:24px 22px;border:1px solid #e5e7eb;border-radius:16px;background:#ffffff;box-shadow:0 10px 30px rgba(15,23,42,0.08);text-align:center;}' +
-          '.spinner{width:28px;height:28px;margin:0 auto 16px;border:3px solid #fde68a;border-top-color:#f59e0b;border-radius:999px;animation:spin 0.8s linear infinite;}' +
-          '.title{font-size:16px;font-weight:700;margin:0 0 8px;}' +
-          '.text{font-size:13px;line-height:1.5;color:#4b5563;margin:0;}' +
-          '@keyframes spin{to{transform:rotate(360deg);}}' +
-          '</style></head><body><div class="card"><div class="spinner"></div><p class="title">Opening customer login</p><p class="text">Please wait while we securely redirect you to the Shopify login screen.</p></div></body></html>'
-        );
-        customerLoginPopup.document.close();
+        var popupDoc = customerLoginPopup.document;
+        popupDoc.title = 'Opening login...';
+
+        if (popupDoc.head) {
+          var meta = popupDoc.createElement('meta');
+          meta.setAttribute('charset', 'utf-8');
+          popupDoc.head.appendChild(meta);
+
+          var style = popupDoc.createElement('style');
+          style.textContent =
+            'html,body{height:100%;margin:0;font-family:Arial,sans-serif;background:#f8fafc;color:#111827;}' +
+            'body{display:flex;align-items:center;justify-content:center;padding:24px;}' +
+            '.card{max-width:320px;padding:24px 22px;border:1px solid #e5e7eb;border-radius:16px;background:#ffffff;box-shadow:0 10px 30px rgba(15,23,42,0.08);text-align:center;}' +
+            '.spinner{width:28px;height:28px;margin:0 auto 16px;border:3px solid #fde68a;border-top-color:#f59e0b;border-radius:999px;animation:spin 0.8s linear infinite;}' +
+            '.title{font-size:16px;font-weight:700;margin:0 0 8px;}' +
+            '.text{font-size:13px;line-height:1.5;color:#4b5563;margin:0;}' +
+            '@keyframes spin{to{transform:rotate(360deg);}}';
+          popupDoc.head.appendChild(style);
+        }
+
+        if (popupDoc.body) {
+          popupDoc.body.innerHTML = '';
+          var card = popupDoc.createElement('div');
+          card.className = 'card';
+
+          var spinner = popupDoc.createElement('div');
+          spinner.className = 'spinner';
+          card.appendChild(spinner);
+
+          var title = popupDoc.createElement('p');
+          title.className = 'title';
+          title.textContent = 'Opening customer login';
+          card.appendChild(title);
+
+          var text = popupDoc.createElement('p');
+          text.className = 'text';
+          text.textContent = 'Please wait while we securely redirect you to the Shopify login screen.';
+          card.appendChild(text);
+
+          popupDoc.body.appendChild(card);
+        }
       } catch (error) {}
 
       try {
