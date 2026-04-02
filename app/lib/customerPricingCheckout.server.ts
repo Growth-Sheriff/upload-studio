@@ -103,6 +103,28 @@ export interface PreparedCustomPricingQuote {
   productTitle: string
   productHandle: string | null
   resolvedVariant: SheetVariantResolution | null
+  requestedQuantity: number
+}
+
+export interface CustomPricingJobItemInput {
+  uploadId: string
+  quantity: number
+  selectedVariantId?: string | null
+}
+
+export interface PreparedCustomPricingJobQuote {
+  shop: {
+    id: string
+    shopDomain: string
+    accessToken: string
+  }
+  pricingContext: CustomerPricingContext
+  currencyCode: string
+  totalPrice: number
+  formattedTotalPrice: string
+  totalBillableLengthIn: number
+  totalRequestedQuantity: number
+  items: PreparedCustomPricingQuote[]
 }
 
 function parsePositiveNumber(value: unknown): number | null {
@@ -196,6 +218,39 @@ export async function prepareCustomPricingQuote({
   quantity: number
   selectedVariantId?: string | null
 }): Promise<PreparedCustomPricingQuote> {
+  const preparedJob = await prepareCustomPricingJobQuote({
+    shopDomain,
+    loggedInCustomerId,
+    items: [{ uploadId, quantity, selectedVariantId }],
+  })
+
+  return preparedJob.items[0]
+}
+
+export async function prepareCustomPricingJobQuote({
+  shopDomain,
+  loggedInCustomerId,
+  items,
+}: {
+  shopDomain: string
+  loggedInCustomerId: string | null
+  items: CustomPricingJobItemInput[]
+}): Promise<PreparedCustomPricingJobQuote> {
+  const normalizedItems = items
+    .map((item) => ({
+      uploadId: String(item.uploadId || '').trim(),
+      quantity: Math.max(1, Math.floor(Number(item.quantity) || 1)),
+      selectedVariantId:
+        item.selectedVariantId != null && String(item.selectedVariantId).trim()
+          ? String(item.selectedVariantId).trim()
+          : null,
+    }))
+    .filter((item) => item.uploadId)
+
+  if (!normalizedItems.length) {
+    throw new Error('Missing uploadId')
+  }
+
   const shop = await prisma.shop.findUnique({
     where: { shopDomain },
     select: {
@@ -212,165 +267,239 @@ export async function prepareCustomPricingQuote({
     throw new Error('Shop not found')
   }
 
-  const upload = await prisma.upload.findFirst({
-    where: { id: uploadId, shopId: shop.id },
-    select: {
-      id: true,
-      productId: true,
-      variantId: true,
-      customerId: true,
-      items: {
-        orderBy: { createdAt: 'asc' },
-        take: 1,
-        select: {
-          originalName: true,
-          storageKey: true,
-          thumbnailKey: true,
-          preflightStatus: true,
-          preflightResult: true,
-        },
-      },
-    },
-  })
-
-  if (!upload) {
-    throw new Error('Upload not found')
-  }
-
   const normalizedLoggedInCustomerId = normalizeCustomerId(loggedInCustomerId)
-  const uploadCustomerId = normalizeCustomerId(upload.customerId)
-  if (uploadCustomerId && normalizedLoggedInCustomerId && uploadCustomerId !== normalizedLoggedInCustomerId) {
-    throw new Error('Upload does not belong to the logged in customer')
-  }
-
   const settings = applyCustomerPricingDefaultsForShop(shop.shopDomain, shop.settings)
-  const pricingContext = resolveCustomerPricingContext(
-    settings,
-    normalizedLoggedInCustomerId,
-    upload.productId
-  )
-
-  if (!pricingContext.hasCustomPricing || pricingContext.pricingMode === 'standard_variant') {
-    throw new Error('Custom pricing is not active for this customer and product')
-  }
-
-  const measurement = extractVipUploadMeasurement(upload.items, shop.shopDomain)
-  if (!measurement) {
-    throw new Error('Upload measurement is not ready')
-  }
-
-  const productId = normalizeProductId(upload.productId)
-  if (!productId) {
-    throw new Error('Upload product is missing')
-  }
-
-  const firstItem = upload.items[0]
   const storageConfig = getStorageConfig({
     storageProvider: shop.storageProvider,
     storageConfig: (shop.storageConfig as Record<string, string> | null) || null,
   })
-  const uploadUrl = firstItem?.storageKey
-    ? await getDownloadSignedUrl(storageConfig, firstItem.storageKey, 30 * 24 * 3600)
-    : null
-  const thumbnailSource = firstItem?.thumbnailKey || firstItem?.storageKey || null
-  const thumbnailUrl = thumbnailSource
-    ? await getDownloadSignedUrl(storageConfig, thumbnailSource, 30 * 24 * 3600)
-    : null
+  const productCache = new Map<
+    string,
+    {
+      builderConfig: Record<string, unknown> | null
+      productData: ProductQueryResponse
+      optionDefs: ProductOptionDef[]
+      variants: ProductVariantDef[]
+      variantLimits: BuilderLimits
+    }
+  >()
 
-  const [productConfig, productData] = await Promise.all([
-    prisma.productConfig.findFirst({
-      where: {
-        shopId: shop.id,
-        OR: [{ productId: upload.productId || '' }, { productId }],
-      },
+  async function prepareSingleItem(
+    itemInput: CustomPricingJobItemInput
+  ): Promise<PreparedCustomPricingQuote> {
+    const upload = await prisma.upload.findFirst({
+      where: { id: itemInput.uploadId, shopId: shop.id },
       select: {
-        builderConfig: true,
+        id: true,
+        productId: true,
+        variantId: true,
+        customerId: true,
+        items: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            originalName: true,
+            storageKey: true,
+            thumbnailKey: true,
+            preflightStatus: true,
+            preflightResult: true,
+          },
+        },
       },
-    }),
-    shopifyGraphQL<ProductQueryResponse>(shop.shopDomain, shop.accessToken, PRODUCT_VARIANTS_QUERY, {
-      id: productId,
-    }),
-  ])
-
-  if (!productData?.product) {
-    throw new Error('Product not found')
-  }
-
-  const builderConfig = (productConfig?.builderConfig as Record<string, unknown> | null) || null
-  const { optionDefs, variants } = buildVariantMatrix(productData.product)
-  const variantLimits = buildVariantLimits(productData.product, builderConfig)
-  const pricePerInch = pricingContext.pricePerInch || pricingContext.businessPricePerInch
-  let resolvedVariant: SheetVariantResolution | null = null
-  let quote: CustomPricedQuote | null = null
-
-  if (pricingContext.pricingMode === 'measured_length') {
-    quote = calculateMeasuredLengthQuote(measurement, pricePerInch)
-    const validation = validateCustomQuoteAgainstLimits(quote, variantLimits, 'Custom design')
-    if (!validation.ok) {
-      throw new Error(validation.reason || 'Design is outside product limits')
-    }
-  } else if (pricingContext.pricingMode === 'variant_length') {
-    const resolution = resolveSheetVariant({
-      widthIn: measurement.widthIn,
-      heightIn: measurement.heightIn,
-      quantity: Math.max(1, Math.floor(quantity)),
-      variants,
-      optionDefs,
-      selectedVariantId: selectedVariantId || null,
-      config: buildEffectiveResolveConfig(builderConfig),
     })
 
-    if (!resolution) {
-      throw new Error('No product variant can fit this upload with the current quantity and available sheet sizes.')
+    if (!upload) {
+      throw new Error('Upload not found')
     }
 
-    const variantLengthQuote = calculateVariantLengthQuote({
+    const uploadCustomerId = normalizeCustomerId(upload.customerId)
+    if (
+      uploadCustomerId &&
+      normalizedLoggedInCustomerId &&
+      uploadCustomerId !== normalizedLoggedInCustomerId
+    ) {
+      throw new Error('Upload does not belong to the logged in customer')
+    }
+
+    const pricingContext = resolveCustomerPricingContext(
+      settings,
+      normalizedLoggedInCustomerId,
+      upload.productId
+    )
+
+    if (!pricingContext.hasCustomPricing || pricingContext.pricingMode === 'standard_variant') {
+      throw new Error('Custom pricing is not active for this customer and product')
+    }
+
+    const measurement = extractVipUploadMeasurement(upload.items, shop.shopDomain)
+    if (!measurement) {
+      throw new Error('Upload measurement is not ready')
+    }
+
+    const productId = normalizeProductId(upload.productId)
+    if (!productId) {
+      throw new Error('Upload product is missing')
+    }
+
+    const firstItem = upload.items[0]
+    const uploadUrl = firstItem?.storageKey
+      ? await getDownloadSignedUrl(storageConfig, firstItem.storageKey, 30 * 24 * 3600)
+      : null
+    const thumbnailSource = firstItem?.thumbnailKey || firstItem?.storageKey || null
+    const thumbnailUrl = thumbnailSource
+      ? await getDownloadSignedUrl(storageConfig, thumbnailSource, 30 * 24 * 3600)
+      : null
+
+    let cachedProduct = productCache.get(productId)
+    if (!cachedProduct) {
+      const [productConfig, productData] = await Promise.all([
+        prisma.productConfig.findFirst({
+          where: {
+            shopId: shop.id,
+            OR: [{ productId: upload.productId || '' }, { productId }],
+          },
+          select: {
+            builderConfig: true,
+          },
+        }),
+        shopifyGraphQL<ProductQueryResponse>(
+          shop.shopDomain,
+          shop.accessToken,
+          PRODUCT_VARIANTS_QUERY,
+          {
+            id: productId,
+          }
+        ),
+      ])
+
+      if (!productData?.product) {
+        throw new Error('Product not found')
+      }
+
+      const builderConfig =
+        (productConfig?.builderConfig as Record<string, unknown> | null) || null
+      const { optionDefs, variants } = buildVariantMatrix(productData.product)
+      const variantLimits = buildVariantLimits(productData.product, builderConfig)
+
+      cachedProduct = {
+        builderConfig,
+        productData,
+        optionDefs,
+        variants,
+        variantLimits,
+      }
+      productCache.set(productId, cachedProduct)
+    }
+
+    const pricePerInch = pricingContext.pricePerInch || pricingContext.businessPricePerInch
+    let resolvedVariant: SheetVariantResolution | null = null
+    let quote: CustomPricedQuote | null = null
+
+    if (pricingContext.pricingMode === 'measured_length') {
+      quote = calculateMeasuredLengthQuote(measurement, pricePerInch)
+      quote.billableLengthIn = Number((quote.billableLengthIn * itemInput.quantity).toFixed(2))
+      quote.totalPrice = Number((quote.billableLengthIn * quote.pricePerInch).toFixed(2))
+      quote.formattedTotalPrice = quote.totalPrice.toFixed(2)
+      const validation = validateCustomQuoteAgainstLimits(quote, cachedProduct.variantLimits, 'Custom design')
+      if (!validation.ok) {
+        throw new Error(validation.reason || 'Design is outside product limits')
+      }
+    } else if (pricingContext.pricingMode === 'variant_length') {
+      const resolution = resolveSheetVariant({
+        widthIn: measurement.widthIn,
+        heightIn: measurement.heightIn,
+        quantity: itemInput.quantity,
+        variants: cachedProduct.variants,
+        optionDefs: cachedProduct.optionDefs,
+        selectedVariantId: itemInput.selectedVariantId || null,
+        config: buildEffectiveResolveConfig(cachedProduct.builderConfig),
+      })
+
+      if (!resolution) {
+        throw new Error(
+          'No product variant can fit this upload with the current quantity and available sheet sizes.'
+        )
+      }
+
+      const variantLengthQuote = calculateVariantLengthQuote({
+        measurement,
+        pricePerInch,
+        variantTitle: resolution.selectedVariantTitle,
+        sheetsNeeded: resolution.sheetsNeeded,
+      })
+
+      if (!variantLengthQuote) {
+        throw new Error('Failed to calculate business quote from the selected variant')
+      }
+
+      const parsedSheetSize = parseSheetSizeFromTitle(resolution.selectedVariantTitle)
+      if (!parsedSheetSize || measurement.widthIn > parsedSheetSize.widthIn + 0.001) {
+        throw new Error('Business design width exceeds the selected sheet width')
+      }
+
+      resolvedVariant = resolution
+      quote = variantLengthQuote
+    } else {
+      throw new Error('Unsupported custom pricing mode')
+    }
+
+    if (!quote) {
+      throw new Error('Failed to calculate custom quote')
+    }
+
+    return {
+      shop: {
+        id: shop.id,
+        shopDomain: shop.shopDomain,
+        accessToken: shop.accessToken,
+      },
+      upload: {
+        id: upload.id,
+        productId: upload.productId,
+        variantId: upload.variantId,
+        customerId: upload.customerId,
+        fileName: firstItem?.originalName || null,
+        uploadUrl,
+        thumbnailUrl,
+      },
+      pricingContext,
       measurement,
-      pricePerInch,
-      variantTitle: resolution.selectedVariantTitle,
-      sheetsNeeded: resolution.sheetsNeeded,
-    })
-
-    if (!variantLengthQuote) {
-      throw new Error('Failed to calculate business quote from the selected variant')
+      quote,
+      currencyCode: String(cachedProduct.productData.shop?.currencyCode || 'USD').toUpperCase(),
+      productTitle: cachedProduct.productData.product?.title || 'Custom Transfer',
+      productHandle: cachedProduct.productData.product?.handle || null,
+      resolvedVariant,
+      requestedQuantity: itemInput.quantity,
     }
-
-    const parsedSheetSize = parseSheetSizeFromTitle(resolution.selectedVariantTitle)
-    if (!parsedSheetSize || measurement.widthIn > parsedSheetSize.widthIn + 0.001) {
-      throw new Error('Business design width exceeds the selected sheet width')
-    }
-
-    resolvedVariant = resolution
-    quote = variantLengthQuote
-  } else {
-    throw new Error('Unsupported custom pricing mode')
   }
 
-  if (!quote) {
-    throw new Error('Failed to calculate custom quote')
+  const preparedItems = await Promise.all(normalizedItems.map((item) => prepareSingleItem(item)))
+  const firstPrepared = preparedItems[0]
+
+  for (const preparedItem of preparedItems) {
+    if (preparedItem.currencyCode !== firstPrepared.currencyCode) {
+      throw new Error('Custom pricing items returned mismatched currencies')
+    }
   }
+
+  const totalPrice = Number(
+    preparedItems.reduce((sum, item) => sum + item.quote.totalPrice, 0).toFixed(2)
+  )
+  const totalBillableLengthIn = Number(
+    preparedItems.reduce((sum, item) => sum + item.quote.billableLengthIn, 0).toFixed(2)
+  )
+  const totalRequestedQuantity = preparedItems.reduce(
+    (sum, item) => sum + Math.max(1, item.requestedQuantity),
+    0
+  )
 
   return {
-    shop: {
-      id: shop.id,
-      shopDomain: shop.shopDomain,
-      accessToken: shop.accessToken,
-    },
-    upload: {
-      id: upload.id,
-      productId: upload.productId,
-      variantId: upload.variantId,
-      customerId: upload.customerId,
-      fileName: firstItem?.originalName || null,
-      uploadUrl,
-      thumbnailUrl,
-    },
-    pricingContext,
-    measurement,
-    quote,
-    currencyCode: String(productData.shop?.currencyCode || 'USD').toUpperCase(),
-    productTitle: productData.product.title || 'Custom Transfer',
-    productHandle: productData.product.handle || null,
-    resolvedVariant,
+    shop: firstPrepared.shop,
+    pricingContext: firstPrepared.pricingContext,
+    currencyCode: firstPrepared.currencyCode,
+    totalPrice,
+    formattedTotalPrice: totalPrice.toFixed(2),
+    totalBillableLengthIn,
+    totalRequestedQuantity,
+    items: preparedItems,
   }
 }

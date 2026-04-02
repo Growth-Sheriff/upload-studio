@@ -107,7 +107,7 @@
         <!-- Upload Section -->
         {% if section.settings.show_upload_section %}
           <div class="border-2 border-dashed border-gray-300 bg-gray-50 rounded p-6 text-center mb-4 ul-main-upload-box">
-            <input id="{{ upload_input_id }}" type="file" class="ul-main-upload-input sr-only" accept=".png,image/png">
+            <input id="{{ upload_input_id }}" type="file" class="ul-main-upload-input sr-only" accept=".png,image/png" multiple>
             <label for="{{ upload_input_id }}" class="ul-main-upload-trigger inline-flex items-center justify-center bg-amazon-yellow hover:brightness-95 text-black border border-black/20 shadow-sm font-medium py-2 px-6 rounded-full text-sm mb-2 cursor-pointer" tabindex="0" role="button">
               {{ section.settings.upload_button_text | escape }}
             </label>
@@ -123,6 +123,7 @@
                 <button type="button" class="ul-main-upload-remove rounded bg-red-500 px-3 py-2 text-xs font-semibold text-white">Remove</button>
               </div>
             </div>
+            <div class="ul-main-custom-queue hidden mt-4 text-left"></div>
             <div class="ul-main-upload-loading hidden mt-4 rounded-lg border border-gray-200 bg-white px-4 py-3 text-left text-sm text-gray-700">
               <div class="font-medium">Processing upload...</div>
               <div class="ul-main-upload-loading-text mt-1 text-xs text-gray-500">Preparing file</div>
@@ -250,7 +251,7 @@
         <div class="ul-main-vip-preview-card hidden mb-6 overflow-hidden rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
-              <div class="text-sm font-semibold text-slate-900">VIP page preview</div>
+              <div class="text-sm font-semibold text-slate-900">Custom quote preview</div>
               <div class="ul-main-vip-preview-summary mt-1 text-xs leading-5 text-slate-600">
                 Upload a PNG to see the billed page with live ruler guides.
               </div>
@@ -279,6 +280,7 @@
           </div>
 
           <div class="ul-main-vip-preview-canvas hidden mt-4">
+            <div class="ul-main-vip-preview-list hidden space-y-4"></div>
             <div class="ul-main-vip-preview-ruler-shell">
               <div class="ul-main-vip-preview-corner"></div>
               <div class="ul-main-vip-preview-top-ruler">
@@ -382,22 +384,24 @@
       return null;
     }
 
-    function applyServerMeasurement(payload) {
+    function applyServerMeasurement(payload, targetState) {
       if (!payload) return false;
 
-      state.widthPx = parseNonNegativeNumber(getPayloadField(payload, 'widthPx')) || state.widthPx || 0;
-      state.heightPx = parseNonNegativeNumber(getPayloadField(payload, 'heightPx')) || state.heightPx || 0;
-      state.trimmedWidthPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedWidthPx')) || 0;
-      state.trimmedHeightPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedHeightPx')) || 0;
-      state.trimmedOffsetXPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedOffsetXPx')) || 0;
-      state.trimmedOffsetYPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedOffsetYPx')) || 0;
-      state.embeddedDpi = parseNonNegativeNumber(getPayloadField(payload, 'dpi')) || state.embeddedDpi || 0;
-      state.effectiveDpi = parseNonNegativeNumber(getPayloadField(payload, 'effectiveDpi')) || state.effectiveDpi || 0;
+      var target = targetState || state;
+
+      target.widthPx = parseNonNegativeNumber(getPayloadField(payload, 'widthPx')) || target.widthPx || 0;
+      target.heightPx = parseNonNegativeNumber(getPayloadField(payload, 'heightPx')) || target.heightPx || 0;
+      target.trimmedWidthPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedWidthPx')) || 0;
+      target.trimmedHeightPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedHeightPx')) || 0;
+      target.trimmedOffsetXPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedOffsetXPx')) || 0;
+      target.trimmedOffsetYPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedOffsetYPx')) || 0;
+      target.embeddedDpi = parseNonNegativeNumber(getPayloadField(payload, 'dpi')) || target.embeddedDpi || 0;
+      target.effectiveDpi = parseNonNegativeNumber(getPayloadField(payload, 'effectiveDpi')) || target.effectiveDpi || 0;
       var nextMeasurementMode = getPayloadField(payload, 'measurementMode');
-      state.measurementMode =
+      target.measurementMode =
         typeof nextMeasurementMode === 'string' && nextMeasurementMode
           ? String(nextMeasurementMode)
-          : state.measurementMode;
+          : target.measurementMode;
 
       var confirmedInches = getServerConfirmedUploadInches(payload);
       if (!confirmedInches) return false;
@@ -407,8 +411,8 @@
         return false;
       }
 
-      state.widthIn = confirmedInches.widthIn;
-      state.heightIn = confirmedInches.heightIn;
+      target.widthIn = confirmedInches.widthIn;
+      target.heightIn = confirmedInches.heightIn;
       return true;
     }
 
@@ -428,6 +432,7 @@
     var uploadLoadingText = root.querySelector('.ul-main-upload-loading-text');
     var uploadProgress = root.querySelector('.ul-main-upload-progress');
     var uploadFeedback = root.querySelector('.ul-main-upload-feedback');
+    var customQueueEl = root.querySelector('.ul-main-custom-queue');
     var uploadThumb = root.querySelector('.ul-main-upload-thumb');
     var uploadName = root.querySelector('.ul-main-upload-name');
     var uploadMeta = root.querySelector('.ul-main-upload-meta');
@@ -452,6 +457,7 @@
     var vipPreviewModeChip = root.querySelector('.ul-main-vip-preview-mode-chip');
     var vipPreviewEmpty = root.querySelector('.ul-main-vip-preview-empty');
     var vipPreviewCanvas = root.querySelector('.ul-main-vip-preview-canvas');
+    var vipPreviewList = root.querySelector('.ul-main-vip-preview-list');
     var vipPreviewFootnote = root.querySelector('.ul-main-vip-preview-footnote');
     var vipPreviewTopTrack = root.querySelector('.ul-main-vip-preview-top-track');
     var vipPreviewLeftTrack = root.querySelector('.ul-main-vip-preview-left-track');
@@ -505,7 +511,9 @@
       preferredVariantId: productData.selectedVariantId || null,
       selectedVariantId: productData.selectedVariantId || null,
       selectedResult: null,
-      lastFile: null
+      lastFile: null,
+      customItems: [],
+      activeCustomItemId: ''
     };
     var resolveRequestToken = 0;
     var uploadFlowToken = 0;
@@ -529,7 +537,9 @@
       quoteVariantTitle: '',
       quoteSheetLabel: '',
       quoteSheetsNeeded: null,
-      quoteDesignsPerSheet: null
+      quoteDesignsPerSheet: null,
+      quoteItems: [],
+      totalRequestedQuantity: 0
     };
 
     function moneyFromCents(cents) {
@@ -765,6 +775,157 @@
       customerPricing.quoteSheetLabel = '';
       customerPricing.quoteSheetsNeeded = null;
       customerPricing.quoteDesignsPerSheet = null;
+      customerPricing.quoteItems = [];
+      customerPricing.totalRequestedQuantity = 0;
+    }
+
+    function markCustomQueueQuoteDirty() {
+      resetVipQuoteState();
+      if (hasCustomQueueItems()) {
+        customerPricing.quoteStatus = 'loading';
+      }
+    }
+
+    function getCustomQueueItems() {
+      return Array.isArray(state.customItems) ? state.customItems : [];
+    }
+
+    function hasCustomQueueItems() {
+      return getCustomQueueItems().length > 0;
+    }
+
+    function createCustomQueueItem(file) {
+      return {
+        id: 'tmp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+        uploadId: '',
+        fileName: file && file.name ? file.name : '',
+        fileSize: file && file.size ? file.size : 0,
+        localPreviewUrl: file && window.URL && window.URL.createObjectURL ? window.URL.createObjectURL(file) : '',
+        originalUrl: '',
+        thumbnailUrl: '',
+        widthPx: 0,
+        heightPx: 0,
+        trimmedWidthPx: 0,
+        trimmedHeightPx: 0,
+        trimmedOffsetXPx: 0,
+        trimmedOffsetYPx: 0,
+        embeddedDpi: 0,
+        effectiveDpi: 0,
+        measurementMode: null,
+        widthIn: 0,
+        heightIn: 0,
+        requestedQuantity: 1,
+        selectedVariantId: '',
+        selectedVariantTitle: '',
+        selectedSheetLabel: '',
+        sheetsNeeded: 0,
+        designsPerSheet: 0,
+        billableLengthIn: 0,
+        totalPrice: null,
+        quoteStatus: 'uploading',
+        uploadStatus: 'uploading',
+        error: '',
+        lastFile: file || null
+      };
+    }
+
+    function revokeCustomItemPreviewUrl(item) {
+      if (!item || !item.localPreviewUrl || !window.URL || !window.URL.revokeObjectURL) return;
+      try {
+        window.URL.revokeObjectURL(item.localPreviewUrl);
+      } catch (error) {}
+      item.localPreviewUrl = '';
+    }
+
+    function getCustomQueueItemById(itemId) {
+      var items = getCustomQueueItems();
+      for (var i = 0; i < items.length; i++) {
+        if (String(items[i].id) === String(itemId) || String(items[i].uploadId) === String(itemId)) {
+          return items[i];
+        }
+      }
+      return null;
+    }
+
+    function setActiveCustomQueueItem(itemId) {
+      var item = getCustomQueueItemById(itemId);
+      if (!item) return;
+
+      state.activeCustomItemId = item.uploadId || item.id;
+      state.uploadId = item.uploadId || '';
+      state.originalUrl = item.originalUrl || '';
+      state.thumbnailUrl = item.thumbnailUrl || '';
+      state.fileName = item.fileName || '';
+      state.widthPx = item.widthPx || 0;
+      state.heightPx = item.heightPx || 0;
+      state.trimmedWidthPx = item.trimmedWidthPx || 0;
+      state.trimmedHeightPx = item.trimmedHeightPx || 0;
+      state.trimmedOffsetXPx = item.trimmedOffsetXPx || 0;
+      state.trimmedOffsetYPx = item.trimmedOffsetYPx || 0;
+      state.embeddedDpi = item.embeddedDpi || 0;
+      state.effectiveDpi = item.effectiveDpi || 0;
+      state.measurementMode = item.measurementMode || null;
+      state.widthIn = item.widthIn || 0;
+      state.heightIn = item.heightIn || 0;
+      state.quantity = item.requestedQuantity || 1;
+      state.selectedVariantId = item.selectedVariantId || '';
+      state.selectedResult = item.selectedVariantId
+        ? {
+            selectedVariantId: item.selectedVariantId || '',
+            selectedVariantTitle: item.selectedVariantTitle || '',
+            selectedSheetLabel: item.selectedSheetLabel || '',
+            sheetsNeeded: item.sheetsNeeded || 1,
+            designsPerSheet: item.designsPerSheet || 0
+          }
+        : null;
+    }
+
+    function removeCustomQueueItem(itemId) {
+      var nextItems = [];
+      var removedCurrent = false;
+      getCustomQueueItems().forEach(function(item) {
+        if (String(item.id) === String(itemId) || String(item.uploadId) === String(itemId)) {
+          revokeCustomItemPreviewUrl(item);
+          if (String(state.activeCustomItemId) === String(item.uploadId || item.id)) {
+            removedCurrent = true;
+          }
+          return;
+        }
+        nextItems.push(item);
+      });
+      state.customItems = nextItems;
+      if (!state.customItems.length) {
+        state.activeCustomItemId = '';
+      } else if (removedCurrent || !getCustomQueueItemById(state.activeCustomItemId)) {
+        setActiveCustomQueueItem(state.customItems[0].uploadId || state.customItems[0].id);
+      }
+    }
+
+    function resetCustomQueue() {
+      getCustomQueueItems().forEach(function(item) {
+        revokeCustomItemPreviewUrl(item);
+      });
+      state.customItems = [];
+      state.activeCustomItemId = '';
+    }
+
+    function getCustomQueueReadyItems() {
+      return getCustomQueueItems().filter(function(item) {
+        return item && item.uploadId && item.quoteStatus === 'ready' && !item.error;
+      });
+    }
+
+    function customQueueHasErrors() {
+      return getCustomQueueItems().some(function(item) {
+        return item && item.error;
+      });
+    }
+
+    function customQueueAllReady() {
+      var items = getCustomQueueItems();
+      return items.length > 0 && items.every(function(item) {
+        return item && item.uploadId && item.quoteStatus === 'ready' && !item.error;
+      });
     }
 
     function clearError() {
@@ -777,6 +938,114 @@
       if (!uploadError) return;
       uploadError.textContent = message;
       uploadError.classList.remove('hidden');
+    }
+
+    function syncUploadInputMode() {
+      if (!uploadInput) return;
+      uploadInput.multiple = hasCustomPricingActive();
+    }
+
+    function renderCustomQueue() {
+      if (!customQueueEl) return;
+
+      if (!hasCustomPricingActive() || !hasCustomQueueItems()) {
+        customQueueEl.innerHTML = '';
+        customQueueEl.classList.add('hidden');
+        return;
+      }
+
+      customQueueEl.classList.remove('hidden');
+
+      var itemsHtml = getCustomQueueItems().map(function(item) {
+        var previewSrc = item.thumbnailUrl || item.originalUrl || item.localPreviewUrl || '';
+        var metaParts = [];
+        if (item.widthPx && item.heightPx) metaParts.push(item.widthPx + ' x ' + item.heightPx + ' px');
+        if (item.embeddedDpi) metaParts.push('File ' + item.embeddedDpi + ' DPI');
+        if (item.widthIn && item.heightIn) {
+          metaParts.push(formatInches(Math.min(item.widthIn, item.heightIn)) + ' x ' + formatInches(Math.max(item.widthIn, item.heightIn)));
+        }
+        var summaryText = '';
+        if (item.selectedVariantTitle) {
+          summaryText = item.selectedVariantTitle;
+          if (item.sheetsNeeded) {
+            summaryText += ' • ' + item.sheetsNeeded + ' sheet' + (item.sheetsNeeded === 1 ? '' : 's');
+          }
+        } else if (item.billableLengthIn) {
+          summaryText = 'Billable length ' + formatInches(item.billableLengthIn);
+        } else if (item.quoteStatus === 'processing' || item.quoteStatus === 'uploading' || item.quoteStatus === 'measuring') {
+          summaryText = 'Processing file...';
+        }
+
+        var statusToneClass =
+          item.error
+            ? 'is-error'
+            : item.quoteStatus === 'ready'
+              ? 'is-ready'
+              : 'is-pending';
+        var statusLabel = item.error
+          ? item.error
+          : item.quoteStatus === 'ready'
+            ? 'Quote ready'
+            : 'Processing upload';
+        var itemTotalText = item.totalPrice != null
+          ? formatMoneyValue(item.totalPrice, customerPricing.currency)
+          : 'Pending';
+        var itemId = item.uploadId || item.id;
+        var isActive = String(state.activeCustomItemId) === String(itemId);
+
+        return '' +
+          '<div class="ul-main-custom-queue-item' + (isActive ? ' is-active' : '') + ' rounded-2xl border bg-white p-4 shadow-sm" data-queue-item-id="' + itemId + '">' +
+            '<div class="ul-main-custom-queue-row flex items-start gap-3">' +
+              '<div class="ul-main-custom-thumb h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">' +
+                (previewSrc
+                  ? '<img src="' + previewSrc + '" alt="' + (item.fileName || 'Upload preview').replace(/"/g, '&quot;') + '" class="h-full w-full object-cover">'
+                  : '<div class="flex h-full w-full items-center justify-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">PNG</div>') +
+              '</div>' +
+              '<div class="ul-main-custom-body min-w-0 flex-1">' +
+                '<div class="ul-main-custom-head flex flex-wrap items-start justify-between gap-3">' +
+                  '<div class="ul-main-custom-main min-w-0 flex-1">' +
+                    '<button type="button" class="ul-main-custom-queue-activate ul-main-custom-title block max-w-full truncate text-left text-sm font-semibold text-slate-900 hover:text-slate-700" data-queue-activate="' + itemId + '">' + (item.fileName || 'Uploaded file') + '</button>' +
+                    '<div class="ul-main-custom-meta mt-1 text-xs text-slate-500">' + (metaParts.join(' • ') || 'Waiting for file measurement...') + '</div>' +
+                    '<div class="ul-main-custom-summary mt-2 text-xs font-medium text-slate-700">' + (summaryText || '&nbsp;') + '</div>' +
+                  '</div>' +
+                  '<div class="ul-main-custom-price text-right">' +
+                    '<div class="text-xs uppercase tracking-wide text-slate-400">Item total</div>' +
+                    '<div class="mt-1 text-sm font-semibold text-slate-900">' + itemTotalText + '</div>' +
+                  '</div>' +
+                '</div>' +
+                '<div class="ul-main-custom-controls mt-3 flex flex-wrap items-center justify-between gap-3">' +
+                  '<div class="ul-main-custom-qty inline-flex items-center rounded-full border border-slate-200 bg-slate-50 p-1">' +
+                    '<button type="button" class="ul-main-custom-qty-btn inline-flex h-8 w-8 items-center justify-center rounded-full text-base font-semibold text-slate-700 hover:bg-white" data-queue-qty="' + itemId + '" data-delta="-1">−</button>' +
+                    '<input type="number" min="1" step="1" value="' + (item.requestedQuantity || 1) + '" class="ul-main-custom-qty-input w-16 border-0 bg-transparent text-center text-sm font-semibold text-slate-900 focus:outline-none focus:ring-0" data-queue-qty-input="' + itemId + '">' +
+                    '<button type="button" class="ul-main-custom-qty-btn inline-flex h-8 w-8 items-center justify-center rounded-full text-base font-semibold text-slate-700 hover:bg-white" data-queue-qty="' + itemId + '" data-delta="1">+</button>' +
+                  '</div>' +
+                  '<div class="flex flex-wrap items-center gap-2">' +
+                    '<span class="ul-main-custom-status inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold ' + statusToneClass + '">' + statusLabel + '</span>' +
+                    '<button type="button" class="ul-main-custom-remove inline-flex items-center rounded-full border border-red-200 px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50" data-queue-remove="' + itemId + '">Remove</button>' +
+                  '</div>' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+      }).join('');
+
+      var totalFiles = getCustomQueueItems().length;
+      var totalCopies = getCustomQueueItems().reduce(function(sum, item) {
+        return sum + Math.max(1, Number(item.requestedQuantity) || 1);
+      }, 0);
+
+      customQueueEl.innerHTML =
+        '<div class="ul-main-custom-queue-header mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-950 px-4 py-3 text-white">' +
+          '<div>' +
+            '<div class="text-sm font-semibold">Custom pricing upload queue</div>' +
+            '<div class="mt-1 text-xs text-slate-300">Each uploaded design keeps its own quantity and quote.</div>' +
+          '</div>' +
+          '<div class="ul-main-custom-queue-header-pills flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-200">' +
+            '<span class="ul-main-custom-queue-header-pill rounded-full bg-white/10 px-3 py-1">' + totalFiles + ' file' + (totalFiles === 1 ? '' : 's') + '</span>' +
+            '<span class="ul-main-custom-queue-header-pill rounded-full bg-white/10 px-3 py-1">' + totalCopies + ' total copies</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="ul-main-custom-queue-list space-y-3">' + itemsHtml + '</div>';
     }
 
     function resetSelectionUI() {
@@ -942,6 +1211,145 @@
       }
     }
 
+    function buildPreviewBoardDataFromItem(item) {
+      if (!item || !(item.widthIn > 0) || !(item.heightIn > 0)) return null;
+
+      var billableWidthIn = Math.min(item.widthIn, item.heightIn);
+      var billableLengthIn = Math.max(item.widthIn, item.heightIn);
+      var imageSrc = item.thumbnailUrl || item.originalUrl || item.localPreviewUrl || '';
+      var hasArtwork =
+        item.trimmedWidthPx > 0 &&
+        item.trimmedHeightPx > 0 &&
+        item.widthPx > 0 &&
+        item.heightPx > 0 &&
+        (
+          item.trimmedWidthPx < item.widthPx ||
+          item.trimmedHeightPx < item.heightPx ||
+          item.trimmedOffsetXPx > 0 ||
+          item.trimmedOffsetYPx > 0
+        );
+      var artworkBounds = null;
+      if (hasArtwork) {
+        var dpi = item.effectiveDpi > 0 ? item.effectiveDpi : 300;
+        artworkBounds = {
+          widthIn: Number((item.trimmedWidthPx / dpi).toFixed(2)),
+          heightIn: Number((item.trimmedHeightPx / dpi).toFixed(2)),
+          offsetXIn: Number((item.trimmedOffsetXPx / dpi).toFixed(2)),
+          offsetYIn: Number((item.trimmedOffsetYPx / dpi).toFixed(2))
+        };
+      }
+
+      return {
+        id: item.uploadId || item.id,
+        fileName: item.fileName || 'Uploaded file',
+        imageSrc: imageSrc,
+        billableWidthIn: billableWidthIn,
+        billableLengthIn: billableLengthIn,
+        artworkBounds: artworkBounds,
+        requestedQuantity: item.requestedQuantity || 1,
+        totalPrice: item.totalPrice,
+        selectedVariantTitle: item.selectedVariantTitle || '',
+        statusLabel: item.selectedVariantTitle
+          ? item.selectedVariantTitle + (item.sheetsNeeded ? ' • ' + item.sheetsNeeded + ' sheet' + (item.sheetsNeeded === 1 ? '' : 's') : '')
+          : 'Measured full page',
+      };
+    }
+
+    function renderPreviewBoardShell(item) {
+      var itemId = item.id;
+      var wrapper = document.createElement('div');
+      wrapper.className = 'ul-main-vip-preview-board rounded-[24px] border border-slate-200 bg-white/95 p-4 shadow-sm';
+      wrapper.setAttribute('data-preview-board', itemId);
+      wrapper.innerHTML =
+        '<div class="ul-main-vip-preview-board-top mb-3 flex flex-wrap items-start justify-between gap-3">' +
+          '<div class="min-w-0 flex-1">' +
+            '<button type="button" class="ul-main-vip-preview-focus ul-main-vip-preview-board-title block max-w-full truncate text-left text-sm font-semibold text-slate-900 hover:text-slate-700" data-preview-focus="' + itemId + '">' + item.fileName + '</button>' +
+            '<div class="ul-main-vip-preview-board-meta mt-1 text-xs text-slate-500">' + item.statusLabel + '</div>' +
+          '</div>' +
+          '<div class="ul-main-vip-preview-board-pills flex flex-wrap items-center gap-2">' +
+            '<span class="ul-main-vip-preview-mini-chip">Qty ' + item.requestedQuantity + '</span>' +
+            '<span class="ul-main-vip-preview-mini-chip">' + formatInches(item.billableWidthIn) + ' × ' + formatInches(item.billableLengthIn) + '</span>' +
+            '<span class="ul-main-vip-preview-mini-chip">' + (item.totalPrice != null ? formatMoneyValue(item.totalPrice, customerPricing.currency) : 'Pending') + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="ul-main-vip-preview-ruler-shell">' +
+          '<div class="ul-main-vip-preview-corner"></div>' +
+          '<div class="ul-main-vip-preview-top-ruler"><div class="ul-main-vip-preview-top-track"></div></div>' +
+          '<div class="ul-main-vip-preview-left-ruler"><div class="ul-main-vip-preview-left-track"></div></div>' +
+          '<div class="ul-main-vip-preview-stage-wrap">' +
+            '<div class="ul-main-vip-preview-stage-rail">' +
+              '<div class="ul-main-vip-preview-stage">' +
+                '<img class="ul-main-vip-preview-image hidden" alt="' + item.fileName.replace(/"/g, '&quot;') + '">' +
+                '<div class="ul-main-vip-preview-artwork hidden"></div>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="mt-3 text-[11px] leading-5 text-slate-500">' +
+          (item.artworkBounds
+            ? 'Solid frame is the billed full page. Dashed overlay marks artwork bounds for reference only.'
+            : 'Solid frame is the billed full page. No separate artwork bounds were detected.') +
+        '</div>';
+      return wrapper;
+    }
+
+    function renderPreviewBoard(wrapper, boardData) {
+      if (!wrapper || !boardData) return;
+
+      var topTrack = wrapper.querySelector('.ul-main-vip-preview-top-track');
+      var leftTrack = wrapper.querySelector('.ul-main-vip-preview-left-track');
+      var stageWrap = wrapper.querySelector('.ul-main-vip-preview-stage-wrap');
+      var stageRail = wrapper.querySelector('.ul-main-vip-preview-stage-rail');
+      var stage = wrapper.querySelector('.ul-main-vip-preview-stage');
+      var image = wrapper.querySelector('.ul-main-vip-preview-image');
+      var artwork = wrapper.querySelector('.ul-main-vip-preview-artwork');
+
+      var previewPadding = 18;
+      var availableWidth = stageWrap && stageWrap.clientWidth
+        ? Math.max(190, stageWrap.clientWidth - (previewPadding * 2))
+        : 250;
+      var scale = Math.min(16, Math.max(8, availableWidth / Math.max(boardData.billableWidthIn, 1)));
+      var stageWidth = Math.max(180, Math.round(boardData.billableWidthIn * scale));
+      var stageHeight = Math.max(220, Math.round(boardData.billableLengthIn * scale));
+
+      if (stageRail) {
+        stageRail.style.width = (stageWidth + (previewPadding * 2)) + 'px';
+        stageRail.style.height = (stageHeight + (previewPadding * 2)) + 'px';
+      }
+      if (stage) {
+        stage.style.width = stageWidth + 'px';
+        stage.style.height = stageHeight + 'px';
+      }
+
+      if (image && boardData.imageSrc) {
+        image.src = boardData.imageSrc;
+        image.classList.remove('hidden');
+      }
+
+      if (boardData.artworkBounds && artwork) {
+        artwork.classList.remove('hidden');
+        artwork.style.left = Math.max(0, Math.round(boardData.artworkBounds.offsetXIn * scale)) + 'px';
+        artwork.style.top = Math.max(0, Math.round(boardData.artworkBounds.offsetYIn * scale)) + 'px';
+        artwork.style.width = Math.max(10, Math.round(boardData.artworkBounds.widthIn * scale)) + 'px';
+        artwork.style.height = Math.max(10, Math.round(boardData.artworkBounds.heightIn * scale)) + 'px';
+      } else if (artwork) {
+        artwork.classList.add('hidden');
+        artwork.removeAttribute('style');
+      }
+
+      buildRulerMarks(topTrack, boardData.billableWidthIn, scale, 'x', previewPadding);
+      buildRulerMarks(leftTrack, boardData.billableLengthIn, scale, 'y', previewPadding);
+
+      function syncBoardRulers() {
+        if (topTrack) topTrack.style.transform = 'translateX(' + (-stageWrap.scrollLeft) + 'px)';
+        if (leftTrack) leftTrack.style.transform = 'translateY(' + (-stageWrap.scrollTop) + 'px)';
+      }
+
+      stageWrap.removeEventListener('scroll', syncBoardRulers);
+      stageWrap.addEventListener('scroll', syncBoardRulers);
+      syncBoardRulers();
+    }
+
     function syncVipPreviewRulers() {
       if (!vipPreviewStageWrap) return;
       if (vipPreviewTopTrack) {
@@ -955,104 +1363,101 @@
     function updateVipPreviewUI() {
       if (!vipPreviewCard) return;
 
-      if (!isVipPricingActive()) {
+      if (!hasCustomPricingActive()) {
         vipPreviewCard.classList.add('hidden');
         return;
       }
 
       vipPreviewCard.classList.remove('hidden');
+      var previewItems = hasCustomQueueItems()
+        ? getCustomQueueItems().map(buildPreviewBoardDataFromItem).filter(Boolean)
+        : [];
 
-      var billableWidthIn = getBillablePageWidthIn();
-      var billableLengthIn = getBillablePageLengthIn();
-      var imageSrc =
-        state.thumbnailUrl ||
-        state.originalUrl ||
-        (uploadThumb ? uploadThumb.getAttribute('src') || '' : '');
+      if (!previewItems.length && state.uploadId) {
+        var singleItem = buildPreviewBoardDataFromItem({
+          id: state.uploadId || 'active',
+          uploadId: state.uploadId,
+          fileName: state.fileName,
+          widthIn: state.widthIn,
+          heightIn: state.heightIn,
+          widthPx: state.widthPx,
+          heightPx: state.heightPx,
+          trimmedWidthPx: state.trimmedWidthPx,
+          trimmedHeightPx: state.trimmedHeightPx,
+          trimmedOffsetXPx: state.trimmedOffsetXPx,
+          trimmedOffsetYPx: state.trimmedOffsetYPx,
+          effectiveDpi: state.effectiveDpi,
+          thumbnailUrl: state.thumbnailUrl,
+          originalUrl: state.originalUrl,
+          localPreviewUrl: uploadThumb ? uploadThumb.getAttribute('src') || '' : '',
+          requestedQuantity: state.quantity,
+          totalPrice: customerPricing.quoteTotal,
+          selectedVariantTitle: customerPricing.quoteVariantTitle || (state.selectedResult && state.selectedResult.selectedVariantTitle) || '',
+          sheetsNeeded: customerPricing.quoteSheetsNeeded || (state.selectedResult && state.selectedResult.sheetsNeeded) || 0
+        });
+        if (singleItem) previewItems = [singleItem];
+      }
 
-      if (!(billableWidthIn > 0) || !(billableLengthIn > 0) || !imageSrc) {
+      if (!previewItems.length) {
         if (vipPreviewCanvas) vipPreviewCanvas.classList.add('hidden');
         if (vipPreviewEmpty) vipPreviewEmpty.classList.remove('hidden');
+        if (vipPreviewList) {
+          vipPreviewList.classList.add('hidden');
+          clearNode(vipPreviewList);
+        }
         if (vipPreviewSummary) {
-          vipPreviewSummary.textContent = state.uploadId
-            ? 'Waiting for the server to confirm the full uploaded page size before pricing.'
-            : 'Upload a PNG to see the billed page with live ruler guides.';
+          vipPreviewSummary.textContent = hasCustomQueueItems()
+            ? 'We are still measuring your uploaded files before pricing.'
+            : 'Upload one or more PNG files to see full-page ruler previews for each design.';
         }
-        if (vipPreviewBillingChip) vipPreviewBillingChip.textContent = 'Billing page pending';
+        if (vipPreviewBillingChip) vipPreviewBillingChip.textContent = 'Billing pages pending';
         if (vipPreviewArtworkChip) vipPreviewArtworkChip.textContent = 'Artwork bounds pending';
-        if (vipPreviewModeChip) vipPreviewModeChip.textContent = 'Full canvas billing';
+        if (vipPreviewModeChip) vipPreviewModeChip.textContent = isBusinessPricingActive() ? 'Business sheet pricing' : 'Full canvas billing';
         if (vipPreviewFootnote) {
-          vipPreviewFootnote.textContent = 'Billing uses the full uploaded page size. When detected, the dashed frame marks artwork bounds inside that page.';
+          vipPreviewFootnote.textContent = 'Each design preview uses the full uploaded page. Dashed overlays mark artwork bounds only for visual reference.';
         }
-        if (vipPreviewImage) {
-          vipPreviewImage.removeAttribute('src');
-          vipPreviewImage.classList.add('hidden');
-        }
-        if (vipPreviewArtwork) vipPreviewArtwork.classList.add('hidden');
-        clearNode(vipPreviewTopTrack);
-        clearNode(vipPreviewLeftTrack);
         return;
       }
 
       if (vipPreviewCanvas) vipPreviewCanvas.classList.remove('hidden');
       if (vipPreviewEmpty) vipPreviewEmpty.classList.add('hidden');
-
-      var previewPadding = 18;
-      var availableWidth = vipPreviewStageWrap && vipPreviewStageWrap.clientWidth
-        ? Math.max(190, vipPreviewStageWrap.clientWidth - (previewPadding * 2))
-        : 250;
-      var scale = Math.min(16, Math.max(9, availableWidth / Math.max(billableWidthIn, 1)));
-      var stageWidth = Math.max(180, Math.round(billableWidthIn * scale));
-      var stageHeight = Math.max(220, Math.round(billableLengthIn * scale));
-
-      if (vipPreviewStageRail) {
-        vipPreviewStageRail.style.width = (stageWidth + (previewPadding * 2)) + 'px';
-        vipPreviewStageRail.style.height = (stageHeight + (previewPadding * 2)) + 'px';
+      if (vipPreviewList) {
+        vipPreviewList.classList.remove('hidden');
+        clearNode(vipPreviewList);
+        previewItems.forEach(function(item) {
+          var board = renderPreviewBoardShell(item);
+          vipPreviewList.appendChild(board);
+          renderPreviewBoard(board, item);
+        });
       }
-      if (vipPreviewStage) {
-        vipPreviewStage.style.width = stageWidth + 'px';
-        vipPreviewStage.style.height = stageHeight + 'px';
-      }
-      if (vipPreviewImage) {
-        vipPreviewImage.src = imageSrc;
-        vipPreviewImage.classList.remove('hidden');
-      }
+      if (vipPreviewStageWrap) vipPreviewStageWrap.parentElement.classList.add('hidden');
 
-      var artworkBounds = getArtworkBoundsInches();
-      if (artworkBounds && hasSeparateArtworkBounds() && vipPreviewArtwork) {
-        vipPreviewArtwork.classList.remove('hidden');
-        vipPreviewArtwork.style.left = Math.max(0, Math.round(artworkBounds.offsetXIn * scale)) + 'px';
-        vipPreviewArtwork.style.top = Math.max(0, Math.round(artworkBounds.offsetYIn * scale)) + 'px';
-        vipPreviewArtwork.style.width = Math.max(10, Math.round(artworkBounds.widthIn * scale)) + 'px';
-        vipPreviewArtwork.style.height = Math.max(10, Math.round(artworkBounds.heightIn * scale)) + 'px';
-        if (vipPreviewArtworkChip) {
-          vipPreviewArtworkChip.textContent =
-            'Artwork bounds ' + formatInches(artworkBounds.widthIn) + ' x ' + formatInches(artworkBounds.heightIn);
-        }
-      } else if (vipPreviewArtwork) {
-        vipPreviewArtwork.classList.add('hidden');
-        vipPreviewArtwork.removeAttribute('style');
-        if (vipPreviewArtworkChip) vipPreviewArtworkChip.textContent = 'Artwork matches full page';
-      }
-
-      buildRulerMarks(vipPreviewTopTrack, billableWidthIn, scale, 'x', previewPadding);
-      buildRulerMarks(vipPreviewLeftTrack, billableLengthIn, scale, 'y', previewPadding);
-      syncVipPreviewRulers();
+      var previewTotalLength = previewItems.reduce(function(sum, item) {
+        return sum + Number(item.billableLengthIn || 0);
+      }, 0);
+      var previewTotalPages = previewItems.length;
+      var previewHasArtwork = previewItems.some(function(item) { return !!item.artworkBounds; });
 
       if (vipPreviewBillingChip) {
         vipPreviewBillingChip.textContent =
-          'Billing page ' + formatInches(billableWidthIn) + ' x ' + formatInches(billableLengthIn);
+          previewTotalPages + ' page' + (previewTotalPages === 1 ? '' : 's') + ' • ' + formatInches(previewTotalLength) + ' total billable length';
       }
-      if (vipPreviewModeChip) vipPreviewModeChip.textContent = 'Full canvas billing';
+      if (vipPreviewArtworkChip) {
+        vipPreviewArtworkChip.textContent = previewHasArtwork ? 'Artwork overlays detected' : 'Artwork matches full pages';
+      }
+      if (vipPreviewModeChip) {
+        vipPreviewModeChip.textContent = isBusinessPricingActive() ? 'Business multi-sheet pricing' : 'VIP multi-page billing';
+      }
       if (vipPreviewSummary) {
         vipPreviewSummary.textContent =
           customerPricing.quoteStatus === 'ready'
-            ? 'Server confirmed the full uploaded page. Pricing uses this full page size, not trimmed artwork.'
-            : 'We are measuring the full uploaded page and drawing artwork bounds separately for reference.';
+            ? 'Each uploaded design now has its own ruler preview, quantity, and exact quote. The total combines every ready item in the queue.'
+            : 'We are measuring each uploaded design and building a combined custom quote for the full queue.';
       }
       if (vipPreviewFootnote) {
-        vipPreviewFootnote.textContent = hasSeparateArtworkBounds()
-          ? 'The solid page frame is the billed upload size. The dashed overlay shows detected artwork bounds for visual reference only.'
-          : 'The solid page frame is the billed upload size. No separate trimmed artwork bounds were detected for this file.';
+        vipPreviewFootnote.textContent = previewHasArtwork
+          ? 'Every card shows the billed full page as the solid frame. Dashed overlays show artwork bounds only for reference.'
+          : 'Every card shows the billed full page. No separate artwork bounds were detected in the current queue.';
       }
     }
 
@@ -1063,11 +1468,7 @@
           return;
         }
         if (hasCustomPricingActive()) {
-          if (isBusinessPricingActive()) {
-            setPurchaseButtonsDisabled(!(state.uploadId && state.selectedResult && state.selectedVariantId && customerPricing.quoteStatus === 'ready' && customerPricing.quoteTotal != null));
-            return;
-          }
-          setPurchaseButtonsDisabled(!(state.uploadId && state.widthIn && state.heightIn && customerPricing.quoteStatus === 'ready' && customerPricing.quoteTotal != null));
+          setPurchaseButtonsDisabled(!(customQueueAllReady() && customerPricing.quoteStatus === 'ready' && customerPricing.quoteTotal != null));
           return;
         }
         setPurchaseButtonsDisabled(!(state.uploadId && state.selectedResult && state.selectedVariantId));
@@ -1078,11 +1479,11 @@
 
     function syncPricingVisibility() {
       if (variantPricingTable) {
-        if (isVipPricingActive()) variantPricingTable.classList.add('hidden');
+        if (hasCustomPricingActive()) variantPricingTable.classList.add('hidden');
         else variantPricingTable.classList.remove('hidden');
       }
       if (quantityRow) {
-        if (isVipPricingActive()) quantityRow.classList.add('hidden');
+        if (hasCustomPricingActive()) quantityRow.classList.add('hidden');
         else quantityRow.classList.remove('hidden');
       }
       if (buyNowBtn) {
@@ -1098,6 +1499,14 @@
           vipPricingBox.classList.add('hidden');
         }
       }
+      if (detectedBox && hasCustomPricingActive()) {
+        detectedBox.classList.add('hidden');
+      }
+      if (uploadFeedback && hasCustomPricingActive()) {
+        uploadFeedback.classList.add('hidden');
+      }
+      renderCustomQueue();
+      syncUploadInputMode();
     }
 
     function syncEffectiveRules(config) {
@@ -1126,6 +1535,8 @@
         return;
       }
 
+      var queueItems = getCustomQueueItems();
+      var queueMode = queueItems.length > 0;
       var billableLengthIn = customerPricing.quoteLengthIn || getBillablePageLengthIn();
       var billableWidthIn = getBillablePageWidthIn();
       var isBusiness = isBusinessPricingActive();
@@ -1133,7 +1544,17 @@
         ? (isBusiness ? 'Business rate: ' : 'VIP price per inch: ') + formatMoneyValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in'
         : 'Rate is loading from the server...';
       var lengthLabel = '';
-      if (isBusiness) {
+      if (queueMode) {
+        var readyCount = getCustomQueueReadyItems().length;
+        var totalFiles = queueItems.length;
+        var totalCopies = queueItems.reduce(function(sum, item) {
+          return sum + Math.max(1, Number(item.requestedQuantity) || 1);
+        }, 0);
+        lengthLabel =
+          readyCount === totalFiles
+            ? totalFiles + ' uploaded design' + (totalFiles === 1 ? '' : 's') + ', ' + totalCopies + ' total cop' + (totalCopies === 1 ? 'y' : 'ies') + '. Billable length: ' + (billableLengthIn ? billableLengthIn.toFixed(2) + '"' : 'pending')
+            : 'Waiting for all uploaded designs to finish measuring before calculating the combined quote.';
+      } else if (isBusiness) {
         if (customerPricing.quoteVariantTitle) {
           lengthLabel = 'Selected sheet: ' + customerPricing.quoteVariantTitle;
           if (customerPricing.quoteSheetsNeeded) {
@@ -1159,6 +1580,12 @@
         ? (isBusiness ? 'Business pricing: ' : 'VIP pricing: ') + customerPricing.statusLabel
         : (isBusiness ? 'Business pricing active' : 'VIP pricing active');
 
+      if (queueMode) {
+        totalLabel = customerPricing.quoteTotal != null
+          ? 'Queue total: ' + formatMoneyValue(customerPricing.quoteTotal, customerPricing.currency)
+          : 'Queue total will be returned after every file is quoted.';
+      }
+
       setVipPricingMessage(
         titleLabel,
         rateLabel,
@@ -1175,7 +1602,9 @@
       }
 
       if (detectedVariant) {
-        if (isBusiness) {
+        if (queueMode) {
+          detectedVariant.value = queueItems.length + ' queued file' + (queueItems.length === 1 ? '' : 's');
+        } else if (isBusiness) {
           detectedVariant.value = customerPricing.quoteVariantTitle || (state.selectedResult && state.selectedResult.selectedVariantTitle) || 'Business custom checkout';
         } else {
           detectedVariant.value = customerPricing.statusLabel ? customerPricing.statusLabel : 'VIP measured checkout';
@@ -1261,28 +1690,54 @@
 
     async function loadVipQuote() {
       if (!hasCustomPricingActive()) return null;
-      if (!state.uploadId || !(state.widthIn > 0) || !(state.heightIn > 0)) return null;
 
       var requestToken = ++vipQuoteRequestToken;
       customerPricing.quoteStatus = 'loading';
       updateVipPricingUI();
       syncPurchaseButtonsForCurrentState();
 
+      var queueMode = hasCustomQueueItems();
+      var requestBody;
+
+      if (queueMode) {
+        var queueItems = getCustomQueueItems();
+        var hasPendingItem = queueItems.some(function(item) {
+          return !item.uploadId || item.error || !(item.widthIn > 0) || !(item.heightIn > 0) || item.uploadStatus !== 'ready';
+        });
+        if (hasPendingItem) {
+          return null;
+        }
+        requestBody = {
+          shopDomain: shopDomain,
+          productId: String(productData.productId),
+          items: queueItems.map(function(item) {
+            return {
+              uploadId: item.uploadId,
+              quantity: item.requestedQuantity || 1,
+              selectedVariantId: item.selectedVariantId || ''
+            };
+          })
+        };
+      } else {
+        if (!state.uploadId || !(state.widthIn > 0) || !(state.heightIn > 0)) return null;
+        requestBody = {
+          shopDomain: shopDomain,
+          productId: String(productData.productId),
+          uploadId: state.uploadId,
+          quantity: state.quantity,
+          selectedVariantId:
+            state.selectedResult && state.selectedResult.selectedVariantId
+              ? state.selectedResult.selectedVariantId
+              : state.selectedVariantId
+        };
+      }
+
       try {
         var response = await fetch(apiBase + '/api/vip/quote', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
-          body: JSON.stringify({
-            shopDomain: shopDomain,
-            productId: String(productData.productId),
-            uploadId: state.uploadId,
-            quantity: state.quantity,
-            selectedVariantId:
-              state.selectedResult && state.selectedResult.selectedVariantId
-                ? state.selectedResult.selectedVariantId
-                : state.selectedVariantId
-          })
+          body: JSON.stringify(requestBody)
         });
         var data = await response.json().catch(function() { return {}; });
         if (requestToken !== vipQuoteRequestToken) return null;
@@ -1305,8 +1760,15 @@
                   ? data.quote.totalPrice
                   : data.quote && data.quote.exactTotal != null
                     ? data.quote.exactTotal
-                    : null
+                : null
         );
+        customerPricing.totalRequestedQuantity = parseNonNegativeNumber(
+          data.totalRequestedQuantity != null
+            ? data.totalRequestedQuantity
+            : data.quote && data.quote.totalRequestedQuantity != null
+              ? data.quote.totalRequestedQuantity
+              : 0
+        ) || 0;
         customerPricing.quoteLengthIn = parsePositiveNumber(
           data.billableLengthIn != null
             ? data.billableLengthIn
@@ -1351,8 +1813,39 @@
               ? data.quote.designsPerSheet
               : null
         );
+        customerPricing.quoteItems = Array.isArray(data.items)
+          ? data.items
+          : data.quote && Array.isArray(data.quote.items)
+            ? data.quote.items
+            : [];
         customerPricing.currency = String(data.currency || data.quote && data.quote.currency || customerPricing.currency || 'USD');
         customerPricing.statusLabel = String(data.statusLabel || data.quote && data.quote.statusLabel || customerPricing.statusLabel || '').trim();
+        clearError();
+        if (queueMode) {
+          customerPricing.quoteItems.forEach(function(quoteItem) {
+            var queueItem = getCustomQueueItemById(quoteItem.uploadId || '');
+            if (!queueItem) return;
+            queueItem.billableLengthIn = parsePositiveNumber(quoteItem.billableLengthIn) || 0;
+            queueItem.totalPrice = parsePositiveNumber(quoteItem.totalPrice);
+            queueItem.selectedVariantId = String(quoteItem.selectedVariantId || '');
+            queueItem.selectedVariantTitle = String(quoteItem.selectedVariantTitle || '');
+            queueItem.selectedSheetLabel = String(quoteItem.selectedSheetLabel || '');
+            queueItem.sheetsNeeded = parsePositiveNumber(quoteItem.sheetsNeeded) || 0;
+            queueItem.designsPerSheet = parsePositiveNumber(quoteItem.designsPerSheet) || 0;
+            queueItem.quoteStatus = 'ready';
+            queueItem.error = '';
+          });
+          if (!getCustomQueueItemById(state.activeCustomItemId) && getCustomQueueItems().length) {
+            setActiveCustomQueueItem(getCustomQueueItems()[0].uploadId || getCustomQueueItems()[0].id);
+          } else if (state.activeCustomItemId) {
+            setActiveCustomQueueItem(state.activeCustomItemId);
+          }
+          renderCustomQueue();
+          updateVipPreviewUI();
+          updateVipPricingUI();
+          syncPurchaseButtonsForCurrentState();
+          return data;
+        }
         if (isBusinessPricingActive() && customerPricing.quoteVariantId) {
           state.selectedResult = {
             selectedVariantId: customerPricing.quoteVariantId,
@@ -1370,6 +1863,14 @@
       } catch (error) {
         if (requestToken !== vipQuoteRequestToken) return null;
         customerPricing.quoteStatus = 'error';
+        if (queueMode) {
+          getCustomQueueItems().forEach(function(item) {
+            if (!item.error) {
+              item.quoteStatus = 'error';
+            }
+          });
+          renderCustomQueue();
+        }
         showError(error && error.message ? error.message : 'Failed to load custom quote.');
         updateVipPricingUI();
         syncPurchaseButtonsForCurrentState();
@@ -1718,10 +2219,200 @@
       return false;
     }
 
+    async function pollCustomQueueItemStatus(queueItem, uploadToken) {
+      for (var attempts = 0; attempts < 60; attempts++) {
+        if (uploadToken !== uploadFlowToken) return false;
+        var response = await fetch(apiBase + '/api/upload/status/' + encodeURIComponent(queueItem.uploadId) + '?shopDomain=' + encodeURIComponent(shopDomain));
+        if (response.ok) {
+          var data = await response.json();
+          if (uploadToken !== uploadFlowToken) return false;
+          var firstItem = data.items && data.items[0] ? data.items[0] : null;
+          if (firstItem) {
+            queueItem.thumbnailUrl = firstItem.thumbnailUrl || data.thumbnailUrl || queueItem.thumbnailUrl || '';
+            queueItem.originalUrl = firstItem.originalUrl || data.downloadUrl || queueItem.originalUrl || '';
+            applyServerMeasurement(firstItem, queueItem);
+            var measurementStatus = firstItem.measurementStatus || 'pending';
+            var orderabilityStatus = data.orderabilityStatus || '';
+
+            if (measurementStatus === 'error' || orderabilityStatus === 'blocked' || data.status === 'error') {
+              queueItem.uploadStatus = 'error';
+              queueItem.quoteStatus = 'error';
+              queueItem.error = getPreflightErrorMessage(data, firstItem);
+              renderCustomQueue();
+              updateVipPreviewUI();
+              syncPurchaseButtonsForCurrentState();
+              return false;
+            }
+
+            if (queueItem.widthIn && queueItem.heightIn && (measurementStatus === 'ready' || measurementStatus === 'warning')) {
+              queueItem.uploadStatus = 'ready';
+              queueItem.quoteStatus = 'processing';
+              queueItem.error = '';
+              if (!state.activeCustomItemId) {
+                setActiveCustomQueueItem(queueItem.uploadId || queueItem.id);
+              }
+              renderCustomQueue();
+              updateVipPreviewUI();
+              await loadVipQuote();
+              return true;
+            }
+          }
+        }
+
+        queueItem.uploadStatus = 'processing';
+        queueItem.quoteStatus = 'processing';
+        renderCustomQueue();
+        await new Promise(function(resolve) { setTimeout(resolve, 1500); });
+      }
+
+      queueItem.uploadStatus = 'error';
+      queueItem.quoteStatus = 'error';
+      queueItem.error = 'Upload finished, but the server did not confirm print size in time. Please try again.';
+      renderCustomQueue();
+      updateVipPreviewUI();
+      syncPurchaseButtonsForCurrentState();
+      return false;
+    }
+
+    async function uploadSingleCustomPricingFile(file) {
+      var queueItem = createCustomQueueItem(file);
+      state.customItems = getCustomQueueItems().concat(queueItem);
+      markCustomQueueQuoteDirty();
+      if (!state.activeCustomItemId) {
+        state.activeCustomItemId = queueItem.id;
+      }
+      renderCustomQueue();
+      updateVipPricingUI();
+      updateVipPreviewUI();
+      syncPurchaseButtonsForCurrentState();
+
+      var uploadToken = ++uploadFlowToken;
+      resolveRequestToken += 1;
+      clearError();
+
+      try {
+        var intentRes = await fetch(apiBase + '/api/upload/intent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            shopDomain: shopDomain,
+            productId: String(productData.productId),
+            mode: 'dtf',
+            fileName: file.name,
+            contentType: file.type || 'application/octet-stream',
+            fileSize: file.size,
+            customerId: root.getAttribute('data-customer-id') || null,
+            customerEmail: root.getAttribute('data-customer-email') || null
+          })
+        });
+        if (!intentRes.ok) {
+          var intentErr = await intentRes.json().catch(function() { return {}; });
+          throw new Error(intentErr.error || 'Failed to create upload intent.');
+        }
+
+        var intent = await intentRes.json();
+        if (uploadToken !== uploadFlowToken) return;
+        queueItem.uploadId = intent.uploadId;
+        queueItem.uploadStatus = 'uploading';
+        queueItem.quoteStatus = 'uploading';
+        renderCustomQueue();
+
+        var uploadStartedAt = Date.now();
+
+        await new Promise(function(resolve, reject) {
+          var xhr = new XMLHttpRequest();
+          xhr.addEventListener('load', function() {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error('Upload failed with HTTP ' + xhr.status));
+          });
+          xhr.addEventListener('error', function() {
+            reject(new Error('Network error during upload.'));
+          });
+          var storageProvider = intent.storageProvider || 'local';
+          var uploadMethod = intent.uploadMethod || (storageProvider === 'local' ? 'POST' : 'PUT');
+          xhr.open(uploadMethod, intent.uploadUrl, true);
+          if (uploadMethod === 'PUT') {
+            xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+          }
+          if (uploadMethod === 'PUT' && intent.uploadHeaders) {
+            Object.keys(intent.uploadHeaders).forEach(function(key) {
+              xhr.setRequestHeader(key, intent.uploadHeaders[key]);
+            });
+          }
+          if (uploadMethod === 'POST') {
+            var formData = new FormData();
+            formData.append('file', file);
+            formData.append('key', intent.key || '');
+            formData.append('uploadId', intent.uploadId || '');
+            formData.append('itemId', intent.itemId || '');
+            xhr.send(formData);
+            return;
+          }
+          xhr.send(file);
+        });
+
+        if (uploadToken !== uploadFlowToken) return;
+
+        queueItem.uploadStatus = 'processing';
+        queueItem.quoteStatus = 'processing';
+        renderCustomQueue();
+
+        var completeRes = await fetch(apiBase + '/api/upload/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            shopDomain: shopDomain,
+            uploadId: intent.uploadId,
+            items: [{
+              itemId: intent.itemId,
+              location: 'front',
+              fileUrl: intent.publicUrl || null,
+              storageProvider: intent.storageProvider || 'local',
+              fileSize: file.size,
+              uploadDurationMs: Date.now() - uploadStartedAt
+            }]
+          })
+        });
+        if (!completeRes.ok) {
+          var completeErr = await completeRes.json().catch(function() { return {}; });
+          throw new Error(completeErr.error || 'Failed to finalize upload.');
+        }
+        if (uploadToken !== uploadFlowToken) return;
+
+        await pollCustomQueueItemStatus(queueItem, uploadToken);
+      } catch (error) {
+        queueItem.uploadStatus = 'error';
+        queueItem.quoteStatus = 'error';
+        queueItem.error = error && error.message ? error.message : 'Upload failed.';
+        renderCustomQueue();
+        updateVipPreviewUI();
+        syncPurchaseButtonsForCurrentState();
+        showError(queueItem.error);
+      }
+    }
+
+    async function handleCustomPricingFiles(fileList) {
+      var files = Array.prototype.slice.call(fileList || []);
+      if (!files.length) return;
+
+      for (var i = 0; i < files.length; i++) {
+        if (!isAcceptedFile(files[i])) {
+          showError('Unsupported file format. Please upload PNG files only.');
+          continue;
+        }
+        await uploadSingleCustomPricingFile(files[i]);
+      }
+    }
+
     async function handleFile(file) {
       if (!file) return;
       if (!isAcceptedFile(file)) {
         showError('Unsupported file format. Please upload a PNG file.');
+        return;
+      }
+
+      if (hasCustomPricingActive()) {
+        await handleCustomPricingFiles([file]);
         return;
       }
 
@@ -1905,6 +2596,17 @@
 
       try {
         if (isCustomPricing) {
+          var customItemsPayload = hasCustomQueueItems()
+            ? getCustomQueueItems().map(function(item) {
+                return {
+                  uploadId: item.uploadId,
+                  quantity: item.requestedQuantity || 1,
+                  selectedVariantId: item.selectedVariantId || ''
+                };
+              }).filter(function(item) {
+                return item.uploadId;
+              })
+            : [];
           var vipResponse = await fetch(apiBase + '/api/vip/checkout', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1913,6 +2615,7 @@
               shopDomain: shopDomain,
               productId: String(productData.productId),
               uploadId: state.uploadId,
+              items: customItemsPayload,
               customerId: root.getAttribute('data-customer-id') || '',
               customerEmail: root.getAttribute('data-customer-email') || '',
               customerType: customerPricing.customerType,
@@ -1987,8 +2690,12 @@
 
     if (uploadInput) {
       uploadInput.addEventListener('change', function(e) {
-        if (e.target.files && e.target.files[0]) {
-          handleFile(e.target.files[0]);
+        if (e.target.files && e.target.files.length) {
+          if (hasCustomPricingActive()) {
+            handleCustomPricingFiles(e.target.files);
+          } else if (e.target.files[0]) {
+            handleFile(e.target.files[0]);
+          }
         }
       });
     }
@@ -2008,9 +2715,81 @@
       });
       uploadBox.addEventListener('drop', function(e) {
         e.preventDefault();
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-          handleFile(e.dataTransfer.files[0]);
+        if (e.dataTransfer.files && e.dataTransfer.files.length) {
+          if (hasCustomPricingActive()) {
+            handleCustomPricingFiles(e.dataTransfer.files);
+          } else if (e.dataTransfer.files[0]) {
+            handleFile(e.dataTransfer.files[0]);
+          }
         }
+      });
+    }
+
+    if (customQueueEl) {
+      customQueueEl.addEventListener('click', function(event) {
+        var activateButton = event.target.closest('[data-queue-activate]');
+        if (activateButton) {
+          setActiveCustomQueueItem(activateButton.getAttribute('data-queue-activate'));
+          renderCustomQueue();
+          updateVipPreviewUI();
+          return;
+        }
+
+        var qtyButton = event.target.closest('[data-queue-qty]');
+        if (qtyButton) {
+          var queueItem = getCustomQueueItemById(qtyButton.getAttribute('data-queue-qty'));
+          if (!queueItem) return;
+          var delta = parseInt(qtyButton.getAttribute('data-delta') || '0', 10) || 0;
+          var nextQuantity = Math.max(1, (queueItem.requestedQuantity || 1) + delta);
+          queueItem.requestedQuantity = nextQuantity;
+          queueItem.quoteStatus = queueItem.uploadStatus === 'ready' ? 'processing' : queueItem.quoteStatus;
+          markCustomQueueQuoteDirty();
+          if (String(state.activeCustomItemId) === String(queueItem.uploadId || queueItem.id)) {
+            setActiveCustomQueueItem(queueItem.uploadId || queueItem.id);
+          }
+          renderCustomQueue();
+          updateVipPricingUI();
+          updateVipPreviewUI();
+          loadVipQuote();
+          return;
+        }
+
+        var removeButton = event.target.closest('[data-queue-remove]');
+        if (removeButton) {
+          removeCustomQueueItem(removeButton.getAttribute('data-queue-remove'));
+          markCustomQueueQuoteDirty();
+          renderCustomQueue();
+          if (!hasCustomQueueItems()) {
+            resetVipQuoteState();
+            setSelectedVariant(getFallbackVariantId());
+          } else {
+            loadVipQuote();
+          }
+          updateVipPricingUI();
+          updateVipPreviewUI();
+          syncPurchaseButtonsForCurrentState();
+          return;
+        }
+      });
+
+      customQueueEl.addEventListener('change', function(event) {
+        var input = event.target.closest('[data-queue-qty-input]');
+        if (!input) return;
+        var queueItem = getCustomQueueItemById(input.getAttribute('data-queue-qty-input'));
+        if (!queueItem) return;
+        var nextQuantity = parseInt(input.value || '1', 10) || 1;
+        if (nextQuantity < 1) nextQuantity = 1;
+        input.value = String(nextQuantity);
+        queueItem.requestedQuantity = nextQuantity;
+        queueItem.quoteStatus = queueItem.uploadStatus === 'ready' ? 'processing' : queueItem.quoteStatus;
+        markCustomQueueQuoteDirty();
+        if (String(state.activeCustomItemId) === String(queueItem.uploadId || queueItem.id)) {
+          setActiveCustomQueueItem(queueItem.uploadId || queueItem.id);
+        }
+        renderCustomQueue();
+        updateVipPricingUI();
+        updateVipPreviewUI();
+        loadVipQuote();
       });
     }
 
@@ -2110,6 +2889,7 @@
     window.addEventListener('message', handleCustomerLoginMessage);
 
     updateCustomerStatusUI();
+    syncUploadInputMode();
     customerPricingPromise = loadCustomerPricingContext();
     setSelectedVariant(getFallbackVariantId());
     updateVipPreviewUI();
@@ -2484,9 +3264,183 @@
     right: 20px;
     transform: translateY(-50%);
   }
+  #{{ section_dom_id }} .ul-main-custom-queue-item {
+    border-radius: 20px;
+    border: 1px solid #e2e8f0;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  }
+  #{{ section_dom_id }} .ul-main-custom-queue-item.is-active {
+    border-color: #0f172a;
+    box-shadow:
+      0 0 0 3px rgba(15, 23, 42, 0.08),
+      0 14px 30px rgba(15, 23, 42, 0.1);
+  }
+  #{{ section_dom_id }} .ul-main-custom-queue-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-radius: 20px;
+    border: 1px solid rgba(15, 23, 42, 0.06);
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    color: #fff;
+  }
+  #{{ section_dom_id }} .ul-main-custom-queue-header-pills,
+  #{{ section_dom_id }} .ul-main-custom-queue-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  #{{ section_dom_id }} .ul-main-custom-queue-list {
+    flex-direction: column;
+  }
+  #{{ section_dom_id }} .ul-main-custom-queue-header-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    padding: 0.45rem 0.85rem;
+  }
+  #{{ section_dom_id }} .ul-main-custom-queue-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  #{{ section_dom_id }} .ul-main-custom-thumb {
+    width: 64px;
+    height: 64px;
+    overflow: hidden;
+    border-radius: 16px;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    flex-shrink: 0;
+  }
+  #{{ section_dom_id }} .ul-main-custom-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  #{{ section_dom_id }} .ul-main-custom-body {
+    min-width: 0;
+    flex: 1;
+  }
+  #{{ section_dom_id }} .ul-main-custom-head,
+  #{{ section_dom_id }} .ul-main-custom-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  #{{ section_dom_id }} .ul-main-custom-controls {
+    margin-top: 12px;
+    align-items: center;
+  }
+  #{{ section_dom_id }} .ul-main-custom-title,
+  #{{ section_dom_id }} .ul-main-vip-preview-board-title {
+    color: #0f172a;
+  }
+  #{{ section_dom_id }} .ul-main-custom-title:hover,
+  #{{ section_dom_id }} .ul-main-vip-preview-board-title:hover {
+    color: #334155;
+  }
+  #{{ section_dom_id }} .ul-main-custom-meta,
+  #{{ section_dom_id }} .ul-main-custom-summary,
+  #{{ section_dom_id }} .ul-main-vip-preview-board-meta {
+    line-height: 1.5;
+  }
+  #{{ section_dom_id }} .ul-main-custom-price {
+    text-align: right;
+    min-width: 90px;
+  }
+  #{{ section_dom_id }} .ul-main-custom-qty {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    border-radius: 999px;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    padding: 4px;
+  }
+  #{{ section_dom_id }} .ul-main-custom-qty-btn {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    cursor: pointer;
+  }
+  #{{ section_dom_id }} .ul-main-custom-qty-btn:hover {
+    background: #ffffff;
+  }
+  #{{ section_dom_id }} .ul-main-custom-qty-input {
+    width: 58px;
+    border: 0;
+    background: transparent;
+    text-align: center;
+    font-weight: 700;
+  }
+  #{{ section_dom_id }} .ul-main-custom-status,
+  #{{ section_dom_id }} .ul-main-vip-preview-mini-chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    padding: 0.4rem 0.8rem;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  #{{ section_dom_id }} .ul-main-custom-status.is-ready {
+    border-color: #a7f3d0;
+    background: #ecfdf5;
+    color: #047857;
+  }
+  #{{ section_dom_id }} .ul-main-custom-status.is-pending {
+    border-color: #fde68a;
+    background: #fffbeb;
+    color: #b45309;
+  }
+  #{{ section_dom_id }} .ul-main-custom-status.is-error {
+    border-color: #fecaca;
+    background: #fef2f2;
+    color: #b91c1c;
+  }
+  #{{ section_dom_id }} .ul-main-custom-remove {
+    border-radius: 999px;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-board {
+    border-radius: 24px;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-board-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-board-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+  }
   @media screen and (max-width: 1023px) {
     #{{ section_dom_id }} .ul-main-vip-preview-ruler-shell {
       grid-template-rows: 34px minmax(0, 420px);
+    }
+    #{{ section_dom_id }} .ul-main-custom-queue-row {
+      flex-direction: column;
+    }
+    #{{ section_dom_id }} .ul-main-custom-price {
+      text-align: left;
+      min-width: 0;
     }
   }
 </style>
