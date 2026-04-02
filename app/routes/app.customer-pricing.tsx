@@ -188,13 +188,8 @@ function serializeStatusesForSave(statuses: StatusEditor[]) {
 
 async function loadProductCatalog(
   admin: Awaited<ReturnType<typeof authenticate.admin>>['admin'],
-  config: CustomerPricingSettings,
-  forceDtfCatalog: boolean
+  config: CustomerPricingSettings
 ): Promise<ProductRuleCatalogItem[]> {
-  if (forceDtfCatalog) {
-    return getDtfPrintHouseProductCatalog()
-  }
-
   const productIds = Array.from(
     new Set(
       config.statuses.flatMap((status) =>
@@ -241,7 +236,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const isDtf = isDtfPrintHouseShop(session.shop)
   const config = applyCustomerPricingDefaultsForShop(session.shop, shop?.settings || {})
-  const productCatalog = await loadProductCatalog(admin, config, isDtf)
+  const productCatalog = isDtf ? getDtfPrintHouseProductCatalog() : await loadProductCatalog(admin, config)
   const url = new URL(request.url)
   const search = String(url.searchParams.get('q') || '').trim()
   let searchResults: SearchCustomer[] = []
