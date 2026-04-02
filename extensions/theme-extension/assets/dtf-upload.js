@@ -106,6 +106,31 @@
     return num / 100;
   }
 
+  function normalizeCustomerField(value) {
+    if (value == null) return '';
+    var normalized = String(value).trim();
+    if (!normalized || normalized === 'null' || normalized === 'undefined') return '';
+    return normalized;
+  }
+
+  function parsePositiveNumber(value) {
+    var parsed = Number(value);
+    return isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  function formatMoneyValue(value, currency) {
+    var amount = Number(value);
+    if (!isFinite(amount)) amount = 0;
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currency || 'USD'
+      }).format(amount);
+    } catch (error) {
+      return '$' + amount.toFixed(2);
+    }
+  }
+
   /* ─────────────────────────────────────────────
      DtfUploadBlock Class
      ───────────────────────────────────────────── */
@@ -129,6 +154,20 @@
     this._cachedOptions = null;
     this._configFetchPromise = null;
     this._configLoaded = false;
+    this._customerContextRequestToken = 0;
+    this._boundCustomerLoginMessageHandler = null;
+    this.loginPopup = null;
+    this.loginPollTimer = null;
+    this.customer = {
+      id: '',
+      email: '',
+      loggedIn: false,
+      customerType: 'guest',
+      statusLabel: 'Guest',
+      pricePerInch: null,
+      currency: this.config.currency || 'USD',
+      contextStatus: 'idle'
+    };
 
     // Derive asset base URL from this script's src (same CDN folder)
     var scripts = document.querySelectorAll('script[src*="dtf-upload"]');
@@ -137,6 +176,9 @@
 
     this.initDOM();
     this.bindEvents();
+    this.syncCustomerIdentity();
+    this.updateCustomerStatusUI();
+    this.loadCustomerPricingContext();
   }
 
   DtfUploadBlock.prototype.initDOM = function() {
@@ -145,9 +187,19 @@
     this.triggerBtn = this.root.querySelector('.dtf-upload-trigger');
     this.modal = document.getElementById('dtf-modal');
     this.modalBody = document.getElementById('dtf-modal-body');
+    this.ensureCustomerUiScaffolding();
     this.closeBtn = this.modal.querySelector('.dtf-modal__close');
     this.uploadsBtn = this.modal.querySelector('.dtf-modal__uploads-btn');
     this.addToCartBtn = this.modal.querySelector('.dtf-modal__add-to-cart');
+    this.customerStatusTitle = this.root.querySelector('.dtf-customer-status__title');
+    this.customerStatusText = this.root.querySelector('.dtf-customer-status__text');
+    this.customerLoginBtn = this.root.querySelector('.dtf-customer-status__login');
+    this.customerAccountLink = this.root.querySelector('.dtf-customer-status__account');
+    this.modalCustomerBadge = this.modal.querySelector('.dtf-modal__customer-badge');
+    this.modalCustomerTitle = this.modal.querySelector('.dtf-modal__customer-title');
+    this.modalCustomerText = this.modal.querySelector('.dtf-modal__customer-text');
+    this.modalCustomerLoginBtn = this.modal.querySelector('.dtf-modal__customer-login');
+    this.modalCustomerAccountLink = this.modal.querySelector('.dtf-modal__customer-account');
 
     this.fileInput = document.createElement('input');
     this.fileInput.type = 'file';
@@ -161,8 +213,42 @@
     document.body.appendChild(this.fileInput);
   };
 
+  DtfUploadBlock.prototype.ensureCustomerUiScaffolding = function() {
+    if (!this.modal) return;
+
+    var header = this.modal.querySelector('.dtf-modal__header');
+    if (!header || header.querySelector('.dtf-modal__customer')) return;
+
+    var uploadsBtn = header.querySelector('.dtf-modal__uploads-btn');
+    var closeBtn = header.querySelector('.dtf-modal__close');
+    var headerMain = document.createElement('div');
+    var customerWrap = document.createElement('div');
+
+    headerMain.className = 'dtf-modal__header-main';
+    customerWrap.className = 'dtf-modal__customer';
+    customerWrap.setAttribute('aria-live', 'polite');
+    customerWrap.innerHTML =
+      '<span class="dtf-modal__customer-badge">Guest</span>' +
+      '<div class="dtf-modal__customer-copy">' +
+        '<div class="dtf-modal__customer-title">Guest checkout</div>' +
+        '<div class="dtf-modal__customer-text">Log in to load your saved customer pricing before adding to cart.</div>' +
+      '</div>' +
+      '<button class="dtf-btn dtf-btn--secondary dtf-modal__customer-login" type="button">Log In</button>' +
+      '<a class="dtf-btn dtf-btn--ghost dtf-modal__customer-account" href="/account" hidden>My Account</a>';
+
+    if (uploadsBtn) headerMain.appendChild(uploadsBtn);
+    headerMain.appendChild(customerWrap);
+
+    if (closeBtn) header.insertBefore(headerMain, closeBtn);
+    else header.appendChild(headerMain);
+  };
+
   DtfUploadBlock.prototype.bindEvents = function() {
     var self = this;
+    var loginHandler = function(e) {
+      e.preventDefault();
+      self.openCustomerLoginPopup();
+    };
 
     this.triggerBtn.addEventListener('click', function() {
       if (self.files.length > 0) {
@@ -220,6 +306,18 @@
 
     // Uploads button — open file picker for new upload
     this.uploadsBtn.addEventListener('click', function() { self.fileInput.click(); });
+
+    if (this.customerLoginBtn) {
+      this.customerLoginBtn.addEventListener('click', loginHandler);
+    }
+    if (this.modalCustomerLoginBtn) {
+      this.modalCustomerLoginBtn.addEventListener('click', loginHandler);
+    }
+
+    this._boundCustomerLoginMessageHandler = function(event) {
+      self.handleCustomerLoginMessage(event);
+    };
+    window.addEventListener('message', this._boundCustomerLoginMessageHandler);
   };
 
   /* ─────────────────────────────────────────────
@@ -237,6 +335,7 @@
   };
 
   DtfUploadBlock.prototype.renderState = function() {
+    this.updateCustomerStatusUI();
     if (this.state === 'UPLOADING') {
       this.modalBody.innerHTML =
         '<div class="dtf-uploading">' +
@@ -356,10 +455,9 @@
     };
 
     // Add customer info if available
-    if (window.ULCustomer) {
-      if (window.ULCustomer.id) intentBody.customerId = String(window.ULCustomer.id);
-      if (window.ULCustomer.email) intentBody.customerEmail = window.ULCustomer.email;
-    }
+    this.syncCustomerIdentity();
+    if (this.customer.id) intentBody.customerId = String(this.customer.id);
+    if (this.customer.email) intentBody.customerEmail = this.customer.email;
 
     // Add visitor info if available
     if (window.ULVisitor) {
@@ -1092,6 +1190,213 @@
         this.selectedServiceOptions[option.name] = preferredValue;
       }
     }
+  };
+
+  DtfUploadBlock.prototype.syncCustomerIdentity = function() {
+    var rawCustomer = window.ULCustomer || {};
+    var customerId = normalizeCustomerField(rawCustomer.id);
+    var customerEmail = normalizeCustomerField(rawCustomer.email);
+
+    this.customer.id = customerId;
+    this.customer.email = customerEmail;
+    this.customer.loggedIn = !!(customerId || customerEmail);
+
+    if (!this.customer.loggedIn) {
+      this.customer.customerType = 'guest';
+      this.customer.statusLabel = 'Guest';
+    }
+
+    return this.customer;
+  };
+
+  DtfUploadBlock.prototype.getCustomerReturnUrl = function() {
+    return window.location.origin + window.location.pathname + window.location.search + '#ul-customer-login-popup';
+  };
+
+  DtfUploadBlock.prototype.clearLoginPopupWatcher = function() {
+    if (this.loginPollTimer) {
+      window.clearInterval(this.loginPollTimer);
+      this.loginPollTimer = null;
+    }
+  };
+
+  DtfUploadBlock.prototype.updateCustomerStatusUI = function() {
+    this.syncCustomerIdentity();
+
+    var accountUrl = this.config.accountUrl || '/account';
+    var isLoggedIn = this.customer.loggedIn;
+    var badgeText = 'Guest';
+    var titleText = 'Guest checkout';
+    var bodyText = 'Log in to use your saved customer pricing on this page.';
+    var rateText = this.customer.pricePerInch != null
+      ? ' Active rate: ' + formatMoneyValue(this.customer.pricePerInch, this.customer.currency) + ' / in.'
+      : '';
+    var identityText = this.customer.email
+      ? 'Signed in as ' + this.customer.email + '.'
+      : 'Your customer account is signed in.';
+
+    if (isLoggedIn) {
+      if (this.customer.contextStatus === 'loading') {
+        badgeText = 'Signed in';
+        titleText = 'Checking customer status';
+        bodyText = identityText + ' We are loading your assigned pricing profile.';
+      } else if (this.customer.customerType === 'vip') {
+        badgeText = this.customer.statusLabel || 'VIP';
+        titleText = 'VIP pricing active';
+        bodyText = identityText + ' ' + badgeText + ' account.' + rateText;
+      } else {
+        badgeText = this.customer.statusLabel || 'Business';
+        titleText = 'Business pricing active';
+        bodyText = identityText + ' ' + badgeText + ' account. Standard checkout rules apply.' + rateText;
+      }
+    }
+
+    if (this.customerStatusTitle) this.customerStatusTitle.textContent = titleText;
+    if (this.customerStatusText) this.customerStatusText.textContent = bodyText;
+    if (this.modalCustomerTitle) this.modalCustomerTitle.textContent = titleText;
+    if (this.modalCustomerText) this.modalCustomerText.textContent = bodyText;
+    if (this.modalCustomerBadge) this.modalCustomerBadge.textContent = badgeText;
+
+    if (this.customerLoginBtn) this.customerLoginBtn.hidden = isLoggedIn;
+    if (this.modalCustomerLoginBtn) this.modalCustomerLoginBtn.hidden = isLoggedIn;
+
+    if (this.customerAccountLink) {
+      this.customerAccountLink.hidden = !isLoggedIn;
+      this.customerAccountLink.setAttribute('href', accountUrl);
+    }
+    if (this.modalCustomerAccountLink) {
+      this.modalCustomerAccountLink.hidden = !isLoggedIn;
+      this.modalCustomerAccountLink.setAttribute('href', accountUrl);
+    }
+  };
+
+  DtfUploadBlock.prototype.loadCustomerPricingContext = function(forceReloadOnSuccess) {
+    var self = this;
+    var requestToken = ++this._customerContextRequestToken;
+    var wasLoggedIn = this.syncCustomerIdentity().loggedIn;
+    var apiBase = this.config.apiBase || '/apps/customizer';
+    var shopDomain = this.config.shopDomain || '';
+    var productId = this.config.productId || '';
+
+    this.customer.contextStatus = wasLoggedIn ? 'loading' : 'idle';
+    this.updateCustomerStatusUI();
+
+    return fetch(
+      apiBase + '/api/vip/context?shopDomain=' + encodeURIComponent(shopDomain) + '&productId=' + encodeURIComponent(String(productId)),
+      { credentials: 'same-origin' }
+    )
+      .then(function(response) {
+        return response.json().catch(function() { return {}; }).then(function(data) {
+          return { response: response, data: data };
+        });
+      })
+      .then(function(result) {
+        if (requestToken !== self._customerContextRequestToken) return self.customer;
+        if (!result.response.ok) {
+          throw new Error(result.data && result.data.error ? result.data.error : 'Failed to load customer pricing context.');
+        }
+
+        var data = result.data || {};
+        var resolvedCustomerId = normalizeCustomerField(data.customerId);
+        var resolvedCustomerType = normalizeCustomerField(data.customerType).toLowerCase();
+
+        if (resolvedCustomerType !== 'vip' && resolvedCustomerType !== 'business' && resolvedCustomerType !== 'guest') {
+          resolvedCustomerType = resolvedCustomerId ? 'business' : 'guest';
+        }
+
+        self.customer.id = resolvedCustomerId || self.customer.id;
+        self.customer.loggedIn = !!(self.customer.id || self.customer.email);
+        self.customer.customerType = self.customer.loggedIn ? resolvedCustomerType : 'guest';
+        self.customer.statusLabel = normalizeCustomerField(data.statusLabel) || (self.customer.customerType === 'vip' ? 'VIP' : self.customer.loggedIn ? 'Business' : 'Guest');
+        self.customer.pricePerInch = parsePositiveNumber(
+          data.pricePerInch != null
+            ? data.pricePerInch
+            : data.status && data.status.pricePerInch != null
+              ? data.status.pricePerInch
+              : data.businessPricePerInch
+        );
+        self.customer.currency = normalizeCustomerField(data.currency) || self.customer.currency || self.config.currency || 'USD';
+        self.customer.contextStatus = 'ready';
+
+        window.ULCustomer = window.ULCustomer || {};
+        if (self.customer.id) window.ULCustomer.id = self.customer.id;
+        if (self.customer.email) window.ULCustomer.email = self.customer.email;
+
+        self.updateCustomerStatusUI();
+
+        if (forceReloadOnSuccess && !wasLoggedIn && self.customer.loggedIn) {
+          window.location.reload();
+        }
+
+        return self.customer;
+      })
+      .catch(function() {
+        if (requestToken !== self._customerContextRequestToken) return self.customer;
+
+        self.customer.contextStatus = 'ready';
+        if (self.customer.loggedIn) {
+          self.customer.customerType = 'business';
+          self.customer.statusLabel = self.customer.statusLabel || 'Business';
+        } else {
+          self.customer.customerType = 'guest';
+          self.customer.statusLabel = 'Guest';
+        }
+        self.updateCustomerStatusUI();
+        return self.customer;
+      });
+  };
+
+  DtfUploadBlock.prototype.openCustomerLoginPopup = function() {
+    var self = this;
+    var loginUrl;
+
+    try {
+      var resolvedLoginUrl = new URL(this.config.accountLoginUrl || '/account/login', window.location.origin);
+      resolvedLoginUrl.searchParams.set('return_url', this.getCustomerReturnUrl());
+      loginUrl = resolvedLoginUrl.toString();
+    } catch (error) {
+      loginUrl = '/account/login?return_url=' + encodeURIComponent(this.getCustomerReturnUrl());
+    }
+
+    this.clearLoginPopupWatcher();
+    this.loginPopup = window.open(
+      loginUrl,
+      'ul-customer-login',
+      'popup=yes,width=460,height=720,resizable=yes,scrollbars=yes'
+    );
+
+    if (!this.loginPopup) {
+      window.location.href = loginUrl;
+      return;
+    }
+
+    try {
+      this.loginPopup.focus();
+    } catch (error) {}
+
+    this.loginPollTimer = window.setInterval(function() {
+      if (!self.loginPopup || self.loginPopup.closed) {
+        self.clearLoginPopupWatcher();
+        self.loginPopup = null;
+        self.loadCustomerPricingContext(true);
+      }
+    }, 800);
+  };
+
+  DtfUploadBlock.prototype.handleCustomerLoginMessage = function(event) {
+    if (!event || event.origin !== window.location.origin) return;
+    if (!event.data || event.data.type !== 'ul-customer-login-success') return;
+
+    this.clearLoginPopupWatcher();
+
+    if (this.loginPopup && !this.loginPopup.closed) {
+      try {
+        this.loginPopup.close();
+      } catch (error) {}
+    }
+
+    this.loginPopup = null;
+    this.loadCustomerPricingContext(true);
   };
 
   DtfUploadBlock.prototype.resolveVariantForFamily = function(family, matrix) {
@@ -2411,7 +2716,9 @@
         imageMarginIn: normalizeMarginIn(root.dataset.imageMarginIn),
         colorProfile: root.dataset.colorProfile || 'CMYK',
         currency: root.dataset.currency || 'USD',
-        enableFitcheck: root.dataset.enableFitcheck !== 'false'
+        enableFitcheck: root.dataset.enableFitcheck !== 'false',
+        accountLoginUrl: root.dataset.accountLoginUrl || '/account/login',
+        accountUrl: root.dataset.accountUrl || '/account'
       };
       window.dtfBlock = new DtfUploadBlock(config);
       // Fetch config from API as fallback if metafields are empty
