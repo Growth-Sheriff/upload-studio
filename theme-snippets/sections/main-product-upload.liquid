@@ -437,12 +437,19 @@
       customerType: customerLoggedIn ? 'unknown' : 'guest',
       statusKey: '',
       statusLabel: '',
+      pricingMode: 'standard_variant',
+      hasCustomPricing: false,
       pricePerInch: null,
       currency: 'USD',
       source: 'fallback',
       quoteStatus: 'idle',
       quoteTotal: null,
-      quoteLengthIn: null
+      quoteLengthIn: null,
+      quoteVariantId: null,
+      quoteVariantTitle: '',
+      quoteSheetLabel: '',
+      quoteSheetsNeeded: null,
+      quoteDesignsPerSheet: null
     };
 
     function moneyFromCents(cents) {
@@ -490,15 +497,27 @@
         return;
       }
 
-      var label = customerPricing.statusLabel || (customerPricing.customerType === 'vip' ? 'VIP' : 'Standard Customer');
-      var badgeLabel = customerPricing.customerType === 'vip' ? label : 'STANDARD';
-      var rateText = customerPricing.pricePerInch != null
-        ? 'Active rate: ' + formatMoneyValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in'
-        : 'Rate is loading from the server.';
+      var label = customerPricing.statusLabel || (customerPricing.customerType === 'business' ? 'Business' : customerPricing.customerType === 'vip' ? 'VIP' : 'Standard Customer');
+      var badgeLabel = customerPricing.customerType === 'business'
+        ? 'BUSINESS'
+        : customerPricing.customerType === 'vip'
+          ? label
+          : 'STANDARD';
 
-      if (customerPricing.customerType === 'vip') {
-        customerStatusTitle.textContent = 'Custom pricing active';
-        customerStatusText.textContent = label + ' status is assigned to this account. ' + rateText;
+      if (customerPricing.hasCustomPricing && (customerPricing.customerType === 'business' || customerPricing.customerType === 'vip')) {
+        var rateText = customerPricing.pricePerInch != null
+          ? 'Active rate: ' + formatMoneyValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in'
+          : 'Rate is loading from the server.';
+        if (customerPricing.customerType === 'business') {
+          customerStatusTitle.textContent = 'Business pricing active';
+          customerStatusText.textContent = label + ' status is assigned to this account. Checkout uses your assigned inch rate on the selected sheet length. ' + rateText;
+        } else {
+          customerStatusTitle.textContent = 'Custom pricing active';
+          customerStatusText.textContent = label + ' status is assigned to this account. ' + rateText;
+        }
+      } else if (customerPricing.customerType === 'business' || customerPricing.customerType === 'vip') {
+        customerStatusTitle.textContent = 'Assigned customer status';
+        customerStatusText.textContent = label + ' is assigned to this account, but this product is using normal variant pricing.';
       } else {
         customerStatusTitle.textContent = 'Logged in as Standard Customer';
         customerStatusText.textContent = 'No custom status is assigned to this account. Normal product pricing applies at checkout.';
@@ -647,6 +666,11 @@
       customerPricing.quoteStatus = 'idle';
       customerPricing.quoteTotal = null;
       customerPricing.quoteLengthIn = null;
+      customerPricing.quoteVariantId = null;
+      customerPricing.quoteVariantTitle = '';
+      customerPricing.quoteSheetLabel = '';
+      customerPricing.quoteSheetsNeeded = null;
+      customerPricing.quoteDesignsPerSheet = null;
     }
 
     function clearError() {
@@ -672,9 +696,10 @@
     }
 
     function resetActionLabels() {
-      if (isVipPricingActive()) {
-        if (addToCartBtn) addToCartBtn.textContent = 'Create VIP Checkout';
-        if (buyNowBtn) buyNowBtn.textContent = 'Create VIP Checkout';
+      if (hasCustomPricingActive()) {
+        var customLabel = isBusinessPricingActive() ? 'Create Business Checkout' : 'Create VIP Checkout';
+        if (addToCartBtn) addToCartBtn.textContent = customLabel;
+        if (buyNowBtn) buyNowBtn.textContent = customLabel;
         return;
       }
       if (addToCartBtn) addToCartBtn.textContent = addToCartLabel;
@@ -692,8 +717,16 @@
       });
     }
 
+    function hasCustomPricingActive() {
+      return customerPricing.status === 'ready' && customerPricing.hasCustomPricing === true;
+    }
+
+    function isBusinessPricingActive() {
+      return hasCustomPricingActive() && customerPricing.customerType === 'business';
+    }
+
     function isVipPricingActive() {
-      return customerPricing.status === 'ready' && customerPricing.customerType === 'vip';
+      return hasCustomPricingActive() && customerPricing.customerType === 'vip';
     }
 
     function isCustomerPricingLoading() {
@@ -716,7 +749,11 @@
           setPurchaseButtonsDisabled(true);
           return;
         }
-        if (isVipPricingActive()) {
+        if (hasCustomPricingActive()) {
+          if (isBusinessPricingActive()) {
+            setPurchaseButtonsDisabled(!(state.uploadId && state.selectedResult && state.selectedVariantId && customerPricing.quoteStatus === 'ready' && customerPricing.quoteTotal != null));
+            return;
+          }
           setPurchaseButtonsDisabled(!(state.uploadId && state.widthIn && state.heightIn && customerPricing.quoteStatus === 'ready' && customerPricing.quoteTotal != null));
           return;
         }
@@ -736,13 +773,13 @@
         else quantityRow.classList.remove('hidden');
       }
       if (buyNowBtn) {
-        if (isVipPricingActive()) buyNowBtn.classList.add('hidden');
+        if (hasCustomPricingActive()) buyNowBtn.classList.add('hidden');
         else buyNowBtn.classList.remove('hidden');
       }
       if (vipPricingBox) {
         if (customerLoggedIn && customerPricing.status === 'loading') {
           vipPricingBox.classList.remove('hidden');
-        } else if (isVipPricingActive()) {
+        } else if (hasCustomPricingActive()) {
           vipPricingBox.classList.remove('hidden');
         } else {
           vipPricingBox.classList.add('hidden');
@@ -767,7 +804,7 @@
       if (!vipPricingBox) return;
       syncPricingVisibility();
 
-      if (!isVipPricingActive()) {
+      if (!hasCustomPricingActive()) {
         if (vipPricingTitle) vipPricingTitle.textContent = '';
         if (vipPricingRate) vipPricingRate.textContent = '';
         if (vipPricingLength) vipPricingLength.textContent = '';
@@ -778,16 +815,36 @@
 
       var billableLengthIn = customerPricing.quoteLengthIn || getBillablePageLengthIn();
       var billableWidthIn = getBillablePageWidthIn();
+      var isBusiness = isBusinessPricingActive();
       var rateLabel = customerPricing.pricePerInch != null
-        ? 'VIP price per inch: ' + formatMoneyValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in'
-        : 'VIP price per inch is loading...';
-      var lengthLabel = billableLengthIn
-        ? 'Measured page: ' + (billableWidthIn ? billableWidthIn.toFixed(2) + '" x ' : '') + billableLengthIn.toFixed(2) + '"'
-        : 'Waiting for server-confirmed measurement...';
+        ? (isBusiness ? 'Business rate: ' : 'VIP price per inch: ') + formatMoneyValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in'
+        : 'Rate is loading from the server...';
+      var lengthLabel = '';
+      if (isBusiness) {
+        if (customerPricing.quoteVariantTitle) {
+          lengthLabel = 'Selected sheet: ' + customerPricing.quoteVariantTitle;
+          if (customerPricing.quoteSheetsNeeded) {
+            lengthLabel += ' (' + customerPricing.quoteSheetsNeeded + ' sheet' + (customerPricing.quoteSheetsNeeded === 1 ? '' : 's') + ')';
+          }
+        } else if (state.selectedResult && state.selectedResult.selectedVariantTitle) {
+          lengthLabel = 'Selected sheet: ' + state.selectedResult.selectedVariantTitle;
+        } else {
+          lengthLabel = 'Waiting for the server to confirm the best sheet size...';
+        }
+        if (billableLengthIn) {
+          lengthLabel += '. Billable length: ' + billableLengthIn.toFixed(2) + '"';
+        }
+      } else {
+        lengthLabel = billableLengthIn
+          ? 'Measured page: ' + (billableWidthIn ? billableWidthIn.toFixed(2) + '" x ' : '') + billableLengthIn.toFixed(2) + '"'
+          : 'Waiting for server-confirmed measurement...';
+      }
       var totalLabel = customerPricing.quoteTotal != null
         ? 'Exact total: ' + formatMoneyValue(customerPricing.quoteTotal, customerPricing.currency)
-        : 'Exact total will be returned by the server quote.';
-      var titleLabel = customerPricing.statusLabel ? 'VIP pricing: ' + customerPricing.statusLabel : 'VIP pricing active';
+        : (isBusiness ? 'Exact total will be returned after the sheet fit is confirmed.' : 'Exact total will be returned by the server quote.');
+      var titleLabel = customerPricing.statusLabel
+        ? (isBusiness ? 'Business pricing: ' : 'VIP pricing: ') + customerPricing.statusLabel
+        : (isBusiness ? 'Business pricing active' : 'VIP pricing active');
 
       setVipPricingMessage(
         titleLabel,
@@ -800,15 +857,19 @@
         if (productPrice) productPrice.textContent = formatMoneyValue(customerPricing.quoteTotal, customerPricing.currency);
         if (buyBoxPrice) buyBoxPrice.textContent = formatMoneyValue(customerPricing.quoteTotal, customerPricing.currency);
       } else {
-        if (productPrice) productPrice.textContent = 'VIP quote pending';
-        if (buyBoxPrice) buyBoxPrice.textContent = 'VIP quote pending';
+        if (productPrice) productPrice.textContent = isBusiness ? 'Business quote pending' : 'VIP quote pending';
+        if (buyBoxPrice) buyBoxPrice.textContent = isBusiness ? 'Business quote pending' : 'VIP quote pending';
       }
 
       if (detectedVariant) {
-        detectedVariant.value = customerPricing.statusLabel ? customerPricing.statusLabel : 'VIP measured checkout';
+        if (isBusiness) {
+          detectedVariant.value = customerPricing.quoteVariantTitle || (state.selectedResult && state.selectedResult.selectedVariantTitle) || 'Business custom checkout';
+        } else {
+          detectedVariant.value = customerPricing.statusLabel ? customerPricing.statusLabel : 'VIP measured checkout';
+        }
       }
       if (detectedTitle) {
-        detectedTitle.textContent = 'Detected Measured Page';
+        detectedTitle.textContent = isBusiness ? detectedDefaultTitle : 'Detected Measured Page';
       }
     }
 
@@ -838,11 +899,16 @@
 
         customerPricing.status = 'ready';
         customerPricing.customerType = String(
-          data.customerType || data.statusType || data.pricingMode || data.mode || 'standard'
+          data.customerType || data.statusType || data.mode || 'standard'
         ).toLowerCase();
-        if (customerPricing.customerType !== 'vip') customerPricing.customerType = 'standard';
+        if (['business', 'vip'].indexOf(customerPricing.customerType) === -1) customerPricing.customerType = 'standard';
         customerPricing.statusKey = String(data.statusKey || data.customerStatusKey || '');
         customerPricing.statusLabel = String(data.statusLabel || data.customerStatusLabel || '').trim();
+        customerPricing.pricingMode = String(data.pricingMode || 'standard_variant').toLowerCase();
+        customerPricing.hasCustomPricing = Boolean(
+          data.hasCustomPricing === true ||
+          (customerPricing.pricingMode !== 'standard_variant' && ['business', 'vip'].indexOf(customerPricing.customerType) >= 0)
+        );
         customerPricing.pricePerInch = parsePositiveNumber(
           data.pricePerInch != null
             ? data.pricePerInch
@@ -852,7 +918,7 @@
         );
         customerPricing.currency = String(data.currency || data.quote && data.quote.currency || 'USD');
         customerPricing.source = String(data.source || 'app_proxy');
-        if (customerPricing.customerType !== 'vip') {
+        if (!customerPricing.hasCustomPricing) {
           resetVipQuoteState();
         }
 
@@ -866,6 +932,8 @@
         if (requestToken !== customerPricingRequestToken) return customerPricing;
         customerPricing.status = 'ready';
         customerPricing.customerType = 'standard';
+        customerPricing.pricingMode = 'standard_variant';
+        customerPricing.hasCustomPricing = false;
         customerPricing.source = 'fallback';
         resetVipQuoteState();
         updateCustomerStatusUI();
@@ -877,7 +945,7 @@
     }
 
     async function loadVipQuote() {
-      if (!isVipPricingActive()) return null;
+      if (!hasCustomPricingActive()) return null;
       if (!state.uploadId || !(state.widthIn > 0) || !(state.heightIn > 0)) return null;
 
       var requestToken = ++vipQuoteRequestToken;
@@ -894,14 +962,18 @@
             shopDomain: shopDomain,
             productId: String(productData.productId),
             uploadId: state.uploadId,
-            quantity: state.quantity
+            quantity: state.quantity,
+            selectedVariantId:
+              state.selectedResult && state.selectedResult.selectedVariantId
+                ? state.selectedResult.selectedVariantId
+                : state.selectedVariantId
           })
         });
         var data = await response.json().catch(function() { return {}; });
         if (requestToken !== vipQuoteRequestToken) return null;
 
         if (!response.ok) {
-          throw new Error(data && data.error ? data.error : 'Failed to load VIP quote.');
+          throw new Error(data && data.error ? data.error : 'Failed to load custom quote.');
         }
 
         customerPricing.quoteStatus = 'ready';
@@ -929,17 +1001,61 @@
                 ? data.quote.billableLengthIn
                 : data.quote && data.quote.pageLengthIn != null
                   ? data.quote.pageLengthIn
-                  : null
+                    : null
+        );
+        customerPricing.quoteVariantId = data.selectedVariantId != null
+          ? String(data.selectedVariantId || '')
+          : data.quote && data.quote.selectedVariantId != null
+            ? String(data.quote.selectedVariantId || '')
+            : null;
+        customerPricing.quoteVariantTitle = String(
+          data.selectedVariantTitle != null
+            ? data.selectedVariantTitle
+            : data.quote && data.quote.selectedVariantTitle != null
+              ? data.quote.selectedVariantTitle
+              : ''
+        );
+        customerPricing.quoteSheetLabel = String(
+          data.selectedSheetLabel != null
+            ? data.selectedSheetLabel
+            : data.quote && data.quote.selectedSheetLabel != null
+              ? data.quote.selectedSheetLabel
+              : ''
+        );
+        customerPricing.quoteSheetsNeeded = parsePositiveNumber(
+          data.sheetsNeeded != null
+            ? data.sheetsNeeded
+            : data.quote && data.quote.sheetsNeeded != null
+              ? data.quote.sheetsNeeded
+              : null
+        );
+        customerPricing.quoteDesignsPerSheet = parsePositiveNumber(
+          data.designsPerSheet != null
+            ? data.designsPerSheet
+            : data.quote && data.quote.designsPerSheet != null
+              ? data.quote.designsPerSheet
+              : null
         );
         customerPricing.currency = String(data.currency || data.quote && data.quote.currency || customerPricing.currency || 'USD');
         customerPricing.statusLabel = String(data.statusLabel || data.quote && data.quote.statusLabel || customerPricing.statusLabel || '').trim();
+        if (isBusinessPricingActive() && customerPricing.quoteVariantId) {
+          state.selectedResult = {
+            selectedVariantId: customerPricing.quoteVariantId,
+            selectedVariantTitle: customerPricing.quoteVariantTitle || '',
+            selectedSheetLabel: customerPricing.quoteSheetLabel || '',
+            designsPerSheet: customerPricing.quoteDesignsPerSheet || 0,
+            sheetsNeeded: customerPricing.quoteSheetsNeeded || 1
+          };
+          setSelectedVariant(customerPricing.quoteVariantId);
+          updateDetectedUI();
+        }
         updateVipPricingUI();
         syncPurchaseButtonsForCurrentState();
         return data;
       } catch (error) {
         if (requestToken !== vipQuoteRequestToken) return null;
         customerPricing.quoteStatus = 'error';
-        showError(error && error.message ? error.message : 'Failed to load VIP quote.');
+        showError(error && error.message ? error.message : 'Failed to load custom quote.');
         syncPurchaseButtonsForCurrentState();
         return null;
       }
@@ -981,14 +1097,14 @@
       });
 
       if (selectedVariant) {
-        if (!isVipPricingActive()) {
+        if (!hasCustomPricingActive()) {
           if (productPrice) productPrice.textContent = moneyFromCents(selectedVariant.price);
           if (buyBoxPrice) buyBoxPrice.textContent = moneyFromCents(selectedVariant.price);
           if (detectedVariant) detectedVariant.value = selectedVariant.title;
         }
       } else if (detectedVariant && !normalizedVariantId) {
         detectedVariant.value = state.uploadId ? 'No matching sheet size' : '';
-        if (!isVipPricingActive() && state.uploadId) {
+        if (!hasCustomPricingActive() && state.uploadId) {
           if (productPrice) productPrice.textContent = 'Unavailable';
           if (buyBoxPrice) buyBoxPrice.textContent = 'Unavailable';
         }
@@ -1007,8 +1123,10 @@
       if (detectedNote) {
         var notes = isVipPricingActive()
           ? ['Measured on the server and priced from the exact uploaded page length.']
-          : ['Resolved on server using the saved product sheet rules.'];
-        if (!isVipPricingActive() && state.selectedResult && state.selectedResult.designsPerSheet && state.selectedResult.sheetsNeeded) {
+          : isBusinessPricingActive()
+            ? ['Resolved on the server using the matched sheet size. Checkout uses your assigned per-inch rate on the selected sheet length.']
+            : ['Resolved on server using the saved product sheet rules.'];
+        if ((isBusinessPricingActive() || !hasCustomPricingActive()) && state.selectedResult && state.selectedResult.designsPerSheet && state.selectedResult.sheetsNeeded) {
           notes.push(
             state.selectedResult.designsPerSheet + ' design(s) per sheet, ' +
             state.selectedResult.sheetsNeeded + ' sheet(s) needed.'
@@ -1253,9 +1371,12 @@
               return false;
             }
             if (state.widthIn && state.heightIn && (measurementStatus === 'ready' || measurementStatus === 'warning')) {
+              if (customerPricing.status === 'loading' && customerPricingPromise) {
+                await customerPricingPromise.catch(function() { return null; });
+              }
               if (uploadLoading) uploadLoading.classList.add('hidden');
               updatePreview();
-              if (isVipPricingActive()) {
+              if (hasCustomPricingActive()) {
                 var vipQuoteData = await loadVipQuote();
                 if (!vipQuoteData || customerPricing.quoteStatus !== 'ready' || customerPricing.quoteTotal == null) {
                   return false;
@@ -1429,17 +1550,18 @@
         return;
       }
       var isVip = isVipPricingActive();
+      var isCustomPricing = hasCustomPricingActive();
       var variantId = state.selectedVariantId || (hiddenVariantInput ? hiddenVariantInput.value : '') || getFallbackVariantId();
-      if (!isVip && !variantId) {
+      if (!isCustomPricing && !variantId) {
         showError('Please select a product variant first.');
         return;
       }
-      if (!isVip && uploadRequired && !state.selectedResult) {
+      if (!isCustomPricing && uploadRequired && !state.selectedResult) {
         showError('Please upload your design first.');
         return;
       }
-      if (isVip && (customerPricing.quoteStatus !== 'ready' || customerPricing.quoteTotal == null)) {
-        showError('VIP pricing is still loading. Please wait for the quote to finish.');
+      if (isCustomPricing && (customerPricing.quoteStatus !== 'ready' || customerPricing.quoteTotal == null)) {
+        showError((isBusinessPricingActive() ? 'Business pricing' : 'VIP pricing') + ' is still loading. Please wait for the quote to finish.');
         return;
       }
 
@@ -1451,7 +1573,7 @@
       }
 
       try {
-        if (isVip) {
+        if (isCustomPricing) {
           var vipResponse = await fetch(apiBase + '/api/vip/checkout', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1465,13 +1587,18 @@
               customerType: customerPricing.customerType,
               statusKey: customerPricing.statusKey,
               pricePerInch: customerPricing.pricePerInch,
+              selectedVariantId:
+                customerPricing.quoteVariantId ||
+                (state.selectedResult && state.selectedResult.selectedVariantId) ||
+                state.selectedVariantId ||
+                '',
               billableLengthIn: customerPricing.quoteLengthIn || getBillablePageLengthIn(),
-              quantity: 1
+              quantity: isBusinessPricingActive() ? state.quantity : 1
             })
           });
           var vipData = await vipResponse.json().catch(function() { return {}; });
           if (!vipResponse.ok) {
-            throw new Error(vipData.error || 'Failed to create VIP checkout.');
+            throw new Error(vipData.error || 'Failed to create custom checkout.');
           }
           if (vipData.quoteTotal != null) {
             customerPricing.quoteTotal = parsePositiveNumber(vipData.quoteTotal);
@@ -1569,7 +1696,7 @@
         quantitySelect.value = String(nextQuantity);
         state.quantity = nextQuantity;
         if (state.uploadId) {
-          if (isVipPricingActive()) loadVipQuote();
+          if (hasCustomPricingActive()) loadVipQuote();
           else updateVariantResolution();
         }
       }
@@ -1583,7 +1710,8 @@
         state.preferredVariantId = variantSelect.value || null;
         setSelectedVariant(state.preferredVariantId);
         if (state.uploadId) {
-          updateVariantResolution();
+          if (hasCustomPricingActive()) loadVipQuote();
+          else updateVariantResolution();
         } else {
           syncPurchaseButtonsForCurrentState();
         }
@@ -1643,7 +1771,7 @@
     window.addEventListener('message', handleCustomerLoginMessage);
 
     updateCustomerStatusUI();
-    loadCustomerPricingContext();
+    customerPricingPromise = loadCustomerPricingContext();
     setSelectedVariant(getFallbackVariantId());
     syncPurchaseButtonsForCurrentState();
   })();

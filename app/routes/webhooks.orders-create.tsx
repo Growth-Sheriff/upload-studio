@@ -13,7 +13,7 @@ function verifyWebhookSignature(body: string, hmac: string, secret: string): boo
 }
 
 function extractVipUploadIdFromOrderNote(note: unknown): string | null {
-  const match = String(note || '').match(/VIP checkout for upload ([A-Za-z0-9_-]+)/)
+  const match = String(note || '').match(/(?:VIP|Custom pricing) checkout for upload ([A-Za-z0-9_-]+)/i)
   return match?.[1] || null
 }
 

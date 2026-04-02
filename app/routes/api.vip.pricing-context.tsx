@@ -2,6 +2,8 @@ import type { LoaderFunctionArgs } from '@remix-run/node'
 import { json } from '@remix-run/node'
 import prisma from '~/lib/prisma.server'
 import {
+  applyCustomerPricingDefaultsForShop,
+  normalizeProductId,
   normalizeCustomerId,
   resolveCustomerPricingContext,
 } from '~/lib/customerPricing.server'
@@ -13,6 +15,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url)
   const shopDomain = url.searchParams.get('shop')?.trim() || ''
   const loggedInCustomerId = normalizeCustomerId(url.searchParams.get('logged_in_customer_id'))
+  const productId = normalizeProductId(url.searchParams.get('productId'))
 
   if (!shopDomain) {
     return json({ error: 'Missing shop parameter' }, { status: 400 })
@@ -30,7 +33,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return json({ error: 'Shop not found' }, { status: 404 })
   }
 
-  const context = resolveCustomerPricingContext(shop.settings, loggedInCustomerId)
+  const settings = applyCustomerPricingDefaultsForShop(shop.shopDomain, shop.settings)
+  const context = resolveCustomerPricingContext(settings, loggedInCustomerId, productId)
 
   return json({
     shopDomain: shop.shopDomain,
@@ -41,6 +45,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
     statusLabel: context.statusLabel,
     pricePerInch: context.pricePerInch,
     businessPricePerInch: context.businessPricePerInch,
+    pricingMode: context.pricingMode,
+    hasCustomPricing: context.hasCustomPricing,
+    productId: context.productId,
+    productRule: context.productRule,
+    productOverride: context.productOverride,
+    isStatusAssigned: context.isStatusAssigned,
     status: context.status,
     assignment: context.assignment,
   })

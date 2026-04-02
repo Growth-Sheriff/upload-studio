@@ -3,21 +3,30 @@ import { Prisma } from '@prisma/client'
 import { json } from '@remix-run/node'
 import { Form, useActionData, useLoaderData, useNavigation } from '@remix-run/react'
 import {
+  Badge,
   Banner,
   BlockStack,
   Box,
   Button,
   Card,
   Checkbox,
+  InlineGrid,
   InlineStack,
   Layout,
   Page,
+  Select,
   Text,
   TextField,
 } from '@shopify/polaris'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import prisma from '~/lib/prisma.server'
-import { normalizeCustomerPricingSettings } from '~/lib/customerPricing.server'
+import type {
+  CustomerPricingAssignment,
+  CustomerPricingProductRule,
+  CustomerPricingSettings,
+  CustomerPricingStatus,
+  ProductRuleCatalogItem,
+} from '~/lib/customerPricing.server'
 import { authenticate } from '~/shopify.server'
 
 const CUSTOMER_SEARCH_QUERY = `#graphql
@@ -35,18 +44,40 @@ const CUSTOMER_SEARCH_QUERY = `#graphql
   }
 `
 
+const PRODUCT_TITLES_QUERY = `#graphql
+  query CustomerPricingProducts($ids: [ID!]!) {
+    nodes(ids: $ids) {
+      ... on Product {
+        id
+        title
+      }
+    }
+  }
+`
+
 interface SearchCustomer {
   id: string
   displayName: string
   email: string | null
 }
 
-interface StatusFormState {
+interface ProductRuleEditor {
+  id: string
+  productId: string
+  productLabel: string
+  active: boolean
+  pricingMode: 'standard_variant' | 'variant_length' | 'measured_length'
+  pricePerInch: string
+}
+
+interface StatusEditor {
   id: string
   key: string
   label: string
+  type: 'standard' | 'business' | 'vip'
   active: boolean
   pricePerInch: string
+  productRules: ProductRuleEditor[]
 }
 
 type CustomerPricingActionData = {
@@ -57,11 +88,11 @@ type CustomerPricingActionData = {
 
 function buildShopSettingsUpdate(
   existingSettings: Record<string, unknown>,
-  nextConfig: ReturnType<typeof normalizeCustomerPricingSettings>
+  nextPricingPayload: Record<string, unknown>
 ) {
   return {
     ...existingSettings,
-    customerPricing: nextConfig as unknown as Prisma.InputJsonValue,
+    customerPricing: nextPricingPayload as unknown as Prisma.InputJsonValue,
   } as Prisma.InputJsonObject
 }
 
@@ -87,10 +118,17 @@ function formatEditableRate(value: number | null | undefined): string {
 }
 
 function formatRate(value: number | null | undefined): string {
-  if (!Number.isFinite(value) || value == null) return 'Rate not set'
+  if (!Number.isFinite(value) || value == null) return 'Not set'
   const normalized = Number(value)
   const formatted = normalized.toFixed(normalized % 0.01 === 0 ? 2 : 4).replace(/\.?0+$/, '')
   return `$${formatted} / in`
+}
+
+function normalizeProductIdLocal(value: string | number | null | undefined): string | null {
+  if (value == null) return null
+  const raw = String(value).trim()
+  if (!raw) return null
+  return raw.startsWith('gid://') ? raw : `gid://shopify/Product/${raw}`
 }
 
 function buildCustomerSearchQueries(search: string): string[] {
@@ -100,24 +138,116 @@ function buildCustomerSearchQueries(search: string): string[] {
   return [search]
 }
 
-export async function loader({ request }: LoaderFunctionArgs) {
-  const { session, admin } = await authenticate.admin(request)
+function toStatusEditor(status: CustomerPricingStatus, productCatalog: ProductRuleCatalogItem[]): StatusEditor {
+  const existingRuleMap = status.productRules.reduce<Record<string, CustomerPricingProductRule>>((acc, rule) => {
+    acc[normalizeProductIdLocal(rule.productId) || rule.productId] = rule
+    return acc
+  }, {})
 
+  return {
+    id: status.id,
+    key: status.key,
+    label: status.label,
+    type: status.type,
+    active: status.active,
+    pricePerInch: formatEditableRate(status.pricePerInch),
+    productRules: productCatalog.map((product) => {
+      const existingRule = existingRuleMap[product.productId]
+      return {
+        id: existingRule?.id || `${status.key}_${product.productId.split('/').pop()}`,
+        productId: product.productId,
+        productLabel: existingRule?.productLabel || product.label,
+        active: existingRule?.active ?? false,
+        pricingMode:
+          existingRule?.pricingMode ||
+          (status.type === 'business' ? 'variant_length' : status.type === 'vip' ? 'measured_length' : 'standard_variant'),
+        pricePerInch: formatEditableRate(existingRule?.pricePerInch ?? status.pricePerInch),
+      }
+    }),
+  }
+}
+
+function serializeStatusesForSave(statuses: StatusEditor[]) {
+  return statuses.map((status) => ({
+    id: status.id,
+    key: status.key,
+    label: status.label,
+    type: status.type,
+    active: status.active,
+    pricePerInch: parseLocalizedPositiveNumber(status.pricePerInch, 0),
+    productRules: status.productRules.map((rule) => ({
+      id: rule.id,
+      productId: rule.productId,
+      productLabel: rule.productLabel,
+      active: rule.active,
+      pricingMode: rule.pricingMode,
+      pricePerInch: parseLocalizedPositiveNumber(rule.pricePerInch, 0),
+    })),
+  }))
+}
+
+async function loadProductCatalog(
+  admin: Awaited<ReturnType<typeof authenticate.admin>>['admin'],
+  config: CustomerPricingSettings,
+  forceDtfCatalog: boolean
+): Promise<ProductRuleCatalogItem[]> {
+  if (forceDtfCatalog) {
+    return getDtfPrintHouseProductCatalog()
+  }
+
+  const productIds = Array.from(
+    new Set(
+      config.statuses.flatMap((status) =>
+        status.productRules
+          .map((rule) => normalizeProductIdLocal(rule.productId))
+          .filter((productId): productId is string => Boolean(productId) && productId !== '*')
+      )
+    )
+  )
+
+  if (!productIds.length) {
+    return []
+  }
+
+  try {
+    const response = await admin.graphql(PRODUCT_TITLES_QUERY, {
+      variables: { ids: productIds },
+    })
+    const payload = await response.json()
+    const nodes = Array.isArray(payload?.data?.nodes) ? payload.data.nodes : []
+    return nodes
+      .filter((node: { id?: string; title?: string } | null) => Boolean(node?.id))
+      .map((node: { id: string; title?: string | null }) => ({
+        productId: node.id,
+        label: String(node.title || node.id),
+      }))
+  } catch (error) {
+    console.error('[Customer Pricing] Product title lookup failed:', error)
+    return productIds.map((productId) => ({ productId, label: productId }))
+  }
+}
+
+export async function loader({ request }: LoaderFunctionArgs) {
+  const {
+    applyCustomerPricingDefaultsForShop,
+    getDtfPrintHouseProductCatalog,
+    isDtfPrintHouseShop,
+  } = await import('~/lib/customerPricing.server')
+  const { session, admin } = await authenticate.admin(request)
   const shop = await prisma.shop.findUnique({
     where: { shopDomain: session.shop },
-    select: {
-      settings: true,
-    },
+    select: { settings: true },
   })
 
-  const config = normalizeCustomerPricingSettings(shop?.settings || {})
+  const isDtf = isDtfPrintHouseShop(session.shop)
+  const config = applyCustomerPricingDefaultsForShop(session.shop, shop?.settings || {})
+  const productCatalog = await loadProductCatalog(admin, config, isDtf)
   const url = new URL(request.url)
   const search = String(url.searchParams.get('q') || '').trim()
   let searchResults: SearchCustomer[] = []
 
   if (search) {
     const attemptedQueries = Array.from(new Set(buildCustomerSearchQueries(search)))
-
     for (const customerQuery of attemptedQueries) {
       try {
         const response = await admin.graphql(CUSTOMER_SEARCH_QUERY, {
@@ -139,7 +269,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
             email: edge.node.email || null,
           })
         )
-
         if (nextResults.length) {
           searchResults = nextResults
           break
@@ -150,24 +279,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
-  return json({
-    config,
-    search,
-    searchResults,
-  })
+  return json({ isDtf, config, productCatalog, search, searchResults })
 }
 
 export async function action({ request }: ActionFunctionArgs) {
+  const {
+    applyCustomerPricingDefaultsForShop,
+    buildCustomerPricingSettingsPayload,
+    normalizeCustomerId,
+    normalizeCustomerPricingSettings,
+  } = await import('~/lib/customerPricing.server')
   const { session } = await authenticate.admin(request)
   const formData = await request.formData()
   const intent = String(formData.get('intent') || '')
 
   const shop = await prisma.shop.findUnique({
     where: { shopDomain: session.shop },
-    select: {
-      id: true,
-      settings: true,
-    },
+    select: { settings: true },
   })
 
   if (!shop) {
@@ -175,7 +303,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const existingSettings = (shop.settings as Record<string, unknown> | null) || {}
-  const existingConfig = normalizeCustomerPricingSettings(existingSettings)
+  const existingConfig = applyCustomerPricingDefaultsForShop(session.shop, existingSettings)
 
   if (intent === 'save-config') {
     let parsedStatuses: unknown[] = []
@@ -185,22 +313,12 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ success: false, error: 'Invalid status payload' }, { status: 400 })
     }
 
-    const businessPricePerInch = parseLocalizedPositiveNumber(
-      formData.get('businessPricePerInch'),
-      existingConfig.businessPricePerInch || 0.2
-    )
-
     const nextConfig = normalizeCustomerPricingSettings({
       customerPricing: {
+        version: 2,
         enabled: formData.get('enabled') === 'true',
-        businessPricePerInch,
-        statuses: parsedStatuses.map((entry) => {
-          const value = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {}
-          return {
-            ...value,
-            pricePerInch: parseLocalizedPositiveNumber(value.pricePerInch, businessPricePerInch),
-          }
-        }),
+        businessPricePerInch: existingConfig.businessPricePerInch,
+        statuses: parsedStatuses,
         assignments: existingConfig.assignments,
       },
     })
@@ -208,19 +326,39 @@ export async function action({ request }: ActionFunctionArgs) {
     await prisma.shop.update({
       where: { shopDomain: session.shop },
       data: {
-        settings: buildShopSettingsUpdate(existingSettings, nextConfig),
+        settings: buildShopSettingsUpdate(
+          existingSettings,
+          buildCustomerPricingSettingsPayload(nextConfig)
+        ),
       },
     })
 
-    return json({ success: true, message: 'Customer pricing settings saved.' })
+    return json({ success: true, message: 'Customer pricing rules saved.' })
   }
 
-  if (intent === 'add-assignment') {
-    const customerId = String(formData.get('customerId') || '').trim()
+  if (intent === 'save-assignment') {
+    const customerId = normalizeCustomerId(String(formData.get('customerId') || '').trim())
     const customerEmail = String(formData.get('customerEmail') || '').trim() || null
     const customerName = String(formData.get('customerName') || '').trim() || null
     const statusKey = String(formData.get('statusKey') || '').trim()
-    const pricePerInchOverride = parseLocalizedPositiveNumber(formData.get('pricePerInchOverride'), -1)
+    let productOverrides: Array<{ productId: string; pricePerInch: number }> = []
+
+    try {
+      const parsedOverrides = JSON.parse(String(formData.get('productOverridesJson') || '[]'))
+      if (Array.isArray(parsedOverrides)) {
+        productOverrides = parsedOverrides
+          .map((entry) => {
+            const value = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {}
+            const productId = normalizeProductIdLocal(value.productId)
+            const pricePerInch = parseLocalizedPositiveNumber(value.pricePerInch, 0)
+            if (!productId || !(pricePerInch > 0)) return null
+            return { productId, pricePerInch }
+          })
+          .filter((entry): entry is { productId: string; pricePerInch: number } => Boolean(entry))
+      }
+    } catch {
+      return json({ success: false, error: 'Invalid override payload' }, { status: 400 })
+    }
 
     if (!customerId || !statusKey) {
       return json({ success: false, error: 'Customer and status are required.' }, { status: 400 })
@@ -234,11 +372,13 @@ export async function action({ request }: ActionFunctionArgs) {
         customerName,
         statusKey,
         active: true,
-        pricePerInchOverride: pricePerInchOverride > 0 ? pricePerInchOverride : null,
+        pricePerInchOverride: productOverrides[0]?.pricePerInch || null,
+        productOverrides,
       })
 
     const nextConfig = normalizeCustomerPricingSettings({
       customerPricing: {
+        version: 2,
         enabled: existingConfig.enabled,
         businessPricePerInch: existingConfig.businessPricePerInch,
         statuses: existingConfig.statuses,
@@ -249,7 +389,10 @@ export async function action({ request }: ActionFunctionArgs) {
     await prisma.shop.update({
       where: { shopDomain: session.shop },
       data: {
-        settings: buildShopSettingsUpdate(existingSettings, nextConfig),
+        settings: buildShopSettingsUpdate(
+          existingSettings,
+          buildCustomerPricingSettingsPayload(nextConfig)
+        ),
       },
     })
 
@@ -257,9 +400,14 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   if (intent === 'delete-assignment') {
-    const customerId = String(formData.get('customerId') || '').trim()
+    const customerId = normalizeCustomerId(String(formData.get('customerId') || '').trim())
+    if (!customerId) {
+      return json({ success: false, error: 'Missing customer ID.' }, { status: 400 })
+    }
+
     const nextConfig = normalizeCustomerPricingSettings({
       customerPricing: {
+        version: 2,
         enabled: existingConfig.enabled,
         businessPricePerInch: existingConfig.businessPricePerInch,
         statuses: existingConfig.statuses,
@@ -270,7 +418,10 @@ export async function action({ request }: ActionFunctionArgs) {
     await prisma.shop.update({
       where: { shopDomain: session.shop },
       data: {
-        settings: buildShopSettingsUpdate(existingSettings, nextConfig),
+        settings: buildShopSettingsUpdate(
+          existingSettings,
+          buildCustomerPricingSettingsPayload(nextConfig)
+        ),
       },
     })
 
@@ -281,80 +432,74 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function CustomerPricingPage() {
-  const { config, search, searchResults } = useLoaderData<typeof loader>()
+  const { isDtf, config, productCatalog, search, searchResults } = useLoaderData<typeof loader>()
   const actionData = useActionData<CustomerPricingActionData>()
   const navigation = useNavigation()
   const isSubmitting = navigation.state === 'submitting'
-  const actionMessage = actionData?.message || null
-  const actionError = actionData?.error || null
   const [enabled, setEnabled] = useState(config.enabled)
-  const [businessPricePerInch, setBusinessPricePerInch] = useState(
-    formatEditableRate(config.businessPricePerInch || 0.2) || '0.2'
-  )
   const [assignmentFilter, setAssignmentFilter] = useState('')
-  const [statuses, setStatuses] = useState<StatusFormState[]>(
-    config.statuses.map((status) => ({
-      id: status.id,
-      key: status.key,
-      label: status.label,
-      active: status.active,
-      pricePerInch: formatEditableRate(status.pricePerInch),
-    }))
+  const [searchInput, setSearchInput] = useState(search)
+  const [statuses, setStatuses] = useState<StatusEditor[]>(
+    config.statuses.map((status) => toStatusEditor(status, productCatalog))
   )
 
-  const savedStatusMap = config.statuses.reduce<Record<string, (typeof config.statuses)[number]>>((acc, status) => {
+  useEffect(() => {
+    setEnabled(config.enabled)
+    setSearchInput(search)
+    setStatuses(config.statuses.map((status) => toStatusEditor(status, productCatalog)))
+  }, [config, productCatalog, search])
+
+  const actionMessage = actionData?.message || null
+  const actionError = actionData?.error || null
+  const statusMap = statuses.reduce<Record<string, StatusEditor>>((acc, status) => {
     acc[status.key] = status
     return acc
   }, {})
-  const savedAssignableStatuses = config.statuses.filter((status) => status.active)
-  const assignmentLookup = config.assignments.reduce<Record<string, (typeof config.assignments)[number]>>((acc, assignment) => {
+  const assignableStatuses = statuses.filter((status) => status.type !== 'standard' && status.active)
+  const assignments = config.assignments
+  const assignmentLookup = assignments.reduce<Record<string, CustomerPricingAssignment>>((acc, assignment) => {
     acc[assignment.customerId] = assignment
     return acc
   }, {})
-  const normalizedBusinessRate = parseLocalizedPositiveNumber(
-    businessPricePerInch,
-    config.businessPricePerInch || 0.2
-  )
-  const sampleBusinessPrice = (60 * normalizedBusinessRate).toFixed(2)
-  const activeStatusCount = statuses.filter((status) => status.active && status.label.trim()).length
-  const filteredAssignments = config.assignments.filter((assignment) => {
-    const searchValue = assignmentFilter.trim().toLowerCase()
-    if (!searchValue) return true
-    const status = savedStatusMap[assignment.statusKey]
-    const haystack = [
+
+  const filteredAssignments = assignments.filter((assignment) => {
+    const needle = assignmentFilter.trim().toLowerCase()
+    if (!needle) return true
+    const status = statusMap[assignment.statusKey]
+    return [
       assignment.customerName || '',
       assignment.customerEmail || '',
       assignment.customerId,
-      assignment.statusKey,
-      status?.label || '',
+      status?.label || assignment.statusKey,
     ]
       .join(' ')
       .toLowerCase()
-    return haystack.includes(searchValue)
+      .includes(needle)
   })
 
-  function updateStatus(index: number, field: keyof StatusFormState, value: string | boolean) {
+  function updateStatusLabel(statusKey: string, label: string) {
     setStatuses((current) =>
-      current.map((status, currentIndex) =>
-        currentIndex === index ? { ...status, [field]: value } : status
-      )
+      current.map((status) => (status.key === statusKey ? { ...status, label } : status))
     )
   }
 
-  function addStatus() {
+  function updateStatusRule(
+    statusKey: string,
+    productId: string,
+    field: keyof ProductRuleEditor,
+    value: string | boolean
+  ) {
     setStatuses((current) =>
-      current.concat({
-        id: `status_${Date.now()}`,
-        key: '',
-        label: '',
-        active: true,
-        pricePerInch: '',
+      current.map((status) => {
+        if (status.key !== statusKey) return status
+        return {
+          ...status,
+          productRules: status.productRules.map((rule) =>
+            rule.productId === productId ? { ...rule, [field]: value } : rule
+          ),
+        }
       })
     )
-  }
-
-  function removeStatus(index: number) {
-    setStatuses((current) => current.filter((_, currentIndex) => currentIndex !== index))
   }
 
   return (
@@ -363,236 +508,153 @@ export default function CustomerPricingPage() {
         <Layout.Section>
           {actionMessage ? <Banner tone="success">{actionMessage}</Banner> : null}
           {actionError ? <Banner tone="critical">{actionError}</Banner> : null}
+          {isDtf ? (
+            <Banner tone="info">
+              DTF Print House uses the simplified model: Standard customers use normal variant prices,
+              Business customers use per-inch pricing on upload DTF/UV products, and VIP customers use
+              measured pricing on the DTF upload product.
+            </Banner>
+          ) : null}
         </Layout.Section>
 
         <Layout.Section>
-          <Card>
-            <BlockStack gap="400">
-              <InlineStack align="space-between" blockAlign="start">
-                <BlockStack gap="100">
-                  <Text as="h2" variant="headingMd">
-                    Pricing overview
-                  </Text>
-                  <Text as="p" variant="bodyMd" tone="subdued">
-                    Guests and standard customers stay on the normal sheet variants. VIP customers
-                    skip the variant table and check out from the exact measured page length.
-                  </Text>
-                </BlockStack>
-              </InlineStack>
-
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                  gap: '12px',
-                }}
-              >
-                <Box padding="300" background="bg-surface-secondary" borderRadius="200">
-                  <Text as="p" variant="bodySm" tone="subdued">
-                    Pricing mode
-                  </Text>
-                  <Text as="p" variant="headingMd">
-                    {enabled ? 'Customer pricing enabled' : 'Customer pricing disabled'}
-                  </Text>
-                </Box>
-
-                <Box padding="300" background="bg-surface-secondary" borderRadius="200">
-                  <Text as="p" variant="bodySm" tone="subdued">
-                    Standard fallback rate
-                  </Text>
-                  <Text as="p" variant="headingMd">
-                    {formatRate(normalizedBusinessRate)}
-                  </Text>
-                  <Text as="p" variant="bodySm" tone="subdued">
-                    60&quot; sample = ${sampleBusinessPrice}
-                  </Text>
-                </Box>
-
-                <Box padding="300" background="bg-surface-secondary" borderRadius="200">
-                  <Text as="p" variant="bodySm" tone="subdued">
-                    VIP statuses
-                  </Text>
-                  <Text as="p" variant="headingMd">
-                    {activeStatusCount} active
-                  </Text>
-                  <Text as="p" variant="bodySm" tone="subdued">
-                    {config.statuses.length} saved status profiles
-                  </Text>
-                </Box>
-
-                <Box padding="300" background="bg-surface-secondary" borderRadius="200">
-                  <Text as="p" variant="bodySm" tone="subdued">
-                    Assigned customers
-                  </Text>
-                  <Text as="p" variant="headingMd">
-                    {config.assignments.length}
-                  </Text>
-                  <Text as="p" variant="bodySm" tone="subdued">
-                    Customers currently using a saved VIP rule
-                  </Text>
-                </Box>
-              </div>
-            </BlockStack>
-          </Card>
+          <InlineGrid columns={{ xs: 1, md: 3 }} gap="400">
+            <Card>
+              <BlockStack gap="150">
+                <Text as="h2" variant="headingMd">Standard Customer</Text>
+                <Badge tone="info">Fallback</Badge>
+                <Text as="p" variant="bodyMd" tone="subdued">
+                  No assignment needed. Standard customers always see and pay the normal Shopify variant price.
+                </Text>
+              </BlockStack>
+            </Card>
+            <Card>
+              <BlockStack gap="150">
+                <Text as="h2" variant="headingMd">Business</Text>
+                <Badge tone="success">{assignments.filter((item) => item.statusKey === 'business').length} assigned</Badge>
+                <Text as="p" variant="bodyMd" tone="subdued">
+                  Business customers keep upload sheet fitting, but checkout uses your per-inch rate on the selected sheet length.
+                </Text>
+              </BlockStack>
+            </Card>
+            <Card>
+              <BlockStack gap="150">
+                <Text as="h2" variant="headingMd">VIP</Text>
+                <Badge tone="attention">{assignments.filter((item) => item.statusKey === 'vip').length} assigned</Badge>
+                <Text as="p" variant="bodyMd" tone="subdued">
+                  VIP customers skip variant pricing and pay from the exact measured uploaded page length.
+                </Text>
+              </BlockStack>
+            </Card>
+          </InlineGrid>
         </Layout.Section>
 
         <Layout.Section>
           <Card>
             <Form method="post">
               <input type="hidden" name="intent" value="save-config" />
+              <input type="hidden" name="enabled" value={enabled ? 'true' : 'false'} />
               <input
                 type="hidden"
                 name="statusesJson"
-                value={JSON.stringify(
-                  statuses.map((status) => ({
-                    id: status.id,
-                    key: status.key,
-                    label: status.label,
-                    active: status.active,
-                    pricePerInch: parseLocalizedPositiveNumber(status.pricePerInch, 0),
-                  }))
-                )}
+                value={JSON.stringify(serializeStatusesForSave(statuses))}
               />
-              <input type="hidden" name="enabled" value={enabled ? 'true' : 'false'} />
 
               <BlockStack gap="500">
                 <InlineStack align="space-between" blockAlign="start">
                   <BlockStack gap="100">
-                    <Text as="h2" variant="headingMd">
-                      Pricing rules
-                    </Text>
+                    <Text as="h2" variant="headingMd">Status Rules</Text>
                     <Text as="p" variant="bodyMd" tone="subdued">
-                      Keep the default fallback rate stable, then define named VIP statuses with
-                      their own per-inch rate.
+                      Turn each product rule on or off and set the exact per-inch rate that applies to
+                      that customer status.
                     </Text>
                   </BlockStack>
-                  <Button submit variant="primary" loading={isSubmitting}>
-                    Save Pricing Rules
-                  </Button>
+                  <Button submit variant="primary" loading={isSubmitting}>Save Rules</Button>
                 </InlineStack>
 
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-                    gap: '16px',
-                  }}
-                >
-                  <Box padding="300" background="bg-surface-secondary" borderRadius="200">
-                    <BlockStack gap="300">
-                      <Checkbox
-                        label="Enable customer-specific pricing"
-                        checked={enabled}
-                        onChange={setEnabled}
-                      />
-                      <TextField
-                        label="Standard fallback rate"
-                        type="text"
-                        inputMode="decimal"
-                        autoComplete="off"
-                        value={businessPricePerInch}
-                        onChange={setBusinessPricePerInch}
-                        name="businessPricePerInch"
-                        helpText="Internal fallback for VIP rules without a custom rate. Standard customers still pay the normal Shopify variant price."
-                      />
-                    </BlockStack>
-                  </Box>
+                <Checkbox
+                  label="Enable customer-specific pricing"
+                  checked={enabled}
+                  onChange={setEnabled}
+                />
 
-                  <Box padding="300" background="bg-surface-secondary" borderRadius="200">
-                    <BlockStack gap="200">
-                      <Text as="h3" variant="headingSm">
-                        How checkout works
-                      </Text>
-                      <Text as="p" variant="bodyMd" tone="subdued">
-                        Standard customers pay the normal Shopify variant price. VIP customers log
-                        in, upload a PNG, and the server charges their exact page length with their
-                        assigned rate.
-                      </Text>
-                      <Text as="p" variant="bodyMd">
-                        Reference example: 60&quot; x {formatRate(normalizedBusinessRate)} = ${sampleBusinessPrice}
-                      </Text>
-                    </BlockStack>
-                  </Box>
-                </div>
+                <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
+                  {statuses
+                    .filter((status) => status.type !== 'standard')
+                    .map((status) => (
+                      <Card key={status.key} background="bg-surface-secondary">
+                        <BlockStack gap="400">
+                          <InlineStack align="space-between" blockAlign="center">
+                            <BlockStack gap="050">
+                              <Text as="h3" variant="headingSm">
+                                {status.type === 'business' ? 'Business status' : 'VIP status'}
+                              </Text>
+                              <Text as="p" variant="bodySm" tone="subdued">
+                                {status.type === 'business'
+                                  ? 'Charges from the resolved upload sheet length.'
+                                  : 'Charges from the exact measured uploaded page length.'}
+                              </Text>
+                            </BlockStack>
+                            <Badge tone={status.type === 'business' ? 'success' : 'attention'}>
+                              {status.type.toUpperCase()}
+                            </Badge>
+                          </InlineStack>
 
-                <BlockStack gap="300">
-                  <InlineStack align="space-between" blockAlign="center">
-                    <BlockStack gap="050">
-                      <Text as="h3" variant="headingSm">
-                        VIP status catalog
-                      </Text>
-                      <Text as="p" variant="bodySm" tone="subdued">
-                        These labels are what logged-in customers will see on the product page.
-                      </Text>
-                    </BlockStack>
-                    <Button onClick={addStatus}>Add Status</Button>
-                  </InlineStack>
+                          <TextField
+                            label="Storefront label"
+                            autoComplete="off"
+                            value={status.label}
+                            onChange={(value) => updateStatusLabel(status.key, value)}
+                          />
 
-                  {statuses.length ? (
-                    <BlockStack gap="300">
-                      {statuses.map((status, index) => (
-                        <Box
-                          key={status.id}
-                          padding="300"
-                          borderWidth="025"
-                          borderColor="border"
-                          borderRadius="200"
-                        >
                           <BlockStack gap="300">
-                            <div
-                              style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                                gap: '12px',
-                              }}
-                            >
-                              <TextField
-                                label="Status label"
-                                autoComplete="off"
-                                value={status.label}
-                                onChange={(value) => updateStatus(index, 'label', value)}
-                                placeholder="VIP Gold"
-                              />
-                              <TextField
-                                label="Internal key"
-                                autoComplete="off"
-                                value={status.key}
-                                onChange={(value) => updateStatus(index, 'key', value)}
-                                placeholder="vip-gold"
-                                helpText="Leave blank to auto-generate from the label."
-                              />
-                              <TextField
-                                label="VIP price per inch"
-                                type="text"
-                                inputMode="decimal"
-                                autoComplete="off"
-                                value={status.pricePerInch}
-                                onChange={(value) => updateStatus(index, 'pricePerInch', value)}
-                                placeholder={formatEditableRate(normalizedBusinessRate) || '0.2'}
-                                helpText="Used when no customer-level override is set."
-                              />
-                            </div>
+                            {status.productRules.map((rule) => (
+                              <Box
+                                key={`${status.key}_${rule.productId}`}
+                                padding="300"
+                                borderWidth="025"
+                                borderColor="border"
+                                borderRadius="200"
+                              >
+                                <BlockStack gap="250">
+                                  <InlineStack align="space-between" blockAlign="center">
+                                    <Text as="p" variant="bodyMd" fontWeight="medium">
+                                      {rule.productLabel}
+                                    </Text>
+                                    <Badge tone={rule.active ? 'success' : undefined}>
+                                      {rule.active ? 'Enabled' : 'Disabled'}
+                                    </Badge>
+                                  </InlineStack>
 
-                            <InlineStack align="space-between" blockAlign="center">
-                              <Checkbox
-                                label="Status is active"
-                                checked={status.active}
-                                onChange={(value) => updateStatus(index, 'active', value)}
-                              />
-                              <Button variant="plain" tone="critical" onClick={() => removeStatus(index)}>
-                                Remove
-                              </Button>
-                            </InlineStack>
+                                  <Checkbox
+                                    label="Rule is active"
+                                    checked={rule.active}
+                                    onChange={(value) => updateStatusRule(status.key, rule.productId, 'active', value)}
+                                  />
+
+                                  <TextField
+                                    label="Price per inch"
+                                    autoComplete="off"
+                                    type="text"
+                                    inputMode="decimal"
+                                    prefix="$"
+                                    value={rule.pricePerInch}
+                                    onChange={(value) => updateStatusRule(status.key, rule.productId, 'pricePerInch', value)}
+                                  />
+
+                                  <Text as="p" variant="bodySm" tone="subdued">
+                                    {rule.pricingMode === 'variant_length'
+                                      ? 'Checkout total = selected sheet length x sheets needed x this rate.'
+                                      : 'Checkout total = measured uploaded page length x this rate.'}
+                                  </Text>
+                                </BlockStack>
+                              </Box>
+                            ))}
                           </BlockStack>
-                        </Box>
-                      ))}
-                    </BlockStack>
-                  ) : (
-                    <Banner tone="info">
-                      Add at least one VIP status before assigning customers.
-                    </Banner>
-                  )}
-                </BlockStack>
+                        </BlockStack>
+                      </Card>
+                    ))}
+                </InlineGrid>
               </BlockStack>
             </Form>
           </Card>
@@ -603,171 +665,52 @@ export default function CustomerPricingPage() {
             <BlockStack gap="400">
               <InlineStack align="space-between" blockAlign="start">
                 <BlockStack gap="100">
-                  <Text as="h2" variant="headingMd">
-                    Find and assign customers
-                  </Text>
+                  <Text as="h2" variant="headingMd">Search Customers</Text>
                   <Text as="p" variant="bodyMd" tone="subdued">
-                    Search Shopify customers by email or name, then assign or update their VIP status in
-                    one step.
+                    Search by email or name, then assign Business or VIP without leaving this page.
                   </Text>
                 </BlockStack>
               </InlineStack>
 
               <Form method="get">
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'minmax(280px, 1fr) auto',
-                    gap: '12px',
-                    alignItems: 'end',
-                  }}
-                >
-                  <div>
-                    <label style={{ display: 'block', fontSize: 12, marginBottom: 6 }}>
-                      Search by customer email or name
-                    </label>
-                    <input
-                      type="text"
+                <InlineStack gap="300" align="start">
+                  <div style={{ flex: 1 }}>
+                    <TextField
+                      label="Search by email or name"
+                      autoComplete="off"
                       name="q"
-                      defaultValue={search}
-                      placeholder="jane@example.com or Jane"
-                      style={{
-                        width: '100%',
-                        minHeight: 40,
-                        padding: '8px 12px',
-                        borderRadius: 8,
-                        border: '1px solid #c9cccf',
-                      }}
+                      value={searchInput}
+                      placeholder="houseofddm@hotmail.com"
+                      onChange={setSearchInput}
                     />
                   </div>
-                  <Button submit>Search Customers</Button>
-                </div>
+                  <Button submit>Search</Button>
+                </InlineStack>
               </Form>
-
-              {!savedAssignableStatuses.length ? (
-                <Banner tone="warning">
-                  Save at least one active VIP status before assigning customers.
-                </Banner>
-              ) : null}
 
               {searchResults.length ? (
                 <BlockStack gap="300">
                   {searchResults.map((customer) => {
-                    const currentAssignment = assignmentLookup[customer.id] || null
-                    const currentStatus = currentAssignment ? savedStatusMap[currentAssignment.statusKey] : null
-                    const currentRate =
-                      currentAssignment?.pricePerInchOverride ??
-                      currentStatus?.pricePerInch ??
-                      config.businessPricePerInch
+                    const currentAssignment = assignmentLookup[customer.id]
+                    const currentStatus = currentAssignment ? statusMap[currentAssignment.statusKey] : null
 
                     return (
-                      <Box
-                        key={customer.id}
-                        padding="300"
-                        borderWidth="025"
-                        borderColor="border"
-                        borderRadius="200"
-                      >
-                        <Form method="post">
-                          <input type="hidden" name="intent" value="add-assignment" />
-                          <input type="hidden" name="customerId" value={customer.id} />
-                          <input type="hidden" name="customerEmail" value={customer.email || ''} />
-                          <input type="hidden" name="customerName" value={customer.displayName} />
-
-                          <BlockStack gap="300">
-                            <InlineStack align="space-between" blockAlign="start" wrap>
-                              <BlockStack gap="050">
-                                <Text as="p" variant="bodyMd">
-                                  {customer.displayName}
-                                </Text>
-                                <Text as="p" variant="bodySm" tone="subdued">
-                                  {customer.email || 'No email on file'}
-                                </Text>
-                                <Text as="p" variant="bodySm" tone="subdued">
-                                  Customer ID: {customer.id}
-                                </Text>
-                              </BlockStack>
-
-                              <Box padding="200" background="bg-surface-secondary" borderRadius="200">
-                                <Text as="p" variant="bodySm" tone="subdued">
-                                  Current status
-                                </Text>
-                                <Text as="p" variant="bodyMd">
-                                  {currentAssignment
-                                    ? `${currentStatus?.label || currentAssignment.statusKey} (${formatRate(currentRate)})`
-                                    : 'Standard customer (no assigned VIP status)'}
-                                </Text>
-                              </Box>
-                            </InlineStack>
-
-                            <div
-                              style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'minmax(220px, 1fr) minmax(220px, 1fr) auto',
-                                gap: '12px',
-                                alignItems: 'end',
-                              }}
-                            >
-                              <div>
-                                <label style={{ display: 'block', fontSize: 12, marginBottom: 6 }}>
-                                  VIP status
-                                </label>
-                                <select
-                                  name="statusKey"
-                                  defaultValue={currentAssignment?.statusKey || savedAssignableStatuses[0]?.key || ''}
-                                  disabled={!savedAssignableStatuses.length}
-                                  style={{
-                                    width: '100%',
-                                    minHeight: 40,
-                                    padding: '8px 12px',
-                                    borderRadius: 8,
-                                    border: '1px solid #c9cccf',
-                                    background: savedAssignableStatuses.length ? '#fff' : '#f3f4f6',
-                                  }}
-                                >
-                                  {savedAssignableStatuses.map((status) => (
-                                    <option key={status.key} value={status.key}>
-                                      {status.label} ({formatRate(status.pricePerInch)})
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-
-                              <div>
-                                <label style={{ display: 'block', fontSize: 12, marginBottom: 6 }}>
-                                  Customer override price per inch
-                                </label>
-                                <input
-                                  type="text"
-                                  name="pricePerInchOverride"
-                                  inputMode="decimal"
-                                  defaultValue={formatEditableRate(currentAssignment?.pricePerInchOverride)}
-                                  placeholder="Optional"
-                                  style={{
-                                    width: '100%',
-                                    minHeight: 40,
-                                    padding: '8px 12px',
-                                    borderRadius: 8,
-                                    border: '1px solid #c9cccf',
-                                  }}
-                                />
-                              </div>
-
-                              <Button submit variant="primary" loading={isSubmitting} disabled={!savedAssignableStatuses.length}>
-                                {currentAssignment ? 'Update Assignment' : 'Assign Customer'}
-                              </Button>
-                            </div>
-                          </BlockStack>
-                        </Form>
-                      </Box>
+                      <Card key={customer.id} background="bg-surface-secondary">
+                        <AssignmentForm
+                          customer={customer}
+                          currentAssignment={currentAssignment || null}
+                          currentStatusLabel={currentStatus?.label || 'Standard'}
+                          assignableStatuses={assignableStatuses}
+                          productCatalog={productCatalog}
+                          isSubmitting={isSubmitting}
+                        />
+                      </Card>
                     )
                   })}
                 </BlockStack>
               ) : search ? (
-                <Banner tone="info">No customers matched that search.</Banner>
-              ) : (
-                <Banner tone="info">Search for a customer to assign a VIP status.</Banner>
-              )}
+                <Banner tone="info">No customers found for "{search}".</Banner>
+              ) : null}
             </BlockStack>
           </Card>
         </Layout.Section>
@@ -775,92 +718,71 @@ export default function CustomerPricingPage() {
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
-              <InlineStack align="space-between" blockAlign="center">
+              <InlineStack align="space-between" blockAlign="start">
                 <BlockStack gap="100">
-                  <Text as="h2" variant="headingMd">
-                    Existing assignments
-                  </Text>
+                  <Text as="h2" variant="headingMd">Existing Assignments</Text>
                   <Text as="p" variant="bodyMd" tone="subdued">
-                    Review who is assigned, what rate they get, and remove outdated mappings quickly.
+                    Review which customers are currently using Business or VIP pricing and remove them when needed.
                   </Text>
                 </BlockStack>
-                <div style={{ minWidth: 260 }}>
-                  <TextField
-                    label="Filter assignments"
-                    labelHidden
-                    autoComplete="off"
-                    value={assignmentFilter}
-                    onChange={setAssignmentFilter}
-                    placeholder="Filter by name, email, ID, or status"
-                  />
-                </div>
               </InlineStack>
 
-              {config.assignments.length ? (
-                filteredAssignments.length ? (
-                  <BlockStack gap="300">
-                    {filteredAssignments.map((assignment) => {
-                      const status = savedStatusMap[assignment.statusKey]
-                      const effectiveRate =
-                        assignment.pricePerInchOverride ??
-                        status?.pricePerInch ??
-                        config.businessPricePerInch
+              <TextField
+                label="Filter assignments"
+                autoComplete="off"
+                value={assignmentFilter}
+                onChange={setAssignmentFilter}
+                placeholder="Search by name, email, or status"
+              />
 
-                      return (
-                        <Box
-                          key={assignment.customerId}
-                          padding="300"
-                          borderWidth="025"
-                          borderColor="border"
-                          borderRadius="200"
-                        >
-                          <InlineStack align="space-between" blockAlign="start" wrap>
-                            <BlockStack gap="100">
-                              <Text as="p" variant="bodyMd">
-                                {assignment.customerName || assignment.customerEmail || assignment.customerId}
-                              </Text>
+              {filteredAssignments.length ? (
+                <BlockStack gap="300">
+                  {filteredAssignments.map((assignment) => {
+                    const status = statusMap[assignment.statusKey]
+                    return (
+                      <Card key={assignment.customerId} background="bg-surface-secondary">
+                        <InlineGrid columns={{ xs: 1, md: '2fr 1fr auto' }} gap="300">
+                          <BlockStack gap="050">
+                            <Text as="p" variant="bodyMd" fontWeight="medium">
+                              {assignment.customerName || assignment.customerEmail || assignment.customerId}
+                            </Text>
+                            <Text as="p" variant="bodySm" tone="subdued">
+                              {assignment.customerEmail || 'No email'} | Customer ID {assignment.customerId}
+                            </Text>
+                          </BlockStack>
+
+                          <BlockStack gap="100">
+                            <Badge tone={status?.type === 'vip' ? 'attention' : 'success'}>
+                              {status?.label || assignment.statusKey}
+                            </Badge>
+                            {assignment.productOverrides.length ? (
                               <Text as="p" variant="bodySm" tone="subdued">
-                                {assignment.customerEmail || 'No email on file'}
+                                {assignment.productOverrides
+                                  .map((override) => {
+                                    const product = productCatalog.find(
+                                      (item) => item.productId === normalizeProductIdLocal(override.productId)
+                                    )
+                                    return `${product?.label || override.productId}: ${formatRate(override.pricePerInch)}`
+                                  })
+                                  .join(' | ')}
                               </Text>
+                            ) : (
                               <Text as="p" variant="bodySm" tone="subdued">
-                                Customer ID: {assignment.customerId}
+                                Using the default rates from the assigned status.
                               </Text>
-                            </BlockStack>
+                            )}
+                          </BlockStack>
 
-                            <Box padding="200" background="bg-surface-secondary" borderRadius="200">
-                              <BlockStack gap="050">
-                                <Text as="p" variant="bodySm" tone="subdued">
-                                  Assigned status
-                                </Text>
-                                <Text as="p" variant="bodyMd">
-                                  {status?.label || assignment.statusKey}
-                                </Text>
-                                <Text as="p" variant="bodySm" tone="subdued">
-                                  Effective rate: {formatRate(effectiveRate)}
-                                </Text>
-                                <Text as="p" variant="bodySm" tone="subdued">
-                                  {assignment.pricePerInchOverride
-                                    ? `Customer override: ${formatRate(assignment.pricePerInchOverride)}`
-                                    : `Status default: ${formatRate(status?.pricePerInch ?? config.businessPricePerInch)}`}
-                                </Text>
-                              </BlockStack>
-                            </Box>
-
-                            <Form method="post">
-                              <input type="hidden" name="intent" value="delete-assignment" />
-                              <input type="hidden" name="customerId" value={assignment.customerId} />
-                              <Button submit tone="critical" variant="plain" loading={isSubmitting}>
-                                Remove
-                              </Button>
-                            </Form>
-                          </InlineStack>
-                        </Box>
-                      )
-                    })}
-                  </BlockStack>
-                ) : (
-                  <Banner tone="info">No assignments matched that filter.</Banner>
-                )
+                          <Form method="post">
+                            <input type="hidden" name="intent" value="delete-assignment" />
+                            <input type="hidden" name="customerId" value={assignment.customerId} />
+                            <Button submit tone="critical" loading={isSubmitting}>Remove</Button>
+                          </Form>
+                        </InlineGrid>
+                      </Card>
+                    )
+                  })}
+                </BlockStack>
               ) : (
                 <Banner tone="info">No customer assignments yet.</Banner>
               )}
@@ -869,5 +791,106 @@ export default function CustomerPricingPage() {
         </Layout.Section>
       </Layout>
     </Page>
+  )
+}
+
+function AssignmentForm({
+  customer,
+  currentAssignment,
+  currentStatusLabel,
+  assignableStatuses,
+  productCatalog,
+  isSubmitting,
+}: {
+  customer: SearchCustomer
+  currentAssignment: CustomerPricingAssignment | null
+  currentStatusLabel: string
+  assignableStatuses: StatusEditor[]
+  productCatalog: ProductRuleCatalogItem[]
+  isSubmitting: boolean
+}) {
+  const [selectedStatusKey, setSelectedStatusKey] = useState(
+    currentAssignment?.statusKey || assignableStatuses[0]?.key || 'business'
+  )
+  const [overrideValues, setOverrideValues] = useState<Record<string, string>>(() =>
+    productCatalog.reduce<Record<string, string>>((acc, product) => {
+      const currentOverride = currentAssignment?.productOverrides.find(
+        (override) => normalizeProductIdLocal(override.productId) === product.productId
+      )
+      acc[product.productId] = formatEditableRate(currentOverride?.pricePerInch)
+      return acc
+    }, {})
+  )
+
+  return (
+    <Form method="post">
+      <input type="hidden" name="intent" value="save-assignment" />
+      <input type="hidden" name="customerId" value={customer.id} />
+      <input type="hidden" name="customerEmail" value={customer.email || ''} />
+      <input type="hidden" name="customerName" value={customer.displayName} />
+      <input
+        type="hidden"
+        name="productOverridesJson"
+        value={JSON.stringify(
+          productCatalog.map((product) => ({
+            productId: product.productId,
+            pricePerInch: overrideValues[product.productId] || '',
+          }))
+        )}
+      />
+
+      <BlockStack gap="300">
+        <InlineStack align="space-between" blockAlign="start">
+          <BlockStack gap="050">
+            <Text as="h3" variant="headingSm">{customer.displayName}</Text>
+            <Text as="p" variant="bodySm" tone="subdued">
+              {customer.email || 'No email'} | Customer ID {customer.id}
+            </Text>
+          </BlockStack>
+          <Badge tone={currentAssignment?.statusKey === 'vip' ? 'attention' : currentAssignment ? 'success' : 'info'}>
+            {currentStatusLabel}
+          </Badge>
+        </InlineStack>
+
+        <Select
+          label="Assigned status"
+          name="statusKey"
+          options={assignableStatuses.map((status) => ({
+            label: status.label,
+            value: status.key,
+          }))}
+          value={selectedStatusKey}
+          onChange={setSelectedStatusKey}
+        />
+
+        <InlineGrid columns={{ xs: 1, md: 2 }} gap="300">
+          {productCatalog.map((product) => (
+            <TextField
+              key={`${customer.id}_${product.productId}`}
+              label={`${product.label} override`}
+              autoComplete="off"
+              type="text"
+              inputMode="decimal"
+              placeholder="Use status default"
+              value={overrideValues[product.productId] || ''}
+              onChange={(value) =>
+                setOverrideValues((current) => ({
+                  ...current,
+                  [product.productId]: value,
+                }))
+              }
+            />
+          ))}
+        </InlineGrid>
+
+        <Text as="p" variant="bodySm" tone="subdued">
+          Leave overrides blank to use the default rate from the selected status.
+        </Text>
+
+        <InlineStack align="end">
+          <Button submit variant="primary" loading={isSubmitting}>Save Assignment</Button>
+        </InlineStack>
+      </BlockStack>
+    </Form>
   )
 }

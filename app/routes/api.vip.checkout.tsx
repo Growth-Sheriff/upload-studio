@@ -1,26 +1,12 @@
 import type { ActionFunctionArgs } from '@remix-run/node'
 import { json } from '@remix-run/node'
-import prisma from '~/lib/prisma.server'
+import { normalizeCustomerId } from '~/lib/customerPricing.server'
+import { prepareCustomPricingQuote } from '~/lib/customerPricingCheckout.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
-import {
-  calculateVipQuote,
-  extractVipUploadMeasurement,
-  normalizeCustomerId,
-  resolveCustomerPricingContext,
-  validateVipQuoteAgainstLimits,
-} from '~/lib/customerPricing.server'
 import { authenticate } from '~/shopify.server'
 
-const SHOP_CURRENCY_QUERY = `
-  query VipCheckoutShopCurrency {
-    shop {
-      currencyCode
-    }
-  }
-`
-
 const DRAFT_ORDER_CREATE_MUTATION = `
-  mutation VipDraftOrderCreate($input: DraftOrderInput!) {
+  mutation CustomPricingDraftOrderCreate($input: DraftOrderInput!) {
     draftOrderCreate(input: $input) {
       draftOrder {
         id
@@ -55,11 +41,22 @@ function parseBody(request: Request): Promise<Record<string, unknown>> {
   })
 }
 
-function normalizeProductId(productId: string | null | undefined): string | null {
-  if (!productId) return null
-  const raw = String(productId).trim()
-  if (!raw) return null
-  return raw.startsWith('gid://') ? raw : `gid://shopify/Product/${raw}`
+function parsePositiveInteger(value: unknown, fallback = 1): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback
+  return Math.max(1, Math.floor(parsed))
+}
+
+function errorStatusFromMessage(message: string): number {
+  if (message === 'Shop not found') return 404
+  if (message === 'Upload not found') return 404
+  if (message === 'Upload measurement is not ready') return 409
+  if (message === 'Upload does not belong to the logged in customer') return 403
+  if (message === 'Custom pricing is not active for this customer and product') return 403
+  if (message.includes('No product variant can fit')) return 422
+  if (message.includes('outside product limits')) return 422
+  if (message.includes('exceeds')) return 422
+  return 500
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -79,141 +76,92 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const body = await parseBody(request)
   const uploadId = String(body.uploadId || '').trim()
+  const quantity = parsePositiveInteger(body.quantity, 1)
+  const selectedVariantId =
+    body.selectedVariantId != null && String(body.selectedVariantId).trim()
+      ? String(body.selectedVariantId).trim()
+      : null
 
   if (!uploadId) {
     return json({ error: 'Missing uploadId' }, { status: 400 })
   }
 
-  const shop = await prisma.shop.findUnique({
-    where: { shopDomain },
-    select: {
-      id: true,
-      shopDomain: true,
-      accessToken: true,
-      settings: true,
-    },
-  })
-
-  if (!shop?.accessToken) {
-    return json({ error: 'Shop not found' }, { status: 404 })
-  }
-
-  const pricingContext = resolveCustomerPricingContext(shop.settings, loggedInCustomerId)
-
-  if (pricingContext.customerType !== 'vip') {
-    return json({ error: 'VIP checkout is only available to assigned VIP customers' }, { status: 403 })
-  }
-
-  const upload = await prisma.upload.findFirst({
-    where: { id: uploadId, shopId: shop.id },
-    select: {
-      id: true,
-      productId: true,
-      variantId: true,
-      customerId: true,
-      items: {
-        orderBy: { createdAt: 'asc' },
-        take: 1,
-        select: {
-          preflightStatus: true,
-          preflightResult: true,
-        },
-      },
-    },
-  })
-
-  if (!upload) {
-    return json({ error: 'Upload not found' }, { status: 404 })
-  }
-
-  const uploadCustomerId = normalizeCustomerId(upload.customerId)
-  if (uploadCustomerId && loggedInCustomerId && uploadCustomerId !== loggedInCustomerId) {
-    return json({ error: 'Upload does not belong to the logged in customer' }, { status: 403 })
-  }
-
-  const measurement = extractVipUploadMeasurement(upload.items)
-  if (!measurement) {
-    return json({ error: 'Upload measurement is not ready' }, { status: 409 })
-  }
-
-  let currencyCode = 'USD'
+  let prepared
   try {
-    const currencyResponse = await shopifyGraphQL<{ shop: { currencyCode?: string | null } }>(
-      shop.shopDomain,
-      shop.accessToken,
-      SHOP_CURRENCY_QUERY
-    )
-    currencyCode = String(currencyResponse?.shop?.currencyCode || 'USD').toUpperCase()
+    prepared = await prepareCustomPricingQuote({
+      shopDomain,
+      loggedInCustomerId,
+      uploadId,
+      quantity,
+      selectedVariantId,
+    })
   } catch (error) {
-    console.warn('[VIP Checkout] Falling back to USD currency code:', error)
+    const message = error instanceof Error ? error.message : 'Failed to prepare custom checkout.'
+    return json({ error: message }, { status: errorStatusFromMessage(message) })
   }
 
-  const productConfig = upload.productId
-    ? await prisma.productConfig.findFirst({
-        where: {
-          shopId: shop.id,
-          OR: [
-            { productId: upload.productId },
-            { productId: normalizeProductId(upload.productId) || upload.productId },
-          ],
-        },
-        select: {
-          builderConfig: true,
-        },
-      })
-    : null
-
-  const quote = calculateVipQuote(measurement, pricingContext.pricePerInch)
-  const validation = validateVipQuoteAgainstLimits(
-    quote,
-    (productConfig?.builderConfig as Record<string, unknown> | null) || null
-  )
-
-  if (!validation.ok) {
-    return json(
-      {
-        error: validation.reason || 'VIP design is outside product limits',
-        code: validation.code,
-      },
-      { status: 422 }
-    )
-  }
+  const checkoutLabel =
+    prepared.pricingContext.customerType === 'business'
+      ? 'Business custom checkout'
+      : 'VIP custom checkout'
+  const lineTitle =
+    prepared.pricingContext.customerType === 'business'
+      ? `${prepared.productTitle} - Business Pricing`
+      : `${prepared.productTitle} - VIP Pricing`
 
   const draftOrderInput = {
-    note: `VIP checkout for upload ${upload.id}`,
+    note: `Custom pricing checkout for upload ${prepared.upload.id}`,
     lineItems: [
       {
-        title: 'VIP Custom Transfer',
+        title: lineTitle,
         quantity: 1,
         requiresShipping: true,
         originalUnitPriceWithCurrency: {
-          amount: quote.formattedTotalPrice,
-          currencyCode,
+          amount: prepared.quote.formattedTotalPrice,
+          currencyCode: prepared.currencyCode,
         },
         customAttributes: [
-          { key: '_ul_upload_id', value: upload.id },
-          { key: '_ul_shop_domain', value: shop.shopDomain },
+          { key: '_ul_upload_id', value: prepared.upload.id },
+          { key: '_ul_shop_domain', value: prepared.shop.shopDomain },
           { key: '_ul_customer_id', value: loggedInCustomerId || '' },
-          { key: '_ul_customer_type', value: pricingContext.customerType },
-          { key: '_ul_status_key', value: pricingContext.statusKey },
-          { key: '_ul_status_label', value: pricingContext.statusLabel },
-          { key: '_ul_price_per_inch', value: pricingContext.pricePerInch.toFixed(4) },
-          { key: '_ul_page_width_in', value: quote.pageWidthIn.toFixed(2) },
-          { key: '_ul_page_length_in', value: quote.pageLengthIn.toFixed(2) },
-          { key: '_ul_measurement_mode', value: measurement.measurementMode || '' },
-          { key: '_ul_product_id', value: upload.productId || '' },
-          { key: '_ul_variant_id', value: upload.variantId || '' },
+          { key: '_ul_customer_type', value: prepared.pricingContext.customerType },
+          { key: '_ul_status_key', value: prepared.pricingContext.statusKey },
+          { key: '_ul_status_label', value: prepared.pricingContext.statusLabel },
+          { key: '_ul_pricing_mode', value: prepared.pricingContext.pricingMode },
+          { key: '_ul_price_per_inch', value: prepared.quote.pricePerInch.toFixed(4) },
+          { key: '_ul_page_width_in', value: prepared.quote.pageWidthIn.toFixed(2) },
+          { key: '_ul_page_length_in', value: prepared.quote.pageLengthIn.toFixed(2) },
+          { key: '_ul_billable_length_in', value: prepared.quote.billableLengthIn.toFixed(2) },
+          { key: '_ul_measurement_mode', value: prepared.measurement.measurementMode || '' },
+          { key: '_ul_product_id', value: prepared.upload.productId || '' },
+          { key: '_ul_variant_id', value: prepared.upload.variantId || '' },
+          {
+            key: '_ul_selected_variant_id',
+            value: prepared.resolvedVariant?.selectedVariantId || selectedVariantId || '',
+          },
+          {
+            key: '_ul_selected_variant_title',
+            value:
+              prepared.resolvedVariant?.selectedVariantTitle ||
+              prepared.quote.sheetVariantTitle ||
+              '',
+          },
+          {
+            key: '_ul_selected_sheet_label',
+            value: prepared.resolvedVariant?.selectedSheetLabel || '',
+          },
+          {
+            key: '_ul_sheets_needed',
+            value: String(prepared.resolvedVariant?.sheetsNeeded || prepared.quote.sheetsNeeded || 1),
+          },
+          {
+            key: '_ul_designs_per_sheet',
+            value: String(prepared.resolvedVariant?.designsPerSheet || ''),
+          },
         ].filter((entry) => entry.value !== ''),
       },
     ],
   }
-
-  let result:
-    | {
-        draftOrder: { id: string; invoiceUrl: string | null } | null
-        userErrors: Array<{ field: string[] | null; message: string }>
-      }
-    | null = null
 
   try {
     const draftOrderResponse = await shopifyGraphQL<{
@@ -221,48 +169,57 @@ export async function action({ request }: ActionFunctionArgs) {
         draftOrder: { id: string; invoiceUrl: string | null } | null
         userErrors: Array<{ field: string[] | null; message: string }>
       }
-    }>(shop.shopDomain, shop.accessToken, DRAFT_ORDER_CREATE_MUTATION, {
+    }>(prepared.shop.shopDomain, prepared.shop.accessToken, DRAFT_ORDER_CREATE_MUTATION, {
       input: draftOrderInput,
     })
-    result = draftOrderResponse?.draftOrderCreate || null
-  } catch (error) {
-    console.error('[VIP Checkout] Draft order creation failed:', error)
-    return json({ error: 'Failed to create VIP draft order' }, { status: 500 })
-  }
 
-  if (!result?.draftOrder?.invoiceUrl) {
-    return json(
-      {
-        error: result?.userErrors?.[0]?.message || 'Failed to create VIP draft order',
-        userErrors: result?.userErrors || [],
+    const result = draftOrderResponse?.draftOrderCreate
+    if (!result?.draftOrder?.invoiceUrl) {
+      return json(
+        {
+          error: result?.userErrors?.[0]?.message || `Failed to create ${checkoutLabel}`,
+          userErrors: result?.userErrors || [],
+        },
+        { status: 500 }
+      )
+    }
+
+    return json({
+      ok: true,
+      checkoutLabel,
+      checkoutUrl: result.draftOrder.invoiceUrl,
+      redirectUrl: result.draftOrder.invoiceUrl,
+      url: result.draftOrder.invoiceUrl,
+      invoiceUrl: result.draftOrder.invoiceUrl,
+      draftOrderId: result.draftOrder.id,
+      quoteTotal: prepared.quote.totalPrice,
+      exactTotal: prepared.quote.totalPrice,
+      currency: prepared.currencyCode,
+      quote: {
+        pageWidthIn: prepared.quote.pageWidthIn,
+        pageLengthIn: prepared.quote.pageLengthIn,
+        billableLengthIn: prepared.quote.billableLengthIn,
+        pricePerInch: prepared.quote.pricePerInch,
+        totalPrice: prepared.quote.totalPrice,
+        formattedTotalPrice: prepared.quote.formattedTotalPrice,
+        currencyCode: prepared.currencyCode,
+        selectedVariantId: prepared.resolvedVariant?.selectedVariantId || null,
+        selectedVariantTitle:
+          prepared.resolvedVariant?.selectedVariantTitle || prepared.quote.sheetVariantTitle || null,
+        selectedSheetLabel: prepared.resolvedVariant?.selectedSheetLabel || null,
+        sheetsNeeded: prepared.resolvedVariant?.sheetsNeeded || prepared.quote.sheetsNeeded || null,
       },
-      { status: 500 }
-    )
+      customer: {
+        customerId: prepared.pricingContext.customerId,
+        customerType: prepared.pricingContext.customerType,
+        statusKey: prepared.pricingContext.statusKey,
+        statusLabel: prepared.pricingContext.statusLabel,
+        pricingMode: prepared.pricingContext.pricingMode,
+        pricePerInch: prepared.pricingContext.pricePerInch,
+      },
+    })
+  } catch (error) {
+    console.error('[Custom Checkout] Draft order creation failed:', error)
+    return json({ error: `Failed to create ${checkoutLabel}` }, { status: 500 })
   }
-
-  return json({
-    ok: true,
-    checkoutUrl: result.draftOrder.invoiceUrl,
-    redirectUrl: result.draftOrder.invoiceUrl,
-    url: result.draftOrder.invoiceUrl,
-    invoiceUrl: result.draftOrder.invoiceUrl,
-    draftOrderId: result.draftOrder.id,
-    quoteTotal: quote.totalPrice,
-    exactTotal: quote.totalPrice,
-    quote: {
-      pageWidthIn: quote.pageWidthIn,
-      pageLengthIn: quote.pageLengthIn,
-      pricePerInch: quote.pricePerInch,
-      totalPrice: quote.totalPrice,
-      formattedTotalPrice: quote.formattedTotalPrice,
-      currencyCode,
-    },
-    customer: {
-      customerId: pricingContext.customerId,
-      customerType: pricingContext.customerType,
-      statusKey: pricingContext.statusKey,
-      statusLabel: pricingContext.statusLabel,
-      pricePerInch: pricingContext.pricePerInch,
-    },
-  })
 }

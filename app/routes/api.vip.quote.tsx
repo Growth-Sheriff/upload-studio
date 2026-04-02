@@ -1,23 +1,8 @@
 import type { ActionFunctionArgs } from '@remix-run/node'
 import { json } from '@remix-run/node'
-import prisma from '~/lib/prisma.server'
-import { shopifyGraphQL } from '~/lib/shopify.server'
-import {
-  calculateVipQuote,
-  extractVipUploadMeasurement,
-  normalizeCustomerId,
-  resolveCustomerPricingContext,
-  validateVipQuoteAgainstLimits,
-} from '~/lib/customerPricing.server'
+import { normalizeCustomerId } from '~/lib/customerPricing.server'
+import { prepareCustomPricingQuote } from '~/lib/customerPricingCheckout.server'
 import { authenticate } from '~/shopify.server'
-
-const SHOP_CURRENCY_QUERY = `
-  query VipQuoteShopCurrency {
-    shop {
-      currencyCode
-    }
-  }
-`
 
 function parseBody(request: Request): Promise<Record<string, unknown>> {
   const contentType = request.headers.get('content-type') || ''
@@ -40,11 +25,22 @@ function parseBody(request: Request): Promise<Record<string, unknown>> {
   })
 }
 
-function normalizeProductId(productId: string | null | undefined): string | null {
-  if (!productId) return null
-  const raw = String(productId).trim()
-  if (!raw) return null
-  return raw.startsWith('gid://') ? raw : `gid://shopify/Product/${raw}`
+function parsePositiveInteger(value: unknown, fallback = 1): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback
+  return Math.max(1, Math.floor(parsed))
+}
+
+function errorStatusFromMessage(message: string): number {
+  if (message === 'Shop not found') return 404
+  if (message === 'Upload not found') return 404
+  if (message === 'Upload measurement is not ready') return 409
+  if (message === 'Upload does not belong to the logged in customer') return 403
+  if (message === 'Custom pricing is not active for this customer and product') return 403
+  if (message.includes('No product variant can fit')) return 422
+  if (message.includes('outside product limits')) return 422
+  if (message.includes('exceeds')) return 422
+  return 500
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -64,130 +60,71 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const body = await parseBody(request)
   const uploadId = String(body.uploadId || '').trim()
+  const quantity = parsePositiveInteger(body.quantity, 1)
+  const selectedVariantId =
+    body.selectedVariantId != null && String(body.selectedVariantId).trim()
+      ? String(body.selectedVariantId).trim()
+      : null
 
   if (!uploadId) {
     return json({ error: 'Missing uploadId' }, { status: 400 })
   }
 
-  const shop = await prisma.shop.findUnique({
-    where: { shopDomain },
-    select: {
-      id: true,
-      shopDomain: true,
-      accessToken: true,
-      settings: true,
-    },
-  })
-
-  if (!shop?.accessToken) {
-    return json({ error: 'Shop not found' }, { status: 404 })
-  }
-
-  const pricingContext = resolveCustomerPricingContext(shop.settings, loggedInCustomerId)
-
-  if (pricingContext.customerType !== 'vip') {
-    return json({ error: 'VIP quote is only available to assigned VIP customers' }, { status: 403 })
-  }
-
-  const upload = await prisma.upload.findFirst({
-    where: { id: uploadId, shopId: shop.id },
-    select: {
-      id: true,
-      productId: true,
-      customerId: true,
-      items: {
-        orderBy: { createdAt: 'asc' },
-        take: 1,
-        select: {
-          preflightStatus: true,
-          preflightResult: true,
-        },
-      },
-    },
-  })
-
-  if (!upload) {
-    return json({ error: 'Upload not found' }, { status: 404 })
-  }
-
-  const uploadCustomerId = normalizeCustomerId(upload.customerId)
-  if (uploadCustomerId && loggedInCustomerId && uploadCustomerId !== loggedInCustomerId) {
-    return json({ error: 'Upload does not belong to the logged in customer' }, { status: 403 })
-  }
-
-  const measurement = extractVipUploadMeasurement(upload.items)
-  if (!measurement) {
-    return json({ error: 'Upload measurement is not ready' }, { status: 409 })
-  }
-
-  const productConfig = upload.productId
-    ? await prisma.productConfig.findFirst({
-        where: {
-          shopId: shop.id,
-          OR: [
-            { productId: upload.productId },
-            { productId: normalizeProductId(upload.productId) || upload.productId },
-          ],
-        },
-        select: {
-          builderConfig: true,
-        },
-      })
-    : null
-
-  const quote = calculateVipQuote(measurement, pricingContext.pricePerInch)
-  const validation = validateVipQuoteAgainstLimits(
-    quote,
-    (productConfig?.builderConfig as Record<string, unknown> | null) || null
-  )
-
-  if (!validation.ok) {
-    return json(
-      {
-        error: validation.reason || 'VIP design is outside product limits',
-        code: validation.code,
-      },
-      { status: 422 }
-    )
-  }
-
-  let currencyCode = 'USD'
   try {
-    const currencyResponse = await shopifyGraphQL<{ shop: { currencyCode?: string | null } }>(
-      shop.shopDomain,
-      shop.accessToken,
-      SHOP_CURRENCY_QUERY
-    )
-    currencyCode = String(currencyResponse?.shop?.currencyCode || 'USD').toUpperCase()
-  } catch (error) {
-    console.warn('[VIP Quote] Falling back to USD currency code:', error)
-  }
+    const prepared = await prepareCustomPricingQuote({
+      shopDomain,
+      loggedInCustomerId,
+      uploadId,
+      quantity,
+      selectedVariantId,
+    })
 
-  return json({
-    ok: true,
-    customerType: pricingContext.customerType,
-    statusKey: pricingContext.statusKey,
-    statusLabel: pricingContext.statusLabel,
-    pricePerInch: quote.pricePerInch,
-    pageWidthIn: quote.pageWidthIn,
-    pageLengthIn: quote.pageLengthIn,
-    billableLengthIn: quote.pageLengthIn,
-    totalPrice: quote.totalPrice,
-    quoteTotal: quote.totalPrice,
-    exactTotal: quote.totalPrice,
-    currency: currencyCode,
-    quote: {
-      customerType: pricingContext.customerType,
-      statusKey: pricingContext.statusKey,
-      statusLabel: pricingContext.statusLabel,
-      pricePerInch: quote.pricePerInch,
-      pageWidthIn: quote.pageWidthIn,
-      pageLengthIn: quote.pageLengthIn,
-      billableLengthIn: quote.pageLengthIn,
-      totalPrice: quote.totalPrice,
-      quoteTotal: quote.totalPrice,
-      exactTotal: quote.totalPrice,
-      currency: currencyCode,
-    },
-  })
+    return json({
+      ok: true,
+      customerType: prepared.pricingContext.customerType,
+      statusKey: prepared.pricingContext.statusKey,
+      statusLabel: prepared.pricingContext.statusLabel,
+      pricingMode: prepared.pricingContext.pricingMode,
+      hasCustomPricing: prepared.pricingContext.hasCustomPricing,
+      pricePerInch: prepared.quote.pricePerInch,
+      pageWidthIn: prepared.quote.pageWidthIn,
+      pageLengthIn: prepared.quote.pageLengthIn,
+      billableLengthIn: prepared.quote.billableLengthIn,
+      totalPrice: prepared.quote.totalPrice,
+      quoteTotal: prepared.quote.totalPrice,
+      exactTotal: prepared.quote.totalPrice,
+      currency: prepared.currencyCode,
+      selectedVariantId: prepared.resolvedVariant?.selectedVariantId || null,
+      selectedVariantTitle:
+        prepared.resolvedVariant?.selectedVariantTitle || prepared.quote.sheetVariantTitle || null,
+      selectedSheetLabel: prepared.resolvedVariant?.selectedSheetLabel || null,
+      sheetsNeeded:
+        prepared.resolvedVariant?.sheetsNeeded || prepared.quote.sheetsNeeded || quantity,
+      designsPerSheet: prepared.resolvedVariant?.designsPerSheet || null,
+      quote: {
+        customerType: prepared.pricingContext.customerType,
+        statusKey: prepared.pricingContext.statusKey,
+        statusLabel: prepared.pricingContext.statusLabel,
+        pricingMode: prepared.pricingContext.pricingMode,
+        pricePerInch: prepared.quote.pricePerInch,
+        pageWidthIn: prepared.quote.pageWidthIn,
+        pageLengthIn: prepared.quote.pageLengthIn,
+        billableLengthIn: prepared.quote.billableLengthIn,
+        totalPrice: prepared.quote.totalPrice,
+        quoteTotal: prepared.quote.totalPrice,
+        exactTotal: prepared.quote.totalPrice,
+        currency: prepared.currencyCode,
+        selectedVariantId: prepared.resolvedVariant?.selectedVariantId || null,
+        selectedVariantTitle:
+          prepared.resolvedVariant?.selectedVariantTitle || prepared.quote.sheetVariantTitle || null,
+        selectedSheetLabel: prepared.resolvedVariant?.selectedSheetLabel || null,
+        sheetsNeeded:
+          prepared.resolvedVariant?.sheetsNeeded || prepared.quote.sheetsNeeded || quantity,
+        designsPerSheet: prepared.resolvedVariant?.designsPerSheet || null,
+      },
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to calculate custom quote.'
+    return json({ error: message }, { status: errorStatusFromMessage(message) })
+  }
 }
