@@ -1,6 +1,6 @@
 import { deriveUploadItemLifecycle } from '~/lib/uploadLifecycle.server'
 
-export type CustomerPricingCustomerType = 'guest' | 'business' | 'vip'
+export type CustomerPricingCustomerType = 'guest' | 'standard' | 'vip'
 
 export interface CustomerPricingStatus {
   id: string
@@ -167,10 +167,10 @@ export function resolveCustomerPricingContext(
   const settings = normalizeCustomerPricingSettings(rawSettings)
   const customerId = normalizeCustomerId(loggedInCustomerId)
 
-  const businessStatus: CustomerPricingStatus = {
-    id: 'business',
-    key: 'business',
-    label: 'Business',
+  const standardStatus: CustomerPricingStatus = {
+    id: 'standard',
+    key: 'standard',
+    label: 'Standard Customer',
     active: true,
     pricePerInch: settings.businessPricePerInch,
   }
@@ -199,12 +199,12 @@ export function resolveCustomerPricingContext(
     return {
       enabled: false,
       customerId,
-      customerType: 'business',
-      statusKey: businessStatus.key,
-      statusLabel: businessStatus.label,
-      pricePerInch: businessStatus.pricePerInch,
+      customerType: 'standard',
+      statusKey: standardStatus.key,
+      statusLabel: standardStatus.label,
+      pricePerInch: standardStatus.pricePerInch,
       businessPricePerInch: settings.businessPricePerInch,
-      status: businessStatus,
+      status: standardStatus,
       assignment: null,
     }
   }
@@ -217,12 +217,12 @@ export function resolveCustomerPricingContext(
     return {
       enabled: settings.enabled,
       customerId,
-      customerType: 'business',
-      statusKey: businessStatus.key,
-      statusLabel: businessStatus.label,
-      pricePerInch: businessStatus.pricePerInch,
+      customerType: 'standard',
+      statusKey: standardStatus.key,
+      statusLabel: standardStatus.label,
+      pricePerInch: standardStatus.pricePerInch,
       businessPricePerInch: settings.businessPricePerInch,
-      status: businessStatus,
+      status: standardStatus,
       assignment: null,
     }
   }
@@ -235,12 +235,12 @@ export function resolveCustomerPricingContext(
     return {
       enabled: settings.enabled,
       customerId,
-      customerType: 'business',
-      statusKey: businessStatus.key,
-      statusLabel: businessStatus.label,
-      pricePerInch: businessStatus.pricePerInch,
+      customerType: 'standard',
+      statusKey: standardStatus.key,
+      statusLabel: standardStatus.label,
+      pricePerInch: standardStatus.pricePerInch,
       businessPricePerInch: settings.businessPricePerInch,
-      status: businessStatus,
+      status: standardStatus,
       assignment: null,
     }
   }

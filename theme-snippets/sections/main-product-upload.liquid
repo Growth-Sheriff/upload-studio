@@ -53,9 +53,9 @@
         <div class="ul-main-customer-status mb-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
-              <div class="ul-main-customer-status-title text-sm font-semibold text-gray-900">Customer pricing</div>
+              <div class="ul-main-customer-status-title text-sm font-semibold text-gray-900">Customer status</div>
               <div class="ul-main-customer-status-text mt-1 text-xs text-gray-600">
-                Log in to see your assigned customer status and pricing before upload.
+                Log in to check whether your account has an assigned custom status before upload.
               </div>
             </div>
             <div class="flex flex-wrap items-center gap-2">
@@ -466,8 +466,8 @@
       if (!customerStatusTitle || !customerStatusText) return;
 
       if (!customerLoggedIn) {
-        customerStatusTitle.textContent = 'Customer pricing';
-        customerStatusText.textContent = 'Log in to see your assigned customer status and pricing before upload.';
+        customerStatusTitle.textContent = 'Customer status';
+        customerStatusText.textContent = 'Log in to check whether your account has an assigned custom status before upload.';
         if (customerStatusBadge) {
           customerStatusBadge.textContent = '';
           customerStatusBadge.classList.add('hidden');
@@ -490,21 +490,22 @@
         return;
       }
 
-      var label = customerPricing.statusLabel || (customerPricing.customerType === 'vip' ? 'VIP' : 'Business');
+      var label = customerPricing.statusLabel || (customerPricing.customerType === 'vip' ? 'VIP' : 'Standard Customer');
+      var badgeLabel = customerPricing.customerType === 'vip' ? label : 'STANDARD';
       var rateText = customerPricing.pricePerInch != null
         ? 'Active rate: ' + formatMoneyValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in'
         : 'Rate is loading from the server.';
 
       if (customerPricing.customerType === 'vip') {
-        customerStatusTitle.textContent = 'VIP pricing active';
-        customerStatusText.textContent = label + ' account. ' + rateText;
+        customerStatusTitle.textContent = 'Custom pricing active';
+        customerStatusText.textContent = label + ' status is assigned to this account. ' + rateText;
       } else {
-        customerStatusTitle.textContent = 'Business pricing active';
-        customerStatusText.textContent = label + ' account. Standard checkout rules apply. ' + rateText;
+        customerStatusTitle.textContent = 'Logged in as Standard Customer';
+        customerStatusText.textContent = 'No custom status is assigned to this account. Normal product pricing applies at checkout.';
       }
 
       if (customerStatusBadge) {
-        customerStatusBadge.textContent = label;
+        customerStatusBadge.textContent = badgeLabel;
         customerStatusBadge.classList.remove('hidden');
       }
     }
@@ -538,6 +539,7 @@
 
     function openCustomerLoginPopup() {
       var loginUrl;
+      var popupFeatures = 'popup=yes,width=460,height=720,resizable=yes,scrollbars=yes';
       try {
         var resolvedLoginUrl = new URL('/customer_authentication/login', window.location.origin);
         resolvedLoginUrl.searchParams.set('return_to', getCustomerLoginReturnPath());
@@ -547,13 +549,36 @@
       }
 
       clearCustomerLoginPopupWatcher();
-      customerLoginPopup = window.open(
-        loginUrl,
-        'ul-main-customer-login',
-        'popup=yes,width=460,height=720,resizable=yes,scrollbars=yes'
-      );
+      customerLoginPopup = window.open('', 'ul-main-customer-login', popupFeatures);
 
       if (!customerLoginPopup) {
+        window.location.href = loginUrl;
+        return;
+      }
+
+      try {
+        customerLoginPopup.document.open();
+        customerLoginPopup.document.write(
+          '<!doctype html><html><head><meta charset="utf-8"><title>Opening login...</title><style>' +
+          'html,body{height:100%;margin:0;font-family:Arial,sans-serif;background:#f8fafc;color:#111827;}' +
+          'body{display:flex;align-items:center;justify-content:center;padding:24px;}' +
+          '.card{max-width:320px;padding:24px 22px;border:1px solid #e5e7eb;border-radius:16px;background:#ffffff;box-shadow:0 10px 30px rgba(15,23,42,0.08);text-align:center;}' +
+          '.spinner{width:28px;height:28px;margin:0 auto 16px;border:3px solid #fde68a;border-top-color:#f59e0b;border-radius:999px;animation:spin 0.8s linear infinite;}' +
+          '.title{font-size:16px;font-weight:700;margin:0 0 8px;}' +
+          '.text{font-size:13px;line-height:1.5;color:#4b5563;margin:0;}' +
+          '@keyframes spin{to{transform:rotate(360deg);}}' +
+          '</style></head><body><div class="card"><div class="spinner"></div><p class="title">Opening customer login</p><p class="text">Please wait while we securely redirect you to the Shopify login screen.</p></div></body></html>'
+        );
+        customerLoginPopup.document.close();
+      } catch (error) {}
+
+      try {
+        customerLoginPopup.location.href = loginUrl;
+      } catch (error) {
+        try {
+          customerLoginPopup.close();
+        } catch (closeError) {}
+        customerLoginPopup = null;
         window.location.href = loginUrl;
         return;
       }
@@ -785,9 +810,9 @@
 
         customerPricing.status = 'ready';
         customerPricing.customerType = String(
-          data.customerType || data.statusType || data.pricingMode || data.mode || 'business'
+          data.customerType || data.statusType || data.pricingMode || data.mode || 'standard'
         ).toLowerCase();
-        if (customerPricing.customerType !== 'vip') customerPricing.customerType = 'business';
+        if (customerPricing.customerType !== 'vip') customerPricing.customerType = 'standard';
         customerPricing.statusKey = String(data.statusKey || data.customerStatusKey || '');
         customerPricing.statusLabel = String(data.statusLabel || data.customerStatusLabel || '').trim();
         customerPricing.pricePerInch = parsePositiveNumber(
@@ -812,7 +837,7 @@
       } catch (error) {
         if (requestToken !== customerPricingRequestToken) return customerPricing;
         customerPricing.status = 'ready';
-        customerPricing.customerType = 'business';
+        customerPricing.customerType = 'standard';
         customerPricing.source = 'fallback';
         resetVipQuoteState();
         updateCustomerStatusUI();

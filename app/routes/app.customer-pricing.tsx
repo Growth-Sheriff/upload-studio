@@ -374,8 +374,8 @@ export default function CustomerPricingPage() {
                     Pricing overview
                   </Text>
                   <Text as="p" variant="bodyMd" tone="subdued">
-                    Business and guest customers stay on the normal sheet variants. VIP customers skip
-                    the variant table and check out from the exact measured page length.
+                    Guests and standard customers stay on the normal sheet variants. VIP customers
+                    skip the variant table and check out from the exact measured page length.
                   </Text>
                 </BlockStack>
               </InlineStack>
@@ -398,7 +398,7 @@ export default function CustomerPricingPage() {
 
                 <Box padding="300" background="bg-surface-secondary" borderRadius="200">
                   <Text as="p" variant="bodySm" tone="subdued">
-                    Business default
+                    Standard fallback rate
                   </Text>
                   <Text as="p" variant="headingMd">
                     {formatRate(normalizedBusinessRate)}
@@ -462,8 +462,8 @@ export default function CustomerPricingPage() {
                       Pricing rules
                     </Text>
                     <Text as="p" variant="bodyMd" tone="subdued">
-                      Keep the business rate stable, then define named VIP statuses with their own
-                      per-inch rate.
+                      Keep the default fallback rate stable, then define named VIP statuses with
+                      their own per-inch rate.
                     </Text>
                   </BlockStack>
                   <Button submit variant="primary" loading={isSubmitting}>
@@ -486,14 +486,14 @@ export default function CustomerPricingPage() {
                         onChange={setEnabled}
                       />
                       <TextField
-                        label="Business price per inch"
+                        label="Standard fallback rate"
                         type="text"
                         inputMode="decimal"
                         autoComplete="off"
                         value={businessPricePerInch}
                         onChange={setBusinessPricePerInch}
                         name="businessPricePerInch"
-                        helpText="Used for guests and regular business customers. Comma or dot both work."
+                        helpText="Internal fallback for VIP rules without a custom rate. Standard customers still pay the normal Shopify variant price."
                       />
                     </BlockStack>
                   </Box>
@@ -504,12 +504,12 @@ export default function CustomerPricingPage() {
                         How checkout works
                       </Text>
                       <Text as="p" variant="bodyMd" tone="subdued">
-                        Business customers pay the normal Shopify variant price. VIP customers log in,
-                        upload a PNG, and the server charges their exact page length with their assigned
-                        rate.
+                        Standard customers pay the normal Shopify variant price. VIP customers log
+                        in, upload a PNG, and the server charges their exact page length with their
+                        assigned rate.
                       </Text>
                       <Text as="p" variant="bodyMd">
-                        Example: 60&quot; x {formatRate(normalizedBusinessRate)} = ${sampleBusinessPrice}
+                        Reference example: 60&quot; x {formatRate(normalizedBusinessRate)} = ${sampleBusinessPrice}
                       </Text>
                     </BlockStack>
                   </Box>
@@ -695,7 +695,7 @@ export default function CustomerPricingPage() {
                                 <Text as="p" variant="bodyMd">
                                   {currentAssignment
                                     ? `${currentStatus?.label || currentAssignment.statusKey} (${formatRate(currentRate)})`
-                                    : `Business (${formatRate(config.businessPricePerInch)})`}
+                                    : 'Standard customer (no assigned VIP status)'}
                                 </Text>
                               </Box>
                             </InlineStack>
