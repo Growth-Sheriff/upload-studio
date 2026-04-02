@@ -30,9 +30,9 @@
 
 {% comment %} Check if this item has upload properties {% endcomment %}
 {%- assign upload_id = item.properties['_ul_upload_id'] -%}
-{%- assign design_file = item.properties['_ul_design_file'] | default: item.properties['File Name'] | default: item.properties['Design Name'] -%}
+{%- assign design_file = item.properties['_ul_design_file'] | default: item.properties['Design File'] | default: item.properties['File Name'] | default: item.properties['Design Name'] -%}
 {%- assign is_uploaded = item.properties['_ul_uploaded'] -%}
-{%- assign uploaded_file_url = item.properties['Uploaded File'] | default: item.properties['_ul_upload_url'] -%}
+{%- assign uploaded_file_url = item.properties['Print READY'] | default: item.properties['Uploaded File'] | default: item.properties['_ul_upload_url'] -%}
 
 {%- if upload_id != blank or is_uploaded == 'true' -%}
 <style>
