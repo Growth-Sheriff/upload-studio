@@ -50,6 +50,14 @@ function parsePositiveInteger(value: unknown, fallback = 1): number {
   return Math.max(1, Math.floor(parsed))
 }
 
+function formatDecimalAmount(value: number, digits = 6): string {
+  const safe = Number(value)
+  if (!Number.isFinite(safe)) return '0'
+  return safe
+    .toFixed(digits)
+    .replace(/\.?0+$/, '')
+}
+
 function normalizeCheckoutItems(body: Record<string, unknown>) {
   const rawItems = Array.isArray(body.items) ? body.items : []
   const normalizedItems = rawItems
@@ -175,15 +183,17 @@ export async function action({ request }: ActionFunctionArgs) {
         item.pricingContext.customerType === 'business'
           ? `${item.productTitle} - Business Pricing`
           : `${item.productTitle} - VIP Pricing`
+      const requestedCopies = Math.max(1, item.requestedQuantity)
+      const unitAmount = item.quote.totalPrice / requestedCopies
 
       return {
         title:
           lineTitle +
-          ` (${item.quote.pageWidthIn.toFixed(2)}" x ${item.quote.pageLengthIn.toFixed(2)}", ${item.requestedQuantity} cop${item.requestedQuantity === 1 ? 'y' : 'ies'})`,
-        quantity: 1,
+          ` (${item.quote.pageWidthIn.toFixed(2)}" x ${item.quote.pageLengthIn.toFixed(2)}", ${requestedCopies} cop${requestedCopies === 1 ? 'y' : 'ies'})`,
+        quantity: requestedCopies,
         requiresShipping: true,
         originalUnitPriceWithCurrency: {
-          amount: item.quote.formattedTotalPrice,
+          amount: formatDecimalAmount(unitAmount),
           currencyCode: item.currencyCode,
         },
         customAttributes: [

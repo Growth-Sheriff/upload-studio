@@ -267,7 +267,14 @@
             <span class="ul-main-vip-preview-chip ul-main-vip-preview-mode-chip">Full canvas billing</span>
           </div>
 
-          <div class="ul-main-vip-preview-tabs hidden mt-4" role="tablist" aria-label="Queued designs"></div>
+          <div class="ul-main-vip-preview-selector hidden mt-4">
+            <label class="ul-main-vip-preview-selector-label mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Focus Design
+            </label>
+            <div class="ul-main-vip-preview-selector-wrap">
+              <select class="ul-main-vip-preview-select" aria-label="Select a queued design"></select>
+            </div>
+          </div>
 
           <div class="ul-main-vip-preview-active hidden mt-4 rounded-[22px] border border-slate-200 bg-white/80 p-4 shadow-sm">
             <div class="ul-main-vip-preview-active-top flex flex-wrap items-start justify-between gap-3">
@@ -467,7 +474,8 @@
     var vipPreviewBillingChip = root.querySelector('.ul-main-vip-preview-billing-chip');
     var vipPreviewArtworkChip = root.querySelector('.ul-main-vip-preview-artwork-chip');
     var vipPreviewModeChip = root.querySelector('.ul-main-vip-preview-mode-chip');
-    var vipPreviewTabs = root.querySelector('.ul-main-vip-preview-tabs');
+    var vipPreviewSelector = root.querySelector('.ul-main-vip-preview-selector');
+    var vipPreviewSelect = root.querySelector('.ul-main-vip-preview-select');
     var vipPreviewActive = root.querySelector('.ul-main-vip-preview-active');
     var vipPreviewActiveTitle = root.querySelector('.ul-main-vip-preview-active-title');
     var vipPreviewActiveMeta = root.querySelector('.ul-main-vip-preview-active-meta');
@@ -1378,40 +1386,21 @@
       if (vipPreviewEmptyBody) vipPreviewEmptyBody.textContent = bodyText || '';
     }
 
-    function buildPreviewTabHtml(item, index, isActive) {
-      var itemId = item.uploadId || item.id;
-      var thumbSrc = item.thumbnailUrl || item.originalUrl || item.localPreviewUrl || '';
-      var ready = item.quoteStatus === 'ready' && !item.error;
-      var statusToneClass = item.error ? 'is-error' : ready ? 'is-ready' : 'is-pending';
-      var statusLabel = item.error ? 'Issue' : ready ? 'Ready' : 'Processing';
-
-      return '' +
-        '<button type="button" class="ul-main-vip-preview-tab' + (isActive ? ' is-active' : '') + '" data-preview-focus="' + itemId + '" role="tab" aria-selected="' + (isActive ? 'true' : 'false') + '">' +
-          '<span class="ul-main-vip-preview-tab-index">' + (index + 1) + '</span>' +
-          '<span class="ul-main-vip-preview-tab-thumb">' +
-            (thumbSrc
-              ? '<img src="' + thumbSrc + '" alt="' + (item.fileName || 'Upload preview').replace(/"/g, '&quot;') + '">'
-              : '<span class="ul-main-vip-preview-tab-thumb-fallback">PNG</span>') +
-          '</span>' +
-          '<span class="ul-main-vip-preview-tab-copy">' +
-            '<span class="ul-main-vip-preview-tab-name">' + (item.fileName || 'Uploaded file') + '</span>' +
-            '<span class="ul-main-vip-preview-tab-meta">Qty ' + (item.requestedQuantity || 1) + (item.totalPrice != null ? ' • ' + formatMoneyValue(item.totalPrice, customerPricing.currency) : '') + '</span>' +
-          '</span>' +
-          '<span class="ul-main-custom-status ' + statusToneClass + '">' + statusLabel + '</span>' +
-        '</button>';
-    }
-
-    function renderVipPreviewTabs(items, activeItemId) {
-      if (!vipPreviewTabs) return;
+    function renderVipPreviewSelector(items, activeItemId) {
+      if (!vipPreviewSelector || !vipPreviewSelect) return;
       if (!items.length || items.length === 1) {
-        vipPreviewTabs.classList.add('hidden');
-        vipPreviewTabs.innerHTML = '';
+        vipPreviewSelector.classList.add('hidden');
+        vipPreviewSelect.innerHTML = '';
         return;
       }
 
-      vipPreviewTabs.classList.remove('hidden');
-      vipPreviewTabs.innerHTML = items.map(function(item, index) {
-        return buildPreviewTabHtml(item, index, String(activeItemId) === String(item.uploadId || item.id));
+      vipPreviewSelector.classList.remove('hidden');
+      vipPreviewSelect.innerHTML = items.map(function(item, index) {
+        var itemId = item.uploadId || item.id;
+        var ready = item.quoteStatus === 'ready' && !item.error;
+        var statusLabel = item.error ? 'Issue' : ready ? 'Ready' : 'Processing';
+        var optionLabel = (index + 1) + '. ' + (item.fileName || 'Uploaded file') + ' • Qty ' + (item.requestedQuantity || 1) + ' • ' + statusLabel;
+        return '<option value="' + itemId + '"' + (String(activeItemId) === String(itemId) ? ' selected' : '') + '>' + optionLabel.replace(/"/g, '&quot;') + '</option>';
       }).join('');
     }
 
@@ -1576,7 +1565,7 @@
         if (vipPreviewCanvas) vipPreviewCanvas.classList.add('hidden');
         if (vipPreviewEmpty) vipPreviewEmpty.classList.remove('hidden');
         clearStaticPreviewBoard();
-        renderVipPreviewTabs(queueItems, state.activeCustomItemId);
+        renderVipPreviewSelector(queueItems, state.activeCustomItemId);
         updateVipPreviewActivePanel(activeQueueItem, null, queueItems.length);
         if (vipPreviewSummary) {
           vipPreviewSummary.textContent = hasCustomQueueItems()
@@ -1598,7 +1587,7 @@
         return;
       }
 
-      renderVipPreviewTabs(queueItems, state.activeCustomItemId);
+      renderVipPreviewSelector(queueItems, state.activeCustomItemId);
       updateVipPreviewActivePanel(activeQueueItem || previewItems[0], activePreviewItem, queueItems.length);
 
       if (activePreviewItem) {
@@ -2977,11 +2966,10 @@
       });
     }
 
-    if (vipPreviewTabs) {
-      vipPreviewTabs.addEventListener('click', function(event) {
-        var previewTab = event.target.closest('[data-preview-focus]');
-        if (!previewTab) return;
-        setActiveCustomQueueItem(previewTab.getAttribute('data-preview-focus'));
+    if (vipPreviewSelect) {
+      vipPreviewSelect.addEventListener('change', function() {
+        if (!vipPreviewSelect.value) return;
+        setActiveCustomQueueItem(vipPreviewSelect.value);
         renderCustomQueue();
         updateVipPreviewUI();
       });
@@ -3605,98 +3593,41 @@
   #{{ section_dom_id }} .ul-main-custom-remove {
     border-radius: 999px;
   }
-  #{{ section_dom_id }} .ul-main-vip-preview-tabs {
-    display: flex;
-    gap: 10px;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    scrollbar-width: thin;
+  #{{ section_dom_id }} .ul-main-vip-preview-selector-wrap {
+    position: relative;
   }
-  #{{ section_dom_id }} .ul-main-vip-preview-tabs::-webkit-scrollbar {
-    height: 8px;
-  }
-  #{{ section_dom_id }} .ul-main-vip-preview-tab {
-    min-width: 220px;
-    display: grid;
-    grid-template-columns: auto 48px minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 10px;
+  #{{ section_dom_id }} .ul-main-vip-preview-select {
+    width: 100%;
+    appearance: none;
     border: 1px solid rgba(203, 213, 225, 0.9);
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.94);
-    padding: 10px 12px;
+    border-radius: 16px;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.4;
+    padding: 0.95rem 3rem 0.95rem 1rem;
     box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
-    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
-    text-align: left;
-    flex-shrink: 0;
   }
-  #{{ section_dom_id }} .ul-main-vip-preview-tab:hover {
-    transform: translateY(-1px);
-    border-color: rgba(15, 23, 42, 0.2);
-    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+  #{{ section_dom_id }} .ul-main-vip-preview-selector-wrap::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 16px;
+    width: 10px;
+    height: 10px;
+    border-right: 2px solid #475569;
+    border-bottom: 2px solid #475569;
+    transform: translateY(-60%) rotate(45deg);
+    pointer-events: none;
   }
-  #{{ section_dom_id }} .ul-main-vip-preview-tab.is-active {
+  #{{ section_dom_id }} .ul-main-vip-preview-select:focus {
+    outline: 0;
     border-color: #0f172a;
     box-shadow:
       0 0 0 3px rgba(15, 23, 42, 0.08),
-      0 14px 30px rgba(15, 23, 42, 0.12);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
-  }
-  #{{ section_dom_id }} .ul-main-vip-preview-tab-index {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    border-radius: 999px;
-    background: #0f172a;
-    color: #fff;
-    font-size: 11px;
-    font-weight: 700;
-    line-height: 1;
-  }
-  #{{ section_dom_id }} .ul-main-vip-preview-tab-thumb {
-    width: 48px;
-    height: 48px;
-    overflow: hidden;
-    border-radius: 14px;
-    border: 1px solid #cbd5e1;
-    background: #f8fafc;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  #{{ section_dom_id }} .ul-main-vip-preview-tab-thumb img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  #{{ section_dom_id }} .ul-main-vip-preview-tab-thumb-fallback {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: #64748b;
-  }
-  #{{ section_dom_id }} .ul-main-vip-preview-tab-copy {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-  #{{ section_dom_id }} .ul-main-vip-preview-tab-name {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: #0f172a;
-    font-size: 13px;
-    font-weight: 700;
-  }
-  #{{ section_dom_id }} .ul-main-vip-preview-tab-meta {
-    display: block;
-    color: #64748b;
-    font-size: 11px;
-    line-height: 1.4;
+      0 8px 18px rgba(15, 23, 42, 0.05);
   }
   #{{ section_dom_id }} .ul-main-vip-preview-active {
     background:
@@ -3721,13 +3652,9 @@
       text-align: left;
       min-width: 0;
     }
-    #{{ section_dom_id }} .ul-main-vip-preview-tab {
-      min-width: 100%;
-      grid-template-columns: auto 42px minmax(0, 1fr);
-    }
-    #{{ section_dom_id }} .ul-main-vip-preview-tab .ul-main-custom-status {
-      grid-column: 2 / 4;
-      justify-self: start;
+    #{{ section_dom_id }} .ul-main-vip-preview-select {
+      font-size: 12px;
+      padding-right: 2.75rem;
     }
   }
 </style>
