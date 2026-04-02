@@ -63,7 +63,7 @@
               <a href="{{ routes.account_login_url }}" class="ul-main-customer-login inline-flex items-center justify-center rounded-full border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm transition-colors duration-200 hover:bg-gray-100">
                 Log In
               </a>
-              <a href="/account" class="ul-main-customer-account hidden inline-flex items-center justify-center rounded-full border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm transition-colors duration-200 hover:bg-gray-100">
+              <a href="{{ routes.account_url }}" class="ul-main-customer-account hidden inline-flex items-center justify-center rounded-full border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-900 shadow-sm transition-colors duration-200 hover:bg-gray-100">
                 My Account
               </a>
             </div>
@@ -263,6 +263,19 @@
 
 <script>
   (function() {
+    try {
+      if (window.location.hash === '#ul-main-customer-login-popup') {
+        if (window.opener) {
+          window.opener.postMessage({ type: 'ul-main-customer-login-success' }, window.location.origin);
+          window.close();
+          return;
+        }
+        if (window.history && typeof window.history.replaceState === 'function') {
+          window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+        }
+      }
+    } catch (error) {}
+
     var root = document.getElementById({{ section_dom_id | json }});
     if (!root || root.getAttribute('data-ul-main-product-bound') === 'true') return;
     root.setAttribute('data-ul-main-product-bound', 'true');
@@ -393,6 +406,9 @@
     var customerStatusBadge = root.querySelector('.ul-main-customer-status-badge');
     var customerLoginLink = root.querySelector('.ul-main-customer-login');
     var customerAccountLink = root.querySelector('.ul-main-customer-account');
+    var customerLoginPopup = null;
+    var customerLoginPollTimer = null;
+    var customerLoginBaseUrl = customerLoginLink ? customerLoginLink.getAttribute('href') : {{ routes.account_login_url | json }};
 
     var state = {
       uploadId: '',
@@ -492,6 +508,82 @@
         customerStatusBadge.textContent = label;
         customerStatusBadge.classList.remove('hidden');
       }
+    }
+
+    function clearCustomerLoginPopupWatcher() {
+      if (customerLoginPollTimer) {
+        window.clearInterval(customerLoginPollTimer);
+        customerLoginPollTimer = null;
+      }
+    }
+
+    function getCustomerLoginReturnUrl() {
+      return window.location.origin + window.location.pathname + window.location.search + '#ul-main-customer-login-popup';
+    }
+
+    async function maybeReloadForLoggedInCustomer() {
+      if (customerLoggedIn) return false;
+      try {
+        var response = await fetch(
+          apiBase + '/api/vip/context?shopDomain=' + encodeURIComponent(shopDomain) + '&productId=' + encodeURIComponent(String(productData.productId)),
+          { credentials: 'same-origin' }
+        );
+        var data = await response.json().catch(function() { return {}; });
+        if (response.ok && data && data.customerId) {
+          window.location.reload();
+          return true;
+        }
+      } catch (error) {}
+      return false;
+    }
+
+    function openCustomerLoginPopup() {
+      var loginUrl;
+      try {
+        var resolvedLoginUrl = new URL(customerLoginBaseUrl || {{ routes.account_login_url | json }}, window.location.origin);
+        resolvedLoginUrl.searchParams.set('return_url', getCustomerLoginReturnUrl());
+        loginUrl = resolvedLoginUrl.toString();
+      } catch (error) {
+        loginUrl = {{ routes.account_login_url | json }} + '?return_url=' + encodeURIComponent(getCustomerLoginReturnUrl());
+      }
+
+      clearCustomerLoginPopupWatcher();
+      customerLoginPopup = window.open(
+        loginUrl,
+        'ul-main-customer-login',
+        'popup=yes,width=460,height=720,resizable=yes,scrollbars=yes'
+      );
+
+      if (!customerLoginPopup) {
+        window.location.href = loginUrl;
+        return;
+      }
+
+      try {
+        customerLoginPopup.focus();
+      } catch (error) {}
+
+      customerLoginPollTimer = window.setInterval(function() {
+        if (!customerLoginPopup || customerLoginPopup.closed) {
+          clearCustomerLoginPopupWatcher();
+          customerLoginPopup = null;
+          maybeReloadForLoggedInCustomer();
+        }
+      }, 800);
+    }
+
+    function handleCustomerLoginMessage(event) {
+      if (!event || event.origin !== window.location.origin) return;
+      if (!event.data || event.data.type !== 'ul-main-customer-login-success') return;
+
+      clearCustomerLoginPopupWatcher();
+      if (customerLoginPopup && !customerLoginPopup.closed) {
+        try {
+          customerLoginPopup.close();
+        } catch (error) {}
+      }
+      customerLoginPopup = null;
+      window.location.reload();
     }
 
     function parsePositiveNumber(value) {
@@ -1488,6 +1580,15 @@
         addConfiguredItem('/checkout', buyNowBtn);
       });
     }
+
+    if (customerLoginLink) {
+      customerLoginLink.addEventListener('click', function(event) {
+        event.preventDefault();
+        openCustomerLoginPopup();
+      });
+    }
+
+    window.addEventListener('message', handleCustomerLoginMessage);
 
     updateCustomerStatusUI();
     loadCustomerPricingContext();
