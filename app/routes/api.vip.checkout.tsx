@@ -125,6 +125,7 @@ export async function action({ request }: ActionFunctionArgs) {
         },
         customAttributes: [
           { key: '_ul_upload_id', value: prepared.upload.id },
+          { key: '_ul_uploaded', value: 'true' },
           { key: '_ul_shop_domain', value: prepared.shop.shopDomain },
           { key: '_ul_customer_id', value: loggedInCustomerId || '' },
           { key: '_ul_customer_type', value: prepared.pricingContext.customerType },
@@ -138,6 +139,13 @@ export async function action({ request }: ActionFunctionArgs) {
           { key: '_ul_measurement_mode', value: prepared.measurement.measurementMode || '' },
           { key: '_ul_product_id', value: prepared.upload.productId || '' },
           { key: '_ul_variant_id', value: prepared.upload.variantId || '' },
+          { key: '_ul_upload_url', value: prepared.upload.uploadUrl || '' },
+          { key: '_ul_original_url', value: prepared.upload.uploadUrl || '' },
+          { key: '_ul_thumbnail', value: prepared.upload.thumbnailUrl || '' },
+          { key: '_ul_design_file', value: prepared.upload.fileName || '' },
+          { key: '_ul_file_name', value: prepared.upload.fileName || '' },
+          { key: 'Uploaded File', value: prepared.upload.uploadUrl || '' },
+          { key: 'File Name', value: prepared.upload.fileName || '' },
           {
             key: '_ul_selected_variant_id',
             value: prepared.resolvedVariant?.selectedVariantId || selectedVariantId || '',

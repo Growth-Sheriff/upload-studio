@@ -1,5 +1,6 @@
 import prisma from '~/lib/prisma.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
+import { getDownloadSignedUrl, getStorageConfig } from '~/lib/storage.server'
 import {
   applyCustomerPricingDefaultsForShop,
   calculateMeasuredLengthQuote,
@@ -91,6 +92,9 @@ export interface PreparedCustomPricingQuote {
     productId: string | null
     variantId: string | null
     customerId: string | null
+    fileName: string | null
+    uploadUrl: string | null
+    thumbnailUrl: string | null
   }
   pricingContext: CustomerPricingContext
   measurement: VipUploadMeasurement
@@ -199,6 +203,8 @@ export async function prepareCustomPricingQuote({
       shopDomain: true,
       accessToken: true,
       settings: true,
+      storageProvider: true,
+      storageConfig: true,
     },
   })
 
@@ -217,6 +223,9 @@ export async function prepareCustomPricingQuote({
         orderBy: { createdAt: 'asc' },
         take: 1,
         select: {
+          originalName: true,
+          storageKey: true,
+          thumbnailKey: true,
           preflightStatus: true,
           preflightResult: true,
         },
@@ -254,6 +263,19 @@ export async function prepareCustomPricingQuote({
   if (!productId) {
     throw new Error('Upload product is missing')
   }
+
+  const firstItem = upload.items[0]
+  const storageConfig = getStorageConfig({
+    storageProvider: shop.storageProvider,
+    storageConfig: (shop.storageConfig as Record<string, string> | null) || null,
+  })
+  const uploadUrl = firstItem?.storageKey
+    ? await getDownloadSignedUrl(storageConfig, firstItem.storageKey, 30 * 24 * 3600)
+    : null
+  const thumbnailSource = firstItem?.thumbnailKey || firstItem?.storageKey || null
+  const thumbnailUrl = thumbnailSource
+    ? await getDownloadSignedUrl(storageConfig, thumbnailSource, 30 * 24 * 3600)
+    : null
 
   const [productConfig, productData] = await Promise.all([
     prisma.productConfig.findFirst({
@@ -339,6 +361,9 @@ export async function prepareCustomPricingQuote({
       productId: upload.productId,
       variantId: upload.variantId,
       customerId: upload.customerId,
+      fileName: firstItem?.originalName || null,
+      uploadUrl,
+      thumbnailUrl,
     },
     pricingContext,
     measurement,
