@@ -267,20 +267,32 @@
             <span class="ul-main-vip-preview-chip ul-main-vip-preview-mode-chip">Full canvas billing</span>
           </div>
 
+          <div class="ul-main-vip-preview-tabs hidden mt-4" role="tablist" aria-label="Queued designs"></div>
+
+          <div class="ul-main-vip-preview-active hidden mt-4 rounded-[22px] border border-slate-200 bg-white/80 p-4 shadow-sm">
+            <div class="ul-main-vip-preview-active-top flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <div class="ul-main-vip-preview-active-label text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Focused design</div>
+                <div class="ul-main-vip-preview-active-title mt-1 truncate text-sm font-semibold text-slate-900"></div>
+                <div class="ul-main-vip-preview-active-meta mt-1 text-xs leading-5 text-slate-500"></div>
+              </div>
+              <div class="ul-main-vip-preview-active-pills flex flex-wrap items-center justify-end gap-2"></div>
+            </div>
+          </div>
+
           <div class="ul-main-vip-preview-empty mt-4 rounded-[22px] border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
             <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-900 shadow-sm">
               <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 7h10M7 12h6m-6 5h10M4 4v16m16-5V4M8 4v4m8 7v5"></path>
               </svg>
             </div>
-            <div class="text-sm font-semibold text-slate-900">Full-page quote preview</div>
-            <div class="mt-2 text-xs leading-5 text-slate-500">
+            <div class="ul-main-vip-preview-empty-title text-sm font-semibold text-slate-900">Full-page quote preview</div>
+            <div class="ul-main-vip-preview-empty-body mt-2 text-xs leading-5 text-slate-500">
               We will render the uploaded page against a scrollable inch ruler. Pricing uses the full uploaded page, not trimmed artwork bounds.
             </div>
           </div>
 
           <div class="ul-main-vip-preview-canvas hidden mt-4">
-            <div class="ul-main-vip-preview-list hidden space-y-4"></div>
             <div class="ul-main-vip-preview-ruler-shell">
               <div class="ul-main-vip-preview-corner"></div>
               <div class="ul-main-vip-preview-top-ruler">
@@ -455,9 +467,15 @@
     var vipPreviewBillingChip = root.querySelector('.ul-main-vip-preview-billing-chip');
     var vipPreviewArtworkChip = root.querySelector('.ul-main-vip-preview-artwork-chip');
     var vipPreviewModeChip = root.querySelector('.ul-main-vip-preview-mode-chip');
+    var vipPreviewTabs = root.querySelector('.ul-main-vip-preview-tabs');
+    var vipPreviewActive = root.querySelector('.ul-main-vip-preview-active');
+    var vipPreviewActiveTitle = root.querySelector('.ul-main-vip-preview-active-title');
+    var vipPreviewActiveMeta = root.querySelector('.ul-main-vip-preview-active-meta');
+    var vipPreviewActivePills = root.querySelector('.ul-main-vip-preview-active-pills');
     var vipPreviewEmpty = root.querySelector('.ul-main-vip-preview-empty');
+    var vipPreviewEmptyTitle = root.querySelector('.ul-main-vip-preview-empty-title');
+    var vipPreviewEmptyBody = root.querySelector('.ul-main-vip-preview-empty-body');
     var vipPreviewCanvas = root.querySelector('.ul-main-vip-preview-canvas');
-    var vipPreviewList = root.querySelector('.ul-main-vip-preview-list');
     var vipPreviewFootnote = root.querySelector('.ul-main-vip-preview-footnote');
     var vipPreviewTopTrack = root.querySelector('.ul-main-vip-preview-top-track');
     var vipPreviewLeftTrack = root.querySelector('.ul-main-vip-preview-left-track');
@@ -880,6 +898,11 @@
         : null;
     }
 
+    function getActiveCustomQueueItem() {
+      if (!hasCustomQueueItems()) return null;
+      return getCustomQueueItemById(state.activeCustomItemId) || getCustomQueueItems()[0] || null;
+    }
+
     function removeCustomQueueItem(itemId) {
       var nextItems = [];
       var removedCurrent = false;
@@ -994,7 +1017,7 @@
         var isActive = String(state.activeCustomItemId) === String(itemId);
 
         return '' +
-          '<div class="ul-main-custom-queue-item' + (isActive ? ' is-active' : '') + ' rounded-2xl border bg-white p-4 shadow-sm" data-queue-item-id="' + itemId + '">' +
+          '<div class="ul-main-custom-queue-item' + (isActive ? ' is-active' : '') + ' rounded-2xl border bg-white p-4 shadow-sm" data-queue-item-id="' + itemId + '" data-queue-activate="' + itemId + '">' +
             '<div class="ul-main-custom-queue-row flex items-start gap-3">' +
               '<div class="ul-main-custom-thumb h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">' +
                 (previewSrc
@@ -1350,6 +1373,150 @@
       syncBoardRulers();
     }
 
+    function setVipPreviewEmptyState(titleText, bodyText) {
+      if (vipPreviewEmptyTitle) vipPreviewEmptyTitle.textContent = titleText || 'Full-page quote preview';
+      if (vipPreviewEmptyBody) vipPreviewEmptyBody.textContent = bodyText || '';
+    }
+
+    function buildPreviewTabHtml(item, index, isActive) {
+      var itemId = item.uploadId || item.id;
+      var thumbSrc = item.thumbnailUrl || item.originalUrl || item.localPreviewUrl || '';
+      var ready = item.quoteStatus === 'ready' && !item.error;
+      var statusToneClass = item.error ? 'is-error' : ready ? 'is-ready' : 'is-pending';
+      var statusLabel = item.error ? 'Issue' : ready ? 'Ready' : 'Processing';
+
+      return '' +
+        '<button type="button" class="ul-main-vip-preview-tab' + (isActive ? ' is-active' : '') + '" data-preview-focus="' + itemId + '" role="tab" aria-selected="' + (isActive ? 'true' : 'false') + '">' +
+          '<span class="ul-main-vip-preview-tab-index">' + (index + 1) + '</span>' +
+          '<span class="ul-main-vip-preview-tab-thumb">' +
+            (thumbSrc
+              ? '<img src="' + thumbSrc + '" alt="' + (item.fileName || 'Upload preview').replace(/"/g, '&quot;') + '">'
+              : '<span class="ul-main-vip-preview-tab-thumb-fallback">PNG</span>') +
+          '</span>' +
+          '<span class="ul-main-vip-preview-tab-copy">' +
+            '<span class="ul-main-vip-preview-tab-name">' + (item.fileName || 'Uploaded file') + '</span>' +
+            '<span class="ul-main-vip-preview-tab-meta">Qty ' + (item.requestedQuantity || 1) + (item.totalPrice != null ? ' • ' + formatMoneyValue(item.totalPrice, customerPricing.currency) : '') + '</span>' +
+          '</span>' +
+          '<span class="ul-main-custom-status ' + statusToneClass + '">' + statusLabel + '</span>' +
+        '</button>';
+    }
+
+    function renderVipPreviewTabs(items, activeItemId) {
+      if (!vipPreviewTabs) return;
+      if (!items.length || items.length === 1) {
+        vipPreviewTabs.classList.add('hidden');
+        vipPreviewTabs.innerHTML = '';
+        return;
+      }
+
+      vipPreviewTabs.classList.remove('hidden');
+      vipPreviewTabs.innerHTML = items.map(function(item, index) {
+        return buildPreviewTabHtml(item, index, String(activeItemId) === String(item.uploadId || item.id));
+      }).join('');
+    }
+
+    function updateVipPreviewActivePanel(item, boardData, queueCount) {
+      if (!vipPreviewActive) return;
+      if (!item) {
+        vipPreviewActive.classList.add('hidden');
+        if (vipPreviewActiveTitle) vipPreviewActiveTitle.textContent = '';
+        if (vipPreviewActiveMeta) vipPreviewActiveMeta.textContent = '';
+        if (vipPreviewActivePills) vipPreviewActivePills.innerHTML = '';
+        return;
+      }
+
+      vipPreviewActive.classList.remove('hidden');
+      if (vipPreviewActiveTitle) {
+        vipPreviewActiveTitle.textContent = item.fileName || 'Uploaded file';
+      }
+
+      var metaText = '';
+      if (boardData) {
+        metaText = (boardData.statusLabel || 'Measured full page') + ' • ' + formatInches(boardData.billableWidthIn) + ' × ' + formatInches(boardData.billableLengthIn);
+      } else if (item.error) {
+        metaText = item.error;
+      } else if (item.uploadStatus === 'ready') {
+        metaText = 'Measurement ready. Waiting for combined quote refresh.';
+      } else if (item.uploadStatus === 'processing' || item.quoteStatus === 'processing' || item.quoteStatus === 'measuring') {
+        metaText = 'Server is still measuring this file before it can be priced.';
+      } else {
+        metaText = 'Upload is still being prepared.';
+      }
+      if (queueCount > 1) {
+        metaText += ' • ' + queueCount + ' designs in this queue';
+      }
+      if (vipPreviewActiveMeta) vipPreviewActiveMeta.textContent = metaText;
+
+      if (vipPreviewActivePills) {
+        var pills = [];
+        pills.push('<span class="ul-main-vip-preview-mini-chip">Qty ' + (item.requestedQuantity || 1) + '</span>');
+        if (boardData) {
+          pills.push('<span class="ul-main-vip-preview-mini-chip">' + formatInches(boardData.billableWidthIn) + ' × ' + formatInches(boardData.billableLengthIn) + '</span>');
+        }
+        pills.push('<span class="ul-main-vip-preview-mini-chip">' + (item.totalPrice != null ? formatMoneyValue(item.totalPrice, customerPricing.currency) : 'Pending') + '</span>');
+        vipPreviewActivePills.innerHTML = pills.join('');
+      }
+    }
+
+    function clearStaticPreviewBoard() {
+      if (vipPreviewImage) {
+        vipPreviewImage.classList.add('hidden');
+        vipPreviewImage.removeAttribute('src');
+      }
+      if (vipPreviewArtwork) {
+        vipPreviewArtwork.classList.add('hidden');
+        vipPreviewArtwork.removeAttribute('style');
+      }
+      if (vipPreviewStageRail) {
+        vipPreviewStageRail.style.width = '';
+        vipPreviewStageRail.style.height = '';
+      }
+      if (vipPreviewStage) {
+        vipPreviewStage.style.width = '';
+        vipPreviewStage.style.height = '';
+      }
+      clearNode(vipPreviewTopTrack);
+      clearNode(vipPreviewLeftTrack);
+    }
+
+    function renderStaticPreviewBoard(boardData) {
+      if (!boardData || !vipPreviewStageWrap) return;
+
+      var previewPadding = 18;
+      var availableWidth = vipPreviewStageWrap && vipPreviewStageWrap.clientWidth
+        ? Math.max(190, vipPreviewStageWrap.clientWidth - (previewPadding * 2))
+        : 250;
+      var scale = Math.min(16, Math.max(8, availableWidth / Math.max(boardData.billableWidthIn, 1)));
+      var stageWidth = Math.max(180, Math.round(boardData.billableWidthIn * scale));
+      var stageHeight = Math.max(220, Math.round(boardData.billableLengthIn * scale));
+
+      if (vipPreviewStageRail) {
+        vipPreviewStageRail.style.width = (stageWidth + (previewPadding * 2)) + 'px';
+        vipPreviewStageRail.style.height = (stageHeight + (previewPadding * 2)) + 'px';
+      }
+      if (vipPreviewStage) {
+        vipPreviewStage.style.width = stageWidth + 'px';
+        vipPreviewStage.style.height = stageHeight + 'px';
+      }
+
+      if (vipPreviewImage && boardData.imageSrc) {
+        vipPreviewImage.src = boardData.imageSrc;
+        vipPreviewImage.classList.remove('hidden');
+      }
+
+      if (boardData.artworkBounds && vipPreviewArtwork) {
+        vipPreviewArtwork.classList.remove('hidden');
+        vipPreviewArtwork.style.left = Math.max(0, Math.round(boardData.artworkBounds.offsetXIn * scale)) + 'px';
+        vipPreviewArtwork.style.top = Math.max(0, Math.round(boardData.artworkBounds.offsetYIn * scale)) + 'px';
+        vipPreviewArtwork.style.width = Math.max(10, Math.round(boardData.artworkBounds.widthIn * scale)) + 'px';
+        vipPreviewArtwork.style.height = Math.max(10, Math.round(boardData.artworkBounds.heightIn * scale)) + 'px';
+      }
+
+      buildRulerMarks(vipPreviewTopTrack, boardData.billableWidthIn, scale, 'x', previewPadding);
+      buildRulerMarks(vipPreviewLeftTrack, boardData.billableLengthIn, scale, 'y', previewPadding);
+      syncVipPreviewRulers();
+    }
+
     function syncVipPreviewRulers() {
       if (!vipPreviewStageWrap) return;
       if (vipPreviewTopTrack) {
@@ -1369,9 +1536,8 @@
       }
 
       vipPreviewCard.classList.remove('hidden');
-      var previewItems = hasCustomQueueItems()
-        ? getCustomQueueItems().map(buildPreviewBoardDataFromItem).filter(Boolean)
-        : [];
+      var queueItems = hasCustomQueueItems() ? getCustomQueueItems() : [];
+      var previewItems = queueItems.map(buildPreviewBoardDataFromItem).filter(Boolean);
 
       if (!previewItems.length && state.uploadId) {
         var singleItem = buildPreviewBoardDataFromItem({
@@ -1398,13 +1564,20 @@
         if (singleItem) previewItems = [singleItem];
       }
 
+      var activeQueueItem = queueItems.length ? getActiveCustomQueueItem() : null;
+      if (queueItems.length && activeQueueItem && String(state.activeCustomItemId) !== String(activeQueueItem.uploadId || activeQueueItem.id)) {
+        setActiveCustomQueueItem(activeQueueItem.uploadId || activeQueueItem.id);
+      }
+      var activePreviewItem = activeQueueItem
+        ? buildPreviewBoardDataFromItem(activeQueueItem)
+        : (previewItems[0] || null);
+
       if (!previewItems.length) {
         if (vipPreviewCanvas) vipPreviewCanvas.classList.add('hidden');
         if (vipPreviewEmpty) vipPreviewEmpty.classList.remove('hidden');
-        if (vipPreviewList) {
-          vipPreviewList.classList.add('hidden');
-          clearNode(vipPreviewList);
-        }
+        clearStaticPreviewBoard();
+        renderVipPreviewTabs(queueItems, state.activeCustomItemId);
+        updateVipPreviewActivePanel(activeQueueItem, null, queueItems.length);
         if (vipPreviewSummary) {
           vipPreviewSummary.textContent = hasCustomQueueItems()
             ? 'We are still measuring your uploaded files before pricing.'
@@ -1413,24 +1586,35 @@
         if (vipPreviewBillingChip) vipPreviewBillingChip.textContent = 'Billing pages pending';
         if (vipPreviewArtworkChip) vipPreviewArtworkChip.textContent = 'Artwork bounds pending';
         if (vipPreviewModeChip) vipPreviewModeChip.textContent = isBusinessPricingActive() ? 'Business sheet pricing' : 'Full canvas billing';
+        setVipPreviewEmptyState(
+          queueItems.length ? 'Queued design is still processing' : 'Full-page quote preview',
+          queueItems.length
+            ? 'Tabs stay visible while the server measures each upload. Select any file to monitor its status and see the ruler view as soon as it is ready.'
+            : 'We will render the uploaded page against a scrollable inch ruler. Pricing uses the full uploaded page, not trimmed artwork bounds.'
+        );
         if (vipPreviewFootnote) {
           vipPreviewFootnote.textContent = 'Each design preview uses the full uploaded page. Dashed overlays mark artwork bounds only for visual reference.';
         }
         return;
       }
 
-      if (vipPreviewCanvas) vipPreviewCanvas.classList.remove('hidden');
-      if (vipPreviewEmpty) vipPreviewEmpty.classList.add('hidden');
-      if (vipPreviewList) {
-        vipPreviewList.classList.remove('hidden');
-        clearNode(vipPreviewList);
-        previewItems.forEach(function(item) {
-          var board = renderPreviewBoardShell(item);
-          vipPreviewList.appendChild(board);
-          renderPreviewBoard(board, item);
-        });
+      renderVipPreviewTabs(queueItems, state.activeCustomItemId);
+      updateVipPreviewActivePanel(activeQueueItem || previewItems[0], activePreviewItem, queueItems.length);
+
+      if (activePreviewItem) {
+        if (vipPreviewCanvas) vipPreviewCanvas.classList.remove('hidden');
+        if (vipPreviewEmpty) vipPreviewEmpty.classList.add('hidden');
+        clearStaticPreviewBoard();
+        renderStaticPreviewBoard(activePreviewItem);
+      } else {
+        if (vipPreviewCanvas) vipPreviewCanvas.classList.add('hidden');
+        if (vipPreviewEmpty) vipPreviewEmpty.classList.remove('hidden');
+        clearStaticPreviewBoard();
+        setVipPreviewEmptyState(
+          'Selected design is still being measured',
+          'This tab is active, but its exact billed page has not been confirmed yet. You can keep working in the queue while the server finishes measuring it.'
+        );
       }
-      if (vipPreviewStageWrap) vipPreviewStageWrap.parentElement.classList.add('hidden');
 
       var previewTotalLength = previewItems.reduce(function(sum, item) {
         return sum + Number(item.billableLengthIn || 0);
@@ -1451,13 +1635,13 @@
       if (vipPreviewSummary) {
         vipPreviewSummary.textContent =
           customerPricing.quoteStatus === 'ready'
-            ? 'Each uploaded design now has its own ruler preview, quantity, and exact quote. The total combines every ready item in the queue.'
-            : 'We are measuring each uploaded design and building a combined custom quote for the full queue.';
+            ? 'Select a design from the left queue or the tabs above to inspect its ruler preview. The checkout total combines every ready file in the queue.'
+            : 'Pick any queued design to inspect it here while the server continues building the combined custom quote.';
       }
       if (vipPreviewFootnote) {
         vipPreviewFootnote.textContent = previewHasArtwork
-          ? 'Every card shows the billed full page as the solid frame. Dashed overlays show artwork bounds only for reference.'
-          : 'Every card shows the billed full page. No separate artwork bounds were detected in the current queue.';
+          ? 'The solid frame is always the billed full page for the active tab. Dashed overlays show artwork bounds only for reference.'
+          : 'The active tab always shows the billed full page. No separate artwork bounds were detected in the current queue.';
       }
     }
 
@@ -2727,14 +2911,6 @@
 
     if (customQueueEl) {
       customQueueEl.addEventListener('click', function(event) {
-        var activateButton = event.target.closest('[data-queue-activate]');
-        if (activateButton) {
-          setActiveCustomQueueItem(activateButton.getAttribute('data-queue-activate'));
-          renderCustomQueue();
-          updateVipPreviewUI();
-          return;
-        }
-
         var qtyButton = event.target.closest('[data-queue-qty]');
         if (qtyButton) {
           var queueItem = getCustomQueueItemById(qtyButton.getAttribute('data-queue-qty'));
@@ -2770,6 +2946,14 @@
           syncPurchaseButtonsForCurrentState();
           return;
         }
+
+        var activateButton = event.target.closest('[data-queue-activate]');
+        if (activateButton) {
+          setActiveCustomQueueItem(activateButton.getAttribute('data-queue-activate'));
+          renderCustomQueue();
+          updateVipPreviewUI();
+          return;
+        }
       });
 
       customQueueEl.addEventListener('change', function(event) {
@@ -2790,6 +2974,16 @@
         updateVipPricingUI();
         updateVipPreviewUI();
         loadVipQuote();
+      });
+    }
+
+    if (vipPreviewTabs) {
+      vipPreviewTabs.addEventListener('click', function(event) {
+        var previewTab = event.target.closest('[data-preview-focus]');
+        if (!previewTab) return;
+        setActiveCustomQueueItem(previewTab.getAttribute('data-preview-focus'));
+        renderCustomQueue();
+        updateVipPreviewUI();
       });
     }
 
@@ -3269,6 +3463,7 @@
     border: 1px solid #e2e8f0;
     background: rgba(255, 255, 255, 0.96);
     box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+    cursor: pointer;
   }
   #{{ section_dom_id }} .ul-main-custom-queue-item.is-active {
     border-color: #0f172a;
@@ -3410,21 +3605,105 @@
   #{{ section_dom_id }} .ul-main-custom-remove {
     border-radius: 999px;
   }
-  #{{ section_dom_id }} .ul-main-vip-preview-list {
+  #{{ section_dom_id }} .ul-main-vip-preview-tabs {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-tabs::-webkit-scrollbar {
+    height: 8px;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-tab {
+    min-width: 220px;
+    display: grid;
+    grid-template-columns: auto 48px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid rgba(203, 213, 225, 0.9);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.94);
+    padding: 10px 12px;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    text-align: left;
+    flex-shrink: 0;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-tab:hover {
+    transform: translateY(-1px);
+    border-color: rgba(15, 23, 42, 0.2);
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-tab.is-active {
+    border-color: #0f172a;
+    box-shadow:
+      0 0 0 3px rgba(15, 23, 42, 0.08),
+      0 14px 30px rgba(15, 23, 42, 0.12);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-tab-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    background: #0f172a;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-tab-thumb {
+    width: 48px;
+    height: 48px;
+    overflow: hidden;
+    border-radius: 14px;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-tab-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-tab-thumb-fallback {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: #64748b;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-tab-copy {
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 2px;
   }
-  #{{ section_dom_id }} .ul-main-vip-preview-board {
-    border-radius: 24px;
+  #{{ section_dom_id }} .ul-main-vip-preview-tab-name {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 700;
   }
-  #{{ section_dom_id }} .ul-main-vip-preview-board-top {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
+  #{{ section_dom_id }} .ul-main-vip-preview-tab-meta {
+    display: block;
+    color: #64748b;
+    font-size: 11px;
+    line-height: 1.4;
   }
+  #{{ section_dom_id }} .ul-main-vip-preview-active {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.96)),
+      #fff;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-active-pills,
   #{{ section_dom_id }} .ul-main-vip-preview-board-pills {
     display: flex;
     flex-wrap: wrap;
@@ -3441,6 +3720,14 @@
     #{{ section_dom_id }} .ul-main-custom-price {
       text-align: left;
       min-width: 0;
+    }
+    #{{ section_dom_id }} .ul-main-vip-preview-tab {
+      min-width: 100%;
+      grid-template-columns: auto 42px minmax(0, 1fr);
+    }
+    #{{ section_dom_id }} .ul-main-vip-preview-tab .ul-main-custom-status {
+      grid-column: 2 / 4;
+      justify-self: start;
     }
   }
 </style>
