@@ -3,7 +3,6 @@ import { json } from '@remix-run/node'
 import { normalizeCustomerId } from '~/lib/customerPricing.server'
 import {
   prepareCustomPricingJobQuote,
-  prepareCustomPricingQuote,
 } from '~/lib/customerPricingCheckout.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
 import { authenticate } from '~/shopify.server'
@@ -136,24 +135,11 @@ export async function action({ request }: ActionFunctionArgs) {
 
   let prepared
   try {
-    prepared =
-      normalizedItems.length === 1
-        ? {
-            items: [
-              await prepareCustomPricingQuote({
-                shopDomain,
-                loggedInCustomerId,
-                uploadId: normalizedItems[0].uploadId,
-                quantity: normalizedItems[0].quantity,
-                selectedVariantId: normalizedItems[0].selectedVariantId,
-              }),
-            ],
-          }
-        : await prepareCustomPricingJobQuote({
-            shopDomain,
-            loggedInCustomerId,
-            items: normalizedItems,
-          })
+    prepared = await prepareCustomPricingJobQuote({
+      shopDomain,
+      loggedInCustomerId,
+      items: normalizedItems,
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to prepare custom checkout.'
     return json({ error: message }, { status: errorStatusFromMessage(message) })
