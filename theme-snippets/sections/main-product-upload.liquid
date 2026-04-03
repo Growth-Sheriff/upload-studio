@@ -351,11 +351,12 @@
           </div>
 
           <div class="ul-main-vip-preview-active hidden mt-4 rounded-[22px] border border-slate-200 bg-white/80 p-4 shadow-sm">
-            <div class="ul-main-vip-preview-active-top flex flex-wrap items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
+            <div class="ul-main-vip-preview-active-top">
+              <div class="ul-main-vip-preview-active-copy">
                 <div class="ul-main-vip-preview-active-label text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Focused design</div>
                 <div class="ul-main-vip-preview-active-title mt-1 truncate text-sm font-semibold text-slate-900"></div>
                 <div class="ul-main-vip-preview-active-meta mt-1 text-xs leading-5 text-slate-500"></div>
+                <div class="ul-main-vip-preview-active-note hidden mt-2 text-[11px] leading-5 text-slate-500"></div>
               </div>
               <div class="ul-main-vip-preview-active-pills flex flex-wrap items-center justify-end gap-2"></div>
             </div>
@@ -614,6 +615,7 @@
     var vipPreviewActive = root.querySelector('.ul-main-vip-preview-active');
     var vipPreviewActiveTitle = root.querySelector('.ul-main-vip-preview-active-title');
     var vipPreviewActiveMeta = root.querySelector('.ul-main-vip-preview-active-meta');
+    var vipPreviewActiveNote = root.querySelector('.ul-main-vip-preview-active-note');
     var vipPreviewActivePills = root.querySelector('.ul-main-vip-preview-active-pills');
     var vipPreviewEmpty = root.querySelector('.ul-main-vip-preview-empty');
     var vipPreviewEmptyTitle = root.querySelector('.ul-main-vip-preview-empty-title');
@@ -1917,6 +1919,10 @@
         vipPreviewActive.classList.add('hidden');
         if (vipPreviewActiveTitle) vipPreviewActiveTitle.textContent = '';
         if (vipPreviewActiveMeta) vipPreviewActiveMeta.textContent = '';
+        if (vipPreviewActiveNote) {
+          vipPreviewActiveNote.textContent = '';
+          vipPreviewActiveNote.classList.add('hidden');
+        }
         if (vipPreviewActivePills) vipPreviewActivePills.innerHTML = '';
         return;
       }
@@ -1942,6 +1948,16 @@
         metaText += ' • ' + queueCount + ' designs in this queue';
       }
       if (vipPreviewActiveMeta) vipPreviewActiveMeta.textContent = metaText;
+      if (vipPreviewActiveNote) {
+        var sizingMethodText = getSizingMethodText(item);
+        if (sizingMethodText) {
+          vipPreviewActiveNote.textContent = sizingMethodText;
+          vipPreviewActiveNote.classList.remove('hidden');
+        } else {
+          vipPreviewActiveNote.textContent = '';
+          vipPreviewActiveNote.classList.add('hidden');
+        }
+      }
 
       if (vipPreviewActivePills) {
         var pills = [];
@@ -1949,7 +1965,6 @@
         if (boardData) {
           pills.push('<span class="ul-main-vip-preview-mini-chip">' + formatInches(boardData.billableWidthIn) + ' × ' + formatInches(boardData.billableLengthIn) + '</span>');
         }
-        pills.push('<span class="ul-main-vip-preview-mini-chip">' + getSizingMethodText(item) + '</span>');
         pills.push('<span class="ul-main-vip-preview-mini-chip">' + (item.totalPrice != null ? formatMoneyValue(item.totalPrice, customerPricing.currency) : 'Pending') + '</span>');
         vipPreviewActivePills.innerHTML = pills.join('');
       }
@@ -4461,12 +4476,41 @@
       linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.96)),
       #fff;
   }
+  #{{ section_dom_id }} .ul-main-vip-preview-active-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-active-copy {
+    min-width: 0;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-active-title {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-active-meta,
+  #{{ section_dom_id }} .ul-main-vip-preview-active-note {
+    max-width: 100%;
+    word-break: break-word;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-active-note {
+    border-top: 1px solid rgba(226, 232, 240, 0.9);
+    padding-top: 10px;
+    color: #475569;
+  }
   #{{ section_dom_id }} .ul-main-vip-preview-active-pills,
   #{{ section_dom_id }} .ul-main-vip-preview-board-pills {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    justify-content: flex-end;
+    justify-content: flex-start;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-active-pills {
+    align-items: flex-start;
+    align-content: flex-start;
   }
   @media screen and (max-width: 1023px) {
     #{{ section_dom_id }} .ul-main-vip-preview-ruler-shell {
@@ -4487,6 +4531,9 @@
     #{{ section_dom_id }} .ul-main-vip-preview-select {
       font-size: 12px;
       padding-right: 2.75rem;
+    }
+    #{{ section_dom_id }} .ul-main-vip-preview-active-pills {
+      justify-content: flex-start;
     }
   }
 </style>
