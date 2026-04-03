@@ -18,30 +18,62 @@
       
       <!-- Left Column - Images (4 cols) -->
       <div class="lg:col-span-4">
-        <div class="aspect-square bg-gray-50 mb-4 relative border border-gray-200 p-2">
-          {% if product.featured_image %}
-            <img src="{{ product.featured_image | image_url: width: 800 }}" alt="{{ product.title | escape }}" class="ul-main-product-image w-full h-full object-contain mix-blend-multiply">
-          {% else %}
-            {% render 'placeholder-image' %}
-          {% endif %}
-          <div class="absolute top-2 left-2 bg-amazon-dark text-white text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg> Works with Any Design
+        <div class="ul-main-gallery-panel">
+          <div class="aspect-square bg-gray-50 mb-4 relative border border-gray-200 p-2">
+            {% if product.featured_image %}
+              <img src="{{ product.featured_image | image_url: width: 800 }}" alt="{{ product.title | escape }}" class="ul-main-product-image w-full h-full object-contain mix-blend-multiply">
+            {% else %}
+              {% render 'placeholder-image' %}
+            {% endif %}
+            <div class="absolute top-2 left-2 bg-amazon-dark text-white text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg> Works with Any Design
+            </div>
+          </div>
+
+          <!-- Thumbnails -->
+          <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+            {% for image in product.images %}
+              <button type="button" class="ul-main-thumb w-12 h-12 flex-shrink-0 border border-gray-300 hover:border-amazon-orange cursor-pointer js-thumb-click" data-image-url="{{ image | image_url: width: 800 }}" aria-label="Show product image {{ forloop.index }}">
+                <img src="{{ image | image_url: width: 100 }}" alt="{{ product.title | escape }}" class="w-full h-full object-cover">
+              </button>
+            {% else %}
+              {% for i in (1..4) %}
+                <div class="w-12 h-12 flex-shrink-0 border border-gray-300">
+                  {% render 'placeholder-image' %}
+                </div>
+              {% endfor %}
+            {% endfor %}
           </div>
         </div>
-        
-        <!-- Thumbnails -->
-        <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-          {% for image in product.images %}
-            <button type="button" class="ul-main-thumb w-12 h-12 flex-shrink-0 border border-gray-300 hover:border-amazon-orange cursor-pointer js-thumb-click" data-image-url="{{ image | image_url: width: 800 }}" aria-label="Show product image {{ forloop.index }}">
-              <img src="{{ image | image_url: width: 100 }}" alt="{{ product.title | escape }}" class="w-full h-full object-cover">
-            </button>
-          {% else %}
-            {% for i in (1..4) %}
-              <div class="w-12 h-12 flex-shrink-0 border border-gray-300">
-                {% render 'placeholder-image' %}
+
+        <div class="ul-main-customer-workspace hidden">
+          <div class="overflow-hidden rounded-[28px] border border-slate-200 bg-slate-950 text-white shadow-[0_24px_60px_rgba(15,23,42,0.22)]">
+            <div class="flex items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
+              <div>
+                <div class="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-200/90">Private reorder desk</div>
+                <div class="mt-1 text-sm text-slate-300">Saved print-ready files for your assigned pricing profile.</div>
               </div>
-            {% endfor %}
-          {% endfor %}
+              <span class="ul-main-customer-workspace-status hidden rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white"></span>
+            </div>
+            <div class="px-5 py-5">
+              <div class="ul-main-customer-workspace-title text-[1.7rem] font-semibold leading-tight tracking-[-0.03em] text-white">Welcome back.</div>
+              <div class="ul-main-customer-workspace-copy mt-3 max-w-[28rem] text-sm leading-6 text-slate-300">
+                This page has been personalized for your account. Reorder your saved print-ready uploads with your assigned pricing already applied.
+              </div>
+              <div class="ul-main-customer-workspace-meta mt-4 flex flex-wrap gap-2"></div>
+            </div>
+          </div>
+
+          <div class="mt-4 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
+            <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+              <div>
+                <div class="text-sm font-semibold text-slate-900">Your recent ordered uploads</div>
+                <div class="mt-1 text-xs text-slate-500">Use your last paid files as a fast starting point for a new custom-priced order.</div>
+              </div>
+              <span class="ul-main-customer-workspace-count rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-700">0 files</span>
+            </div>
+            <div class="ul-main-customer-workspace-list max-h-[840px] overflow-y-auto bg-slate-50 p-4"></div>
+          </div>
         </div>
       </div>
 
@@ -461,10 +493,20 @@
     var apiBase = root.getAttribute('data-api-base') || '/apps/customizer';
     var shopDomain = root.getAttribute('data-shop-domain') || '';
     var customerLoggedIn = root.getAttribute('data-customer-logged-in') === 'true';
+    var customerFirstName = root.getAttribute('data-customer-first-name') || '';
+    var customerLastName = root.getAttribute('data-customer-last-name') || '';
     var effectiveRules = {
       maxUploadWidth: parseOptionalPositiveNumber(root.getAttribute('data-max-upload-width'))
     };
 
+    var galleryPanel = root.querySelector('.ul-main-gallery-panel');
+    var customerWorkspace = root.querySelector('.ul-main-customer-workspace');
+    var customerWorkspaceStatus = root.querySelector('.ul-main-customer-workspace-status');
+    var customerWorkspaceTitle = root.querySelector('.ul-main-customer-workspace-title');
+    var customerWorkspaceCopy = root.querySelector('.ul-main-customer-workspace-copy');
+    var customerWorkspaceMeta = root.querySelector('.ul-main-customer-workspace-meta');
+    var customerWorkspaceCount = root.querySelector('.ul-main-customer-workspace-count');
+    var customerWorkspaceList = root.querySelector('.ul-main-customer-workspace-list');
     var uploadInput = root.querySelector('.ul-main-upload-input');
     var uploadTrigger = root.querySelector('.ul-main-upload-trigger');
     var uploadBox = root.querySelector('.ul-main-upload-box');
@@ -596,6 +638,13 @@
       quoteDesignsPerSheet: null,
       quoteItems: [],
       totalRequestedQuantity: 0
+    };
+    var customerWorkspaceState = {
+      status: 'idle',
+      items: [],
+      error: '',
+      loadedKey: '',
+      activeActionId: ''
     };
     var customBatchState = {
       active: false,
@@ -1283,6 +1332,250 @@
       }
     }
 
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function getCustomerDisplayName() {
+      var first = String(customerFirstName || '').trim();
+      var last = String(customerLastName || '').trim();
+      if (first) return first;
+      if (last) return last;
+      var email = root.getAttribute('data-customer-email') || '';
+      if (email && email.indexOf('@') > 0) return email.split('@')[0];
+      return 'there';
+    }
+
+    function shouldShowCustomerWorkspace() {
+      return hasCustomPricingActive() && (customerPricing.customerType === 'business' || customerPricing.customerType === 'vip');
+    }
+
+    function getCustomerWorkspaceKey() {
+      return [
+        customerPricing.customerType || '',
+        customerPricing.statusKey || '',
+        String(productData.productId || ''),
+        root.getAttribute('data-customer-id') || ''
+      ].join(':');
+    }
+
+    function getCustomerWorkspaceItems() {
+      return Array.isArray(customerWorkspaceState.items) ? customerWorkspaceState.items : [];
+    }
+
+    function getWorkspaceItemById(itemId) {
+      var items = getCustomerWorkspaceItems();
+      for (var i = 0; i < items.length; i += 1) {
+        if (String(items[i].uploadId) === String(itemId)) return items[i];
+      }
+      return null;
+    }
+
+    function formatWorkspaceDate(value) {
+      if (!value) return 'Recent order';
+      try {
+        return new Intl.DateTimeFormat('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        }).format(new Date(value));
+      } catch (error) {
+        return 'Recent order';
+      }
+    }
+
+    function buildCustomerWorkspaceQueueItem(item) {
+      var measurement = item && item.measurement && typeof item.measurement === 'object' ? item.measurement : {};
+      return {
+        id: 'workspace-' + String(item.uploadId || ''),
+        uploadId: String(item.uploadId || ''),
+        fileName: item.fileName || 'Print-ready upload',
+        fileSize: 0,
+        localPreviewUrl: '',
+        originalUrl: item.uploadUrl || '',
+        thumbnailUrl: item.thumbnailUrl || '',
+        widthPx: parseNonNegativeNumber(measurement.widthPx),
+        heightPx: parseNonNegativeNumber(measurement.heightPx),
+        trimmedWidthPx: parseNonNegativeNumber(measurement.trimmedWidthPx),
+        trimmedHeightPx: parseNonNegativeNumber(measurement.trimmedHeightPx),
+        trimmedOffsetXPx: parseNonNegativeNumber(measurement.trimmedOffsetXPx),
+        trimmedOffsetYPx: parseNonNegativeNumber(measurement.trimmedOffsetYPx),
+        embeddedDpi: parseNonNegativeNumber(measurement.dpi),
+        effectiveDpi: parseNonNegativeNumber(measurement.effectiveDpi),
+        measurementMode: measurement.measurementMode || 'full',
+        widthIn: parsePositiveNumber(measurement.widthIn) || 0,
+        heightIn: parsePositiveNumber(measurement.heightIn) || 0,
+        requestedQuantity: Math.max(1, parseInt(item.requestedQuantity || item.lastOrderedQuantity || 1, 10) || 1),
+        selectedVariantId: item.selectedVariantId || '',
+        selectedVariantTitle: item.selectedVariantTitle || '',
+        selectedSheetLabel: item.selectedSheetLabel || '',
+        sheetsNeeded: 0,
+        designsPerSheet: 0,
+        billableLengthIn: parsePositiveNumber(item.billableLengthIn) || 0,
+        totalPrice: null,
+        quoteStatus: 'processing',
+        uploadStatus: 'ready',
+        error: '',
+        lastFile: null
+      };
+    }
+
+    function ensureWorkspaceItemInQueue(workspaceItem) {
+      if (!workspaceItem) return null;
+      var existing = getCustomQueueItemById(workspaceItem.uploadId);
+      if (existing) {
+        existing.requestedQuantity = Math.max(1, parseInt(workspaceItem.requestedQuantity || 1, 10) || 1);
+        existing.selectedVariantId = workspaceItem.selectedVariantId || existing.selectedVariantId || '';
+        existing.selectedVariantTitle = workspaceItem.selectedVariantTitle || existing.selectedVariantTitle || '';
+        existing.selectedSheetLabel = workspaceItem.selectedSheetLabel || existing.selectedSheetLabel || '';
+        existing.quoteStatus = existing.uploadStatus === 'ready' ? 'processing' : existing.quoteStatus;
+        return existing;
+      }
+
+      var queueItem = buildCustomerWorkspaceQueueItem(workspaceItem);
+      state.customItems = getCustomQueueItems().concat(queueItem);
+      return queueItem;
+    }
+
+    function getWorkspaceActionLabel(item) {
+      var quantity = Math.max(1, parseInt(item.requestedQuantity || item.lastOrderedQuantity || 1, 10) || 1);
+      return quantity + ' cop' + (quantity === 1 ? 'y' : 'ies');
+    }
+
+    function renderCustomerWorkspace() {
+      if (!customerWorkspace || !galleryPanel || !customerWorkspaceList) return;
+
+      if (!shouldShowCustomerWorkspace()) {
+        customerWorkspace.classList.add('hidden');
+        galleryPanel.classList.remove('hidden');
+        return;
+      }
+
+      customerWorkspace.classList.remove('hidden');
+      galleryPanel.classList.add('hidden');
+
+      var displayName = getCustomerDisplayName();
+      var workspaceStatusLabel = customerPricing.statusLabel || (customerPricing.customerType === 'business' ? 'Business' : 'VIP');
+      if (customerWorkspaceStatus) {
+        customerWorkspaceStatus.textContent = workspaceStatusLabel;
+        customerWorkspaceStatus.classList.remove('hidden');
+      }
+
+      if (customerWorkspaceTitle) {
+        customerWorkspaceTitle.textContent = 'Welcome back, ' + displayName + '.';
+      }
+
+      if (customerWorkspaceCopy) {
+        customerWorkspaceCopy.textContent =
+          'This reorder desk has been tailored to your ' +
+          workspaceStatusLabel +
+          ' pricing profile. Every quick action below uses your assigned pricing automatically, so you can reorder faster with your saved print-ready artwork.';
+      }
+
+      if (customerWorkspaceMeta) {
+        var metaChips = [];
+        if (customerPricing.pricePerInch != null) {
+          metaChips.push('<span class="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">' + escapeHtml(formatMoneyValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in') + '</span>');
+        }
+        metaChips.push('<span class="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">' + escapeHtml(customerPricing.customerType === 'business' ? 'Business reorder flow' : 'VIP reorder flow') + '</span>');
+        metaChips.push('<span class="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">' + escapeHtml(String(getCustomerWorkspaceItems().length)) + ' saved files</span>');
+        customerWorkspaceMeta.innerHTML = metaChips.join('');
+      }
+
+      var items = getCustomerWorkspaceItems();
+      if (customerWorkspaceCount) {
+        customerWorkspaceCount.textContent = items.length + ' file' + (items.length === 1 ? '' : 's');
+      }
+
+      if (customerWorkspaceState.status === 'loading') {
+        customerWorkspaceList.innerHTML =
+          '<div class="space-y-3">' +
+            '<div class="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">' +
+              '<div class="h-4 w-32 animate-pulse bg-slate-200"></div>' +
+              '<div class="mt-3 h-20 animate-pulse bg-slate-100"></div>' +
+            '</div>' +
+            '<div class="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">' +
+              '<div class="h-4 w-40 animate-pulse bg-slate-200"></div>' +
+              '<div class="mt-3 h-20 animate-pulse bg-slate-100"></div>' +
+            '</div>' +
+          '</div>';
+        return;
+      }
+
+      if (customerWorkspaceState.status === 'error') {
+        customerWorkspaceList.innerHTML =
+          '<div class="rounded-[24px] border border-red-200 bg-red-50 px-4 py-5 text-sm text-red-700">' +
+            escapeHtml(customerWorkspaceState.error || 'We could not load your saved uploads right now.') +
+          '</div>';
+        return;
+      }
+
+      if (!items.length) {
+        customerWorkspaceList.innerHTML =
+          '<div class="rounded-[24px] border border-dashed border-slate-300 bg-white px-5 py-10 text-center">' +
+            '<div class="text-sm font-semibold text-slate-900">Your saved print-ready uploads will appear here.</div>' +
+            '<div class="mt-2 text-xs leading-6 text-slate-500">Once you complete a paid order on this product, your most recent uploads, last ordered quantity, and quick reorder actions will be ready in this panel.</div>' +
+          '</div>';
+        return;
+      }
+
+      var workspaceHtml = items.map(function(item) {
+        var previewSrc = item.thumbnailUrl || '';
+        var quantity = Math.max(1, parseInt(item.requestedQuantity || item.lastOrderedQuantity || 1, 10) || 1);
+        var actionBusy = String(customerWorkspaceState.activeActionId) === String(item.uploadId);
+        var sizeText = '';
+        if (item.measurement && item.measurement.widthIn && item.measurement.heightIn) {
+          sizeText = formatInches(Math.min(item.measurement.widthIn, item.measurement.heightIn)) + ' x ' + formatInches(Math.max(item.measurement.widthIn, item.measurement.heightIn));
+        }
+        var billableText = item.billableLengthIn ? 'Billable length ' + formatInches(item.billableLengthIn) : '';
+        return '' +
+          '<div class="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md" data-workspace-item="' + escapeHtml(item.uploadId) + '">' +
+            '<div class="flex items-start gap-4">' +
+              '<div class="h-20 w-20 flex-shrink-0 overflow-hidden rounded-[20px] border border-slate-200 bg-slate-100">' +
+                (previewSrc
+                  ? '<img src="' + escapeHtml(previewSrc) + '" alt="' + escapeHtml(item.fileName || 'Recent upload') + '" class="h-full w-full object-cover">'
+                  : '<div class="flex h-full w-full items-center justify-center text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">PNG</div>') +
+              '</div>' +
+              '<div class="min-w-0 flex-1">' +
+                '<div class="flex flex-wrap items-start justify-between gap-3">' +
+                  '<div class="min-w-0 flex-1">' +
+                    '<div class="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700">' + escapeHtml(item.productTitle || 'Custom Upload') + '</div>' +
+                    '<div class="mt-3 truncate text-sm font-semibold text-slate-900">' + escapeHtml(item.fileName || 'Print-ready upload') + '</div>' +
+                    '<div class="mt-2 flex flex-wrap gap-2 text-[11px] font-medium text-slate-500">' +
+                      '<span class="rounded-full border border-slate-200 bg-white px-3 py-1">Last order ' + escapeHtml(formatWorkspaceDate(item.orderedAt)) + '</span>' +
+                      '<span class="rounded-full border border-slate-200 bg-white px-3 py-1">Last qty ' + escapeHtml(String(item.lastOrderedQuantity || quantity)) + '</span>' +
+                      (sizeText ? '<span class="rounded-full border border-slate-200 bg-white px-3 py-1">' + escapeHtml(sizeText) + '</span>' : '') +
+                      (billableText ? '<span class="rounded-full border border-slate-200 bg-white px-3 py-1">' + escapeHtml(billableText) + '</span>' : '') +
+                    '</div>' +
+                  '</div>' +
+                  '<div class="text-right">' +
+                    '<div class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Quick reorder</div>' +
+                    '<div class="mt-2 text-xs font-medium text-slate-600">' + escapeHtml(getWorkspaceActionLabel(item)) + '</div>' +
+                  '</div>' +
+                '</div>' +
+                '<div class="mt-4 flex flex-wrap items-center gap-2">' +
+                  '<a href="' + escapeHtml(item.uploadUrl || '#') + '" target="_blank" rel="noopener noreferrer" class="inline-flex items-center rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"' + (item.uploadUrl ? '' : ' aria-disabled="true" tabindex="-1"') + '>Print READY</a>' +
+                  '<div class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 p-1">' +
+                    '<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-full text-base font-semibold text-slate-700 hover:bg-white" data-workspace-qty="' + escapeHtml(item.uploadId) + '" data-delta="-1">-</button>' +
+                    '<input type="number" min="1" step="1" value="' + quantity + '" class="w-14 border-0 bg-transparent text-center text-sm font-semibold text-slate-900 focus:outline-none focus:ring-0" data-workspace-qty-input="' + escapeHtml(item.uploadId) + '">' +
+                    '<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-full text-base font-semibold text-slate-700 hover:bg-white" data-workspace-qty="' + escapeHtml(item.uploadId) + '" data-delta="1">+</button>' +
+                  '</div>' +
+                  '<button type="button" class="inline-flex items-center rounded-full border border-slate-900 bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition-colors duration-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60" data-workspace-add="' + escapeHtml(item.uploadId) + '"' + (actionBusy ? ' disabled' : '') + '>' + (actionBusy ? 'Working...' : 'Add to Cart') + '</button>' +
+                  '<button type="button" class="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900 transition-colors duration-200 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60" data-workspace-buy="' + escapeHtml(item.uploadId) + '"' + (actionBusy ? ' disabled' : '') + '>Buy Now</button>' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+      }).join('');
+
+      customerWorkspaceList.innerHTML = '<div class="space-y-3">' + workspaceHtml + '</div>';
+    }
+
     function hasArtworkBounds() {
       return state.trimmedWidthPx > 0 && state.trimmedHeightPx > 0;
     }
@@ -1792,6 +2085,7 @@
     }
 
     function syncPricingVisibility() {
+      renderCustomerWorkspace();
       if (variantPricingTable) {
         if (hasCustomPricingActive()) variantPricingTable.classList.add('hidden');
         else variantPricingTable.classList.remove('hidden');
@@ -1978,9 +2272,17 @@
         if (!customerPricing.hasCustomPricing) {
           resetVipQuoteState();
         }
+        customerWorkspaceState.status = customerPricing.hasCustomPricing ? 'loading' : 'idle';
+        if (!customerPricing.hasCustomPricing) {
+          customerWorkspaceState.items = [];
+          customerWorkspaceState.error = '';
+          customerWorkspaceState.loadedKey = '';
+          customerWorkspaceState.activeActionId = '';
+        }
 
         updateCustomerStatusUI();
         syncPricingVisibility();
+        await loadCustomerWorkspace();
         updateVipPricingUI();
         resetActionLabels();
         syncPurchaseButtonsForCurrentState();
@@ -1993,12 +2295,148 @@
         customerPricing.hasCustomPricing = false;
         customerPricing.source = 'fallback';
         resetVipQuoteState();
+        customerWorkspaceState.status = 'idle';
+        customerWorkspaceState.items = [];
+        customerWorkspaceState.error = '';
+        customerWorkspaceState.loadedKey = '';
+        customerWorkspaceState.activeActionId = '';
         updateCustomerStatusUI();
         syncPricingVisibility();
+        renderCustomerWorkspace();
         updateVipPreviewUI();
         resetActionLabels();
         syncPurchaseButtonsForCurrentState();
         return customerPricing;
+      }
+    }
+
+    async function loadCustomerWorkspace() {
+      if (!customerWorkspace || !customerWorkspaceList) return null;
+
+      if (!shouldShowCustomerWorkspace()) {
+        customerWorkspaceState.status = 'idle';
+        customerWorkspaceState.items = [];
+        customerWorkspaceState.error = '';
+        customerWorkspaceState.loadedKey = '';
+        customerWorkspaceState.activeActionId = '';
+        renderCustomerWorkspace();
+        return null;
+      }
+
+      var workspaceKey = getCustomerWorkspaceKey();
+      if (customerWorkspaceState.loadedKey === workspaceKey && customerWorkspaceState.status === 'ready') {
+        renderCustomerWorkspace();
+        return customerWorkspaceState.items;
+      }
+
+      customerWorkspaceState.status = 'loading';
+      customerWorkspaceState.error = '';
+      renderCustomerWorkspace();
+
+      try {
+        var workspaceUrl =
+          apiBase +
+          '/api/customer-pricing/workspace?shopDomain=' +
+          encodeURIComponent(shopDomain) +
+          '&productId=' +
+          encodeURIComponent(String(productData.productId));
+        var response = await fetch(workspaceUrl, { credentials: 'same-origin' });
+        var data = await response.json().catch(function() { return {}; });
+        if (!response.ok) {
+          throw new Error(data && data.error ? data.error : 'Failed to load recent ordered uploads.');
+        }
+
+        customerWorkspaceState.status = 'ready';
+        customerWorkspaceState.items = Array.isArray(data.items)
+          ? data.items.map(function(item) {
+              var requestedQuantity = Math.max(1, parseInt(item.requestedQuantity || item.lastOrderedQuantity || 1, 10) || 1);
+              return {
+                uploadId: String(item.uploadId || ''),
+                productTitle: String(item.productTitle || productData.title || 'Custom Upload'),
+                productId: String(item.productId || ''),
+                productHandle: String(item.productHandle || ''),
+                fileName: String(item.fileName || 'Print-ready upload'),
+                uploadUrl: String(item.uploadUrl || ''),
+                thumbnailUrl: String(item.thumbnailUrl || ''),
+                orderedAt: item.orderedAt || '',
+                lastOrderedQuantity: Math.max(1, parseInt(item.lastOrderedQuantity || requestedQuantity, 10) || requestedQuantity),
+                requestedQuantity: requestedQuantity,
+                selectedVariantId: String(item.selectedVariantId || ''),
+                selectedVariantTitle: String(item.selectedVariantTitle || ''),
+                selectedSheetLabel: String(item.selectedSheetLabel || ''),
+                billableLengthIn: parsePositiveNumber(item.billableLengthIn) || 0,
+                measurement: item.measurement && typeof item.measurement === 'object' ? item.measurement : null
+              };
+            }).filter(function(item) {
+              return item.uploadId;
+            })
+          : [];
+        customerWorkspaceState.loadedKey = workspaceKey;
+        customerWorkspaceState.activeActionId = '';
+        renderCustomerWorkspace();
+        return customerWorkspaceState.items;
+      } catch (error) {
+        customerWorkspaceState.status = 'error';
+        customerWorkspaceState.error = error && error.message ? error.message : 'Failed to load recent ordered uploads.';
+        customerWorkspaceState.items = [];
+        customerWorkspaceState.loadedKey = '';
+        customerWorkspaceState.activeActionId = '';
+        renderCustomerWorkspace();
+        return null;
+      }
+    }
+
+    async function checkoutWorkspaceItem(workspaceItem) {
+      if (!workspaceItem) return;
+      clearError();
+      customerWorkspaceState.activeActionId = workspaceItem.uploadId;
+      renderCustomerWorkspace();
+      try {
+        var checkoutResponse = await fetch(apiBase + '/api/vip/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            shopDomain: shopDomain,
+            productId: String(productData.productId),
+            items: [{
+              uploadId: workspaceItem.uploadId,
+              quantity: workspaceItem.requestedQuantity || 1,
+              selectedVariantId: workspaceItem.selectedVariantId || ''
+            }]
+          })
+        });
+        var checkoutData = await checkoutResponse.json().catch(function() { return {}; });
+        if (!checkoutResponse.ok) {
+          throw new Error(checkoutData.error || 'Failed to create custom checkout.');
+        }
+        window.location.href = checkoutData.checkoutUrl || checkoutData.redirectUrl || checkoutData.url || '/checkout';
+      } catch (error) {
+        showError(error && error.message ? error.message : 'Failed to create custom checkout.');
+        customerWorkspaceState.activeActionId = '';
+        renderCustomerWorkspace();
+      }
+    }
+
+    function addWorkspaceItemToQueue(workspaceItem) {
+      if (!workspaceItem) return;
+      clearError();
+      var queueItem = ensureWorkspaceItemInQueue(workspaceItem);
+      if (!queueItem) return;
+      customerWorkspaceState.activeActionId = workspaceItem.uploadId;
+      setActiveCustomQueueItem(queueItem.uploadId || queueItem.id);
+      markCustomQueueQuoteDirty();
+      renderCustomQueue();
+      updateVipPricingUI();
+      updateVipPreviewUI();
+      syncPurchaseButtonsForCurrentState();
+      renderCustomerWorkspace();
+      loadVipQuote().finally(function() {
+        customerWorkspaceState.activeActionId = '';
+        renderCustomerWorkspace();
+      });
+      if (uploadBox && typeof uploadBox.scrollIntoView === 'function') {
+        uploadBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     }
 
@@ -3217,6 +3655,43 @@
         updateVipPricingUI();
         updateVipPreviewUI();
         loadVipQuote();
+      });
+    }
+
+    if (customerWorkspaceList) {
+      customerWorkspaceList.addEventListener('click', function(event) {
+        var qtyButton = event.target.closest('[data-workspace-qty]');
+        if (qtyButton) {
+          var workspaceItem = getWorkspaceItemById(qtyButton.getAttribute('data-workspace-qty'));
+          if (!workspaceItem) return;
+          var delta = parseInt(qtyButton.getAttribute('data-delta') || '0', 10) || 0;
+          workspaceItem.requestedQuantity = Math.max(1, (workspaceItem.requestedQuantity || workspaceItem.lastOrderedQuantity || 1) + delta);
+          renderCustomerWorkspace();
+          return;
+        }
+
+        var addButton = event.target.closest('[data-workspace-add]');
+        if (addButton) {
+          addWorkspaceItemToQueue(getWorkspaceItemById(addButton.getAttribute('data-workspace-add')));
+          return;
+        }
+
+        var buyButton = event.target.closest('[data-workspace-buy]');
+        if (buyButton) {
+          checkoutWorkspaceItem(getWorkspaceItemById(buyButton.getAttribute('data-workspace-buy')));
+        }
+      });
+
+      customerWorkspaceList.addEventListener('change', function(event) {
+        var input = event.target.closest('[data-workspace-qty-input]');
+        if (!input) return;
+        var workspaceItem = getWorkspaceItemById(input.getAttribute('data-workspace-qty-input'));
+        if (!workspaceItem) return;
+        var nextQuantity = parseInt(input.value || '1', 10) || 1;
+        if (nextQuantity < 1) nextQuantity = 1;
+        workspaceItem.requestedQuantity = nextQuantity;
+        input.value = String(nextQuantity);
+        renderCustomerWorkspace();
       });
     }
 
