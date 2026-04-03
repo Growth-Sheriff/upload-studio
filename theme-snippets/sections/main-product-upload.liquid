@@ -490,6 +490,11 @@
       target.trimmedOffsetYPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedOffsetYPx')) || 0;
       target.embeddedDpi = parseNonNegativeNumber(getPayloadField(payload, 'dpi')) || target.embeddedDpi || 0;
       target.effectiveDpi = parseNonNegativeNumber(getPayloadField(payload, 'effectiveDpi')) || target.effectiveDpi || 0;
+      var nextSizingSource = getPayloadField(payload, 'sizingSource');
+      target.sizingSource =
+        typeof nextSizingSource === 'string' && nextSizingSource
+          ? String(nextSizingSource)
+          : target.sizingSource;
       var nextMeasurementMode = getPayloadField(payload, 'measurementMode');
       target.measurementMode =
         typeof nextMeasurementMode === 'string' && nextMeasurementMode
@@ -507,6 +512,43 @@
       target.widthIn = confirmedInches.widthIn;
       target.heightIn = confirmedInches.heightIn;
       return true;
+    }
+
+    function getResolvedSizingSource(value) {
+      if (value && typeof value === 'object') {
+        var explicitSource = typeof value.sizingSource === 'string' && value.sizingSource ? String(value.sizingSource) : '';
+        if (explicitSource) return explicitSource;
+        var embeddedDpi = parseNonNegativeNumber(value.embeddedDpi);
+        var effectiveDpi = parseNonNegativeNumber(value.effectiveDpi);
+        if (embeddedDpi > 0 && effectiveDpi > 0 && Math.abs(embeddedDpi - effectiveDpi) < 0.01) {
+          return 'document_dpi';
+        }
+      }
+      return 'fallback_200dpi';
+    }
+
+    function getResolvedSizingDpi(value) {
+      if (!value || typeof value !== 'object') return 200;
+      var source = getResolvedSizingSource(value);
+      var embeddedDpi = parseNonNegativeNumber(value.embeddedDpi);
+      var effectiveDpi = parseNonNegativeNumber(value.effectiveDpi);
+      if (source === 'document_dpi') {
+        return embeddedDpi || effectiveDpi || 200;
+      }
+      return effectiveDpi || 200;
+    }
+
+    function getSizingMethodText(value) {
+      var embeddedDpi = value && typeof value === 'object' ? parseNonNegativeNumber(value.embeddedDpi) : 0;
+      var effectiveDpi = value && typeof value === 'object' ? parseNonNegativeNumber(value.effectiveDpi) : 0;
+      if (!(embeddedDpi > 0) && !(effectiveDpi > 0)) {
+        return 'Document size will be confirmed after upload measurement.';
+      }
+      var sizingDpi = getResolvedSizingDpi(value);
+      if (getResolvedSizingSource(value) === 'document_dpi') {
+        return 'Document size calculated from embedded ' + sizingDpi + ' DPI.';
+      }
+      return 'Document size estimated using ' + sizingDpi + ' DPI fallback.';
     }
 
     var productJsonEl = document.getElementById({{ section_dom_id | append: '-product-json' | json }});
@@ -623,6 +665,7 @@
       trimmedOffsetYPx: 0,
       embeddedDpi: 0,
       effectiveDpi: 0,
+      sizingSource: null,
       measurementMode: null,
       widthIn: 0,
       heightIn: 0,
@@ -1035,6 +1078,7 @@
         trimmedOffsetYPx: 0,
         embeddedDpi: 0,
         effectiveDpi: 0,
+        sizingSource: null,
         measurementMode: null,
         widthIn: 0,
         heightIn: 0,
@@ -1088,6 +1132,7 @@
       state.trimmedOffsetYPx = item.trimmedOffsetYPx || 0;
       state.embeddedDpi = item.embeddedDpi || 0;
       state.effectiveDpi = item.effectiveDpi || 0;
+      state.sizingSource = item.sizingSource || null;
       state.measurementMode = item.measurementMode || null;
       state.widthIn = item.widthIn || 0;
       state.heightIn = item.heightIn || 0;
@@ -1193,6 +1238,7 @@
         if (item.widthIn && item.heightIn) {
           metaParts.push(formatInches(Math.min(item.widthIn, item.heightIn)) + ' x ' + formatInches(Math.max(item.widthIn, item.heightIn)));
         }
+        var sizingMethodText = getSizingMethodText(item);
         var summaryText = '';
         if (item.selectedVariantTitle) {
           summaryText = item.selectedVariantTitle;
@@ -1236,6 +1282,7 @@
                     '<button type="button" class="ul-main-custom-queue-activate ul-main-custom-title block max-w-full truncate text-left text-sm font-semibold text-slate-900 hover:text-slate-700" data-queue-activate="' + itemId + '">' + (item.fileName || 'Uploaded file') + '</button>' +
                     '<div class="ul-main-custom-meta mt-1 text-xs text-slate-500">' + (metaParts.join(' • ') || 'Waiting for file measurement...') + '</div>' +
                     '<div class="ul-main-custom-summary mt-2 text-xs font-medium text-slate-700">' + (summaryText || '&nbsp;') + '</div>' +
+                    '<div class="ul-main-custom-sizing mt-2 text-[11px] font-medium text-slate-500">' + sizingMethodText + '</div>' +
                   '</div>' +
                   '<div class="ul-main-custom-price text-right">' +
                     '<div class="text-xs uppercase tracking-wide text-slate-400">Item total</div>' +
@@ -1429,6 +1476,7 @@
         trimmedOffsetYPx: parseNonNegativeNumber(measurement.trimmedOffsetYPx),
         embeddedDpi: parseNonNegativeNumber(measurement.dpi),
         effectiveDpi: parseNonNegativeNumber(measurement.effectiveDpi),
+        sizingSource: measurement.sizingSource || null,
         measurementMode: measurement.measurementMode || 'full',
         widthIn: parsePositiveNumber(measurement.widthIn) || 0,
         heightIn: parsePositiveNumber(measurement.heightIn) || 0,
@@ -1614,7 +1662,7 @@
 
     function getArtworkBoundsInches() {
       if (!hasArtworkBounds()) return null;
-      var dpi = state.effectiveDpi > 0 ? state.effectiveDpi : 300;
+      var dpi = state.effectiveDpi > 0 ? state.effectiveDpi : 200;
       return {
         widthIn: Number((state.trimmedWidthPx / dpi).toFixed(2)),
         heightIn: Number((state.trimmedHeightPx / dpi).toFixed(2)),
@@ -1723,7 +1771,7 @@
         );
       var artworkBounds = null;
       if (hasArtwork) {
-        var dpi = item.effectiveDpi > 0 ? item.effectiveDpi : 300;
+        var dpi = item.effectiveDpi > 0 ? item.effectiveDpi : 200;
         artworkBounds = {
           widthIn: Number((item.trimmedWidthPx / dpi).toFixed(2)),
           heightIn: Number((item.trimmedHeightPx / dpi).toFixed(2)),
@@ -1901,6 +1949,7 @@
         if (boardData) {
           pills.push('<span class="ul-main-vip-preview-mini-chip">' + formatInches(boardData.billableWidthIn) + ' × ' + formatInches(boardData.billableLengthIn) + '</span>');
         }
+        pills.push('<span class="ul-main-vip-preview-mini-chip">' + getSizingMethodText(item) + '</span>');
         pills.push('<span class="ul-main-vip-preview-mini-chip">' + (item.totalPrice != null ? formatMoneyValue(item.totalPrice, customerPricing.currency) : 'Pending') + '</span>');
         vipPreviewActivePills.innerHTML = pills.join('');
       }
@@ -1997,7 +2046,9 @@
           trimmedHeightPx: state.trimmedHeightPx,
           trimmedOffsetXPx: state.trimmedOffsetXPx,
           trimmedOffsetYPx: state.trimmedOffsetYPx,
+          embeddedDpi: state.embeddedDpi,
           effectiveDpi: state.effectiveDpi,
+          sizingSource: state.sizingSource,
           thumbnailUrl: state.thumbnailUrl,
           originalUrl: state.originalUrl,
           localPreviewUrl: uploadThumb ? uploadThumb.getAttribute('src') || '' : '',
@@ -2599,6 +2650,9 @@
           customerPricing.quoteItems.forEach(function(quoteItem) {
             var queueItem = getCustomQueueItemById(quoteItem.uploadId || '');
             if (!queueItem) return;
+            if (quoteItem.measurement && typeof quoteItem.measurement === 'object') {
+              applyServerMeasurement(quoteItem.measurement, queueItem);
+            }
             queueItem.billableLengthIn = parsePositiveNumber(quoteItem.billableLengthIn) || 0;
             queueItem.totalPrice = parsePositiveNumber(quoteItem.totalPrice);
             queueItem.selectedVariantId = String(quoteItem.selectedVariantId || '');
@@ -2726,11 +2780,7 @@
         if (hasSeparateArtworkBounds()) {
           notes.push('Artwork bounds were also detected for preview, but billing keeps the full uploaded page size.');
         }
-        if (state.embeddedDpi && state.effectiveDpi && state.embeddedDpi !== state.effectiveDpi) {
-          notes.push(
-            'File DPI: ' + state.embeddedDpi + '. Production sizing baseline: ' + state.effectiveDpi + ' DPI.'
-          );
-        }
+        notes.push(getSizingMethodText(state));
         detectedNote.textContent = notes.join(' ');
       }
     }
@@ -2833,6 +2883,7 @@
       state.trimmedOffsetYPx = 0;
       state.embeddedDpi = 0;
       state.effectiveDpi = 0;
+      state.sizingSource = null;
       state.measurementMode = null;
       state.widthIn = 0;
       state.heightIn = 0;
@@ -2862,9 +2913,7 @@
       var meta = [];
       if (state.widthPx && state.heightPx) meta.push(state.widthPx + ' x ' + state.heightPx + ' px');
       if (state.embeddedDpi) meta.push('File ' + state.embeddedDpi + ' DPI');
-      if (state.effectiveDpi && state.effectiveDpi !== state.embeddedDpi) {
-        meta.push('Sizing ' + state.effectiveDpi + ' DPI');
-      }
+      meta.push(getSizingMethodText(state));
       if (state.lastFile && state.lastFile.size) meta.push((state.lastFile.size / (1024 * 1024)).toFixed(1) + ' MB');
       if (uploadMeta) uploadMeta.textContent = meta.join(' | ');
 
@@ -3319,6 +3368,7 @@
       state.trimmedOffsetYPx = 0;
       state.embeddedDpi = 0;
       state.effectiveDpi = 0;
+      state.sizingSource = null;
       state.measurementMode = null;
       state.widthIn = 0;
       state.heightIn = 0;

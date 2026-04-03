@@ -195,6 +195,9 @@ export async function action({ request }: ActionFunctionArgs) {
           item.resolvedVariant?.sheetsNeeded || item.quote.sheetsNeeded || item.requestedQuantity,
         designsPerSheet: item.resolvedVariant?.designsPerSheet || null,
         measurement: {
+          dpi: item.measurement.dpi,
+          effectiveDpi: item.measurement.effectiveDpi,
+          sizingSource: item.measurement.sizingSource,
           widthIn: item.measurement.widthIn,
           heightIn: item.measurement.heightIn,
           measurementMode: item.measurement.measurementMode,

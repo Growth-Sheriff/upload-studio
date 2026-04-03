@@ -76,7 +76,9 @@ export interface VipUploadMeasurement {
   heightPx: number
   measurementWidthPx: number
   measurementHeightPx: number
+  dpi: number
   effectiveDpi: number
+  sizingSource: string | null
   widthIn: number
   heightIn: number
   measurementMode: string | null
@@ -740,7 +742,9 @@ export function extractVipUploadMeasurement(
       heightPx: metadata.heightPx,
       measurementWidthPx: metadata.measurementWidthPx,
       measurementHeightPx: metadata.measurementHeightPx,
+      dpi: metadata.dpi,
       effectiveDpi: metadata.effectiveDpi,
+      sizingSource: metadata.sizingSource,
       widthIn: metadata.widthIn,
       heightIn: metadata.heightIn,
       measurementMode: metadata.measurementMode,

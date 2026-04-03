@@ -45,6 +45,8 @@ const DEFAULT_CONFIG = {
   maxWidthIn: 21.75,
 }
 
+const DEFAULT_DOCUMENT_FALLBACK_DPI = 200
+
 interface ResolveRequestBody {
   shopDomain?: string
   productId?: string | number
@@ -100,7 +102,8 @@ function extractUploadDimensions(preflightResult: unknown) {
   let trimmedHeightPx = 0
   let measurementWidthPx = 0
   let measurementHeightPx = 0
-  let effectiveDpi = 300
+  let effectiveDpi = DEFAULT_DOCUMENT_FALLBACK_DPI
+  let sizingSource: string | null = null
   let measurementMode = 'full'
   let widthIn = 0
   let heightIn = 0
@@ -113,9 +116,10 @@ function extractUploadDimensions(preflightResult: unknown) {
     trimmedHeightPx = Number(metadata.trimmedHeightPx || 0)
     measurementWidthPx = Number(metadata.measurementWidthPx || 0)
     measurementHeightPx = Number(metadata.measurementHeightPx || 0)
-    effectiveDpi = Number(metadata.effectiveDpi || effectiveDpi || 300)
-    widthIn = Number(metadata.widthIn || 0)
-    heightIn = Number(metadata.heightIn || 0)
+    sizingSource =
+      typeof metadata.sizingSource === 'string' && metadata.sizingSource
+        ? String(metadata.sizingSource)
+        : sizingSource
     measurementMode =
       typeof metadata.measurementMode === 'string' && metadata.measurementMode
         ? String(metadata.measurementMode)
@@ -131,9 +135,10 @@ function extractUploadDimensions(preflightResult: unknown) {
       trimmedHeightPx = Number(details.trimmedHeight || 0)
       measurementWidthPx = Number(details.measurementWidth || 0)
       measurementHeightPx = Number(details.measurementHeight || 0)
-      effectiveDpi = Number(details.effectiveDpi || effectiveDpi || 300)
-      widthIn = Number(details.widthIn || 0)
-      heightIn = Number(details.heightIn || 0)
+      sizingSource =
+        typeof details.sizingSource === 'string' && details.sizingSource
+          ? String(details.sizingSource)
+          : sizingSource
       measurementMode =
         typeof details.measurementMode === 'string' && details.measurementMode
           ? String(details.measurementMode)
@@ -152,11 +157,21 @@ function extractUploadDimensions(preflightResult: unknown) {
     measurementWidthPx = widthPx
     measurementHeightPx = heightPx
   }
-  if (!(widthIn > 0) || !(heightIn > 0) || !(effectiveDpi > 0)) {
-    effectiveDpi = effectiveDpi > 0 ? effectiveDpi : 300
-    widthIn = Number((measurementWidthPx / effectiveDpi).toFixed(2))
-    heightIn = Number((measurementHeightPx / effectiveDpi).toFixed(2))
+
+  if (sizingSource === 'document_dpi' && dpi > 0) {
+    effectiveDpi = dpi
+  } else if (sizingSource === 'fallback_200dpi') {
+    effectiveDpi = DEFAULT_DOCUMENT_FALLBACK_DPI
+  } else if (dpi > 0) {
+    effectiveDpi = dpi
+    sizingSource = 'document_dpi'
+  } else {
+    effectiveDpi = DEFAULT_DOCUMENT_FALLBACK_DPI
+    sizingSource = 'fallback_200dpi'
   }
+
+  widthIn = Number((measurementWidthPx / effectiveDpi).toFixed(2))
+  heightIn = Number((measurementHeightPx / effectiveDpi).toFixed(2))
 
   return {
     widthPx,
@@ -167,6 +182,7 @@ function extractUploadDimensions(preflightResult: unknown) {
     measurementWidthPx,
     measurementHeightPx,
     effectiveDpi,
+    sizingSource,
     measurementMode,
     widthIn,
     heightIn,
@@ -176,14 +192,17 @@ function extractUploadDimensions(preflightResult: unknown) {
 function applyFullCanvasDimensions<T extends {
   widthPx: number
   heightPx: number
+  dpi: number
   effectiveDpi: number
+  sizingSource: string | null
   measurementWidthPx: number
   measurementHeightPx: number
   widthIn: number
   heightIn: number
   measurementMode: string
 }>(dimensions: T): T {
-  const effectiveDpi = dimensions.effectiveDpi > 0 ? dimensions.effectiveDpi : 300
+  const effectiveDpi =
+    dimensions.effectiveDpi > 0 ? dimensions.effectiveDpi : DEFAULT_DOCUMENT_FALLBACK_DPI
   const measurementWidthPx = dimensions.widthPx > 0 ? dimensions.widthPx : dimensions.measurementWidthPx
   const measurementHeightPx = dimensions.heightPx > 0 ? dimensions.heightPx : dimensions.measurementHeightPx
 
@@ -191,6 +210,8 @@ function applyFullCanvasDimensions<T extends {
     ...dimensions,
     measurementWidthPx,
     measurementHeightPx,
+    effectiveDpi,
+    sizingSource: dimensions.sizingSource || (dimensions.dpi > 0 ? 'document_dpi' : 'fallback_200dpi'),
     widthIn: Number((measurementWidthPx / effectiveDpi).toFixed(2)),
     heightIn: Number((measurementHeightPx / effectiveDpi).toFixed(2)),
     measurementMode: 'full',

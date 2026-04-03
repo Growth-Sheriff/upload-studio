@@ -5,13 +5,13 @@ import path from 'path'
 import { promisify } from 'util'
 
 const execAsync = promisify(exec)
-const PRODUCTION_DPI = 300
+const DEFAULT_DOCUMENT_FALLBACK_DPI = 200
 
 function parsePngInfo(buffer: Buffer) {
   if (buffer.length < 24) return null
   const width = buffer.readUInt32BE(16)
   const height = buffer.readUInt32BE(20)
-  let dpi = 72
+  let dpi = 0
   let hasAlpha = false
 
   const colorType = buffer[25]
@@ -51,7 +51,7 @@ function parsePngInfo(buffer: Buffer) {
 function parseJpegInfo(buffer: Buffer) {
   if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) return null
 
-  let dpi = 72
+  let dpi = 0
   let offset = 2
   while (offset + 4 <= buffer.length) {
     if (buffer[offset] !== 0xff) {
@@ -108,7 +108,7 @@ function parseWebpInfo(buffer: Buffer) {
   if (chunkType === 'VP8 ') {
     const width = buffer.readUInt16LE(26) & 0x3fff
     const height = buffer.readUInt16LE(28) & 0x3fff
-    return { width, height, dpi: 72, colorspace: 'sRGB', hasAlpha: false, format: 'WEBP' }
+    return { width, height, dpi: 0, colorspace: 'sRGB', hasAlpha: false, format: 'WEBP' }
   }
 
   if (chunkType === 'VP8L') {
@@ -116,7 +116,7 @@ function parseWebpInfo(buffer: Buffer) {
     const width = (bits & 0x3fff) + 1
     const height = ((bits >> 14) & 0x3fff) + 1
     const alpha = (bits >> 28) & 0x1
-    return { width, height, dpi: 72, colorspace: 'sRGB', hasAlpha: alpha === 1, format: 'WEBP' }
+    return { width, height, dpi: 0, colorspace: 'sRGB', hasAlpha: alpha === 1, format: 'WEBP' }
   }
 
   if (chunkType === 'VP8X' && buffer.length >= 30) {
@@ -126,7 +126,7 @@ function parseWebpInfo(buffer: Buffer) {
     return {
       width,
       height,
-      dpi: 72,
+      dpi: 0,
       colorspace: 'sRGB',
       hasAlpha: (flags & 0x10) !== 0,
       format: 'WEBP',
@@ -561,6 +561,9 @@ export async function getImageInfo(filePath: string): Promise<{
   format: string
 } & Partial<MeasuredImageInfo>> {
   const detectedType = await detectFileType(filePath)
+  const nativeInfo = detectedType
+    ? await getImageInfoWithoutImagemagick(filePath, detectedType).catch(() => null)
+    : null
 
   try {
     // v4.5.0: No timeout - large files (10GB+) need unlimited time
@@ -577,14 +580,25 @@ export async function getImageInfo(filePath: string): Promise<{
     const channels = parts[5] || ''
     const format = parts[6] || 'unknown'
 
-    // Average DPI
-    const dpi = Math.round((xDpi + yDpi) / 2)
+    // Native parsing wins when it can distinguish missing metadata from a real DPI value.
+    const identifiedDpi = Math.round((xDpi + yDpi) / 2)
+    const dpi =
+      nativeInfo && typeof nativeInfo.dpi === 'number'
+        ? nativeInfo.dpi
+        : identifiedDpi
 
     // Check for alpha channel
     const hasAlpha =
       channels.toLowerCase().includes('a') || channels.toLowerCase().includes('alpha')
 
-    return { width, height, dpi, colorspace, hasAlpha, format }
+    return {
+      width: nativeInfo?.width || width,
+      height: nativeInfo?.height || height,
+      dpi,
+      colorspace,
+      hasAlpha: nativeInfo?.hasAlpha != null ? nativeInfo.hasAlpha : hasAlpha,
+      format,
+    }
   } catch (error) {
     console.error('[Preflight] ImageMagick identify failed:', error)
 
@@ -937,7 +951,8 @@ export async function runPreflightChecks(
   try {
     const imageInfo = await getImageInfo(filePath)
     const trimmedBounds = await getTrimmedImageBounds(filePath, imageInfo)
-    const effectiveDpi = PRODUCTION_DPI
+    const effectiveDpi = imageInfo.dpi > 0 ? imageInfo.dpi : DEFAULT_DOCUMENT_FALLBACK_DPI
+    const sizingSource = imageInfo.dpi > 0 ? 'document_dpi' : 'fallback_200dpi'
     const measurementWidth = imageInfo.width
     const measurementHeight = imageInfo.height
 
@@ -947,14 +962,14 @@ export async function runPreflightChecks(
         name: 'dpi',
         status: 'warning',
         value: imageInfo.dpi,
-        message: `Embedded DPI metadata is missing. Production sizing uses ${effectiveDpi} DPI.`,
+        message: `Embedded DPI metadata is missing. Document sizing uses ${effectiveDpi} DPI fallback.`,
       })
     } else if (imageInfo.dpi < config.requiredDPI) {
       checks.push({
         name: 'dpi',
         status: 'warning',
         value: imageInfo.dpi,
-        message: `Embedded DPI (${imageInfo.dpi}) is below recommended (${config.requiredDPI}). Production sizing uses ${effectiveDpi} DPI.`,
+        message: `Embedded DPI (${imageInfo.dpi}) is below recommended (${config.requiredDPI}). Document sizing keeps the embedded DPI.`,
       })
       if (overall === 'ok') overall = 'warning'
     } else {
@@ -982,6 +997,7 @@ export async function runPreflightChecks(
         measurementWidth,
         measurementHeight,
         effectiveDpi,
+        sizingSource,
         measurementMode: 'full',
         widthIn: Number((measurementWidth / effectiveDpi).toFixed(2)),
         heightIn: Number((measurementHeight / effectiveDpi).toFixed(2)),

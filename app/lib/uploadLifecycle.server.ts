@@ -33,6 +33,7 @@ export interface UploadLifecycleMetadata {
   measurementWidthPx: number
   measurementHeightPx: number
   effectiveDpi: number
+  sizingSource: string | null
   widthIn: number
   heightIn: number
   measurementMode: string | null
@@ -57,11 +58,52 @@ interface UploadItemLike {
   thumbnailKey?: string | null
 }
 
-const DEFAULT_EFFECTIVE_DPI = 300
+const DEFAULT_EFFECTIVE_DPI = 200
 
 function parsePositiveNumber(value: unknown): number {
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+function normalizeSizingSource(value: unknown): string | null {
+  const raw = String(value || '').trim()
+  return raw || null
+}
+
+function resolveMeasurementSizing(metadata: {
+  dpi?: unknown
+  effectiveDpi?: unknown
+  sizingSource?: unknown
+}): { effectiveDpi: number; sizingSource: string } {
+  const documentDpi = parsePositiveNumber(metadata.dpi)
+  const storedEffectiveDpi = parsePositiveNumber(metadata.effectiveDpi)
+  const storedSizingSource = normalizeSizingSource(metadata.sizingSource)
+
+  if (storedSizingSource === 'document_dpi') {
+    return {
+      effectiveDpi: storedEffectiveDpi || documentDpi || DEFAULT_EFFECTIVE_DPI,
+      sizingSource: 'document_dpi',
+    }
+  }
+
+  if (storedSizingSource === 'fallback_200dpi') {
+    return {
+      effectiveDpi: storedEffectiveDpi || DEFAULT_EFFECTIVE_DPI,
+      sizingSource: 'fallback_200dpi',
+    }
+  }
+
+  if (documentDpi > 0) {
+    return {
+      effectiveDpi: documentDpi,
+      sizingSource: 'document_dpi',
+    }
+  }
+
+  return {
+    effectiveDpi: DEFAULT_EFFECTIVE_DPI,
+    sizingSource: 'fallback_200dpi',
+  }
 }
 
 function normalizeStageStatus(value: unknown): UploadStageStatus | null {
@@ -103,8 +145,7 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
   let measurementWidthPx = 0
   let measurementHeightPx = 0
   let effectiveDpi = DEFAULT_EFFECTIVE_DPI
-  let widthIn = 0
-  let heightIn = 0
+  let sizingSource: string | null = null
   let measurementMode: string | null = null
 
   for (const check of checks) {
@@ -118,9 +159,9 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
       trimmedOffsetYPx = parsePositiveNumber(details.trimmedOffsetY)
       measurementWidthPx = parsePositiveNumber(details.measurementWidth)
       measurementHeightPx = parsePositiveNumber(details.measurementHeight)
-      effectiveDpi = parsePositiveNumber(details.effectiveDpi) || DEFAULT_EFFECTIVE_DPI
-      widthIn = parsePositiveNumber(details.widthIn)
-      heightIn = parsePositiveNumber(details.heightIn)
+      const resolvedSizing = resolveMeasurementSizing(details)
+      effectiveDpi = resolvedSizing.effectiveDpi
+      sizingSource = resolvedSizing.sizingSource
       measurementMode =
         typeof details.measurementMode === 'string' && details.measurementMode
           ? details.measurementMode
@@ -141,11 +182,6 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
     measurementHeightPx = heightPx
   }
 
-  if (!(widthIn > 0) || !(heightIn > 0)) {
-    widthIn = Number((measurementWidthPx / effectiveDpi).toFixed(2))
-    heightIn = Number((measurementHeightPx / effectiveDpi).toFixed(2))
-  }
-
   return {
     widthPx,
     heightPx,
@@ -157,8 +193,9 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
     measurementWidthPx,
     measurementHeightPx,
     effectiveDpi,
-    widthIn,
-    heightIn,
+    sizingSource,
+    widthIn: Number((measurementWidthPx / effectiveDpi).toFixed(2)),
+    heightIn: Number((measurementHeightPx / effectiveDpi).toFixed(2)),
     measurementMode,
   }
 }
@@ -176,13 +213,8 @@ function extractMetadata(preflightResult: unknown, checks: Array<Record<string, 
     if (widthPx > 0 && heightPx > 0) {
       const measurementWidthPx = parsePositiveNumber(metadata.measurementWidthPx) || widthPx
       const measurementHeightPx = parsePositiveNumber(metadata.measurementHeightPx) || heightPx
-      const effectiveDpi = parsePositiveNumber(metadata.effectiveDpi) || DEFAULT_EFFECTIVE_DPI
-      const widthIn =
-        parsePositiveNumber(metadata.widthIn) ||
-        Number((measurementWidthPx / effectiveDpi).toFixed(2))
-      const heightIn =
-        parsePositiveNumber(metadata.heightIn) ||
-        Number((measurementHeightPx / effectiveDpi).toFixed(2))
+      const resolvedSizing = resolveMeasurementSizing(metadata)
+      const effectiveDpi = resolvedSizing.effectiveDpi
 
       return {
         widthPx,
@@ -195,8 +227,9 @@ function extractMetadata(preflightResult: unknown, checks: Array<Record<string, 
         measurementWidthPx,
         measurementHeightPx,
         effectiveDpi,
-        widthIn,
-        heightIn,
+        sizingSource: resolvedSizing.sizingSource,
+        widthIn: Number((measurementWidthPx / effectiveDpi).toFixed(2)),
+        heightIn: Number((measurementHeightPx / effectiveDpi).toFixed(2)),
         measurementMode:
           typeof metadata.measurementMode === 'string' && metadata.measurementMode
             ? metadata.measurementMode
@@ -213,12 +246,15 @@ export function applyFullCanvasMeasurementMetadata(
 ): UploadLifecycleMetadata | null {
   if (!metadata) return null
 
-  const effectiveDpi = metadata.effectiveDpi > 0 ? metadata.effectiveDpi : DEFAULT_EFFECTIVE_DPI
+  const resolvedSizing = resolveMeasurementSizing(metadata)
+  const effectiveDpi = resolvedSizing.effectiveDpi
 
   return {
     ...metadata,
     measurementWidthPx: metadata.widthPx > 0 ? metadata.widthPx : metadata.measurementWidthPx,
     measurementHeightPx: metadata.heightPx > 0 ? metadata.heightPx : metadata.measurementHeightPx,
+    effectiveDpi,
+    sizingSource: resolvedSizing.sizingSource,
     widthIn: Number(((metadata.widthPx > 0 ? metadata.widthPx : metadata.measurementWidthPx) / effectiveDpi).toFixed(2)),
     heightIn: Number(((metadata.heightPx > 0 ? metadata.heightPx : metadata.measurementHeightPx) / effectiveDpi).toFixed(2)),
     measurementMode: 'full',
