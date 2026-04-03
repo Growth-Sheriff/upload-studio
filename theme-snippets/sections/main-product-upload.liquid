@@ -108,10 +108,31 @@
         {% if section.settings.show_upload_section %}
           <div class="border-2 border-dashed border-gray-300 bg-gray-50 rounded p-6 text-center mb-4 ul-main-upload-box">
             <input id="{{ upload_input_id }}" type="file" class="ul-main-upload-input sr-only" accept=".png,image/png" multiple>
-            <label for="{{ upload_input_id }}" class="ul-main-upload-trigger inline-flex items-center justify-center bg-amazon-yellow hover:brightness-95 text-black border border-black/20 shadow-sm font-medium py-2 px-6 rounded-full text-sm mb-2 cursor-pointer" tabindex="0" role="button">
-              {{ section.settings.upload_button_text | escape }}
-            </label>
+            <div class="ul-main-upload-trigger-row mb-2 inline-flex flex-wrap items-center justify-center gap-3">
+              <div class="ul-main-custom-batch-inline hidden">
+                <span class="ul-main-custom-batch-inline-current">1</span>/<span class="ul-main-custom-batch-inline-total">1</span>
+              </div>
+              <label for="{{ upload_input_id }}" class="ul-main-upload-trigger inline-flex items-center justify-center bg-amazon-yellow hover:brightness-95 text-black border border-black/20 shadow-sm font-medium py-2 px-6 rounded-full text-sm cursor-pointer" tabindex="0" role="button">
+                {{ section.settings.upload_button_text | escape }}
+              </label>
+            </div>
             <p class="text-xs text-gray-500">PNG only. Drag & drop your file here.</p>
+            <div class="ul-main-custom-batch-progress hidden mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left shadow-sm">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <div class="ul-main-custom-batch-step text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">File 1 of 1</div>
+                  <div class="ul-main-custom-batch-text mt-1 truncate text-sm font-semibold text-slate-900">Preparing upload queue...</div>
+                  <div class="ul-main-custom-batch-meta mt-1 text-xs text-slate-500">Your files are being uploaded one by one and measured on the server.</div>
+                </div>
+                <div class="ul-main-custom-batch-count text-right">
+                  <div class="ul-main-custom-batch-count-text text-2xl font-semibold leading-none text-slate-900">1/1</div>
+                  <div class="ul-main-custom-batch-count-caption mt-1 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">Batch progress</div>
+                </div>
+              </div>
+              <div class="mt-3 h-2 overflow-hidden bg-slate-200">
+                <div class="ul-main-custom-batch-bar h-full w-0 bg-amazon-orange transition-all duration-300"></div>
+              </div>
+            </div>
             <div class="ul-main-upload-feedback hidden mt-4 text-left">
               <div class="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3">
                 <img class="ul-main-upload-thumb hidden h-16 w-16 rounded object-cover border border-gray-200" alt="Upload preview">
@@ -450,6 +471,15 @@
     var uploadLoading = root.querySelector('.ul-main-upload-loading');
     var uploadLoadingText = root.querySelector('.ul-main-upload-loading-text');
     var uploadProgress = root.querySelector('.ul-main-upload-progress');
+    var customBatchInline = root.querySelector('.ul-main-custom-batch-inline');
+    var customBatchInlineCurrent = root.querySelector('.ul-main-custom-batch-inline-current');
+    var customBatchInlineTotal = root.querySelector('.ul-main-custom-batch-inline-total');
+    var customBatchProgress = root.querySelector('.ul-main-custom-batch-progress');
+    var customBatchStep = root.querySelector('.ul-main-custom-batch-step');
+    var customBatchText = root.querySelector('.ul-main-custom-batch-text');
+    var customBatchMeta = root.querySelector('.ul-main-custom-batch-meta');
+    var customBatchCountText = root.querySelector('.ul-main-custom-batch-count-text');
+    var customBatchBar = root.querySelector('.ul-main-custom-batch-bar');
     var uploadFeedback = root.querySelector('.ul-main-upload-feedback');
     var customQueueEl = root.querySelector('.ul-main-custom-queue');
     var uploadThumb = root.querySelector('.ul-main-upload-thumb');
@@ -567,6 +597,17 @@
       quoteItems: [],
       totalRequestedQuantity: 0
     };
+    var customBatchState = {
+      active: false,
+      total: 0,
+      currentIndex: 0,
+      completed: 0,
+      fileName: '',
+      stage: '',
+      meta: '',
+      progressRatio: 0
+    };
+    var customBatchHideTimer = null;
 
     function moneyFromCents(cents) {
       return '$' + ((Number(cents || 0) / 100).toFixed(2));
@@ -583,6 +624,92 @@
       } catch (error) {
         return '$' + amount.toFixed(2);
       }
+    }
+
+    function clearCustomBatchHideTimer() {
+      if (customBatchHideTimer) {
+        window.clearTimeout(customBatchHideTimer);
+        customBatchHideTimer = null;
+      }
+    }
+
+    function syncCustomBatchProgressUI() {
+      if (!customBatchInline || !customBatchProgress) return;
+
+      if (!customBatchState.active || !(customBatchState.total > 0)) {
+        customBatchInline.classList.add('hidden');
+        customBatchProgress.classList.add('hidden');
+        if (customBatchBar) customBatchBar.style.width = '0%';
+        return;
+      }
+
+      var safeTotal = Math.max(1, customBatchState.total);
+      var safeCurrent = Math.max(1, Math.min(safeTotal, customBatchState.currentIndex || 1));
+      var progressPercent = Math.max(0, Math.min(100, Math.round((customBatchState.progressRatio || 0) * 100)));
+
+      customBatchInline.classList.remove('hidden');
+      customBatchProgress.classList.remove('hidden');
+      if (customBatchInlineCurrent) customBatchInlineCurrent.textContent = String(safeCurrent);
+      if (customBatchInlineTotal) customBatchInlineTotal.textContent = String(safeTotal);
+      if (customBatchStep) customBatchStep.textContent = 'File ' + safeCurrent + ' of ' + safeTotal;
+      if (customBatchText) customBatchText.textContent = customBatchState.stage || 'Preparing upload queue...';
+      if (customBatchMeta) customBatchMeta.textContent = customBatchState.meta || ('Completed ' + Math.max(0, customBatchState.completed) + ' of ' + safeTotal + ' uploads.');
+      if (customBatchCountText) customBatchCountText.textContent = safeCurrent + '/' + safeTotal;
+      if (customBatchBar) customBatchBar.style.width = progressPercent + '%';
+    }
+
+    function setCustomBatchProgress(patch) {
+      clearCustomBatchHideTimer();
+      customBatchState.active = patch && typeof patch.active === 'boolean' ? patch.active : customBatchState.active;
+      if (patch && patch.total != null) customBatchState.total = Math.max(0, Number(patch.total) || 0);
+      if (patch && patch.currentIndex != null) customBatchState.currentIndex = Math.max(0, Number(patch.currentIndex) || 0);
+      if (patch && patch.completed != null) customBatchState.completed = Math.max(0, Number(patch.completed) || 0);
+      if (patch && patch.fileName != null) customBatchState.fileName = String(patch.fileName || '');
+      if (patch && patch.stage != null) customBatchState.stage = String(patch.stage || '');
+      if (patch && patch.meta != null) customBatchState.meta = String(patch.meta || '');
+      if (patch && patch.progressRatio != null) {
+        customBatchState.progressRatio = Math.max(0, Math.min(1, Number(patch.progressRatio) || 0));
+      }
+      syncCustomBatchProgressUI();
+    }
+
+    function hideCustomBatchProgress() {
+      clearCustomBatchHideTimer();
+      customBatchState.active = false;
+      customBatchState.total = 0;
+      customBatchState.currentIndex = 0;
+      customBatchState.completed = 0;
+      customBatchState.fileName = '';
+      customBatchState.stage = '';
+      customBatchState.meta = '';
+      customBatchState.progressRatio = 0;
+      syncCustomBatchProgressUI();
+    }
+
+    function scheduleHideCustomBatchProgress(delayMs) {
+      clearCustomBatchHideTimer();
+      customBatchHideTimer = window.setTimeout(function() {
+        hideCustomBatchProgress();
+      }, delayMs || 1200);
+    }
+
+    function updateCustomBatchProgressForFile(batchMeta, stageText, fileProgress, metaText) {
+      if (!batchMeta || !(batchMeta.total > 0)) return;
+
+      var safeTotal = Math.max(1, Number(batchMeta.total) || 1);
+      var safeIndex = Math.max(1, Math.min(safeTotal, Number(batchMeta.index) || 1));
+      var safeFileProgress = Math.max(0, Math.min(1, Number(fileProgress) || 0));
+
+      setCustomBatchProgress({
+        active: true,
+        total: safeTotal,
+        currentIndex: safeIndex,
+        completed: Math.max(0, safeIndex - 1),
+        fileName: batchMeta.fileName || '',
+        stage: stageText,
+        meta: metaText || ('Processing ' + safeIndex + ' of ' + safeTotal + ' uploads.'),
+        progressRatio: ((safeIndex - 1) + safeFileProgress) / safeTotal
+      });
     }
 
     function updateCustomerStatusUI() {
@@ -1204,9 +1331,10 @@
         return;
       }
 
-      var paddedSize = Math.ceil((totalIn * scale) + (padding * 2));
-      if (axis === 'x') track.style.width = paddedSize + 'px';
-      else track.style.height = paddedSize + 'px';
+      var offset = Math.max(0, Number(padding) || 0);
+      var trackSize = Math.max(1, Math.round((totalIn * scale) + (offset * 2)));
+      if (axis === 'x') track.style.width = trackSize + 'px';
+      else track.style.height = trackSize + 'px';
 
       var majorStep = chooseRulerStep(totalIn, axis);
       var minorStep = Math.max(1, majorStep / 2);
@@ -1218,7 +1346,9 @@
           Math.abs(value - totalIn) < 0.001;
         var mark = document.createElement('div');
         mark.className = 'ul-main-vip-preview-tick' + (isMajor ? ' is-major' : '');
-        var position = padding + (value * scale);
+        var isFirst = value === 0;
+        var isLast = Math.abs(value - totalIn) < 0.001;
+        var position = Math.round(offset + Math.min(totalIn, value) * scale);
         if (axis === 'x') {
           mark.style.left = position + 'px';
         } else {
@@ -1232,14 +1362,31 @@
           label.textContent = formatRulerLabel(value);
           if (axis === 'x') {
             label.style.left = position + 'px';
+            label.style.transform = isFirst ? 'translateX(0)' : (isLast ? 'translateX(-100%)' : 'translateX(-50%)');
           } else {
             label.style.top = position + 'px';
+            label.style.transform = isFirst ? 'translateY(0)' : (isLast ? 'translateY(-100%)' : 'translateY(-50%)');
           }
           track.appendChild(label);
         }
 
         value = Number((value + minorStep).toFixed(2));
       }
+    }
+
+    function getPreviewBoardMetrics(stageWrap, boardData) {
+      var widthIn = Math.max(Number(boardData && boardData.billableWidthIn) || 0, 0.25);
+      var lengthIn = Math.max(Number(boardData && boardData.billableLengthIn) || 0, 0.25);
+      var availableWidth = stageWrap && stageWrap.clientWidth
+        ? Math.max(180, stageWrap.clientWidth - 2)
+        : 250;
+      var scale = Math.max(12, Math.min(96, availableWidth / widthIn));
+
+      return {
+        scale: scale,
+        stageWidth: Math.max(1, Math.round(widthIn * scale)),
+        stageHeight: Math.max(1, Math.round(lengthIn * scale))
+      };
     }
 
     function buildPreviewBoardDataFromItem(item) {
@@ -1335,17 +1482,14 @@
       var image = wrapper.querySelector('.ul-main-vip-preview-image');
       var artwork = wrapper.querySelector('.ul-main-vip-preview-artwork');
 
-      var previewPadding = 18;
-      var availableWidth = stageWrap && stageWrap.clientWidth
-        ? Math.max(190, stageWrap.clientWidth - (previewPadding * 2))
-        : 250;
-      var scale = Math.min(16, Math.max(8, availableWidth / Math.max(boardData.billableWidthIn, 1)));
-      var stageWidth = Math.max(180, Math.round(boardData.billableWidthIn * scale));
-      var stageHeight = Math.max(220, Math.round(boardData.billableLengthIn * scale));
+      var metrics = getPreviewBoardMetrics(stageWrap, boardData);
+      var scale = metrics.scale;
+      var stageWidth = metrics.stageWidth;
+      var stageHeight = metrics.stageHeight;
 
       if (stageRail) {
-        stageRail.style.width = (stageWidth + (previewPadding * 2)) + 'px';
-        stageRail.style.height = (stageHeight + (previewPadding * 2)) + 'px';
+        stageRail.style.width = stageWidth + 'px';
+        stageRail.style.height = stageHeight + 'px';
       }
       if (stage) {
         stage.style.width = stageWidth + 'px';
@@ -1368,8 +1512,8 @@
         artwork.removeAttribute('style');
       }
 
-      buildRulerMarks(topTrack, boardData.billableWidthIn, scale, 'x', previewPadding);
-      buildRulerMarks(leftTrack, boardData.billableLengthIn, scale, 'y', previewPadding);
+      buildRulerMarks(topTrack, boardData.billableWidthIn, scale, 'x', 0);
+      buildRulerMarks(leftTrack, boardData.billableLengthIn, scale, 'y', 0);
 
       function syncBoardRulers() {
         if (topTrack) topTrack.style.transform = 'translateX(' + (-stageWrap.scrollLeft) + 'px)';
@@ -1471,17 +1615,14 @@
     function renderStaticPreviewBoard(boardData) {
       if (!boardData || !vipPreviewStageWrap) return;
 
-      var previewPadding = 18;
-      var availableWidth = vipPreviewStageWrap && vipPreviewStageWrap.clientWidth
-        ? Math.max(190, vipPreviewStageWrap.clientWidth - (previewPadding * 2))
-        : 250;
-      var scale = Math.min(16, Math.max(8, availableWidth / Math.max(boardData.billableWidthIn, 1)));
-      var stageWidth = Math.max(180, Math.round(boardData.billableWidthIn * scale));
-      var stageHeight = Math.max(220, Math.round(boardData.billableLengthIn * scale));
+      var metrics = getPreviewBoardMetrics(vipPreviewStageWrap, boardData);
+      var scale = metrics.scale;
+      var stageWidth = metrics.stageWidth;
+      var stageHeight = metrics.stageHeight;
 
       if (vipPreviewStageRail) {
-        vipPreviewStageRail.style.width = (stageWidth + (previewPadding * 2)) + 'px';
-        vipPreviewStageRail.style.height = (stageHeight + (previewPadding * 2)) + 'px';
+        vipPreviewStageRail.style.width = stageWidth + 'px';
+        vipPreviewStageRail.style.height = stageHeight + 'px';
       }
       if (vipPreviewStage) {
         vipPreviewStage.style.width = stageWidth + 'px';
@@ -1501,8 +1642,8 @@
         vipPreviewArtwork.style.height = Math.max(10, Math.round(boardData.artworkBounds.heightIn * scale)) + 'px';
       }
 
-      buildRulerMarks(vipPreviewTopTrack, boardData.billableWidthIn, scale, 'x', previewPadding);
-      buildRulerMarks(vipPreviewLeftTrack, boardData.billableLengthIn, scale, 'y', previewPadding);
+      buildRulerMarks(vipPreviewTopTrack, boardData.billableWidthIn, scale, 'x', 0);
+      buildRulerMarks(vipPreviewLeftTrack, boardData.billableLengthIn, scale, 'y', 0);
       syncVipPreviewRulers();
     }
 
@@ -1578,7 +1719,7 @@
         setVipPreviewEmptyState(
           queueItems.length ? 'Queued design is still processing' : 'Full-page quote preview',
           queueItems.length
-            ? 'Tabs stay visible while the server measures each upload. Select any file to monitor its status and see the ruler view as soon as it is ready.'
+            ? 'The queue selector stays available while the server measures each upload. Pick any file to monitor its status and open its ruler view as soon as it is ready.'
             : 'We will render the uploaded page against a scrollable inch ruler. Pricing uses the full uploaded page, not trimmed artwork bounds.'
         );
         if (vipPreviewFootnote) {
@@ -1601,7 +1742,7 @@
         clearStaticPreviewBoard();
         setVipPreviewEmptyState(
           'Selected design is still being measured',
-          'This tab is active, but its exact billed page has not been confirmed yet. You can keep working in the queue while the server finishes measuring it.'
+          'This design is focused, but its exact billed page has not been confirmed yet. You can keep working in the queue while the server finishes measuring it.'
         );
       }
 
@@ -1624,13 +1765,13 @@
       if (vipPreviewSummary) {
         vipPreviewSummary.textContent =
           customerPricing.quoteStatus === 'ready'
-            ? 'Select a design from the left queue or the tabs above to inspect its ruler preview. The checkout total combines every ready file in the queue.'
+            ? 'Select a design from the left queue or the dropdown above to inspect its ruler preview. The checkout total combines every ready file in the queue.'
             : 'Pick any queued design to inspect it here while the server continues building the combined custom quote.';
       }
       if (vipPreviewFootnote) {
         vipPreviewFootnote.textContent = previewHasArtwork
-          ? 'The solid frame is always the billed full page for the active tab. Dashed overlays show artwork bounds only for reference.'
-          : 'The active tab always shows the billed full page. No separate artwork bounds were detected in the current queue.';
+          ? 'The solid frame is always the billed full page for the focused design. Dashed overlays show artwork bounds only for reference.'
+          : 'The focused design always shows the billed full page. No separate artwork bounds were detected in the current queue.';
       }
     }
 
@@ -2392,7 +2533,7 @@
       return false;
     }
 
-    async function pollCustomQueueItemStatus(queueItem, uploadToken) {
+    async function pollCustomQueueItemStatus(queueItem, uploadToken, batchMeta) {
       for (var attempts = 0; attempts < 60; attempts++) {
         if (uploadToken !== uploadFlowToken) return false;
         var response = await fetch(apiBase + '/api/upload/status/' + encodeURIComponent(queueItem.uploadId) + '?shopDomain=' + encodeURIComponent(shopDomain));
@@ -2411,6 +2552,12 @@
               queueItem.uploadStatus = 'error';
               queueItem.quoteStatus = 'error';
               queueItem.error = getPreflightErrorMessage(data, firstItem);
+              updateCustomBatchProgressForFile(
+                batchMeta,
+                'Measurement failed for ' + (queueItem.fileName || 'uploaded file'),
+                1,
+                queueItem.error
+              );
               renderCustomQueue();
               updateVipPreviewUI();
               syncPurchaseButtonsForCurrentState();
@@ -2421,12 +2568,24 @@
               queueItem.uploadStatus = 'ready';
               queueItem.quoteStatus = 'processing';
               queueItem.error = '';
+              updateCustomBatchProgressForFile(
+                batchMeta,
+                'Refreshing quote for ' + (queueItem.fileName || 'uploaded file'),
+                0.94,
+                'Server measurement is ready. Updating the combined custom quote.'
+              );
               if (!state.activeCustomItemId) {
                 setActiveCustomQueueItem(queueItem.uploadId || queueItem.id);
               }
               renderCustomQueue();
               updateVipPreviewUI();
               await loadVipQuote();
+              updateCustomBatchProgressForFile(
+                batchMeta,
+                (queueItem.fileName || 'Uploaded file') + ' is ready',
+                1,
+                'Measured and added to the combined quote.'
+              );
               return true;
             }
           }
@@ -2434,6 +2593,12 @@
 
         queueItem.uploadStatus = 'processing';
         queueItem.quoteStatus = 'processing';
+        updateCustomBatchProgressForFile(
+          batchMeta,
+          'Measuring ' + (queueItem.fileName || 'uploaded file'),
+          Math.min(0.92, 0.82 + (attempts * 0.01)),
+          'Waiting for the server to confirm the exact billed page size.'
+        );
         renderCustomQueue();
         await new Promise(function(resolve) { setTimeout(resolve, 1500); });
       }
@@ -2441,19 +2606,31 @@
       queueItem.uploadStatus = 'error';
       queueItem.quoteStatus = 'error';
       queueItem.error = 'Upload finished, but the server did not confirm print size in time. Please try again.';
+      updateCustomBatchProgressForFile(
+        batchMeta,
+        'Measurement timed out for ' + (queueItem.fileName || 'uploaded file'),
+        1,
+        queueItem.error
+      );
       renderCustomQueue();
       updateVipPreviewUI();
       syncPurchaseButtonsForCurrentState();
       return false;
     }
 
-    async function uploadSingleCustomPricingFile(file) {
+    async function uploadSingleCustomPricingFile(file, batchMeta) {
       var queueItem = createCustomQueueItem(file);
       state.customItems = getCustomQueueItems().concat(queueItem);
       markCustomQueueQuoteDirty();
       if (!state.activeCustomItemId) {
         state.activeCustomItemId = queueItem.id;
       }
+      updateCustomBatchProgressForFile(
+        batchMeta,
+        'Preparing ' + (file.name || 'uploaded file'),
+        0.04,
+        'Added to the queue and requesting an upload slot.'
+      );
       renderCustomQueue();
       updateVipPricingUI();
       updateVipPreviewUI();
@@ -2464,6 +2641,12 @@
       clearError();
 
       try {
+        updateCustomBatchProgressForFile(
+          batchMeta,
+          'Creating upload slot for ' + (file.name || 'uploaded file'),
+          0.08,
+          'Requesting a secure upload intent from the server.'
+        );
         var intentRes = await fetch(apiBase + '/api/upload/intent', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2488,12 +2671,28 @@
         queueItem.uploadId = intent.uploadId;
         queueItem.uploadStatus = 'uploading';
         queueItem.quoteStatus = 'uploading';
+        updateCustomBatchProgressForFile(
+          batchMeta,
+          'Uploading ' + (file.name || 'uploaded file'),
+          0.14,
+          'File ' + (batchMeta && batchMeta.index ? batchMeta.index : 1) + ' is on its way to the server.'
+        );
         renderCustomQueue();
 
         var uploadStartedAt = Date.now();
 
         await new Promise(function(resolve, reject) {
           var xhr = new XMLHttpRequest();
+          xhr.upload.addEventListener('progress', function(e) {
+            if (!e.lengthComputable) return;
+            var fileRatio = e.total > 0 ? (e.loaded / e.total) : 0;
+            updateCustomBatchProgressForFile(
+              batchMeta,
+              'Uploading ' + (file.name || 'uploaded file'),
+              0.14 + (Math.max(0, Math.min(1, fileRatio)) * 0.56),
+              (e.loaded / (1024 * 1024)).toFixed(1) + ' MB of ' + (e.total / (1024 * 1024)).toFixed(1) + ' MB uploaded.'
+            );
+          });
           xhr.addEventListener('load', function() {
             if (xhr.status >= 200 && xhr.status < 300) resolve();
             else reject(new Error('Upload failed with HTTP ' + xhr.status));
@@ -2528,6 +2727,12 @@
 
         queueItem.uploadStatus = 'processing';
         queueItem.quoteStatus = 'processing';
+        updateCustomBatchProgressForFile(
+          batchMeta,
+          'Finalizing ' + (file.name || 'uploaded file'),
+          0.76,
+          'Upload completed. Registering the file and preparing measurement.'
+        );
         renderCustomQueue();
 
         var completeRes = await fetch(apiBase + '/api/upload/complete', {
@@ -2552,11 +2757,23 @@
         }
         if (uploadToken !== uploadFlowToken) return;
 
-        await pollCustomQueueItemStatus(queueItem, uploadToken);
+        updateCustomBatchProgressForFile(
+          batchMeta,
+          'Measuring ' + (file.name || 'uploaded file'),
+          0.84,
+          'The server is now confirming the exact billed page dimensions.'
+        );
+        await pollCustomQueueItemStatus(queueItem, uploadToken, batchMeta);
       } catch (error) {
         queueItem.uploadStatus = 'error';
         queueItem.quoteStatus = 'error';
         queueItem.error = error && error.message ? error.message : 'Upload failed.';
+        updateCustomBatchProgressForFile(
+          batchMeta,
+          'Upload failed for ' + (file.name || 'uploaded file'),
+          1,
+          queueItem.error
+        );
         renderCustomQueue();
         updateVipPreviewUI();
         syncPurchaseButtonsForCurrentState();
@@ -2568,13 +2785,50 @@
       var files = Array.prototype.slice.call(fileList || []);
       if (!files.length) return;
 
-      for (var i = 0; i < files.length; i++) {
-        if (!isAcceptedFile(files[i])) {
+      var validFiles = files.filter(function(file) {
+        return isAcceptedFile(file);
+      });
+
+      files.forEach(function(file) {
+        if (!isAcceptedFile(file)) {
           showError('Unsupported file format. Please upload PNG files only.');
-          continue;
         }
-        await uploadSingleCustomPricingFile(files[i]);
+      });
+
+      if (!validFiles.length) return;
+
+      setCustomBatchProgress({
+        active: true,
+        total: validFiles.length,
+        currentIndex: 1,
+        completed: 0,
+        stage: 'Preparing upload queue',
+        meta: 'Your files will be uploaded and measured one by one.',
+        progressRatio: 0.02
+      });
+
+      for (var i = 0; i < validFiles.length; i++) {
+        var batchMeta = {
+          index: i + 1,
+          total: validFiles.length,
+          fileName: validFiles[i] && validFiles[i].name ? validFiles[i].name : ''
+        };
+        await uploadSingleCustomPricingFile(validFiles[i], batchMeta);
+        setCustomBatchProgress({
+          active: true,
+          total: validFiles.length,
+          currentIndex: Math.min(validFiles.length, i + 1),
+          completed: i + 1,
+          fileName: batchMeta.fileName,
+          stage: (i + 1 === validFiles.length ? 'Upload queue is ready' : 'Queued ' + (i + 1) + ' of ' + validFiles.length + ' files'),
+          meta: (i + 1 === validFiles.length)
+            ? 'Every valid upload has been processed and added to the combined quote.'
+            : 'Moving to the next file in the queue.',
+          progressRatio: (i + 1) / validFiles.length
+        });
       }
+
+      scheduleHideCustomBatchProgress(1400);
     }
 
     async function handleFile(file) {
@@ -3268,19 +3522,18 @@
     transform: rotate(180deg);
   }
   #{{ section_dom_id }} .ul-main-vip-preview-card {
-    border-radius: 28px;
     background:
       radial-gradient(circle at top right, rgba(251, 191, 36, 0.14), transparent 34%),
       linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
     box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
   }
   #{{ section_dom_id }} .ul-main-vip-preview-empty {
-    border-radius: 22px;
+    border-radius: 0;
   }
   #{{ section_dom_id }} .ul-main-vip-preview-chip {
     display: inline-flex;
     align-items: center;
-    border-radius: 999px;
+    border-radius: 0;
     border: 1px solid rgba(148, 163, 184, 0.3);
     background: rgba(255, 255, 255, 0.92);
     padding: 0.45rem 0.85rem;
@@ -3296,7 +3549,7 @@
     grid-template-rows: 38px minmax(0, 520px);
     overflow: hidden;
     border: 1px solid rgba(148, 163, 184, 0.24);
-    border-radius: 22px;
+    border-radius: 0;
     background: rgba(255, 255, 255, 0.95);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
   }
@@ -3351,7 +3604,7 @@
   }
   #{{ section_dom_id }} .ul-main-vip-preview-stage-wrap::-webkit-scrollbar-thumb {
     border: 2px solid rgba(255, 255, 255, 0.96);
-    border-radius: 999px;
+    border-radius: 0;
     background: rgba(100, 116, 139, 0.5);
   }
   #{{ section_dom_id }} .ul-main-vip-preview-stage-wrap::-webkit-scrollbar-track {
@@ -3365,10 +3618,10 @@
   }
   #{{ section_dom_id }} .ul-main-vip-preview-stage {
     position: relative;
-    margin: 18px;
+    margin: 0;
     overflow: hidden;
     border: 2px solid #0f172a;
-    border-radius: 18px;
+    border-radius: 0;
     background:
       linear-gradient(45deg, rgba(226, 232, 240, 0.72) 25%, transparent 25%, transparent 75%, rgba(226, 232, 240, 0.72) 75%, rgba(226, 232, 240, 0.72)),
       linear-gradient(45deg, rgba(226, 232, 240, 0.72) 25%, transparent 25%, transparent 75%, rgba(226, 232, 240, 0.72) 75%, rgba(226, 232, 240, 0.72)),
@@ -3401,7 +3654,7 @@
     z-index: 3;
     pointer-events: none;
     border: 2px dashed rgba(245, 158, 11, 0.95);
-    border-radius: 12px;
+    border-radius: 0;
     background: rgba(251, 191, 36, 0.14);
     box-shadow:
       0 0 0 1px rgba(255, 255, 255, 0.58),
@@ -3440,11 +3693,9 @@
   }
   #{{ section_dom_id }} .ul-main-vip-preview-top-track .ul-main-vip-preview-tick-label {
     bottom: 18px;
-    transform: translateX(-50%);
   }
   #{{ section_dom_id }} .ul-main-vip-preview-left-track .ul-main-vip-preview-tick-label {
     right: 20px;
-    transform: translateY(-50%);
   }
   #{{ section_dom_id }} .ul-main-custom-queue-item {
     border-radius: 20px;
@@ -3568,12 +3819,17 @@
   #{{ section_dom_id }} .ul-main-vip-preview-mini-chip {
     display: inline-flex;
     align-items: center;
-    border-radius: 999px;
     border: 1px solid rgba(148, 163, 184, 0.24);
     padding: 0.4rem 0.8rem;
     font-size: 11px;
     font-weight: 700;
     line-height: 1;
+  }
+  #{{ section_dom_id }} .ul-main-custom-status {
+    border-radius: 999px;
+  }
+  #{{ section_dom_id }} .ul-main-vip-preview-mini-chip {
+    border-radius: 0;
   }
   #{{ section_dom_id }} .ul-main-custom-status.is-ready {
     border-color: #a7f3d0;
@@ -3593,6 +3849,29 @@
   #{{ section_dom_id }} .ul-main-custom-remove {
     border-radius: 999px;
   }
+  #{{ section_dom_id }} .ul-main-custom-batch-inline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 78px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    padding: 0.55rem 0.9rem;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    color: #fff;
+    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.14);
+  }
+  #{{ section_dom_id }} .ul-main-custom-batch-progress {
+    border: 1px solid rgba(226, 232, 240, 1);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+    box-shadow: 0 12px 26px rgba(15, 23, 42, 0.06);
+  }
+  #{{ section_dom_id }} .ul-main-custom-batch-bar {
+    transition: width 220ms ease;
+  }
   #{{ section_dom_id }} .ul-main-vip-preview-selector-wrap {
     position: relative;
   }
@@ -3600,7 +3879,7 @@
     width: 100%;
     appearance: none;
     border: 1px solid rgba(203, 213, 225, 0.9);
-    border-radius: 16px;
+    border-radius: 0;
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
     color: #0f172a;
@@ -3630,6 +3909,7 @@
       0 8px 18px rgba(15, 23, 42, 0.05);
   }
   #{{ section_dom_id }} .ul-main-vip-preview-active {
+    border-radius: 0;
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.96)),
       #fff;
@@ -3644,6 +3924,11 @@
   @media screen and (max-width: 1023px) {
     #{{ section_dom_id }} .ul-main-vip-preview-ruler-shell {
       grid-template-rows: 34px minmax(0, 420px);
+    }
+    #{{ section_dom_id }} .ul-main-custom-batch-inline {
+      min-width: 68px;
+      font-size: 15px;
+      padding: 0.5rem 0.75rem;
     }
     #{{ section_dom_id }} .ul-main-custom-queue-row {
       flex-direction: column;
