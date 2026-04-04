@@ -168,6 +168,16 @@
               <label for="{{ upload_input_id }}" class="ul-main-upload-trigger inline-flex items-center justify-center bg-amazon-yellow hover:brightness-95 text-black border border-black/20 shadow-sm font-medium py-2 px-6 rounded-full text-sm cursor-pointer" tabindex="0" role="button">
                 {{ section.settings.upload_button_text | escape }}
               </label>
+              <div class="ul-main-inline-pricing hidden">
+                <div class="ul-main-inline-pricing-copy">
+                  <div class="ul-main-inline-pricing-kicker">Custom pricing</div>
+                  <div class="ul-main-inline-pricing-total">$0.00</div>
+                  <div class="ul-main-inline-pricing-meta">Waiting for your measured quote.</div>
+                </div>
+                <button type="button" class="ul-main-inline-pricing-button" disabled aria-disabled="true">
+                  Create Custom Checkout
+                </button>
+              </div>
             </div>
             <p class="text-xs text-gray-500">PNG only. Drag & drop your file here.</p>
             <div class="ul-main-custom-batch-progress hidden mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left shadow-sm">
@@ -580,6 +590,11 @@
     var customBatchInline = root.querySelector('.ul-main-custom-batch-inline');
     var customBatchInlineCurrent = root.querySelector('.ul-main-custom-batch-inline-current');
     var customBatchInlineTotal = root.querySelector('.ul-main-custom-batch-inline-total');
+    var inlinePricingBox = root.querySelector('.ul-main-inline-pricing');
+    var inlinePricingKicker = root.querySelector('.ul-main-inline-pricing-kicker');
+    var inlinePricingTotal = root.querySelector('.ul-main-inline-pricing-total');
+    var inlinePricingMeta = root.querySelector('.ul-main-inline-pricing-meta');
+    var inlinePricingButton = root.querySelector('.ul-main-inline-pricing-button');
     var customBatchProgress = root.querySelector('.ul-main-custom-batch-progress');
     var customBatchStep = root.querySelector('.ul-main-custom-batch-step');
     var customBatchText = root.querySelector('.ul-main-custom-batch-text');
@@ -1439,14 +1454,16 @@
         var customLabel = isBusinessPricingActive() ? 'Create Business Checkout' : 'Create VIP Checkout';
         if (addToCartBtn) addToCartBtn.textContent = customLabel;
         if (buyNowBtn) buyNowBtn.textContent = customLabel;
+        if (inlinePricingButton) inlinePricingButton.textContent = customLabel;
         return;
       }
       if (addToCartBtn) addToCartBtn.textContent = addToCartLabel;
       if (buyNowBtn) buyNowBtn.textContent = buyNowLabel;
+      if (inlinePricingButton) inlinePricingButton.textContent = 'Create Custom Checkout';
     }
 
     function setPurchaseButtonsDisabled(disabled) {
-      [addToCartBtn, buyNowBtn].forEach(function(button) {
+      [addToCartBtn, buyNowBtn, inlinePricingButton].forEach(function(button) {
         if (!button) return;
         button.disabled = disabled;
         button.setAttribute('aria-disabled', disabled ? 'true' : 'false');
@@ -2300,12 +2317,23 @@
           vipPricingBox.classList.add('hidden');
         }
       }
+      if (inlinePricingBox) {
+        if (customerLoggedIn && customerPricing.status === 'loading') {
+          inlinePricingBox.classList.remove('hidden');
+        } else if (hasCustomPricingActive()) {
+          inlinePricingBox.classList.remove('hidden');
+        } else {
+          inlinePricingBox.classList.add('hidden');
+          inlinePricingBox.classList.remove('is-live');
+        }
+      }
       if (detectedBox && hasCustomPricingActive()) {
         detectedBox.classList.add('hidden');
       }
       if (uploadFeedback && hasCustomPricingActive()) {
         uploadFeedback.classList.add('hidden');
       }
+      resetActionLabels();
       renderCustomQueue();
       syncUploadInputMode();
     }
@@ -2323,6 +2351,14 @@
       if (vipPricingTotal) vipPricingTotal.textContent = totalText || '';
     }
 
+    function setInlinePricingMessage(kickerText, totalText, metaText, isLive) {
+      if (inlinePricingKicker) inlinePricingKicker.textContent = kickerText || 'Custom pricing';
+      if (inlinePricingTotal) inlinePricingTotal.textContent = totalText || '$0.00';
+      if (inlinePricingMeta) inlinePricingMeta.textContent = metaText || 'Waiting for your measured quote.';
+      if (inlinePricingBox) inlinePricingBox.classList.toggle('is-live', !!isLive);
+      if (inlinePricingButton) inlinePricingButton.classList.toggle('is-live', !!isLive);
+    }
+
     function updateVipPricingUI() {
       if (!vipPricingBox) return;
       syncPricingVisibility();
@@ -2332,6 +2368,14 @@
         if (vipPricingRate) vipPricingRate.textContent = '';
         if (vipPricingLength) vipPricingLength.textContent = '';
         if (vipPricingTotal) vipPricingTotal.textContent = '';
+        setInlinePricingMessage(
+          customerLoggedIn && customerPricing.status === 'loading' ? 'Pricing desk' : 'Custom pricing',
+          customerLoggedIn && customerPricing.status === 'loading' ? 'Checking...' : '$0.00',
+          customerLoggedIn && customerPricing.status === 'loading'
+            ? 'Checking your assigned pricing and loading your checkout desk.'
+            : 'Upload artwork to unlock your measured total here.',
+          false
+        );
         if (detectedTitle) detectedTitle.textContent = detectedDefaultTitle;
         return;
       }
@@ -2411,11 +2455,29 @@
           : 'Queue total will be returned after every file is quoted.';
       }
 
+      var inlineKicker = isBusiness ? 'Business pricing live' : 'VIP pricing live';
+      var inlineTotalText = customerPricing.quoteTotal != null
+        ? formatMoneyValue(customerPricing.quoteTotal, customerPricing.currency)
+        : 'Pending';
+      var inlineMetaText = customerPricing.quoteTotal != null
+        ? (queueMode
+            ? getCustomQueueReadyItems().length + ' ready design' + (getCustomQueueReadyItems().length === 1 ? '' : 's') + ' • ' + queueItems.reduce(function(sum, item) { return sum + Math.max(1, Number(item.requestedQuantity) || 1); }, 0) + ' total cop' + (queueItems.reduce(function(sum, item) { return sum + Math.max(1, Number(item.requestedQuantity) || 1); }, 0) === 1 ? 'y' : 'ies')
+            : (billableLengthIn ? 'Billable length ' + billableLengthIn.toFixed(2) + '"' : 'Ready to create checkout'))
+        : (queueMode
+            ? 'Building your measured running total from each ready upload.'
+            : 'Waiting for the server-confirmed quote to finish.');
+
       setVipPricingMessage(
         titleLabel,
         rateLabel,
         lengthLabel,
         totalLabel
+      );
+      setInlinePricingMessage(
+        inlineKicker,
+        inlineTotalText,
+        inlineMetaText,
+        customerPricing.quoteStatus === 'ready' && customerPricing.quoteTotal != null
       );
 
       if (customerPricing.quoteTotal != null) {
@@ -4079,6 +4141,12 @@
       });
     }
 
+    if (inlinePricingButton) {
+      inlinePricingButton.addEventListener('click', function() {
+        addConfiguredItem('/checkout', inlinePricingButton);
+      });
+    }
+
     if (customerLoginLink) {
       customerLoginLink.addEventListener('click', function(event) {
         event.preventDefault();
@@ -4479,6 +4547,104 @@
     background:
       linear-gradient(135deg, #fbbf24, #f59e0b);
     box-shadow: 0 18px 34px rgba(245, 158, 11, 0.20);
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    min-width: min(100%, 420px);
+    border: 1px solid rgba(226, 232, 240, 0.94);
+    background:
+      linear-gradient(135deg, rgba(255, 248, 228, 0.98), rgba(255, 255, 255, 0.98) 54%, rgba(242, 248, 255, 0.98));
+    padding: 10px 12px;
+    box-shadow:
+      0 16px 34px rgba(15, 23, 42, 0.06),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing-copy {
+    min-width: 0;
+    flex: 1 1 auto;
+    text-align: left;
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing-kicker {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: #64748b;
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing-total {
+    margin-top: 2px;
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1;
+    color: #0f172a;
+    letter-spacing: -0.04em;
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing-meta {
+    margin-top: 4px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #475569;
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing-button {
+    flex: 0 0 auto;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    background: linear-gradient(135deg, #0f172a, #334155);
+    color: #fff;
+    padding: 0.9rem 1.25rem;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    box-shadow: 0 16px 32px rgba(15, 23, 42, 0.18);
+    transition:
+      transform 160ms ease,
+      box-shadow 160ms ease,
+      opacity 160ms ease;
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing-button:hover {
+    transform: translateY(-1px);
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing.is-live {
+    border-color: rgba(251, 191, 36, 0.45);
+    box-shadow:
+      0 22px 48px rgba(245, 158, 11, 0.16),
+      inset 0 1px 0 rgba(255, 255, 255, 0.86);
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing-button.is-live {
+    animation: ul-main-inline-cta-shake 1.2s cubic-bezier(.36,.07,.19,.97) infinite;
+    box-shadow:
+      0 0 0 1px rgba(251, 191, 36, 0.22),
+      0 16px 34px rgba(245, 158, 11, 0.28);
+  }
+  @keyframes ul-main-inline-cta-shake {
+    0%, 100% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    6% {
+      transform: translate3d(-2px, 0, 0) scale(1.01);
+    }
+    12% {
+      transform: translate3d(3px, 0, 0) scale(1.02);
+    }
+    18% {
+      transform: translate3d(-4px, 0, 0) scale(1.02);
+    }
+    24% {
+      transform: translate3d(4px, 0, 0) scale(1.03);
+    }
+    30% {
+      transform: translate3d(-3px, 0, 0) scale(1.02);
+    }
+    36% {
+      transform: translate3d(2px, 0, 0) scale(1.01);
+    }
+    42% {
+      transform: translate3d(0, 0, 0) scale(1.03);
+    }
+    58% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
   }
   #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-custom-batch-progress {
     border-color: rgba(226, 232, 240, 0.92);
@@ -5020,6 +5186,21 @@
     align-content: flex-start;
   }
   @media screen and (max-width: 1023px) {
+    #{{ section_dom_id }} .ul-main-upload-trigger-row {
+      display: flex;
+      width: 100%;
+      justify-content: center;
+    }
+    #{{ section_dom_id }} .ul-main-inline-pricing {
+      width: 100%;
+      min-width: 0;
+      flex-direction: column;
+      align-items: stretch;
+      text-align: left;
+    }
+    #{{ section_dom_id }} .ul-main-inline-pricing-button {
+      width: 100%;
+    }
     #{{ section_dom_id }} .ul-main-vip-preview-ruler-shell {
       grid-template-rows: 34px minmax(0, 420px);
     }
