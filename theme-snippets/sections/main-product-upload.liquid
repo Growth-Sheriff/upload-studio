@@ -13,7 +13,7 @@
 
 <!-- sections/main-product.liquid -->
 <div class="w-full bg-[#f3f3f3] pb-10" id="{{ section_dom_id }}" data-section-id="{{ section.id }}" data-product-id="{{ product.id }}" data-shop-domain="{{ shop.permanent_domain }}" data-api-base="/apps/customizer" data-customer-id="{{ customer.id | default: '' }}" data-customer-email="{{ customer.email | default: '' }}" data-customer-first-name="{{ customer.first_name | default: '' }}" data-customer-last-name="{{ customer.last_name | default: '' }}" data-customer-logged-in="{% if customer %}true{% else %}false{% endif %}">
-  <div class="max-w-2k w-full mx-auto px-4 py-6 font-amazon bg-white mt-4 mb-8 rounded shadow-sm">
+  <div class="ul-main-shell max-w-2k w-full mx-auto px-4 py-6 font-amazon bg-white mt-4 mb-8 rounded shadow-sm">
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
       
       <!-- Left Column - Images (4 cols) -->
@@ -47,15 +47,15 @@
         </div>
 
         <div class="ul-main-customer-workspace hidden">
-          <div class="overflow-hidden rounded-[28px] border border-slate-200 bg-slate-950 text-white shadow-[0_24px_60px_rgba(15,23,42,0.22)]">
-            <div class="flex items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
+          <div class="ul-main-customer-workspace-hero overflow-hidden rounded-[28px] border border-slate-200 bg-slate-950 text-white shadow-[0_24px_60px_rgba(15,23,42,0.22)]">
+            <div class="ul-main-customer-workspace-hero-top flex items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
               <div>
-                <div class="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-200/90">Private reorder desk</div>
-                <div class="mt-1 text-sm text-slate-300">Saved print-ready files for your assigned pricing profile.</div>
+                <div class="ul-main-customer-workspace-kicker text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-200/90">Private reorder desk</div>
+                <div class="ul-main-customer-workspace-subtitle mt-1 text-sm text-slate-300">Saved print-ready files for your assigned pricing profile.</div>
               </div>
               <span class="ul-main-customer-workspace-status hidden rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white"></span>
             </div>
-            <div class="px-5 py-5">
+            <div class="ul-main-customer-workspace-hero-body px-5 py-5">
               <div class="ul-main-customer-workspace-title text-[1.7rem] font-semibold leading-tight tracking-[-0.03em] text-white">Welcome back.</div>
               <div class="ul-main-customer-workspace-copy mt-3 max-w-[28rem] text-sm leading-6 text-slate-300">
                 This page has been personalized for your account. Reorder your saved print-ready uploads with your assigned pricing already applied.
@@ -64,11 +64,11 @@
             </div>
           </div>
 
-          <div class="mt-4 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
-            <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div class="ul-main-customer-workspace-panel mt-4 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
+            <div class="ul-main-customer-workspace-panel-head flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
               <div>
-                <div class="text-sm font-semibold text-slate-900">Your recent ordered uploads</div>
-                <div class="mt-1 text-xs text-slate-500">Use your last paid files as a fast starting point for a new custom-priced order.</div>
+                <div class="ul-main-customer-workspace-panel-title text-sm font-semibold text-slate-900">Your recent ordered uploads</div>
+                <div class="ul-main-customer-workspace-panel-copy mt-1 text-xs text-slate-500">Use your last paid files as a fast starting point for a new custom-priced order.</div>
               </div>
               <span class="ul-main-customer-workspace-count rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-700">0 files</span>
             </div>
@@ -287,7 +287,7 @@
           </div>
         {% endif %}
 
-        <div class="border border-gray-200 rounded-lg p-4 bg-white mb-6">
+        <div class="ul-main-buybox-card border border-gray-200 rounded-lg p-4 bg-white mb-6">
           <div class="ul-main-buybox-price text-2xl font-medium text-gray-900 mb-2">{{ product.price | money }}</div>
           <div class="ul-main-vip-pricing hidden mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
             <div class="ul-main-vip-pricing-title font-semibold"></div>
@@ -868,11 +868,11 @@
           ? 'Active rate: ' + formatMoneyValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in'
           : 'Rate is loading from the server.';
         if (customerPricing.customerType === 'business') {
-          customerStatusTitle.textContent = 'Welcome back, ' + customerName;
-          customerStatusText.textContent = label + ' pricing is assigned to this account. Your sheet-based checkout will use the business rate linked to your profile. ' + rateText;
+          customerStatusTitle.textContent = 'Welcome back, ' + customerName + '. Your private pricing desk is ready.';
+          customerStatusText.textContent = 'This page has been personalized for your ' + label + ' profile. Upload new artwork, revisit saved files, and check out with your assigned sheet-based pricing already applied. ' + rateText;
         } else {
-          customerStatusTitle.textContent = 'Welcome back, ' + customerName;
-          customerStatusText.textContent = label + ' pricing is assigned to this account. Your upload will be quoted using the custom rate linked to your profile. ' + rateText;
+          customerStatusTitle.textContent = 'Welcome back, ' + customerName + '. Your private pricing desk is ready.';
+          customerStatusText.textContent = 'This page has been personalized for your ' + label + ' profile. Upload fresh artwork, reorder saved files, and place measured custom-priced orders with your assigned rate already applied. ' + rateText;
         }
       } else if (customerPricing.customerType === 'business' || customerPricing.customerType === 'vip') {
         customerStatusTitle.textContent = 'Welcome back, ' + customerName;
@@ -1539,14 +1539,14 @@
       }
 
       if (customerWorkspaceTitle) {
-        customerWorkspaceTitle.textContent = 'Welcome back, ' + displayName + '.';
+        customerWorkspaceTitle.textContent = 'Hello ' + displayName + ', your private pricing studio is ready.';
       }
 
       if (customerWorkspaceCopy) {
         customerWorkspaceCopy.textContent =
-          'This reorder desk has been tailored to your ' +
+          'This reorder studio has been tailored to your ' +
           workspaceStatusLabel +
-          ' pricing profile. Every quick action below uses your assigned pricing automatically, so you can reorder faster with your saved print-ready artwork.';
+          ' pricing profile. Every quick action below keeps your assigned pricing, saved print-ready artwork, and preferred reorder flow perfectly in sync so you can move from upload to checkout faster.';
       }
 
       if (customerWorkspaceMeta) {
@@ -2173,6 +2173,11 @@
     }
 
     function syncPricingVisibility() {
+      if (root) {
+        root.classList.toggle('ul-main-has-custom-pricing', hasCustomPricingActive());
+        root.classList.toggle('ul-main-has-business-pricing', isBusinessPricingActive());
+        root.classList.toggle('ul-main-has-vip-pricing', isVipPricingActive());
+      }
       renderCustomerWorkspace();
       if (variantPricingTable) {
         if (hasCustomPricingActive()) variantPricingTable.classList.add('hidden');
@@ -4083,11 +4088,278 @@
   #{{ section_dom_id }} .js-accordion-icon.is-open {
     transform: rotate(180deg);
   }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing {
+    background:
+      radial-gradient(circle at 12% 10%, rgba(251, 191, 36, 0.10), transparent 22%),
+      radial-gradient(circle at 88% 8%, rgba(125, 211, 252, 0.12), transparent 26%),
+      linear-gradient(180deg, #f7f3ec 0%, #eef4f9 100%);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-shell {
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: 30px;
+    background:
+      linear-gradient(180deg, rgba(255, 253, 250, 0.98), rgba(255, 255, 255, 0.98) 34%, rgba(248, 251, 255, 0.98) 100%);
+    box-shadow:
+      0 28px 70px rgba(15, 23, 42, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-status {
+    border-color: rgba(226, 232, 240, 0.95);
+    border-radius: 30px;
+    background:
+      radial-gradient(circle at top right, rgba(251, 191, 36, 0.18), transparent 30%),
+      radial-gradient(circle at bottom left, rgba(125, 211, 252, 0.16), transparent 24%),
+      linear-gradient(135deg, rgba(255, 250, 242, 0.98), rgba(255, 255, 255, 0.98) 42%, rgba(243, 248, 255, 0.98) 100%);
+    box-shadow:
+      0 22px 54px rgba(15, 23, 42, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-status-badge {
+    border-color: rgba(251, 191, 36, 0.35);
+    background:
+      linear-gradient(135deg, rgba(255, 243, 199, 0.96), rgba(255, 252, 243, 0.96));
+    color: #92400e;
+    box-shadow: 0 14px 32px rgba(251, 191, 36, 0.16);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-account,
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-login {
+    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.10);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-workspace-hero {
+    position: relative;
+    border-color: rgba(226, 232, 240, 0.92);
+    background:
+      radial-gradient(circle at top right, rgba(251, 191, 36, 0.22), transparent 32%),
+      radial-gradient(circle at bottom left, rgba(125, 211, 252, 0.16), transparent 24%),
+      linear-gradient(145deg, rgba(255, 248, 237, 0.98), rgba(255, 253, 247, 0.98) 38%, rgba(243, 248, 255, 0.98) 100%);
+    box-shadow:
+      0 24px 60px rgba(15, 23, 42, 0.10),
+      inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    color: #0f172a;
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-workspace-hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.34), transparent 38%);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-workspace-hero-top,
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-workspace-hero-body {
+    position: relative;
+    z-index: 1;
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-workspace-hero-top {
+    border-color: rgba(226, 232, 240, 0.72);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-workspace-kicker {
+    color: #a16207;
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-workspace-subtitle,
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-workspace-copy {
+    color: #475569;
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-workspace-title {
+    color: #0f172a;
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-workspace-status {
+    border-color: rgba(251, 191, 36, 0.34);
+    background: rgba(255, 255, 255, 0.72);
+    color: #92400e;
+    box-shadow: 0 10px 26px rgba(251, 191, 36, 0.12);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-workspace-meta > span {
+    border: 1px solid rgba(226, 232, 240, 0.9) !important;
+    background: rgba(255, 255, 255, 0.82) !important;
+    color: #334155 !important;
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-workspace-panel,
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-buybox-card {
+    border-color: rgba(226, 232, 240, 0.92);
+    border-radius: 28px;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(250, 251, 255, 0.96));
+    box-shadow:
+      0 18px 46px rgba(15, 23, 42, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-workspace-panel-head {
+    border-color: rgba(226, 232, 240, 0.8);
+    background:
+      linear-gradient(180deg, rgba(255, 250, 242, 0.84), rgba(255, 255, 255, 0.84));
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-workspace-panel-title {
+    color: #0f172a;
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-workspace-panel-copy {
+    color: #64748b;
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-workspace-count {
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    background: rgba(255, 255, 255, 0.92);
+    color: #475569;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-customer-workspace-list {
+    background:
+      linear-gradient(180deg, rgba(248, 250, 252, 0.82), rgba(255, 255, 255, 0.92));
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing [data-workspace-item] {
+    position: relative;
+    overflow: hidden;
+    border-color: rgba(226, 232, 240, 0.92);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 251, 245, 0.96));
+    box-shadow:
+      0 16px 38px rgba(15, 23, 42, 0.07),
+      inset 0 1px 0 rgba(255, 255, 255, 0.78);
+    transition:
+      transform 0.22s ease,
+      box-shadow 0.22s ease,
+      border-color 0.22s ease;
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing [data-workspace-item]::before {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 4px;
+    background:
+      linear-gradient(180deg, rgba(251, 191, 36, 0.95), rgba(59, 130, 246, 0.5));
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing [data-workspace-item]:hover {
+    transform: translateY(-3px);
+    border-color: rgba(251, 191, 36, 0.32);
+    box-shadow:
+      0 24px 52px rgba(15, 23, 42, 0.11),
+      inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing [data-workspace-item] > div > div:first-child {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing [data-workspace-item] a,
+  #{{ section_dom_id }}.ul-main-has-custom-pricing [data-workspace-item] button,
+  #{{ section_dom_id }}.ul-main-has-custom-pricing [data-workspace-item] input {
+    transition:
+      transform 0.18s ease,
+      box-shadow 0.18s ease,
+      border-color 0.18s ease,
+      background-color 0.18s ease;
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing [data-workspace-item] [data-workspace-add] {
+    border-color: rgba(15, 23, 42, 0.08);
+    background:
+      linear-gradient(135deg, #0f172a, #334155);
+    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing [data-workspace-item] [data-workspace-buy] {
+    border-color: rgba(251, 191, 36, 0.32);
+    background:
+      linear-gradient(135deg, rgba(255, 247, 214, 0.98), rgba(255, 252, 244, 0.98));
+    box-shadow: 0 12px 24px rgba(251, 191, 36, 0.12);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing [data-workspace-item] [data-workspace-qty],
+  #{{ section_dom_id }}.ul-main-has-custom-pricing [data-workspace-item] [data-workspace-qty-input] {
+    border-color: rgba(226, 232, 240, 0.94);
+    background: rgba(255, 255, 255, 0.84);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-upload-box {
+    border-style: solid;
+    border-width: 1px;
+    border-color: rgba(226, 232, 240, 0.94);
+    border-radius: 30px;
+    background:
+      radial-gradient(circle at top right, rgba(251, 191, 36, 0.10), transparent 24%),
+      radial-gradient(circle at bottom left, rgba(125, 211, 252, 0.10), transparent 20%),
+      linear-gradient(180deg, rgba(255, 251, 245, 0.98), rgba(255, 255, 255, 0.98));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.78),
+      0 18px 44px rgba(15, 23, 42, 0.05);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-upload-trigger {
+    border-color: rgba(251, 191, 36, 0.26);
+    background:
+      linear-gradient(135deg, #fbbf24, #f59e0b);
+    box-shadow: 0 18px 34px rgba(245, 158, 11, 0.20);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-custom-batch-progress {
+    border-color: rgba(226, 232, 240, 0.92);
+    border-radius: 24px;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 250, 244, 0.96));
+    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.06);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-custom-queue-header {
+    border-color: rgba(226, 232, 240, 0.95);
+    background:
+      linear-gradient(135deg, rgba(255, 248, 236, 0.98), rgba(255, 255, 255, 0.98) 50%, rgba(243, 248, 255, 0.98));
+    color: #0f172a;
+    box-shadow:
+      0 18px 34px rgba(15, 23, 42, 0.06),
+      inset 0 1px 0 rgba(255, 255, 255, 0.76);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-custom-queue-header-pill {
+    border: 1px solid rgba(226, 232, 240, 0.92);
+    background: rgba(255, 255, 255, 0.9);
+    color: #475569;
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-custom-queue-item {
+    border-radius: 28px;
+    border-color: rgba(226, 232, 240, 0.94);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 251, 245, 0.96));
+    box-shadow:
+      0 18px 42px rgba(15, 23, 42, 0.07),
+      inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-custom-queue-item.is-active {
+    border-color: rgba(251, 191, 36, 0.38);
+    box-shadow:
+      0 22px 48px rgba(15, 23, 42, 0.10),
+      0 0 0 1px rgba(251, 191, 36, 0.18);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-custom-thumb {
+    border-color: rgba(226, 232, 240, 0.92);
+    background:
+      linear-gradient(180deg, rgba(248, 250, 252, 0.92), rgba(255, 255, 255, 0.98));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.84);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-custom-qty {
+    border-color: rgba(226, 232, 240, 0.94);
+    background: rgba(255, 255, 255, 0.88);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-custom-remove {
+    border-color: rgba(254, 202, 202, 0.9);
+    background: rgba(255, 255, 255, 0.84);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-vip-pricing {
+    border-color: rgba(251, 191, 36, 0.28);
+    border-radius: 22px;
+    background:
+      linear-gradient(135deg, rgba(255, 248, 228, 0.98), rgba(255, 255, 255, 0.98) 54%, rgba(242, 248, 255, 0.98));
+    box-shadow:
+      0 16px 34px rgba(251, 191, 36, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  }
   #{{ section_dom_id }} .ul-main-vip-preview-card {
     background:
       radial-gradient(circle at top right, rgba(251, 191, 36, 0.14), transparent 34%),
       linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
     box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-vip-preview-card {
+    border-color: rgba(226, 232, 240, 0.92);
+    border-radius: 30px;
+    background:
+      radial-gradient(circle at top right, rgba(251, 191, 36, 0.18), transparent 28%),
+      radial-gradient(circle at bottom left, rgba(125, 211, 252, 0.14), transparent 22%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 255, 0.98));
+    box-shadow:
+      0 24px 54px rgba(15, 23, 42, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.76);
   }
   #{{ section_dom_id }} .ul-main-vip-preview-empty {
     border-radius: 0;
@@ -4105,6 +4377,13 @@
     color: #334155;
     box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
   }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-vip-preview-chip,
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-vip-preview-mini-chip {
+    border-color: rgba(226, 232, 240, 0.9);
+    background: rgba(255, 255, 255, 0.88);
+    color: #475569;
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+  }
   #{{ section_dom_id }} .ul-main-vip-preview-ruler-shell {
     display: grid;
     grid-template-columns: 44px minmax(0, 1fr);
@@ -4114,6 +4393,12 @@
     border-radius: 0;
     background: rgba(255, 255, 255, 0.95);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-vip-preview-ruler-shell {
+    border-color: rgba(226, 232, 240, 0.9);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.82),
+      0 18px 38px rgba(15, 23, 42, 0.05);
   }
   #{{ section_dom_id }} .ul-main-vip-preview-corner {
     grid-column: 1;
@@ -4193,6 +4478,12 @@
     box-shadow:
       0 26px 40px rgba(15, 23, 42, 0.14),
       inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-vip-preview-stage {
+    border-color: #1e293b;
+    box-shadow:
+      0 28px 42px rgba(15, 23, 42, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.82);
   }
   #{{ section_dom_id }} .ul-main-vip-preview-stage::before {
     content: '';
@@ -4451,6 +4742,12 @@
     padding: 0.95rem 3rem 0.95rem 1rem;
     box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
   }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-vip-preview-select {
+    border-color: rgba(226, 232, 240, 0.94);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 250, 244, 0.96));
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.05);
+  }
   #{{ section_dom_id }} .ul-main-vip-preview-selector-wrap::after {
     content: '';
     position: absolute;
@@ -4500,6 +4797,19 @@
     border-top: 1px solid rgba(226, 232, 240, 0.9);
     padding-top: 10px;
     color: #475569;
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-add-to-cart {
+    border-color: rgba(15, 23, 42, 0.08);
+    background:
+      linear-gradient(135deg, #0f172a, #334155);
+    box-shadow: 0 18px 34px rgba(15, 23, 42, 0.18);
+  }
+  #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-buy-now {
+    border-color: rgba(251, 191, 36, 0.3);
+    background:
+      linear-gradient(135deg, #f59e0b, #fbbf24);
+    color: #111827;
+    box-shadow: 0 16px 30px rgba(245, 158, 11, 0.18);
   }
   #{{ section_dom_id }} .ul-main-vip-preview-active-pills,
   #{{ section_dom_id }} .ul-main-vip-preview-board-pills {
