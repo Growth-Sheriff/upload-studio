@@ -2351,12 +2351,19 @@
       if (vipPricingTotal) vipPricingTotal.textContent = totalText || '';
     }
 
+    function setInlinePricingAlertLevel(level) {
+      var safeLevel = Math.max(0, Math.min(6, parseInt(level || '0', 10) || 0));
+      if (inlinePricingBox) inlinePricingBox.setAttribute('data-alert-level', String(safeLevel));
+      if (inlinePricingButton) inlinePricingButton.setAttribute('data-alert-level', String(safeLevel));
+    }
+
     function setInlinePricingMessage(kickerText, totalText, metaText, isLive) {
       if (inlinePricingKicker) inlinePricingKicker.textContent = kickerText || 'Custom pricing';
       if (inlinePricingTotal) inlinePricingTotal.textContent = totalText || '$0.00';
       if (inlinePricingMeta) inlinePricingMeta.textContent = metaText || 'Waiting for your measured quote.';
       if (inlinePricingBox) inlinePricingBox.classList.toggle('is-live', !!isLive);
       if (inlinePricingButton) inlinePricingButton.classList.toggle('is-live', !!isLive);
+      if (!isLive) setInlinePricingAlertLevel(0);
     }
 
     function updateVipPricingUI() {
@@ -2383,6 +2390,11 @@
       var queueItems = getCustomQueueItems();
       var actionableQueueItems = getCustomQueueActionableItems();
       var queueMode = queueItems.length > 0;
+      var readyQueueItems = getCustomQueueReadyItems();
+      var readyCount = readyQueueItems.length;
+      var totalCopies = queueItems.reduce(function(sum, item) {
+        return sum + Math.max(1, Number(item.requestedQuantity) || 1);
+      }, 0);
       var billableLengthIn = customerPricing.quoteLengthIn || getBillablePageLengthIn();
       var billableWidthIn = getBillablePageWidthIn();
       var isBusiness = isBusinessPricingActive();
@@ -2391,14 +2403,10 @@
         : 'Rate is loading from the server...';
       var lengthLabel = '';
       if (queueMode) {
-        var readyCount = getCustomQueueReadyItems().length;
         var totalFiles = queueItems.length;
         var actionableFiles = actionableQueueItems.length;
         var failedFiles = Math.max(0, totalFiles - actionableFiles);
         var waitingFiles = Math.max(0, actionableFiles - readyCount);
-        var totalCopies = queueItems.reduce(function(sum, item) {
-          return sum + Math.max(1, Number(item.requestedQuantity) || 1);
-        }, 0);
         if (readyCount > 0) {
           lengthLabel =
             readyCount +
@@ -2461,11 +2469,18 @@
         : 'Pending';
       var inlineMetaText = customerPricing.quoteTotal != null
         ? (queueMode
-            ? getCustomQueueReadyItems().length + ' ready design' + (getCustomQueueReadyItems().length === 1 ? '' : 's') + ' • ' + queueItems.reduce(function(sum, item) { return sum + Math.max(1, Number(item.requestedQuantity) || 1); }, 0) + ' total cop' + (queueItems.reduce(function(sum, item) { return sum + Math.max(1, Number(item.requestedQuantity) || 1); }, 0) === 1 ? 'y' : 'ies')
+            ? readyCount + ' ready design' + (readyCount === 1 ? '' : 's') + ' • ' + totalCopies + ' total cop' + (totalCopies === 1 ? 'y' : 'ies')
             : (billableLengthIn ? 'Billable length ' + billableLengthIn.toFixed(2) + '"' : 'Ready to create checkout'))
         : (queueMode
             ? 'Building your measured running total from each ready upload.'
             : 'Waiting for the server-confirmed quote to finish.');
+      var inlineAlertLevel = 0;
+      if (customerPricing.quoteStatus === 'ready' && customerPricing.quoteTotal != null) {
+        inlineAlertLevel = queueMode ? Math.min(6, Math.max(1, readyCount)) : 1;
+        if (queueMode && actionableQueueItems.length > readyCount) {
+          inlineAlertLevel = Math.min(6, inlineAlertLevel + 1);
+        }
+      }
 
       setVipPricingMessage(
         titleLabel,
@@ -2479,6 +2494,7 @@
         inlineMetaText,
         customerPricing.quoteStatus === 'ready' && customerPricing.quoteTotal != null
       );
+      setInlinePricingAlertLevel(inlineAlertLevel);
 
       if (customerPricing.quoteTotal != null) {
         if (productPrice) productPrice.textContent = formatMoneyValue(customerPricing.quoteTotal, customerPricing.currency);
@@ -4549,6 +4565,8 @@
     box-shadow: 0 18px 34px rgba(245, 158, 11, 0.20);
   }
   #{{ section_dom_id }} .ul-main-inline-pricing {
+    position: relative;
+    overflow: hidden;
     display: inline-flex;
     align-items: center;
     gap: 14px;
@@ -4560,8 +4578,34 @@
     box-shadow:
       0 16px 34px rgba(15, 23, 42, 0.06),
       inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    --ul-main-alert-speed: 1.25s;
+    --ul-main-alert-shake: 2px;
+    --ul-main-alert-scale: 1.015;
+    --ul-main-alert-blue: rgba(59, 130, 246, 0.34);
+    --ul-main-alert-red: rgba(239, 68, 68, 0.30);
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing::before,
+  #{{ section_dom_id }} .ul-main-inline-pricing::after {
+    content: '';
+    position: absolute;
+    inset: -20% auto -20% auto;
+    width: 42%;
+    opacity: 0;
+    filter: blur(22px);
+    pointer-events: none;
+    transition: opacity 180ms ease;
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing::before {
+    left: -8%;
+    background: linear-gradient(90deg, transparent, var(--ul-main-alert-blue), transparent);
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing::after {
+    right: -8%;
+    background: linear-gradient(90deg, transparent, var(--ul-main-alert-red), transparent);
   }
   #{{ section_dom_id }} .ul-main-inline-pricing-copy {
+    position: relative;
+    z-index: 1;
     min-width: 0;
     flex: 1 1 auto;
     text-align: left;
@@ -4588,6 +4632,8 @@
     color: #475569;
   }
   #{{ section_dom_id }} .ul-main-inline-pricing-button {
+    position: relative;
+    z-index: 1;
     flex: 0 0 auto;
     border: 1px solid rgba(15, 23, 42, 0.1);
     background: linear-gradient(135deg, #0f172a, #334155);
@@ -4611,39 +4657,127 @@
       0 22px 48px rgba(245, 158, 11, 0.16),
       inset 0 1px 0 rgba(255, 255, 255, 0.86);
   }
+  #{{ section_dom_id }} .ul-main-inline-pricing.is-live::before,
+  #{{ section_dom_id }} .ul-main-inline-pricing.is-live::after {
+    opacity: 1;
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing.is-live::before {
+    animation: ul-main-inline-siren-left var(--ul-main-alert-speed) linear infinite;
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing.is-live::after {
+    animation: ul-main-inline-siren-right var(--ul-main-alert-speed) linear infinite;
+  }
   #{{ section_dom_id }} .ul-main-inline-pricing-button.is-live {
-    animation: ul-main-inline-cta-shake 1.2s cubic-bezier(.36,.07,.19,.97) infinite;
+    animation:
+      ul-main-inline-cta-shake var(--ul-main-alert-speed) cubic-bezier(.36,.07,.19,.97) infinite,
+      ul-main-inline-cta-strobe calc(var(--ul-main-alert-speed) * 1.15) linear infinite;
     box-shadow:
       0 0 0 1px rgba(251, 191, 36, 0.22),
       0 16px 34px rgba(245, 158, 11, 0.28);
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing[data-alert-level="1"],
+  #{{ section_dom_id }} .ul-main-inline-pricing-button[data-alert-level="1"] {
+    --ul-main-alert-speed: 1.18s;
+    --ul-main-alert-shake: 2px;
+    --ul-main-alert-scale: 1.018;
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing[data-alert-level="2"],
+  #{{ section_dom_id }} .ul-main-inline-pricing-button[data-alert-level="2"] {
+    --ul-main-alert-speed: 1.02s;
+    --ul-main-alert-shake: 3px;
+    --ul-main-alert-scale: 1.022;
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing[data-alert-level="3"],
+  #{{ section_dom_id }} .ul-main-inline-pricing-button[data-alert-level="3"] {
+    --ul-main-alert-speed: 0.9s;
+    --ul-main-alert-shake: 4px;
+    --ul-main-alert-scale: 1.026;
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing[data-alert-level="4"],
+  #{{ section_dom_id }} .ul-main-inline-pricing-button[data-alert-level="4"] {
+    --ul-main-alert-speed: 0.78s;
+    --ul-main-alert-shake: 5px;
+    --ul-main-alert-scale: 1.03;
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing[data-alert-level="5"],
+  #{{ section_dom_id }} .ul-main-inline-pricing-button[data-alert-level="5"] {
+    --ul-main-alert-speed: 0.66s;
+    --ul-main-alert-shake: 6px;
+    --ul-main-alert-scale: 1.035;
+  }
+  #{{ section_dom_id }} .ul-main-inline-pricing[data-alert-level="6"],
+  #{{ section_dom_id }} .ul-main-inline-pricing-button[data-alert-level="6"] {
+    --ul-main-alert-speed: 0.54s;
+    --ul-main-alert-shake: 7px;
+    --ul-main-alert-scale: 1.04;
   }
   @keyframes ul-main-inline-cta-shake {
     0%, 100% {
       transform: translate3d(0, 0, 0) scale(1);
     }
     6% {
-      transform: translate3d(-2px, 0, 0) scale(1.01);
+      transform: translate3d(calc(var(--ul-main-alert-shake) * -0.6), 0, 0) scale(calc(var(--ul-main-alert-scale) * 0.985));
     }
     12% {
-      transform: translate3d(3px, 0, 0) scale(1.02);
+      transform: translate3d(calc(var(--ul-main-alert-shake) * 0.85), 0, 0) scale(var(--ul-main-alert-scale));
     }
     18% {
-      transform: translate3d(-4px, 0, 0) scale(1.02);
+      transform: translate3d(calc(var(--ul-main-alert-shake) * -1), 0, 0) scale(var(--ul-main-alert-scale));
     }
     24% {
-      transform: translate3d(4px, 0, 0) scale(1.03);
+      transform: translate3d(calc(var(--ul-main-alert-shake) * 1.15), 0, 0) scale(calc(var(--ul-main-alert-scale) * 1.02));
     }
     30% {
-      transform: translate3d(-3px, 0, 0) scale(1.02);
+      transform: translate3d(calc(var(--ul-main-alert-shake) * -0.85), 0, 0) scale(var(--ul-main-alert-scale));
     }
     36% {
-      transform: translate3d(2px, 0, 0) scale(1.01);
+      transform: translate3d(calc(var(--ul-main-alert-shake) * 0.55), 0, 0) scale(calc(var(--ul-main-alert-scale) * 0.99));
     }
     42% {
-      transform: translate3d(0, 0, 0) scale(1.03);
+      transform: translate3d(0, 0, 0) scale(calc(var(--ul-main-alert-scale) * 1.02));
     }
     58% {
       transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+  @keyframes ul-main-inline-cta-strobe {
+    0%, 100% {
+      background: linear-gradient(135deg, #0f172a, #334155);
+      box-shadow:
+        0 0 0 1px rgba(59, 130, 246, 0.22),
+        0 16px 34px rgba(59, 130, 246, 0.24);
+    }
+    49% {
+      background: linear-gradient(135deg, #0f172a, #2563eb);
+      box-shadow:
+        0 0 0 1px rgba(59, 130, 246, 0.3),
+        0 18px 36px rgba(59, 130, 246, 0.34);
+    }
+    50% {
+      background: linear-gradient(135deg, #7f1d1d, #ef4444);
+      box-shadow:
+        0 0 0 1px rgba(239, 68, 68, 0.28),
+        0 18px 36px rgba(239, 68, 68, 0.32);
+    }
+  }
+  @keyframes ul-main-inline-siren-left {
+    0%, 100% {
+      transform: translateX(-18%) scaleX(0.86);
+      opacity: 0.18;
+    }
+    50% {
+      transform: translateX(18%) scaleX(1.18);
+      opacity: 0.68;
+    }
+  }
+  @keyframes ul-main-inline-siren-right {
+    0%, 100% {
+      transform: translateX(18%) scaleX(0.86);
+      opacity: 0.18;
+    }
+    50% {
+      transform: translateX(-18%) scaleX(1.18);
+      opacity: 0.68;
     }
   }
   #{{ section_dom_id }}.ul-main-has-custom-pricing .ul-main-custom-batch-progress {
