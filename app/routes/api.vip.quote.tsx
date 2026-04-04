@@ -97,13 +97,16 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const url = new URL(request.url)
   const shopDomain = url.searchParams.get('shop')?.trim() || ''
-  const loggedInCustomerId = normalizeCustomerId(url.searchParams.get('logged_in_customer_id'))
 
   if (!shopDomain) {
     return json({ error: 'Missing shop parameter' }, { status: 400 })
   }
 
   const body = await parseBody(request)
+  const fallbackCustomerEmail = String(body.customerEmail || '').trim()
+  const loggedInCustomerId =
+    normalizeCustomerId(url.searchParams.get('logged_in_customer_id')) ||
+    normalizeCustomerId(body.customerId)
   const normalizedItems = normalizeQuoteItems(body)
 
   if (!normalizedItems.length) {
@@ -118,6 +121,7 @@ export async function action({ request }: ActionFunctionArgs) {
               await prepareCustomPricingQuote({
                 shopDomain,
                 loggedInCustomerId,
+                loggedInCustomerEmail: fallbackCustomerEmail,
                 uploadId: normalizedItems[0].uploadId,
                 quantity: normalizedItems[0].quantity,
                 selectedVariantId: normalizedItems[0].selectedVariantId,
@@ -127,6 +131,7 @@ export async function action({ request }: ActionFunctionArgs) {
         : await prepareCustomPricingJobQuote({
             shopDomain,
             loggedInCustomerId,
+            loggedInCustomerEmail: fallbackCustomerEmail,
             items: normalizedItems,
           })
 

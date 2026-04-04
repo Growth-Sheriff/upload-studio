@@ -221,12 +221,14 @@ function buildVariantLimits(
 export async function prepareCustomPricingQuote({
   shopDomain,
   loggedInCustomerId,
+  loggedInCustomerEmail,
   uploadId,
   quantity,
   selectedVariantId,
 }: {
   shopDomain: string
   loggedInCustomerId: string | null
+  loggedInCustomerEmail?: string | null
   uploadId: string
   quantity: number
   selectedVariantId?: string | null
@@ -234,6 +236,7 @@ export async function prepareCustomPricingQuote({
   const preparedJob = await prepareCustomPricingJobQuote({
     shopDomain,
     loggedInCustomerId,
+    loggedInCustomerEmail,
     items: [{ uploadId, quantity, selectedVariantId }],
   })
 
@@ -243,10 +246,12 @@ export async function prepareCustomPricingQuote({
 export async function prepareCustomPricingJobQuote({
   shopDomain,
   loggedInCustomerId,
+  loggedInCustomerEmail,
   items,
 }: {
   shopDomain: string
   loggedInCustomerId: string | null
+  loggedInCustomerEmail?: string | null
   items: CustomPricingJobItemInput[]
 }): Promise<PreparedCustomPricingJobQuote> {
   const normalizedItems = items
@@ -336,7 +341,8 @@ export async function prepareCustomPricingJobQuote({
     const pricingContext = resolveCustomerPricingContext(
       settings,
       normalizedLoggedInCustomerId,
-      upload.productId
+      upload.productId,
+      loggedInCustomerEmail
     )
 
     if (!pricingContext.hasCustomPricing || pricingContext.pricingMode === 'standard_variant') {

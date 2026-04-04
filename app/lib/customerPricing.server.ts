@@ -249,6 +249,12 @@ export function normalizeCustomerId(value: string | number | null | undefined): 
   return digits || raw
 }
 
+function normalizeCustomerEmail(value: string | null | undefined): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+}
+
 export function normalizeProductId(value: string | number | null | undefined): string | null {
   return ensureProductId(value)
 }
@@ -585,11 +591,13 @@ export function buildCustomerPricingSettingsPayload(
 export function resolveCustomerPricingContext(
   rawSettings: unknown,
   loggedInCustomerId: string | number | null | undefined,
-  productIdInput?: string | number | null
+  productIdInput?: string | number | null,
+  customerEmailInput?: string | null
 ): CustomerPricingContext {
   const settings = coerceCustomerPricingSettings(rawSettings)
   const customerId = normalizeCustomerId(loggedInCustomerId)
   const productId = normalizeProductId(productIdInput)
+  const customerEmail = normalizeCustomerEmail(customerEmailInput)
 
   const standardStatus: CustomerPricingStatus = {
     id: 'standard',
@@ -601,7 +609,7 @@ export function resolveCustomerPricingContext(
     productRules: [],
   }
 
-  if (!customerId) {
+  if (!customerId && !customerEmail) {
     return {
       enabled: settings.enabled,
       customerId: null,
@@ -646,9 +654,20 @@ export function resolveCustomerPricingContext(
     }
   }
 
-  const assignment = settings.assignments.find(
-    (entry) => entry.active && normalizeCustomerId(entry.customerId) === customerId
-  )
+  const assignmentById = customerId
+    ? settings.assignments.find(
+        (entry) => entry.active && normalizeCustomerId(entry.customerId) === customerId
+      ) || null
+    : null
+  const assignment =
+    assignmentById ||
+    (customerEmail
+      ? settings.assignments.find(
+          (entry) =>
+            entry.active &&
+            normalizeCustomerEmail(entry.customerEmail) === customerEmail
+        ) || null
+      : null)
 
   if (!assignment) {
     return {

@@ -581,6 +581,8 @@
     var customerWorkspaceMeta = root.querySelector('.ul-main-customer-workspace-meta');
     var customerWorkspaceCount = root.querySelector('.ul-main-customer-workspace-count');
     var customerWorkspaceList = root.querySelector('.ul-main-customer-workspace-list');
+    var themeCustomerId = root.getAttribute('data-customer-id') || '';
+    var themeCustomerEmail = root.getAttribute('data-customer-email') || '';
     var uploadInput = root.querySelector('.ul-main-upload-input');
     var uploadTrigger = root.querySelector('.ul-main-upload-trigger');
     var uploadBox = root.querySelector('.ul-main-upload-box');
@@ -918,7 +920,15 @@
       if (customerLoggedIn) return false;
       try {
         var response = await fetch(
-          apiBase + '/api/vip/context?shopDomain=' + encodeURIComponent(shopDomain) + '&productId=' + encodeURIComponent(String(productData.productId)),
+          apiBase +
+            '/api/vip/context?shopDomain=' +
+            encodeURIComponent(shopDomain) +
+            '&productId=' +
+            encodeURIComponent(String(productData.productId)) +
+            '&customerId=' +
+            encodeURIComponent(themeCustomerId || '') +
+            '&customerEmail=' +
+            encodeURIComponent(themeCustomerEmail || ''),
           { credentials: 'same-origin' }
         );
         var data = await response.json().catch(function() { return {}; });
@@ -2534,7 +2544,16 @@
       updateCustomerStatusUI();
 
       try {
-        var contextUrl = apiBase + '/api/vip/context?shopDomain=' + encodeURIComponent(shopDomain) + '&productId=' + encodeURIComponent(String(productData.productId));
+        var contextUrl =
+          apiBase +
+          '/api/vip/context?shopDomain=' +
+          encodeURIComponent(shopDomain) +
+          '&productId=' +
+          encodeURIComponent(String(productData.productId)) +
+          '&customerId=' +
+          encodeURIComponent(themeCustomerId || '') +
+          '&customerEmail=' +
+          encodeURIComponent(themeCustomerEmail || '');
         var response = await fetch(contextUrl, { credentials: 'same-origin' });
         var data = await response.json().catch(function() { return {}; });
         if (requestToken !== customerPricingRequestToken) return customerPricing;
@@ -2634,7 +2653,11 @@
           '/api/customer-pricing/workspace?shopDomain=' +
           encodeURIComponent(shopDomain) +
           '&productId=' +
-          encodeURIComponent(String(productData.productId));
+          encodeURIComponent(String(productData.productId)) +
+          '&customerId=' +
+          encodeURIComponent(themeCustomerId || '') +
+          '&customerEmail=' +
+          encodeURIComponent(themeCustomerEmail || '');
         var response = await fetch(workspaceUrl, { credentials: 'same-origin' });
         var data = await response.json().catch(function() { return {}; });
         if (!response.ok) {
@@ -2692,13 +2715,15 @@
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
           body: JSON.stringify({
-            shopDomain: shopDomain,
-            productId: String(productData.productId),
-            items: [{
-              uploadId: workspaceItem.uploadId,
-              quantity: workspaceItem.requestedQuantity || 1,
-              selectedVariantId: workspaceItem.selectedVariantId || ''
-            }]
+              shopDomain: shopDomain,
+              productId: String(productData.productId),
+              customerId: themeCustomerId || '',
+              customerEmail: themeCustomerEmail || '',
+              items: [{
+                uploadId: workspaceItem.uploadId,
+                quantity: workspaceItem.requestedQuantity || 1,
+                selectedVariantId: workspaceItem.selectedVariantId || ''
+              }]
           })
         });
         var checkoutData = await checkoutResponse.json().catch(function() { return {}; });
@@ -2782,6 +2807,8 @@
               body: JSON.stringify({
                 shopDomain: shopDomain,
                 productId: String(productData.productId),
+                customerId: themeCustomerId || '',
+                customerEmail: themeCustomerEmail || '',
                 items: [{
                   uploadId: queueItem.uploadId,
                   quantity: queueItem.requestedQuantity || 1,
@@ -2862,6 +2889,8 @@
         requestBody = {
           shopDomain: shopDomain,
           productId: String(productData.productId),
+          customerId: themeCustomerId || '',
+          customerEmail: themeCustomerEmail || '',
           uploadId: state.uploadId,
           quantity: state.quantity,
           selectedVariantId:

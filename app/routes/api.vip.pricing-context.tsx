@@ -14,7 +14,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const url = new URL(request.url)
   const shopDomain = url.searchParams.get('shop')?.trim() || ''
-  const loggedInCustomerId = normalizeCustomerId(url.searchParams.get('logged_in_customer_id'))
+  const fallbackCustomerId = normalizeCustomerId(url.searchParams.get('customerId'))
+  const fallbackCustomerEmail = String(url.searchParams.get('customerEmail') || '').trim()
+  const loggedInCustomerId =
+    normalizeCustomerId(url.searchParams.get('logged_in_customer_id')) || fallbackCustomerId
   const productId = normalizeProductId(url.searchParams.get('productId'))
 
   if (!shopDomain) {
@@ -34,7 +37,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const settings = applyCustomerPricingDefaultsForShop(shop.shopDomain, shop.settings)
-  const context = resolveCustomerPricingContext(settings, loggedInCustomerId, productId)
+  const context = resolveCustomerPricingContext(
+    settings,
+    loggedInCustomerId,
+    productId,
+    fallbackCustomerEmail
+  )
 
   return json({
     shopDomain: shop.shopDomain,
