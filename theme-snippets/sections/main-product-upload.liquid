@@ -1096,6 +1096,7 @@
         designsPerSheet: 0,
         billableLengthIn: 0,
         totalPrice: null,
+        uploadToken: '',
         quoteStatus: 'uploading',
         uploadStatus: 'uploading',
         quoteRequestKey: '',
@@ -1207,7 +1208,7 @@
         return (
           item &&
           item.uploadId &&
-          item.uploadStatus === 'ready' &&
+          item.uploadStatus !== 'uploading' &&
           item.widthIn > 0 &&
           item.heightIn > 0
         );
@@ -1587,6 +1588,7 @@
         designsPerSheet: 0,
         billableLengthIn: parsePositiveNumber(item.billableLengthIn) || 0,
         totalPrice: null,
+        uploadToken: '',
         quoteStatus: 'processing',
         uploadStatus: 'ready',
         quoteRequestKey: '',
@@ -3217,7 +3219,7 @@
               showError(getPreflightErrorMessage(data, firstItem));
               return false;
             }
-            if (state.widthIn && state.heightIn && (measurementStatus === 'ready' || measurementStatus === 'warning')) {
+            if (state.widthIn && state.heightIn && measurementStatus !== 'error') {
               if (customerPricing.status === 'loading' && customerPricingPromise) {
                 await customerPricingPromise.catch(function() { return null; });
               }
@@ -3246,11 +3248,11 @@
 
     async function pollCustomQueueItemStatus(queueItem, uploadToken, batchMeta) {
       for (var attempts = 0; attempts < 60; attempts++) {
-        if (uploadToken !== uploadFlowToken) return false;
+        if (!queueItem || queueItem.uploadToken !== uploadToken) return false;
         var response = await fetch(apiBase + '/api/upload/status/' + encodeURIComponent(queueItem.uploadId) + '?shopDomain=' + encodeURIComponent(shopDomain));
         if (response.ok) {
           var data = await response.json();
-          if (uploadToken !== uploadFlowToken) return false;
+          if (!queueItem || queueItem.uploadToken !== uploadToken) return false;
           var firstItem = data.items && data.items[0] ? data.items[0] : null;
           if (firstItem) {
             queueItem.thumbnailUrl = firstItem.thumbnailUrl || data.thumbnailUrl || queueItem.thumbnailUrl || '';
@@ -3275,7 +3277,7 @@
               return false;
             }
 
-            if (queueItem.widthIn && queueItem.heightIn && (measurementStatus === 'ready' || measurementStatus === 'warning')) {
+            if (queueItem.widthIn && queueItem.heightIn && measurementStatus !== 'error') {
               queueItem.uploadStatus = 'ready';
               queueItem.quoteStatus = 'processing';
               queueItem.error = '';
@@ -3359,7 +3361,8 @@
       updateVipPreviewUI();
       syncPurchaseButtonsForCurrentState();
 
-      var uploadToken = ++uploadFlowToken;
+      var uploadToken = 'queue-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+      queueItem.uploadToken = uploadToken;
       resolveRequestToken += 1;
       clearError();
 
@@ -3390,7 +3393,7 @@
         }
 
         var intent = await intentRes.json();
-        if (uploadToken !== uploadFlowToken) return;
+        if (queueItem.uploadToken !== uploadToken) return;
         queueItem.uploadId = intent.uploadId;
         queueItem.uploadStatus = 'uploading';
         queueItem.quoteStatus = 'uploading';
@@ -3446,7 +3449,7 @@
           xhr.send(file);
         });
 
-        if (uploadToken !== uploadFlowToken) return;
+        if (queueItem.uploadToken !== uploadToken) return;
 
         queueItem.uploadStatus = 'processing';
         queueItem.quoteStatus = 'processing';
@@ -3478,7 +3481,7 @@
           var completeErr = await completeRes.json().catch(function() { return {}; });
           throw new Error(completeErr.error || 'Failed to finalize upload.');
         }
-        if (uploadToken !== uploadFlowToken) return;
+        if (queueItem.uploadToken !== uploadToken) return;
 
         updateCustomBatchProgressForFile(
           batchMeta,
