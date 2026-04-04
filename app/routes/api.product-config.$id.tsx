@@ -13,6 +13,7 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, getCorsHeaders } from "~/lib/cors.server";
 import prisma from "~/lib/prisma.server";
+import { getMaxWidthLimitForShop, isDtfPrintHouseShop } from "~/lib/customerPricing.server";
 
 // Helper to create cached CORS JSON response
 function cachedCorsJson<T>(data: T, request: Request, options: { status?: number } = {}) {
@@ -53,6 +54,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   try {
+    const shopMaxWidthLimit = getMaxWidthLimitForShop(shopDomain);
+    const isDtfPrintHouse = isDtfPrintHouseShop(shopDomain);
+
     // Find shop
     const shop = await prisma.shop.findUnique({
       where: { shopDomain },
@@ -93,9 +97,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           widthOptionName: null,
           heightOptionName: null,
           modalOptionNames: [],
-          artboardMarginIn: 0.125,
-          imageMarginIn: 0.125,
-          maxWidthIn: 21.75,
+          artboardMarginIn: isDtfPrintHouse ? 0 : 0.125,
+          imageMarginIn: isDtfPrintHouse ? 0 : 0.125,
+          maxWidthIn: shopMaxWidthLimit,
           maxHeightIn: 35.75,
           minWidthIn: 1,
           minHeightIn: 1,
@@ -128,9 +132,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         widthOptionName: builderConfig.widthOptionName ?? null,
         heightOptionName: builderConfig.heightOptionName ?? null,
         modalOptionNames: Array.isArray(builderConfig.modalOptionNames) ? builderConfig.modalOptionNames : [],
-        artboardMarginIn: Math.max(0.125, Number(builderConfig.artboardMarginIn ?? 0.125)),
-        imageMarginIn: Math.max(0.125, Number(builderConfig.imageMarginIn ?? 0.125)),
-        maxWidthIn: builderConfig.maxWidthIn ?? 21.75,
+        artboardMarginIn: isDtfPrintHouse ? Math.max(0, Number(builderConfig.artboardMarginIn ?? 0)) : Math.max(0.125, Number(builderConfig.artboardMarginIn ?? 0.125)),
+        imageMarginIn: isDtfPrintHouse ? Math.max(0, Number(builderConfig.imageMarginIn ?? 0)) : Math.max(0.125, Number(builderConfig.imageMarginIn ?? 0.125)),
+        maxWidthIn: Math.max(Number(builderConfig.maxWidthIn ?? 0) || 0, shopMaxWidthLimit),
         maxHeightIn: builderConfig.maxHeightIn ?? 35.75,
         minWidthIn: builderConfig.minWidthIn ?? 1,
         minHeightIn: builderConfig.minHeightIn ?? 1,

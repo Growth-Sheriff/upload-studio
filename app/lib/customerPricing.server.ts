@@ -6,6 +6,7 @@ import {
 export const DTF_PRINTHOUSE_SHOP_DOMAIN = 'e3bd2d-3.myshopify.com'
 export const DTF_PRINTHOUSE_DTF_UPLOAD_PRODUCT_ID = 'gid://shopify/Product/7605186560158'
 export const DTF_PRINTHOUSE_UV_UPLOAD_PRODUCT_ID = 'gid://shopify/Product/7717339562142'
+export const DTF_PRINTHOUSE_MAX_WIDTH_IN = 22.5
 
 export type CustomerPricingCustomerType = 'guest' | 'standard' | 'business' | 'vip'
 export type CustomerPricingMode = 'standard_variant' | 'variant_length' | 'measured_length'
@@ -254,6 +255,10 @@ export function normalizeProductId(value: string | number | null | undefined): s
 
 export function isDtfPrintHouseShop(shopDomain: string | null | undefined): boolean {
   return String(shopDomain || '').trim().toLowerCase() === DTF_PRINTHOUSE_SHOP_DOMAIN
+}
+
+export function getMaxWidthLimitForShop(shopDomain: string | null | undefined): number {
+  return isDtfPrintHouseShop(shopDomain) ? DTF_PRINTHOUSE_MAX_WIDTH_IN : DEFAULT_MAX_WIDTH_IN
 }
 
 export function getDtfPrintHouseProductCatalog(): ProductRuleCatalogItem[] {

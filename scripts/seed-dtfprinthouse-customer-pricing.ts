@@ -84,7 +84,7 @@ function mergeBuilderConfig(rawConfig: Prisma.JsonValue | null | undefined) {
 
   return {
     ...current,
-    maxWidthIn: 22,
+    maxWidthIn: 22.5,
     minWidthIn: 1,
     maxHeightIn: 240,
     minHeightIn: 1,

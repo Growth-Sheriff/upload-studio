@@ -3,7 +3,7 @@ import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
-import { isDtfPrintHouseShop } from '~/lib/customerPricing.server'
+import { getMaxWidthLimitForShop, isDtfPrintHouseShop } from '~/lib/customerPricing.server'
 import {
   resolveSheetVariant,
   type BuilderResolveConfig,
@@ -42,7 +42,7 @@ const PRODUCT_VARIANTS_QUERY = `
 const DEFAULT_CONFIG = {
   artboardMarginIn: 0,
   imageMarginIn: 0,
-  maxWidthIn: 21.75,
+  maxWidthIn: 22,
 }
 
 const DEFAULT_DOCUMENT_FALLBACK_DPI = 200
@@ -323,7 +323,8 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const rawBuilderConfig = (productConfig?.builderConfig || {}) as Record<string, unknown>
-    const effectiveConfig: BuilderResolveConfig & { maxWidthIn: number } = {
+    const shopMaxWidthLimit = getMaxWidthLimitForShop(shopDomain)
+    const effectiveConfig: BuilderResolveConfig & { maxWidthIn: number; fitToleranceIn: number } = {
       sheetOptionName:
         typeof rawBuilderConfig.sheetOptionName === 'string' ? rawBuilderConfig.sheetOptionName : null,
       widthOptionName:
@@ -337,10 +338,13 @@ export async function action({ request }: ActionFunctionArgs) {
         : [],
       artboardMarginIn: DEFAULT_CONFIG.artboardMarginIn,
       imageMarginIn: DEFAULT_CONFIG.imageMarginIn,
-      maxWidthIn:
-        parsePositiveNumber(body.maxUploadWidth) ||
-        parsePositiveNumber(rawBuilderConfig.maxWidthIn) ||
-        DEFAULT_CONFIG.maxWidthIn,
+      fitToleranceIn: isDtfPrintHouseShop(shopDomain) ? 0.5 : 0,
+      maxWidthIn: Math.max(
+        parsePositiveNumber(body.maxUploadWidth) || 0,
+        parsePositiveNumber(rawBuilderConfig.maxWidthIn) || 0,
+        shopMaxWidthLimit || 0,
+        DEFAULT_CONFIG.maxWidthIn
+      ),
     }
 
     if (!productData.product) {

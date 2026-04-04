@@ -109,7 +109,7 @@ const DEFAULT_BUILDER_CONFIG: BuilderConfig = {
   modalOptionNames: [],
   artboardMarginIn: 0.125,
   imageMarginIn: 0.125,
-  maxWidthIn: 21.75,
+  maxWidthIn: 22.5,
   maxHeightIn: 35.75,
   minWidthIn: 1,
   minHeightIn: 1,

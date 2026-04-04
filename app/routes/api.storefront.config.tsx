@@ -3,6 +3,7 @@ import { handleCorsOptions, corsJson } from "~/lib/cors.server";
 import { rateLimitGuard, getIdentifier } from "~/lib/rateLimit.server";
 import prisma from "~/lib/prisma.server";
 import { extractAutoSheetFromSettings } from "~/lib/autoSheet.server";
+import { getMaxWidthLimitForShop, isDtfPrintHouseShop } from "~/lib/customerPricing.server";
 
 /**
  * GET /api/storefront/config?shopDomain=xxx&productId=xxx
@@ -127,6 +128,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const builderConfigRaw = productConfig
     ? (productConfig.builderConfig as Record<string, any>) || {}
     : {};
+  const shopMaxWidthLimit = getMaxWidthLimitForShop(shopDomain);
+  const isDtfPrintHouse = isDtfPrintHouseShop(shopDomain);
 
   const product = productConfig
     ? {
@@ -144,9 +147,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
           widthOptionName: builderConfigRaw.widthOptionName ?? null,
           heightOptionName: builderConfigRaw.heightOptionName ?? null,
           modalOptionNames: Array.isArray(builderConfigRaw.modalOptionNames) ? builderConfigRaw.modalOptionNames : [],
-          artboardMarginIn: Math.max(0.125, Number(builderConfigRaw.artboardMarginIn ?? 0.125)),
-          imageMarginIn: Math.max(0.125, Number(builderConfigRaw.imageMarginIn ?? 0.125)),
-          maxWidthIn: builderConfigRaw.maxWidthIn ?? 21.75,
+          artboardMarginIn: isDtfPrintHouse ? Math.max(0, Number(builderConfigRaw.artboardMarginIn ?? 0)) : Math.max(0.125, Number(builderConfigRaw.artboardMarginIn ?? 0.125)),
+          imageMarginIn: isDtfPrintHouse ? Math.max(0, Number(builderConfigRaw.imageMarginIn ?? 0)) : Math.max(0.125, Number(builderConfigRaw.imageMarginIn ?? 0.125)),
+          maxWidthIn: Math.max(Number(builderConfigRaw.maxWidthIn ?? 0) || 0, shopMaxWidthLimit),
           maxHeightIn: builderConfigRaw.maxHeightIn ?? 35.75,
           minWidthIn: builderConfigRaw.minWidthIn ?? 1,
           minHeightIn: builderConfigRaw.minHeightIn ?? 1,

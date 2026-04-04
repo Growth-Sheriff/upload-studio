@@ -1049,8 +1049,12 @@
     }
 
     function markCustomQueueQuoteDirty() {
-      resetVipQuoteState();
-      if (hasCustomQueueItems()) {
+      if (!hasCustomQueueItems()) {
+        resetVipQuoteState();
+        return;
+      }
+      syncCustomQueueQuoteSummary();
+      if (!getCustomQueueReadyItems().length) {
         customerPricing.quoteStatus = 'loading';
       }
     }
@@ -1094,6 +1098,7 @@
         totalPrice: null,
         quoteStatus: 'uploading',
         uploadStatus: 'uploading',
+        quoteRequestKey: '',
         error: '',
         lastFile: file || null
       };
@@ -1584,6 +1589,7 @@
         totalPrice: null,
         quoteStatus: 'processing',
         uploadStatus: 'ready',
+        quoteRequestKey: '',
         error: '',
         lastFile: null
       };
@@ -2677,6 +2683,15 @@
         }
 
         var itemResponses = await Promise.all(queueItems.map(async function(queueItem) {
+          var requestKey =
+            String(queueItem.uploadId || queueItem.id || '') +
+            ':' +
+            String(queueItem.requestedQuantity || 1) +
+            ':' +
+            String(Date.now()) +
+            ':' +
+            Math.random().toString(36).slice(2, 8);
+          queueItem.quoteRequestKey = requestKey;
           queueItem.quoteStatus = 'processing';
           queueItem.error = '';
           try {
@@ -2695,7 +2710,6 @@
               })
             });
             var data = await response.json().catch(function() { return {}; });
-            if (requestToken !== vipQuoteRequestToken) return null;
             if (!response.ok) {
               throw new Error(data && data.error ? data.error : 'Failed to load custom quote.');
             }
@@ -2705,36 +2719,44 @@
               throw new Error('Failed to load custom quote.');
             }
 
-            if (quoteItem.measurement && typeof quoteItem.measurement === 'object') {
-              applyServerMeasurement(quoteItem.measurement, queueItem);
+            var currentQueueItem = getCustomQueueItemById(queueItem.uploadId || queueItem.id);
+            if (!currentQueueItem || currentQueueItem.quoteRequestKey !== requestKey) {
+              return null;
             }
-            queueItem.billableLengthIn = parsePositiveNumber(quoteItem.billableLengthIn) || 0;
-            queueItem.totalPrice = parsePositiveNumber(quoteItem.totalPrice);
-            queueItem.selectedVariantId = String(quoteItem.selectedVariantId || '');
-            queueItem.selectedVariantTitle = String(quoteItem.selectedVariantTitle || '');
-            queueItem.selectedSheetLabel = String(quoteItem.selectedSheetLabel || '');
-            queueItem.sheetsNeeded = parsePositiveNumber(quoteItem.sheetsNeeded) || 0;
-            queueItem.designsPerSheet = parsePositiveNumber(quoteItem.designsPerSheet) || 0;
-            queueItem.quoteStatus = 'ready';
-            queueItem.error = '';
+
+            if (quoteItem.measurement && typeof quoteItem.measurement === 'object') {
+              applyServerMeasurement(quoteItem.measurement, currentQueueItem);
+            }
+            currentQueueItem.billableLengthIn = parsePositiveNumber(quoteItem.billableLengthIn) || 0;
+            currentQueueItem.totalPrice = parsePositiveNumber(quoteItem.totalPrice);
+            currentQueueItem.selectedVariantId = String(quoteItem.selectedVariantId || '');
+            currentQueueItem.selectedVariantTitle = String(quoteItem.selectedVariantTitle || '');
+            currentQueueItem.selectedSheetLabel = String(quoteItem.selectedSheetLabel || '');
+            currentQueueItem.sheetsNeeded = parsePositiveNumber(quoteItem.sheetsNeeded) || 0;
+            currentQueueItem.designsPerSheet = parsePositiveNumber(quoteItem.designsPerSheet) || 0;
+            currentQueueItem.quoteStatus = 'ready';
+            currentQueueItem.error = '';
+            currentQueueItem.quoteRequestKey = '';
             customerPricing.currency = String(data.currency || customerPricing.currency || 'USD');
             return quoteItem;
           } catch (error) {
-            if (requestToken !== vipQuoteRequestToken) return null;
-            queueItem.totalPrice = null;
-            queueItem.billableLengthIn = 0;
-            queueItem.selectedVariantId = '';
-            queueItem.selectedVariantTitle = '';
-            queueItem.selectedSheetLabel = '';
-            queueItem.sheetsNeeded = 0;
-            queueItem.designsPerSheet = 0;
-            queueItem.quoteStatus = 'error';
-            queueItem.error = error && error.message ? error.message : 'Failed to load custom quote.';
+            var currentQueueItem = getCustomQueueItemById(queueItem.uploadId || queueItem.id);
+            if (!currentQueueItem || currentQueueItem.quoteRequestKey !== requestKey) {
+              return null;
+            }
+            currentQueueItem.totalPrice = null;
+            currentQueueItem.billableLengthIn = 0;
+            currentQueueItem.selectedVariantId = '';
+            currentQueueItem.selectedVariantTitle = '';
+            currentQueueItem.selectedSheetLabel = '';
+            currentQueueItem.sheetsNeeded = 0;
+            currentQueueItem.designsPerSheet = 0;
+            currentQueueItem.quoteStatus = 'error';
+            currentQueueItem.error = error && error.message ? error.message : 'Failed to load custom quote.';
+            currentQueueItem.quoteRequestKey = '';
             return null;
           }
         }));
-
-        if (requestToken !== vipQuoteRequestToken) return null;
 
         syncCustomQueueQuoteSummary();
         if (!getCustomQueueItemById(state.activeCustomItemId) && getCustomQueueItems().length) {

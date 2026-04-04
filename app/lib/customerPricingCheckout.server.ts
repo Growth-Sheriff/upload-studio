@@ -7,6 +7,8 @@ import {
   calculateVariantLengthQuote,
   deriveVariantBasedLimits,
   extractVipUploadMeasurement,
+  getMaxWidthLimitForShop,
+  isDtfPrintHouseShop,
   normalizeCustomerId,
   normalizeProductId,
   parseSheetSizeFromTitle,
@@ -133,8 +135,12 @@ function parsePositiveNumber(value: unknown): number | null {
   return parsed
 }
 
-function buildEffectiveResolveConfig(builderConfig: Record<string, unknown> | null | undefined): BuilderResolveConfig {
+function buildEffectiveResolveConfig(
+  builderConfig: Record<string, unknown> | null | undefined,
+  shopDomain: string
+): BuilderResolveConfig {
   const configuredMaxWidth = parsePositiveNumber(builderConfig?.maxWidthIn) || 0
+  const maxWidthLimit = getMaxWidthLimitForShop(shopDomain)
   return {
     sheetOptionName:
       typeof builderConfig?.sheetOptionName === 'string' ? builderConfig.sheetOptionName : null,
@@ -149,7 +155,8 @@ function buildEffectiveResolveConfig(builderConfig: Record<string, unknown> | nu
       : [],
     artboardMarginIn: 0,
     imageMarginIn: 0,
-    maxWidthIn: configuredMaxWidth > 0 ? Math.max(configuredMaxWidth, 22) : 22,
+    maxWidthIn: configuredMaxWidth > 0 ? Math.max(configuredMaxWidth, maxWidthLimit) : maxWidthLimit,
+    fitToleranceIn: isDtfPrintHouseShop(shopDomain) ? 0.5 : 0,
   }
 }
 
@@ -194,15 +201,21 @@ function buildVariantMatrix(
 
 function buildVariantLimits(
   product: ProductQueryResponse['product'],
-  builderConfig: Record<string, unknown> | null | undefined
+  builderConfig: Record<string, unknown> | null | undefined,
+  shopDomain: string
 ): BuilderLimits {
   const variantTitles = (product?.variants.edges || [])
     .map((edge) => edge.node?.title || '')
     .filter(Boolean)
-  return deriveVariantBasedLimits(
+  const limits = deriveVariantBasedLimits(
     variantTitles,
     (builderConfig as BuilderLimits | null | undefined) || null
   )
+  const maxWidthLimit = getMaxWidthLimitForShop(shopDomain)
+  return {
+    ...limits,
+    maxWidthIn: Math.max(parsePositiveNumber(limits.maxWidthIn) || 0, maxWidthLimit),
+  }
 }
 
 export async function prepareCustomPricingQuote({
@@ -378,7 +391,7 @@ export async function prepareCustomPricingJobQuote({
       const builderConfig =
         (productConfig?.builderConfig as Record<string, unknown> | null) || null
       const { optionDefs, variants } = buildVariantMatrix(productData.product)
-      const variantLimits = buildVariantLimits(productData.product, builderConfig)
+      const variantLimits = buildVariantLimits(productData.product, builderConfig, shop.shopDomain)
 
       cachedProduct = {
         builderConfig,
@@ -411,7 +424,7 @@ export async function prepareCustomPricingJobQuote({
         variants: cachedProduct.variants,
         optionDefs: cachedProduct.optionDefs,
         selectedVariantId: itemInput.selectedVariantId || null,
-        config: buildEffectiveResolveConfig(cachedProduct.builderConfig),
+        config: buildEffectiveResolveConfig(cachedProduct.builderConfig, shop.shopDomain),
       })
 
       if (!resolution) {
@@ -432,7 +445,11 @@ export async function prepareCustomPricingJobQuote({
       }
 
       const parsedSheetSize = parseSheetSizeFromTitle(resolution.selectedVariantTitle)
-      if (!parsedSheetSize || measurement.widthIn > parsedSheetSize.widthIn + 0.001) {
+      const selectedSheetMaxWidth =
+        parsedSheetSize?.widthIn != null
+          ? Math.max(parsedSheetSize.widthIn, getMaxWidthLimitForShop(shop.shopDomain))
+          : 0
+      if (!parsedSheetSize || measurement.widthIn > selectedSheetMaxWidth + 0.001) {
         throw new Error('Business design width exceeds the selected sheet width')
       }
 

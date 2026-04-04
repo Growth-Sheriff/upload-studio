@@ -30,6 +30,7 @@ export interface BuilderResolveConfig {
   modalOptionNames?: string[] | null
   artboardMarginIn?: number | null
   imageMarginIn?: number | null
+  fitToleranceIn?: number | null
 }
 
 interface Measurement {
@@ -75,6 +76,12 @@ export interface SheetVariantResolution {
 function normalizeMarginIn(value: number | null | undefined): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed < MIN_MARGIN_IN) return MIN_MARGIN_IN
+  return parsed
+}
+
+function normalizeToleranceIn(value: number | null | undefined): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) return 0
   return parsed
 }
 
@@ -520,19 +527,31 @@ function calculateGridFit(
   const margin = normalizeMarginIn(config.artboardMarginIn)
   const usableWidth = sheet.widthInch - 2 * margin
   const usableHeight = sheet.heightInch - 2 * margin
+  const tolerance = normalizeToleranceIn(config.fitToleranceIn)
 
   if (usableWidth <= 0 || usableHeight <= 0) {
     return { count: 0, efficiency: 0 }
   }
 
-  const normalCount = fitGrid(design.widthInch, design.heightInch, usableWidth, usableHeight, gap)
+  const effectiveDesign = {
+    widthInch:
+      design.widthInch > usableWidth && design.widthInch <= usableWidth + tolerance
+        ? usableWidth
+        : design.widthInch,
+    heightInch:
+      design.heightInch > usableHeight && design.heightInch <= usableHeight + tolerance
+        ? usableHeight
+        : design.heightInch,
+  }
+
+  const normalCount = fitGrid(effectiveDesign.widthInch, effectiveDesign.heightInch, usableWidth, usableHeight, gap)
   const rotatedCount =
-    design.widthInch !== design.heightInch
-      ? fitGrid(design.heightInch, design.widthInch, usableWidth, usableHeight, gap)
+    effectiveDesign.widthInch !== effectiveDesign.heightInch
+      ? fitGrid(effectiveDesign.heightInch, effectiveDesign.widthInch, usableWidth, usableHeight, gap)
       : 0
   const mixedCount =
-    design.widthInch !== design.heightInch
-      ? fitGridMixed(design.widthInch, design.heightInch, usableWidth, usableHeight, gap)
+    effectiveDesign.widthInch !== effectiveDesign.heightInch
+      ? fitGridMixed(effectiveDesign.widthInch, effectiveDesign.heightInch, usableWidth, usableHeight, gap)
       : 0
 
   const count = Math.max(normalCount, rotatedCount, mixedCount)
