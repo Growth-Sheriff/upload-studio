@@ -1197,6 +1197,24 @@
       });
     }
 
+    function getCustomQueueQuotableItems() {
+      return getCustomQueueActionableItems().filter(function(item) {
+        return (
+          item &&
+          item.uploadId &&
+          item.uploadStatus === 'ready' &&
+          item.widthIn > 0 &&
+          item.heightIn > 0
+        );
+      });
+    }
+
+    function getCustomQueueItemsAwaitingQuote() {
+      return getCustomQueueQuotableItems().filter(function(item) {
+        return item && item.quoteStatus !== 'ready';
+      });
+    }
+
     function customQueueHasErrors() {
       return getCustomQueueItems().some(function(item) {
         return item && item.error;
@@ -1208,6 +1226,74 @@
       return items.length > 0 && items.every(function(item) {
         return item && item.uploadId && item.quoteStatus === 'ready' && !item.error;
       });
+    }
+
+    function syncCustomQueueQuoteSummary() {
+      var readyItems = getCustomQueueReadyItems();
+      var quotableItems = getCustomQueueQuotableItems();
+
+      customerPricing.quoteItems = readyItems.map(function(item) {
+        return {
+          uploadId: item.uploadId,
+          fileName: item.fileName || '',
+          requestedQuantity: item.requestedQuantity || 1,
+          billableLengthIn: item.billableLengthIn || 0,
+          totalPrice: item.totalPrice,
+          selectedVariantId: item.selectedVariantId || '',
+          selectedVariantTitle: item.selectedVariantTitle || '',
+          selectedSheetLabel: item.selectedSheetLabel || '',
+          sheetsNeeded: item.sheetsNeeded || 0,
+          designsPerSheet: item.designsPerSheet || 0,
+          measurement: {
+            dpi: item.embeddedDpi || 0,
+            effectiveDpi: item.effectiveDpi || 0,
+            sizingSource: item.sizingSource || null,
+            widthIn: item.widthIn || 0,
+            heightIn: item.heightIn || 0,
+            measurementMode: item.measurementMode || null,
+          },
+        };
+      });
+
+      customerPricing.totalRequestedQuantity = readyItems.reduce(function(sum, item) {
+        return sum + Math.max(1, Number(item.requestedQuantity) || 1);
+      }, 0);
+
+      customerPricing.quoteLengthIn = readyItems.length
+        ? Number(
+            readyItems.reduce(function(sum, item) {
+              return sum + (Number(item.billableLengthIn) || 0);
+            }, 0).toFixed(2)
+          )
+        : null;
+
+      customerPricing.quoteTotal = readyItems.length
+        ? Number(
+            readyItems.reduce(function(sum, item) {
+              return sum + (Number(item.totalPrice) || 0);
+            }, 0).toFixed(2)
+          )
+        : null;
+
+      if (readyItems.length) {
+        var firstReady = readyItems[0];
+        customerPricing.quoteVariantId = firstReady.selectedVariantId || null;
+        customerPricing.quoteVariantTitle = firstReady.selectedVariantTitle || '';
+        customerPricing.quoteSheetLabel = firstReady.selectedSheetLabel || '';
+        customerPricing.quoteSheetsNeeded = readyItems.reduce(function(sum, item) {
+          return sum + (parsePositiveNumber(item.sheetsNeeded) || 0);
+        }, 0) || null;
+        customerPricing.quoteDesignsPerSheet = parsePositiveNumber(firstReady.designsPerSheet) || null;
+        customerPricing.quoteStatus = 'ready';
+        return;
+      }
+
+      customerPricing.quoteVariantId = null;
+      customerPricing.quoteVariantTitle = '';
+      customerPricing.quoteSheetLabel = '';
+      customerPricing.quoteSheetsNeeded = null;
+      customerPricing.quoteDesignsPerSheet = null;
+      customerPricing.quoteStatus = quotableItems.length ? 'loading' : (hasCustomQueueItems() ? 'loading' : 'idle');
     }
 
     function clearError() {
@@ -2257,13 +2343,34 @@
         var totalFiles = queueItems.length;
         var actionableFiles = actionableQueueItems.length;
         var failedFiles = Math.max(0, totalFiles - actionableFiles);
+        var waitingFiles = Math.max(0, actionableFiles - readyCount);
         var totalCopies = queueItems.reduce(function(sum, item) {
           return sum + Math.max(1, Number(item.requestedQuantity) || 1);
         }, 0);
-        lengthLabel =
-          actionableFiles > 0 && readyCount === actionableFiles
-            ? actionableFiles + ' uploaded design' + (actionableFiles === 1 ? '' : 's') + ', ' + totalCopies + ' total cop' + (totalCopies === 1 ? 'y' : 'ies') + '. Billable length: ' + (billableLengthIn ? billableLengthIn.toFixed(2) + '"' : 'pending') + (failedFiles ? '. ' + failedFiles + ' failed file' + (failedFiles === 1 ? '' : 's') + ' excluded from this quote.' : '')
-            : 'Waiting for all ready uploads to finish measuring before calculating the combined quote.' + (failedFiles ? ' Failed uploads are excluded until you remove or replace them.' : '');
+        if (readyCount > 0) {
+          lengthLabel =
+            readyCount +
+            ' of ' +
+            actionableFiles +
+            ' ready design' +
+            (actionableFiles === 1 ? '' : 's') +
+            ', ' +
+            totalCopies +
+            ' total cop' +
+            (totalCopies === 1 ? 'y' : 'ies') +
+            '. Current billable length: ' +
+            (billableLengthIn ? billableLengthIn.toFixed(2) + '"' : 'pending');
+          if (waitingFiles) {
+            lengthLabel += '. ' + waitingFiles + ' upload' + (waitingFiles === 1 ? ' is' : 's are') + ' still measuring.';
+          }
+          if (failedFiles) {
+            lengthLabel += ' ' + failedFiles + ' failed file' + (failedFiles === 1 ? '' : 's') + ' excluded from this quote.';
+          }
+        } else {
+          lengthLabel =
+            'Waiting for the first ready upload to finish measuring before building the running total.' +
+            (failedFiles ? ' Failed uploads are excluded until you remove or replace them.' : '');
+        }
       } else if (isBusiness) {
         if (customerPricing.quoteVariantTitle) {
           lengthLabel = 'Selected sheet: ' + customerPricing.quoteVariantTitle;
@@ -2546,36 +2653,109 @@
       if (!hasCustomPricingActive()) return null;
 
       var requestToken = ++vipQuoteRequestToken;
-      customerPricing.quoteStatus = 'loading';
-      updateVipPricingUI();
-      syncPurchaseButtonsForCurrentState();
-
       var queueMode = hasCustomQueueItems();
       var requestBody;
 
       if (queueMode) {
-        var queueItems = getCustomQueueActionableItems();
+        customerPricing.quoteStatus = getCustomQueueReadyItems().length ? 'ready' : 'loading';
+        syncCustomQueueQuoteSummary();
+        updateVipPricingUI();
+        syncPurchaseButtonsForCurrentState();
+
+        var queueItems = getCustomQueueItemsAwaitingQuote();
         if (!queueItems.length) {
-          return null;
+          syncCustomQueueQuoteSummary();
+          updateVipPreviewUI();
+          updateVipPricingUI();
+          syncPurchaseButtonsForCurrentState();
+          return {
+            items: customerPricing.quoteItems || [],
+            totalPrice: customerPricing.quoteTotal,
+            billableLengthIn: customerPricing.quoteLengthIn,
+            currency: customerPricing.currency,
+          };
         }
-        var hasPendingItem = queueItems.some(function(item) {
-          return !item.uploadId || item.error || !(item.widthIn > 0) || !(item.heightIn > 0) || item.uploadStatus !== 'ready';
-        });
-        if (hasPendingItem) {
-          return null;
+
+        var itemResponses = await Promise.all(queueItems.map(async function(queueItem) {
+          queueItem.quoteStatus = 'processing';
+          queueItem.error = '';
+          try {
+            var response = await fetch(apiBase + '/api/vip/quote', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'same-origin',
+              body: JSON.stringify({
+                shopDomain: shopDomain,
+                productId: String(productData.productId),
+                items: [{
+                  uploadId: queueItem.uploadId,
+                  quantity: queueItem.requestedQuantity || 1,
+                  selectedVariantId: queueItem.selectedVariantId || ''
+                }]
+              })
+            });
+            var data = await response.json().catch(function() { return {}; });
+            if (requestToken !== vipQuoteRequestToken) return null;
+            if (!response.ok) {
+              throw new Error(data && data.error ? data.error : 'Failed to load custom quote.');
+            }
+
+            var quoteItem = Array.isArray(data.items) && data.items[0] ? data.items[0] : null;
+            if (!quoteItem) {
+              throw new Error('Failed to load custom quote.');
+            }
+
+            if (quoteItem.measurement && typeof quoteItem.measurement === 'object') {
+              applyServerMeasurement(quoteItem.measurement, queueItem);
+            }
+            queueItem.billableLengthIn = parsePositiveNumber(quoteItem.billableLengthIn) || 0;
+            queueItem.totalPrice = parsePositiveNumber(quoteItem.totalPrice);
+            queueItem.selectedVariantId = String(quoteItem.selectedVariantId || '');
+            queueItem.selectedVariantTitle = String(quoteItem.selectedVariantTitle || '');
+            queueItem.selectedSheetLabel = String(quoteItem.selectedSheetLabel || '');
+            queueItem.sheetsNeeded = parsePositiveNumber(quoteItem.sheetsNeeded) || 0;
+            queueItem.designsPerSheet = parsePositiveNumber(quoteItem.designsPerSheet) || 0;
+            queueItem.quoteStatus = 'ready';
+            queueItem.error = '';
+            customerPricing.currency = String(data.currency || customerPricing.currency || 'USD');
+            return quoteItem;
+          } catch (error) {
+            if (requestToken !== vipQuoteRequestToken) return null;
+            queueItem.totalPrice = null;
+            queueItem.billableLengthIn = 0;
+            queueItem.selectedVariantId = '';
+            queueItem.selectedVariantTitle = '';
+            queueItem.selectedSheetLabel = '';
+            queueItem.sheetsNeeded = 0;
+            queueItem.designsPerSheet = 0;
+            queueItem.quoteStatus = 'error';
+            queueItem.error = error && error.message ? error.message : 'Failed to load custom quote.';
+            return null;
+          }
+        }));
+
+        if (requestToken !== vipQuoteRequestToken) return null;
+
+        syncCustomQueueQuoteSummary();
+        if (!getCustomQueueItemById(state.activeCustomItemId) && getCustomQueueItems().length) {
+          setActiveCustomQueueItem(getCustomQueueItems()[0].uploadId || getCustomQueueItems()[0].id);
+        } else if (state.activeCustomItemId) {
+          setActiveCustomQueueItem(state.activeCustomItemId);
         }
-        requestBody = {
-          shopDomain: shopDomain,
-          productId: String(productData.productId),
-          items: queueItems.map(function(item) {
-            return {
-              uploadId: item.uploadId,
-              quantity: item.requestedQuantity || 1,
-              selectedVariantId: item.selectedVariantId || ''
-            };
-          })
+        renderCustomQueue();
+        updateVipPreviewUI();
+        updateVipPricingUI();
+        syncPurchaseButtonsForCurrentState();
+        return {
+          items: itemResponses.filter(Boolean),
+          totalPrice: customerPricing.quoteTotal,
+          billableLengthIn: customerPricing.quoteLengthIn,
+          currency: customerPricing.currency,
         };
       } else {
+        customerPricing.quoteStatus = 'loading';
+        updateVipPricingUI();
+        syncPurchaseButtonsForCurrentState();
         if (!state.uploadId || !(state.widthIn > 0) || !(state.heightIn > 0)) return null;
         requestBody = {
           shopDomain: shopDomain,
@@ -2678,34 +2858,6 @@
         customerPricing.currency = String(data.currency || data.quote && data.quote.currency || customerPricing.currency || 'USD');
         customerPricing.statusLabel = String(data.statusLabel || data.quote && data.quote.statusLabel || customerPricing.statusLabel || '').trim();
         clearError();
-        if (queueMode) {
-          customerPricing.quoteItems.forEach(function(quoteItem) {
-            var queueItem = getCustomQueueItemById(quoteItem.uploadId || '');
-            if (!queueItem) return;
-            if (quoteItem.measurement && typeof quoteItem.measurement === 'object') {
-              applyServerMeasurement(quoteItem.measurement, queueItem);
-            }
-            queueItem.billableLengthIn = parsePositiveNumber(quoteItem.billableLengthIn) || 0;
-            queueItem.totalPrice = parsePositiveNumber(quoteItem.totalPrice);
-            queueItem.selectedVariantId = String(quoteItem.selectedVariantId || '');
-            queueItem.selectedVariantTitle = String(quoteItem.selectedVariantTitle || '');
-            queueItem.selectedSheetLabel = String(quoteItem.selectedSheetLabel || '');
-            queueItem.sheetsNeeded = parsePositiveNumber(quoteItem.sheetsNeeded) || 0;
-            queueItem.designsPerSheet = parsePositiveNumber(quoteItem.designsPerSheet) || 0;
-            queueItem.quoteStatus = 'ready';
-            queueItem.error = '';
-          });
-          if (!getCustomQueueItemById(state.activeCustomItemId) && getCustomQueueItems().length) {
-            setActiveCustomQueueItem(getCustomQueueItems()[0].uploadId || getCustomQueueItems()[0].id);
-          } else if (state.activeCustomItemId) {
-            setActiveCustomQueueItem(state.activeCustomItemId);
-          }
-          renderCustomQueue();
-          updateVipPreviewUI();
-          updateVipPricingUI();
-          syncPurchaseButtonsForCurrentState();
-          return data;
-        }
         if (isBusinessPricingActive() && customerPricing.quoteVariantId) {
           state.selectedResult = {
             selectedVariantId: customerPricing.quoteVariantId,
@@ -2724,11 +2876,7 @@
         if (requestToken !== vipQuoteRequestToken) return null;
         customerPricing.quoteStatus = 'error';
         if (queueMode) {
-          getCustomQueueItems().forEach(function(item) {
-            if (!item.error) {
-              item.quoteStatus = 'error';
-            }
-          });
+          syncCustomQueueQuoteSummary();
           renderCustomQueue();
         }
         showError(error && error.message ? error.message : 'Failed to load custom quote.');
@@ -3121,6 +3269,18 @@
               renderCustomQueue();
               updateVipPreviewUI();
               await loadVipQuote();
+              if (queueItem.error) {
+                updateCustomBatchProgressForFile(
+                  batchMeta,
+                  'Quote blocked for ' + (queueItem.fileName || 'uploaded file'),
+                  1,
+                  queueItem.error
+                );
+                renderCustomQueue();
+                updateVipPreviewUI();
+                syncPurchaseButtonsForCurrentState();
+                return false;
+              }
               updateCustomBatchProgressForFile(
                 batchMeta,
                 (queueItem.fileName || 'Uploaded file') + ' is ready',
