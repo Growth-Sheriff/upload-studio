@@ -1191,6 +1191,12 @@
       });
     }
 
+    function getCustomQueueActionableItems() {
+      return getCustomQueueItems().filter(function(item) {
+        return item && item.uploadId && !item.error;
+      });
+    }
+
     function customQueueHasErrors() {
       return getCustomQueueItems().some(function(item) {
         return item && item.error;
@@ -1198,7 +1204,7 @@
     }
 
     function customQueueAllReady() {
-      var items = getCustomQueueItems();
+      var items = getCustomQueueActionableItems();
       return items.length > 0 && items.every(function(item) {
         return item && item.uploadId && item.quoteStatus === 'ready' && !item.error;
       });
@@ -2046,7 +2052,7 @@
 
       vipPreviewCard.classList.remove('hidden');
       var queueItems = hasCustomQueueItems() ? getCustomQueueItems() : [];
-      var previewItems = queueItems.map(buildPreviewBoardDataFromItem).filter(Boolean);
+      var previewItems = getCustomQueueActionableItems().map(buildPreviewBoardDataFromItem).filter(Boolean);
 
       if (!previewItems.length && state.uploadId) {
         var singleItem = buildPreviewBoardDataFromItem({
@@ -2237,6 +2243,7 @@
       }
 
       var queueItems = getCustomQueueItems();
+      var actionableQueueItems = getCustomQueueActionableItems();
       var queueMode = queueItems.length > 0;
       var billableLengthIn = customerPricing.quoteLengthIn || getBillablePageLengthIn();
       var billableWidthIn = getBillablePageWidthIn();
@@ -2248,13 +2255,15 @@
       if (queueMode) {
         var readyCount = getCustomQueueReadyItems().length;
         var totalFiles = queueItems.length;
+        var actionableFiles = actionableQueueItems.length;
+        var failedFiles = Math.max(0, totalFiles - actionableFiles);
         var totalCopies = queueItems.reduce(function(sum, item) {
           return sum + Math.max(1, Number(item.requestedQuantity) || 1);
         }, 0);
         lengthLabel =
-          readyCount === totalFiles
-            ? totalFiles + ' uploaded design' + (totalFiles === 1 ? '' : 's') + ', ' + totalCopies + ' total cop' + (totalCopies === 1 ? 'y' : 'ies') + '. Billable length: ' + (billableLengthIn ? billableLengthIn.toFixed(2) + '"' : 'pending')
-            : 'Waiting for all uploaded designs to finish measuring before calculating the combined quote.';
+          actionableFiles > 0 && readyCount === actionableFiles
+            ? actionableFiles + ' uploaded design' + (actionableFiles === 1 ? '' : 's') + ', ' + totalCopies + ' total cop' + (totalCopies === 1 ? 'y' : 'ies') + '. Billable length: ' + (billableLengthIn ? billableLengthIn.toFixed(2) + '"' : 'pending') + (failedFiles ? '. ' + failedFiles + ' failed file' + (failedFiles === 1 ? '' : 's') + ' excluded from this quote.' : '')
+            : 'Waiting for all ready uploads to finish measuring before calculating the combined quote.' + (failedFiles ? ' Failed uploads are excluded until you remove or replace them.' : '');
       } else if (isBusiness) {
         if (customerPricing.quoteVariantTitle) {
           lengthLabel = 'Selected sheet: ' + customerPricing.quoteVariantTitle;
@@ -2545,7 +2554,10 @@
       var requestBody;
 
       if (queueMode) {
-        var queueItems = getCustomQueueItems();
+        var queueItems = getCustomQueueActionableItems();
+        if (!queueItems.length) {
+          return null;
+        }
         var hasPendingItem = queueItems.some(function(item) {
           return !item.uploadId || item.error || !(item.widthIn > 0) || !(item.heightIn > 0) || item.uploadStatus !== 'ready';
         });
@@ -3554,7 +3566,7 @@
       try {
         if (isCustomPricing) {
           var customItemsPayload = hasCustomQueueItems()
-            ? getCustomQueueItems().map(function(item) {
+            ? getCustomQueueReadyItems().map(function(item) {
                 return {
                   uploadId: item.uploadId,
                   quantity: item.requestedQuantity || 1,
