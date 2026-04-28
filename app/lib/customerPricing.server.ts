@@ -117,6 +117,9 @@ export interface ParsedSheetSize {
 export interface ProductRuleCatalogItem {
   productId: string
   label: string
+  source?: 'default' | 'product_config' | 'rule'
+  eligible?: boolean
+  missing?: boolean
 }
 
 const DEFAULT_BUSINESS_PRICE_PER_INCH = 0.2
@@ -190,11 +193,29 @@ function normalizeProductLabel(productId: string): string {
   return match?.label || productId
 }
 
-function ensureProductId(value: unknown): string | null {
+function normalizeProductIdValue(value: unknown, allowWildcard: boolean): string | null {
   if (value == null) return null
   const raw = String(value).trim()
   if (!raw) return null
-  return raw.startsWith('gid://') ? raw : `gid://shopify/Product/${raw}`
+  if (raw === '*') return allowWildcard ? '*' : null
+
+  const productGidMatch = raw.match(/^gid:\/\/shopify\/Product\/(\d+)$/)
+  if (productGidMatch?.[1]) {
+    return `gid://shopify/Product/${productGidMatch[1]}`
+  }
+
+  if (raw.startsWith('gid://')) return null
+
+  const numericIdMatch = raw.match(/^\d+$/)
+  if (numericIdMatch) {
+    return `gid://shopify/Product/${raw}`
+  }
+
+  return null
+}
+
+function ensureProductId(value: unknown): string | null {
+  return normalizeProductIdValue(value, true)
 }
 
 function isWildcardProductId(productId: string | null | undefined): boolean {
@@ -204,7 +225,16 @@ function isWildcardProductId(productId: string | null | undefined): boolean {
 function productRuleMatches(ruleProductId: string, productId: string | null): boolean {
   if (isWildcardProductId(ruleProductId)) return true
   if (!productId) return false
-  return ensureProductId(ruleProductId) === productId
+  return normalizeProductIdValue(ruleProductId, false) === productId
+}
+
+function productRuleKey(productId: string | null | undefined): string {
+  if (isWildcardProductId(productId)) return '*'
+  return normalizeProductIdValue(productId, false) || String(productId || '').trim()
+}
+
+function productRuleIdsEqual(left: string | null | undefined, right: string | null | undefined): boolean {
+  return productRuleKey(left) === productRuleKey(right)
 }
 
 function findBestProductRule<T extends { productId: string }>(
@@ -232,7 +262,7 @@ function ensureStatusRule(
   rules: CustomerPricingProductRule[],
   nextRule: CustomerPricingProductRule
 ): CustomerPricingProductRule[] {
-  const existingIndex = rules.findIndex((rule) => rule.productId === nextRule.productId)
+  const existingIndex = rules.findIndex((rule) => productRuleIdsEqual(rule.productId, nextRule.productId))
   if (existingIndex < 0) return rules.concat(nextRule)
   return rules.map((rule, index) => (index === existingIndex ? nextRule : rule))
 }
@@ -256,7 +286,7 @@ function normalizeCustomerEmail(value: string | null | undefined): string {
 }
 
 export function normalizeProductId(value: string | number | null | undefined): string | null {
-  return ensureProductId(value)
+  return normalizeProductIdValue(value, false)
 }
 
 export function isDtfPrintHouseShop(shopDomain: string | null | undefined): boolean {
@@ -517,7 +547,9 @@ export function applyCustomerPricingDefaultsForShop(
     }
 
     for (const defaultRule of defaultStatus.productRules) {
-      const currentRule = currentStatus.productRules.find((rule) => rule.productId === defaultRule.productId)
+      const currentRule = currentStatus.productRules.find((rule) =>
+        productRuleIdsEqual(rule.productId, defaultRule.productId)
+      )
       if (!currentRule) {
         nextStatus = {
           ...nextStatus,

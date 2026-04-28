@@ -50,6 +50,8 @@ const PRODUCT_TITLES_QUERY = `#graphql
       ... on Product {
         id
         title
+        handle
+        status
       }
     }
   }
@@ -128,7 +130,16 @@ function normalizeProductIdLocal(value: string | number | null | undefined): str
   if (value == null) return null
   const raw = String(value).trim()
   if (!raw) return null
-  return raw.startsWith('gid://') ? raw : `gid://shopify/Product/${raw}`
+  if (raw === '*') return '*'
+  const productGidMatch = raw.match(/^gid:\/\/shopify\/Product\/(\d+)$/)
+  if (productGidMatch?.[1]) return `gid://shopify/Product/${productGidMatch[1]}`
+  if (raw.startsWith('gid://')) return null
+  if (/^\d+$/.test(raw)) return `gid://shopify/Product/${raw}`
+  return null
+}
+
+function productRuleKey(value: string | number | null | undefined): string {
+  return normalizeProductIdLocal(value) || String(value || '').trim()
 }
 
 function buildCustomerSearchQueries(search: string): string[] {
@@ -139,8 +150,8 @@ function buildCustomerSearchQueries(search: string): string[] {
 }
 
 function toStatusEditor(status: CustomerPricingStatus, productCatalog: ProductRuleCatalogItem[]): StatusEditor {
-  const existingRuleMap = status.productRules.reduce<Record<string, CustomerPricingProductRule>>((acc, rule) => {
-    acc[normalizeProductIdLocal(rule.productId) || rule.productId] = rule
+  const catalogMap = productCatalog.reduce<Record<string, ProductRuleCatalogItem>>((acc, product) => {
+    acc[productRuleKey(product.productId)] = product
     return acc
   }, {})
 
@@ -151,17 +162,15 @@ function toStatusEditor(status: CustomerPricingStatus, productCatalog: ProductRu
     type: status.type,
     active: status.active,
     pricePerInch: formatEditableRate(status.pricePerInch),
-    productRules: productCatalog.map((product) => {
-      const existingRule = existingRuleMap[product.productId]
+    productRules: status.productRules.map((rule) => {
+      const product = catalogMap[productRuleKey(rule.productId)]
       return {
-        id: existingRule?.id || `${status.key}_${product.productId.split('/').pop()}`,
-        productId: product.productId,
-        productLabel: existingRule?.productLabel || product.label,
-        active: existingRule?.active ?? false,
-        pricingMode:
-          existingRule?.pricingMode ||
-          (status.type === 'business' ? 'variant_length' : status.type === 'vip' ? 'measured_length' : 'standard_variant'),
-        pricePerInch: formatEditableRate(existingRule?.pricePerInch ?? status.pricePerInch),
+        id: rule.id || `${status.key}_${String(rule.productId).split('/').pop()}`,
+        productId: normalizeProductIdLocal(rule.productId) || rule.productId,
+        productLabel: product?.label || rule.productLabel || rule.productId,
+        active: rule.active,
+        pricingMode: rule.pricingMode,
+        pricePerInch: formatEditableRate(rule.pricePerInch ?? status.pricePerInch),
       }
     }),
   }
@@ -186,19 +195,146 @@ function serializeStatusesForSave(statuses: StatusEditor[]) {
   }))
 }
 
+function isCustomPricingMode(value: unknown): value is ProductRuleEditor['pricingMode'] {
+  return value === 'variant_length' || value === 'measured_length' || value === 'standard_variant'
+}
+
+function validateSubmittedStatuses(
+  parsedStatuses: unknown[],
+  existingConfig: CustomerPricingSettings,
+  productCatalog: ProductRuleCatalogItem[]
+): string | null {
+  const eligibleProducts = new Set(
+    productCatalog
+      .filter((product) => product.eligible !== false && !product.missing)
+      .map((product) => productRuleKey(product.productId))
+  )
+  const catalogProducts = new Set(productCatalog.map((product) => productRuleKey(product.productId)))
+
+  for (const entry of parsedStatuses) {
+    const status = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {}
+    const statusKey = String(status.key || '').trim()
+    const existingStatus = existingConfig.statuses.find((item) => item.key === statusKey) || null
+    const productRules = Array.isArray(status.productRules) ? status.productRules : []
+    const seenProducts = new Set<string>()
+
+    for (const ruleEntry of productRules) {
+      const rule = ruleEntry && typeof ruleEntry === 'object' ? (ruleEntry as Record<string, unknown>) : {}
+      const productId = normalizeProductIdLocal(rule.productId as string | number | null | undefined)
+      const productKey = productRuleKey(rule.productId as string | number | null | undefined)
+      if (seenProducts.has(productKey)) {
+        return 'Each status can only contain one rule per product.'
+      }
+      seenProducts.add(productKey)
+
+      const pricingMode = String(rule.pricingMode || '')
+      if (!isCustomPricingMode(pricingMode)) {
+        return 'Product rule has an invalid pricing mode.'
+      }
+
+      const active = rule.active !== false
+      const pricePerInch = Number(rule.pricePerInch)
+      if (active && pricingMode !== 'standard_variant' && !(pricePerInch > 0)) {
+        return 'Active custom product rules require a positive price per inch.'
+      }
+
+      const existingRule = existingStatus?.productRules.find(
+        (item) => productRuleKey(item.productId) === productKey
+      )
+      const isExistingRule = Boolean(existingRule)
+      const isNewlyActivated = active && existingRule?.active === false
+
+      if (!productId || productId === '*') {
+        if (!isExistingRule || isNewlyActivated) {
+          return 'New product rules must use a Shopify product ID, not a variant ID, handle, or wildcard.'
+        }
+        continue
+      }
+
+      if (
+        active &&
+        (!catalogProducts.has(productKey) || (!eligibleProducts.has(productKey) && (!isExistingRule || isNewlyActivated)))
+      ) {
+        return 'Product rules can only be activated for upload-enabled products in this shop.'
+      }
+    }
+  }
+
+  return null
+}
+
 async function loadProductCatalog(
   admin: Awaited<ReturnType<typeof authenticate.admin>>['admin'],
-  config: CustomerPricingSettings
+  shopId: string,
+  config: CustomerPricingSettings,
+  defaultCatalog: ProductRuleCatalogItem[] = []
 ): Promise<ProductRuleCatalogItem[]> {
-  const productIds = Array.from(
-    new Set(
-      config.statuses.flatMap((status) =>
-        status.productRules
-          .map((rule) => normalizeProductIdLocal(rule.productId))
-          .filter((productId): productId is string => Boolean(productId) && productId !== '*')
-      )
-    )
+  const catalogMap = new Map<string, ProductRuleCatalogItem>()
+
+  function upsertCatalogItem(nextItem: ProductRuleCatalogItem) {
+    const productId = normalizeProductIdLocal(nextItem.productId)
+    if (!productId || productId === '*') return
+    const existing = catalogMap.get(productId)
+    catalogMap.set(productId, {
+      productId,
+      label: existing?.label || nextItem.label || productId,
+      source: existing?.source || nextItem.source,
+      eligible: Boolean(existing?.eligible || nextItem.eligible),
+      missing: existing?.missing ?? nextItem.missing,
+    })
+  }
+
+  defaultCatalog.forEach((product) =>
+    upsertCatalogItem({
+      ...product,
+      source: 'default',
+      eligible: true,
+    })
   )
+
+  const productConfigs = await prisma.productConfig.findMany({
+    where: { shopId },
+    select: {
+      productId: true,
+      uploadEnabled: true,
+      enabled: true,
+    },
+  })
+
+  productConfigs
+    .filter((product) => product.uploadEnabled && product.enabled)
+    .forEach((product) =>
+      upsertCatalogItem({
+        productId: product.productId,
+        label: product.productId,
+        source: 'product_config',
+        eligible: true,
+      })
+    )
+
+  config.statuses.forEach((status) => {
+    status.productRules.forEach((rule) =>
+      upsertCatalogItem({
+        productId: rule.productId,
+        label: rule.productLabel || rule.productId,
+        source: 'rule',
+        eligible: false,
+      })
+    )
+  })
+
+  config.assignments.forEach((assignment) => {
+    assignment.productOverrides.forEach((override) =>
+      upsertCatalogItem({
+        productId: override.productId,
+        label: override.productId,
+        source: 'rule',
+        eligible: false,
+      })
+    )
+  })
+
+  const productIds = Array.from(catalogMap.keys())
 
   if (!productIds.length) {
     return []
@@ -210,15 +346,30 @@ async function loadProductCatalog(
     })
     const payload = await response.json()
     const nodes = Array.isArray(payload?.data?.nodes) ? payload.data.nodes : []
-    return nodes
-      .filter((node: { id?: string; title?: string } | null) => Boolean(node?.id))
-      .map((node: { id: string; title?: string | null }) => ({
-        productId: node.id,
-        label: String(node.title || node.id),
-      }))
+    const titleMap = new Map<string, { title: string; missing: boolean }>(
+      nodes
+        .filter((node: { id?: string; title?: string } | null) => Boolean(node?.id))
+        .map((node: { id: string; title?: string | null; status?: string | null }) => [
+          node.id,
+          {
+            title: String(node.title || node.id),
+            missing: false,
+          },
+        ])
+    )
+
+    return productIds.map((productId) => {
+      const product = catalogMap.get(productId)!
+      const shopifyProduct = titleMap.get(productId)
+      return {
+        ...product,
+        label: shopifyProduct?.title || product.label,
+        missing: shopifyProduct ? false : true,
+      }
+    })
   } catch (error) {
     console.error('[Customer Pricing] Product title lookup failed:', error)
-    return productIds.map((productId) => ({ productId, label: productId }))
+    return productIds.map((productId) => catalogMap.get(productId) || { productId, label: productId })
   }
 }
 
@@ -231,12 +382,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const { session, admin } = await authenticate.admin(request)
   const shop = await prisma.shop.findUnique({
     where: { shopDomain: session.shop },
-    select: { settings: true },
+    select: { id: true, settings: true },
   })
 
   const isDtf = isDtfPrintHouseShop(session.shop)
   const config = applyCustomerPricingDefaultsForShop(session.shop, shop?.settings || {})
-  const productCatalog = isDtf ? getDtfPrintHouseProductCatalog() : await loadProductCatalog(admin, config)
+  const productCatalog = await loadProductCatalog(
+    admin,
+    shop?.id || '',
+    config,
+    isDtf ? getDtfPrintHouseProductCatalog() : []
+  )
   const url = new URL(request.url)
   const search = String(url.searchParams.get('q') || '').trim()
   let searchResults: SearchCustomer[] = []
@@ -281,16 +437,18 @@ export async function action({ request }: ActionFunctionArgs) {
   const {
     applyCustomerPricingDefaultsForShop,
     buildCustomerPricingSettingsPayload,
+    getDtfPrintHouseProductCatalog,
+    isDtfPrintHouseShop,
     normalizeCustomerId,
     normalizeCustomerPricingSettings,
   } = await import('~/lib/customerPricing.server')
-  const { session } = await authenticate.admin(request)
+  const { session, admin } = await authenticate.admin(request)
   const formData = await request.formData()
   const intent = String(formData.get('intent') || '')
 
   const shop = await prisma.shop.findUnique({
     where: { shopDomain: session.shop },
-    select: { settings: true },
+    select: { id: true, settings: true },
   })
 
   if (!shop) {
@@ -299,6 +457,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const existingSettings = (shop.settings as Record<string, unknown> | null) || {}
   const existingConfig = applyCustomerPricingDefaultsForShop(session.shop, existingSettings)
+  const defaultCatalog = isDtfPrintHouseShop(session.shop) ? getDtfPrintHouseProductCatalog() : []
+  const productCatalog = await loadProductCatalog(admin, shop.id, existingConfig, defaultCatalog)
 
   if (intent === 'save-config') {
     let parsedStatuses: unknown[] = []
@@ -306,6 +466,11 @@ export async function action({ request }: ActionFunctionArgs) {
       parsedStatuses = JSON.parse(String(formData.get('statusesJson') || '[]'))
     } catch {
       return json({ success: false, error: 'Invalid status payload' }, { status: 400 })
+    }
+
+    const validationError = validateSubmittedStatuses(parsedStatuses, existingConfig, productCatalog)
+    if (validationError) {
+      return json({ success: false, error: validationError }, { status: 400 })
     }
 
     const nextConfig = normalizeCustomerPricingSettings({
@@ -344,7 +509,9 @@ export async function action({ request }: ActionFunctionArgs) {
         productOverrides = parsedOverrides
           .map((entry) => {
             const value = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {}
-            const productId = normalizeProductIdLocal(value.productId)
+            const productId = normalizeProductIdLocal(
+              value.productId as string | number | null | undefined
+            )
             const pricePerInch = parseLocalizedPositiveNumber(value.pricePerInch, 0)
             if (!productId || !(pricePerInch > 0)) return null
             return { productId, pricePerInch }
@@ -437,11 +604,13 @@ export default function CustomerPricingPage() {
   const [statuses, setStatuses] = useState<StatusEditor[]>(
     config.statuses.map((status) => toStatusEditor(status, productCatalog))
   )
+  const [newRuleProductIds, setNewRuleProductIds] = useState<Record<string, string>>({})
 
   useEffect(() => {
     setEnabled(config.enabled)
     setSearchInput(search)
     setStatuses(config.statuses.map((status) => toStatusEditor(status, productCatalog)))
+    setNewRuleProductIds({})
   }, [config, productCatalog, search])
 
   const actionMessage = actionData?.message || null
@@ -454,6 +623,10 @@ export default function CustomerPricingPage() {
   const assignments = config.assignments
   const assignmentLookup = assignments.reduce<Record<string, CustomerPricingAssignment>>((acc, assignment) => {
     acc[assignment.customerId] = assignment
+    return acc
+  }, {})
+  const productCatalogMap = productCatalog.reduce<Record<string, ProductRuleCatalogItem>>((acc, product) => {
+    acc[productRuleKey(product.productId)] = product
     return acc
   }, {})
 
@@ -497,6 +670,47 @@ export default function CustomerPricingPage() {
     )
   }
 
+  function availableProductsForStatus(status: StatusEditor): ProductRuleCatalogItem[] {
+    const existingProducts = new Set(status.productRules.map((rule) => productRuleKey(rule.productId)))
+    return productCatalog.filter(
+      (product) =>
+        product.eligible !== false &&
+        !product.missing &&
+        !existingProducts.has(productRuleKey(product.productId))
+    )
+  }
+
+  function addStatusRule(statusKey: string) {
+    setStatuses((current) =>
+      current.map((status) => {
+        if (status.key !== statusKey) return status
+        const availableProducts = availableProductsForStatus(status)
+        const selectedProductId = newRuleProductIds[status.key] || availableProducts[0]?.productId || ''
+        const selectedProduct = productCatalogMap[productRuleKey(selectedProductId)]
+        if (!selectedProduct) return status
+        const pricingMode =
+          status.type === 'business'
+            ? 'variant_length'
+            : status.type === 'vip'
+              ? 'measured_length'
+              : 'standard_variant'
+
+        return {
+          ...status,
+          productRules: status.productRules.concat({
+            id: `${status.key}_${selectedProduct.productId.split('/').pop()}`,
+            productId: selectedProduct.productId,
+            productLabel: selectedProduct.label,
+            active: true,
+            pricingMode,
+            pricePerInch: status.pricePerInch || '0.2',
+          }),
+        }
+      })
+    )
+    setNewRuleProductIds((current) => ({ ...current, [statusKey]: '' }))
+  }
+
   return (
     <Page title="Customer Pricing" backAction={{ content: 'Settings', url: '/app/settings' }}>
       <Layout>
@@ -526,7 +740,9 @@ export default function CustomerPricingPage() {
             <Card>
               <BlockStack gap="150">
                 <Text as="h2" variant="headingMd">Business</Text>
-                <Badge tone="success">{assignments.filter((item) => item.statusKey === 'business').length} assigned</Badge>
+                <Badge tone="success">
+                  {`${assignments.filter((item) => item.statusKey === 'business').length} assigned`}
+                </Badge>
                 <Text as="p" variant="bodyMd" tone="subdued">
                   Business customers keep upload sheet fitting, but checkout uses your per-inch rate on the selected sheet length.
                 </Text>
@@ -535,7 +751,9 @@ export default function CustomerPricingPage() {
             <Card>
               <BlockStack gap="150">
                 <Text as="h2" variant="headingMd">VIP</Text>
-                <Badge tone="attention">{assignments.filter((item) => item.statusKey === 'vip').length} assigned</Badge>
+                <Badge tone="attention">
+                  {`${assignments.filter((item) => item.statusKey === 'vip').length} assigned`}
+                </Badge>
                 <Text as="p" variant="bodyMd" tone="subdued">
                   VIP customers skip variant pricing and pay from the exact measured uploaded page length.
                 </Text>
@@ -576,79 +794,155 @@ export default function CustomerPricingPage() {
                 <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
                   {statuses
                     .filter((status) => status.type !== 'standard')
-                    .map((status) => (
-                      <Card key={status.key} background="bg-surface-secondary">
-                        <BlockStack gap="400">
-                          <InlineStack align="space-between" blockAlign="center">
-                            <BlockStack gap="050">
-                              <Text as="h3" variant="headingSm">
-                                {status.type === 'business' ? 'Business status' : 'VIP status'}
-                              </Text>
-                              <Text as="p" variant="bodySm" tone="subdued">
-                                {status.type === 'business'
-                                  ? 'Charges from the resolved upload sheet length.'
-                                  : 'Charges from the exact measured uploaded page length.'}
-                              </Text>
-                            </BlockStack>
-                            <Badge tone={status.type === 'business' ? 'success' : 'attention'}>
-                              {status.type.toUpperCase()}
-                            </Badge>
-                          </InlineStack>
+                    .map((status) => {
+                      const availableProducts = availableProductsForStatus(status)
+                      const selectedProductId =
+                        newRuleProductIds[status.key] || availableProducts[0]?.productId || ''
 
-                          <TextField
-                            label="Storefront label"
-                            autoComplete="off"
-                            value={status.label}
-                            onChange={(value) => updateStatusLabel(status.key, value)}
-                          />
+                      return (
+                        <Card key={status.key} background="bg-surface-secondary">
+                          <BlockStack gap="400">
+                            <InlineStack align="space-between" blockAlign="center">
+                              <BlockStack gap="050">
+                                <Text as="h3" variant="headingSm">
+                                  {status.type === 'business' ? 'Business status' : 'VIP status'}
+                                </Text>
+                                <Text as="p" variant="bodySm" tone="subdued">
+                                  {status.type === 'business'
+                                    ? 'Charges from the resolved upload sheet length.'
+                                    : 'Charges from the exact measured uploaded page length.'}
+                                </Text>
+                              </BlockStack>
+                              <Badge tone={status.type === 'business' ? 'success' : 'attention'}>
+                                {status.type.toUpperCase()}
+                              </Badge>
+                            </InlineStack>
 
-                          <BlockStack gap="300">
-                            {status.productRules.map((rule) => (
-                              <Box
-                                key={`${status.key}_${rule.productId}`}
-                                padding="300"
-                                borderWidth="025"
-                                borderColor="border"
-                                borderRadius="200"
-                              >
-                                <BlockStack gap="250">
-                                  <InlineStack align="space-between" blockAlign="center">
-                                    <Text as="p" variant="bodyMd" fontWeight="medium">
-                                      {rule.productLabel}
-                                    </Text>
-                                    <Badge tone={rule.active ? 'success' : undefined}>
-                                      {rule.active ? 'Enabled' : 'Disabled'}
-                                    </Badge>
+                            <TextField
+                              label="Storefront label"
+                              autoComplete="off"
+                              value={status.label}
+                              onChange={(value) => updateStatusLabel(status.key, value)}
+                            />
+
+                            <BlockStack gap="300">
+                              {status.productRules.map((rule) => {
+                                const product = productCatalogMap[productRuleKey(rule.productId)]
+                                const productBadge =
+                                  product?.missing
+                                    ? 'Missing product'
+                                    : product?.eligible === false
+                                      ? 'Saved rule'
+                                      : rule.active
+                                        ? 'Enabled'
+                                        : 'Disabled'
+
+                                return (
+                                  <Box
+                                    key={`${status.key}_${rule.productId}`}
+                                    padding="300"
+                                    borderWidth="025"
+                                    borderColor="border"
+                                    borderRadius="200"
+                                  >
+                                    <BlockStack gap="200">
+                                      <InlineStack align="space-between" blockAlign="center">
+                                        <BlockStack gap="050">
+                                          <Text as="p" variant="bodyMd" fontWeight="medium">
+                                            {rule.productLabel}
+                                          </Text>
+                                          <Text as="p" variant="bodySm" tone="subdued">
+                                            {rule.productId}
+                                          </Text>
+                                        </BlockStack>
+                                        <Badge tone={rule.active && !product?.missing ? 'success' : undefined}>
+                                          {productBadge}
+                                        </Badge>
+                                      </InlineStack>
+
+                                      <Checkbox
+                                        label="Rule is active"
+                                        checked={rule.active}
+                                        onChange={(value) => updateStatusRule(status.key, rule.productId, 'active', value)}
+                                      />
+
+                                      <Select
+                                        label="Pricing mode"
+                                        options={[
+                                          { label: 'Standard Shopify variant price', value: 'standard_variant' },
+                                          { label: 'Selected sheet length x rate', value: 'variant_length' },
+                                          { label: 'Measured uploaded length x rate', value: 'measured_length' },
+                                        ]}
+                                        value={rule.pricingMode}
+                                        onChange={(value) => updateStatusRule(status.key, rule.productId, 'pricingMode', value)}
+                                      />
+
+                                      <TextField
+                                        label="Price per inch"
+                                        autoComplete="off"
+                                        type="text"
+                                        inputMode="decimal"
+                                        prefix="$"
+                                        value={rule.pricePerInch}
+                                        onChange={(value) => updateStatusRule(status.key, rule.productId, 'pricePerInch', value)}
+                                      />
+
+                                      <Text as="p" variant="bodySm" tone="subdued">
+                                        {rule.pricingMode === 'standard_variant'
+                                          ? 'Checkout uses the normal Shopify variant price.'
+                                          : rule.pricingMode === 'variant_length'
+                                            ? 'Checkout total = selected sheet length x sheets needed x this rate.'
+                                            : 'Checkout total = measured uploaded page length x this rate.'}
+                                      </Text>
+                                    </BlockStack>
+                                  </Box>
+                                )
+                              })}
+
+                              <Box padding="300" borderWidth="025" borderColor="border" borderRadius="200">
+                                <BlockStack gap="200">
+                                  <Text as="p" variant="bodyMd" fontWeight="medium">
+                                    Add product rule
+                                  </Text>
+                                  <InlineStack gap="300" align="start" blockAlign="end">
+                                    <div style={{ flex: 1 }}>
+                                      <Select
+                                        label="Upload product"
+                                        disabled={!availableProducts.length}
+                                        options={
+                                          availableProducts.length
+                                            ? availableProducts.map((product) => ({
+                                                label: product.label,
+                                                value: product.productId,
+                                              }))
+                                            : [{ label: 'No more upload-enabled products', value: '' }]
+                                        }
+                                        value={selectedProductId}
+                                        onChange={(value) =>
+                                          setNewRuleProductIds((current) => ({
+                                            ...current,
+                                            [status.key]: value,
+                                          }))
+                                        }
+                                      />
+                                    </div>
+                                    <Button
+                                      onClick={() => addStatusRule(status.key)}
+                                      disabled={!availableProducts.length}
+                                    >
+                                      Add Rule
+                                    </Button>
                                   </InlineStack>
-
-                                  <Checkbox
-                                    label="Rule is active"
-                                    checked={rule.active}
-                                    onChange={(value) => updateStatusRule(status.key, rule.productId, 'active', value)}
-                                  />
-
-                                  <TextField
-                                    label="Price per inch"
-                                    autoComplete="off"
-                                    type="text"
-                                    inputMode="decimal"
-                                    prefix="$"
-                                    value={rule.pricePerInch}
-                                    onChange={(value) => updateStatusRule(status.key, rule.productId, 'pricePerInch', value)}
-                                  />
-
                                   <Text as="p" variant="bodySm" tone="subdued">
-                                    {rule.pricingMode === 'variant_length'
-                                      ? 'Checkout total = selected sheet length x sheets needed x this rate.'
-                                      : 'Checkout total = measured uploaded page length x this rate.'}
+                                    Products must be configured as upload-enabled before they can be activated here.
                                   </Text>
                                 </BlockStack>
                               </Box>
-                            ))}
+                            </BlockStack>
                           </BlockStack>
-                        </BlockStack>
-                      </Card>
-                    ))}
+                        </Card>
+                      )
+                    })}
                 </InlineGrid>
               </BlockStack>
             </Form>
