@@ -123,6 +123,7 @@ function customerIdFromGraphql(node: { legacyResourceId?: string | number | null
 function parseLocalizedPositiveNumber(value: unknown, fallback = 0): number {
   const normalized = String(value ?? '')
     .trim()
+    .replace(/[^0-9,.-]/g, '')
     .replace(',', '.')
   const parsed = Number(normalized)
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
@@ -146,6 +147,28 @@ function normalizeProductIdLocal(value: string | number | null | undefined): str
   if (!raw) return null
   if (raw === '*') return '*'
   return raw.startsWith('gid://') ? raw : `gid://shopify/Product/${raw}`
+}
+
+function slugifyStatusKey(value: string): string {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  return normalized || 'status'
+}
+
+function buildUniqueStatusKey(statuses: Array<{ key: string }>, label: string): string {
+  const baseKey = slugifyStatusKey(label)
+  const existingKeys = new Set(statuses.map((status) => status.key))
+  if (!existingKeys.has(baseKey)) return baseKey
+
+  let index = 2
+  while (existingKeys.has(`${baseKey}-${index}`)) {
+    index += 1
+  }
+  return `${baseKey}-${index}`
 }
 
 function normalizeProductGidInput(value: string): string | null {
@@ -420,6 +443,50 @@ export async function action({ request }: ActionFunctionArgs) {
   const existingSettings = (shop.settings as Record<string, unknown> | null) || {}
   const existingConfig = applyCustomerPricingDefaultsForShop(session.shop, existingSettings)
 
+  if (intent === 'add-status') {
+    const statusLabel = String(formData.get('statusLabel') || '').trim()
+    const statusTypeInput = String(formData.get('statusType') || '').trim()
+    const statusType: CustomerPricingStatus['type'] =
+      statusTypeInput === 'vip' ? 'vip' : 'business'
+
+    if (!statusLabel) {
+      return json({ success: false, error: 'Status label is required.' }, { status: 400 })
+    }
+
+    const statusKey = buildUniqueStatusKey(existingConfig.statuses, statusLabel)
+    const nextStatus: CustomerPricingStatus = {
+      id: statusKey,
+      key: statusKey,
+      label: statusLabel,
+      type: statusType,
+      active: true,
+      pricePerInch: existingConfig.businessPricePerInch,
+      productRules: [],
+    }
+
+    const nextConfig = normalizeCustomerPricingSettings({
+      customerPricing: {
+        version: 2,
+        enabled: existingConfig.enabled,
+        businessPricePerInch: existingConfig.businessPricePerInch,
+        statuses: existingConfig.statuses.concat(nextStatus),
+        assignments: existingConfig.assignments,
+      },
+    })
+
+    await prisma.shop.update({
+      where: { shopDomain: session.shop },
+      data: {
+        settings: buildShopSettingsUpdate(
+          existingSettings,
+          buildCustomerPricingSettingsPayload(nextConfig)
+        ),
+      },
+    })
+
+    return json({ success: true, message: `${statusLabel} status added.` })
+  }
+
   if (intent === 'add-product-rule') {
     const statusKey = String(formData.get('statusKey') || '').trim()
     const productInput = String(formData.get('productInput') || '').trim()
@@ -641,18 +708,18 @@ export default function CustomerPricingPage() {
   const [statuses, setStatuses] = useState<StatusEditor[]>(
     config.statuses.map((status) => toStatusEditor(status))
   )
-  const [newRuleStatusKey, setNewRuleStatusKey] = useState(
-    config.statuses.find((status) => status.type === 'business')?.key ||
-      config.statuses.find((status) => status.type !== 'standard')?.key ||
-      ''
-  )
-  const [newRuleProductInput, setNewRuleProductInput] = useState('')
-  const [newRuleRate, setNewRuleRate] = useState('')
+  const [newStatusLabel, setNewStatusLabel] = useState('')
+  const [newStatusType, setNewStatusType] = useState<CustomerPricingStatus['type']>('business')
+  const [newRuleInputs, setNewRuleInputs] = useState<
+    Record<string, { productInput: string; pricePerInch: string }>
+  >({})
 
   useEffect(() => {
     setEnabled(config.enabled)
     setSearchInput(search)
     setStatuses(config.statuses.map((status) => toStatusEditor(status)))
+    setNewRuleInputs({})
+    setNewStatusLabel('')
   }, [config, search])
 
   const actionMessage = actionData?.message || null
@@ -662,13 +729,11 @@ export default function CustomerPricingPage() {
     return acc
   }, {})
   const assignableStatuses = statuses.filter((status) => status.type !== 'standard' && status.active)
-
-  useEffect(() => {
-    if (assignableStatuses.some((status) => status.key === newRuleStatusKey)) return
-    setNewRuleStatusKey(assignableStatuses[0]?.key || '')
-  }, [assignableStatuses, newRuleStatusKey])
-
   const assignments = config.assignments
+  const assignmentCountsByStatus = assignments.reduce<Record<string, number>>((acc, assignment) => {
+    acc[assignment.statusKey] = (acc[assignment.statusKey] || 0) + 1
+    return acc
+  }, {})
   const assignmentLookup = assignments.reduce<Record<string, CustomerPricingAssignment>>((acc, assignment) => {
     acc[assignment.customerId] = assignment
     return acc
@@ -727,6 +792,25 @@ export default function CustomerPricingPage() {
     )
   }
 
+  function removeStatus(statusKey: string) {
+    setStatuses((current) => current.filter((status) => status.key !== statusKey))
+  }
+
+  function updateNewRuleInput(
+    statusKey: string,
+    field: 'productInput' | 'pricePerInch',
+    value: string
+  ) {
+    setNewRuleInputs((current) => ({
+      ...current,
+      [statusKey]: {
+        productInput: current[statusKey]?.productInput || '',
+        pricePerInch: current[statusKey]?.pricePerInch || '',
+        [field]: value,
+      },
+    }))
+  }
+
   return (
     <Page title="Customer Pricing" backAction={{ content: 'Settings', url: '/app/settings' }}>
       <Layout>
@@ -780,106 +864,104 @@ export default function CustomerPricingPage() {
 
         <Layout.Section>
           <Card>
-            <Form method="post">
-              <input type="hidden" name="intent" value="add-product-rule" />
-              <BlockStack gap="400">
-                <InlineStack align="space-between" blockAlign="start">
-                  <BlockStack gap="100">
-                    <Text as="h2" variant="headingMd">Add Product Rule</Text>
-                    <Text as="p" variant="bodyMd" tone="subdued">
-                      Add the Shopify product that should use customer-specific pricing for the selected status.
-                    </Text>
-                  </BlockStack>
-                  <Button submit variant="primary" loading={isSubmitting} disabled={!newRuleStatusKey}>
-                    Add Product
-                  </Button>
-                </InlineStack>
+            <BlockStack gap="500">
+              <InlineStack align="space-between" blockAlign="start">
+                <BlockStack gap="100">
+                  <Text as="h2" variant="headingMd">Status Rules</Text>
+                  <Text as="p" variant="bodyMd" tone="subdued">
+                    Define customer statuses, assign products under each status, and set the per-inch rate for each product.
+                  </Text>
+                </BlockStack>
+                <Form method="post">
+                  <input type="hidden" name="intent" value="save-config" />
+                  <input type="hidden" name="enabled" value={enabled ? 'true' : 'false'} />
+                  <input
+                    type="hidden"
+                    name="statusesJson"
+                    value={JSON.stringify(serializeStatusesForSave(statuses))}
+                  />
+                  <Button submit variant="primary" loading={isSubmitting}>Save Rules</Button>
+                </Form>
+              </InlineStack>
 
-                <InlineGrid columns={{ xs: 1, md: 3 }} gap="300">
-                  <Select
-                    label="Customer status"
-                    name="statusKey"
-                    options={assignableStatuses.map((status) => ({
-                      label: status.label,
-                      value: status.key,
-                    }))}
-                    value={newRuleStatusKey}
-                    onChange={setNewRuleStatusKey}
-                  />
-                  <TextField
-                    label="Product URL, handle, or product ID"
-                    name="productInput"
-                    autoComplete="off"
-                    value={newRuleProductInput}
-                    onChange={setNewRuleProductInput}
-                    placeholder="products/upload-gang-sheet"
-                  />
-                  <TextField
-                    label="Price per inch"
-                    name="pricePerInch"
-                    autoComplete="off"
-                    type="text"
-                    inputMode="decimal"
-                    prefix="$"
-                    value={newRuleRate}
-                    onChange={setNewRuleRate}
-                    placeholder="0.2"
-                  />
-                </InlineGrid>
-              </BlockStack>
-            </Form>
-          </Card>
-        </Layout.Section>
-
-        <Layout.Section>
-          <Card>
-            <Form method="post">
-              <input type="hidden" name="intent" value="save-config" />
-              <input type="hidden" name="enabled" value={enabled ? 'true' : 'false'} />
-              <input
-                type="hidden"
-                name="statusesJson"
-                value={JSON.stringify(serializeStatusesForSave(statuses))}
+              <Checkbox
+                label="Enable customer-specific pricing"
+                checked={enabled}
+                onChange={setEnabled}
               />
 
-              <BlockStack gap="500">
-                <InlineStack align="space-between" blockAlign="start">
-                  <BlockStack gap="100">
-                    <Text as="h2" variant="headingMd">Status Rules</Text>
-                    <Text as="p" variant="bodyMd" tone="subdued">
-                      Turn each product rule on or off and set the exact per-inch rate that applies to
-                      that customer status.
-                    </Text>
+              <Card background="bg-surface-secondary">
+                <Form method="post">
+                  <input type="hidden" name="intent" value="add-status" />
+                  <input type="hidden" name="statusLabel" value={newStatusLabel} />
+                  <input type="hidden" name="statusType" value={newStatusType} />
+                  <BlockStack gap="300">
+                    <Text as="h3" variant="headingSm">Add status</Text>
+                    <InlineGrid columns={{ xs: 1, md: '2fr 1fr auto' }} gap="300">
+                      <TextField
+                        label="Status label"
+                        autoComplete="off"
+                        value={newStatusLabel}
+                        onChange={setNewStatusLabel}
+                        placeholder="Wholesale"
+                      />
+                      <Select
+                        label="Customer tier behavior"
+                        options={[
+                          { label: 'Business', value: 'business' },
+                          { label: 'VIP', value: 'vip' },
+                        ]}
+                        value={newStatusType}
+                        onChange={(value) => setNewStatusType(value === 'vip' ? 'vip' : 'business')}
+                      />
+                      <Button submit loading={isSubmitting} disabled={!newStatusLabel.trim()}>
+                        Add Status
+                      </Button>
+                    </InlineGrid>
                   </BlockStack>
-                  <Button submit variant="primary" loading={isSubmitting}>Save Rules</Button>
-                </InlineStack>
+                </Form>
+              </Card>
 
-                <Checkbox
-                  label="Enable customer-specific pricing"
-                  checked={enabled}
-                  onChange={setEnabled}
-                />
+              <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
+                {statuses
+                  .filter((status) => status.type !== 'standard')
+                  .map((status) => {
+                    const ruleDraft = newRuleInputs[status.key] || {
+                      productInput: '',
+                      pricePerInch: '',
+                    }
+                    const assignmentCount = assignmentCountsByStatus[status.key] || 0
+                    const canRemoveStatus =
+                      status.key !== 'business' && status.key !== 'vip' && assignmentCount === 0
 
-                <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
-                  {statuses
-                    .filter((status) => status.type !== 'standard')
-                    .map((status) => (
+                    return (
                       <Card key={status.key} background="bg-surface-secondary">
                         <BlockStack gap="400">
                           <InlineStack align="space-between" blockAlign="center">
                             <BlockStack gap="050">
                               <Text as="h3" variant="headingSm">
-                                {status.type === 'business' ? 'Business status' : 'VIP status'}
+                                {status.label} status
                               </Text>
                               <Text as="p" variant="bodySm" tone="subdued">
                                 {status.type === 'business'
-                                  ? 'Charges from the resolved upload sheet length.'
-                                  : 'Charges from the exact measured uploaded page length.'}
+                                  ? 'Uses the upload sheet resolution flow for this status.'
+                                  : 'Uses the measured upload length flow for this status.'}
                               </Text>
                             </BlockStack>
-                            <Badge tone={status.type === 'business' ? 'success' : 'attention'}>
-                              {status.type.toUpperCase()}
-                            </Badge>
+                            <InlineStack gap="200" blockAlign="center">
+                              <Badge tone={status.type === 'business' ? 'success' : 'attention'}>
+                                {status.type.toUpperCase()}
+                              </Badge>
+                              {status.key !== 'business' && status.key !== 'vip' ? (
+                                <Button
+                                  tone="critical"
+                                  disabled={!canRemoveStatus}
+                                  onClick={() => removeStatus(status.key)}
+                                >
+                                  Remove
+                                </Button>
+                              ) : null}
+                            </InlineStack>
                           </InlineStack>
 
                           <TextField
@@ -943,20 +1025,67 @@ export default function CustomerPricingPage() {
                                   />
 
                                   <Text as="p" variant="bodySm" tone="subdued">
-                                    {rule.pricingMode === 'variant_length'
-                                      ? 'Checkout total = selected sheet length x sheets needed x this rate.'
-                                      : 'Checkout total = measured uploaded page length x this rate.'}
+                                    This product uses this status rate at checkout.
                                   </Text>
                                 </BlockStack>
                               </Box>
                             ))}
                           </BlockStack>
+
+                          <Box
+                            padding="300"
+                            borderWidth="025"
+                            borderColor="border"
+                            borderRadius="200"
+                          >
+                            <Form method="post">
+                              <input type="hidden" name="intent" value="add-product-rule" />
+                              <input type="hidden" name="statusKey" value={status.key} />
+                              <input type="hidden" name="productInput" value={ruleDraft.productInput} />
+                              <input type="hidden" name="pricePerInch" value={ruleDraft.pricePerInch} />
+                              <BlockStack gap="300">
+                                <Text as="h4" variant="headingSm">Add product rule</Text>
+                                <InlineGrid columns={{ xs: 1, md: '2fr 1fr auto' }} gap="300">
+                                  <TextField
+                                    label="Product URL, handle, or product ID"
+                                    autoComplete="off"
+                                    value={ruleDraft.productInput}
+                                    onChange={(value) =>
+                                      updateNewRuleInput(status.key, 'productInput', value)
+                                    }
+                                    placeholder="products/upload-gang-sheet"
+                                  />
+                                  <TextField
+                                    label="Price per inch"
+                                    autoComplete="off"
+                                    type="text"
+                                    inputMode="decimal"
+                                    prefix="$"
+                                    value={ruleDraft.pricePerInch}
+                                    onChange={(value) =>
+                                      updateNewRuleInput(status.key, 'pricePerInch', value)
+                                    }
+                                    placeholder="0.2"
+                                  />
+                                  <Button
+                                    submit
+                                    loading={isSubmitting}
+                                    disabled={
+                                      !ruleDraft.productInput.trim() || !ruleDraft.pricePerInch.trim()
+                                    }
+                                  >
+                                    Add Product
+                                  </Button>
+                                </InlineGrid>
+                              </BlockStack>
+                            </Form>
+                          </Box>
                         </BlockStack>
                       </Card>
-                    ))}
-                </InlineGrid>
-              </BlockStack>
-            </Form>
+                    )
+                  })}
+              </InlineGrid>
+            </BlockStack>
           </Card>
         </Layout.Section>
 
