@@ -3,15 +3,180 @@ import { exec } from 'child_process'
 import fs from 'fs/promises'
 import path from 'path'
 import { promisify } from 'util'
+import { inflateSync } from 'zlib'
 
 const execAsync = promisify(exec)
 const DEFAULT_DOCUMENT_FALLBACK_DPI = 200
 
-function parsePngInfo(buffer: Buffer) {
+interface DpiCandidate {
+  dpi: number
+  source: string
+  priority: number
+}
+
+function parseResolutionNumber(value: unknown): number {
+  if (typeof value !== 'string' && typeof value !== 'number') return 0
+  const raw = String(value).trim()
+  if (!raw) return 0
+
+  const rational = raw.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/)
+  if (rational) {
+    const numerator = Number(rational[1])
+    const denominator = Number(rational[2])
+    return denominator > 0 ? numerator / denominator : 0
+  }
+
+  const parsed = Number(raw.replace(/,/g, ''))
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function normalizeResolutionUnit(value: unknown): 'inch' | 'centimeter' | 'meter' | null {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return null
+  if (raw === '2' || raw === 'inch' || raw === 'inches' || raw === 'pixelsperinch') {
+    return 'inch'
+  }
+  if (
+    raw === '3' ||
+    raw === 'cm' ||
+    raw === 'centimeter' ||
+    raw === 'centimeters' ||
+    raw === 'pixelspercentimeter'
+  ) {
+    return 'centimeter'
+  }
+  if (raw === 'm' || raw === 'meter' || raw === 'meters' || raw === 'pixelspermeter') {
+    return 'meter'
+  }
+  return null
+}
+
+function buildDpiCandidate(
+  xResolution: number,
+  yResolution: number,
+  unit: unknown,
+  source: string,
+  priority: number
+): DpiCandidate | null {
+  if (!(xResolution > 0) || !(yResolution > 0)) return null
+
+  const normalizedUnit = normalizeResolutionUnit(unit)
+  if (!normalizedUnit) return null
+
+  const dpiX =
+    normalizedUnit === 'meter'
+      ? xResolution * 0.0254
+      : normalizedUnit === 'centimeter'
+        ? xResolution * 2.54
+        : xResolution
+  const dpiY =
+    normalizedUnit === 'meter'
+      ? yResolution * 0.0254
+      : normalizedUnit === 'centimeter'
+        ? yResolution * 2.54
+        : yResolution
+  const minDpi = Math.min(dpiX, dpiY)
+  const maxDpi = Math.max(dpiX, dpiY)
+  if (!(minDpi > 1) || maxDpi > 10000) return null
+
+  // Print files should have square pixels. A large X/Y mismatch is usually bad metadata.
+  if (maxDpi / minDpi > 1.05) return null
+
+  return {
+    dpi: Math.round((dpiX + dpiY) / 2),
+    source,
+    priority,
+  }
+}
+
+function chooseBestDpiCandidate(candidates: Array<DpiCandidate | null>): DpiCandidate | null {
+  return candidates
+    .filter((candidate): candidate is DpiCandidate => Boolean(candidate && candidate.dpi > 0))
+    .sort((a, b) => b.priority - a.priority || b.dpi - a.dpi)[0] || null
+}
+
+function decodeXmlEntities(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+}
+
+function getXmlField(source: string, fieldName: string): string | null {
+  const attrMatch = source.match(
+    new RegExp(`\\b(?:[A-Za-z0-9_-]+:)?${fieldName}\\s*=\\s*["']([^"']+)["']`, 'i')
+  )
+  if (attrMatch) return decodeXmlEntities(attrMatch[1])
+
+  const tagMatch = source.match(
+    new RegExp(`<[^>]*?(?:[A-Za-z0-9_-]+:)?${fieldName}[^>]*>([^<]+)<\\/[^>]+>`, 'i')
+  )
+  return tagMatch ? decodeXmlEntities(tagMatch[1]) : null
+}
+
+function parseXmpResolution(source: string, priority = 95): DpiCandidate | null {
+  if (!source || !/xmp|rdf|resolution/i.test(source)) return null
+
+  const xResolution = parseResolutionNumber(getXmlField(source, 'XResolution'))
+  const yResolution = parseResolutionNumber(getXmlField(source, 'YResolution')) || xResolution
+  const unit = getXmlField(source, 'ResolutionUnit') || '2'
+
+  return buildDpiCandidate(xResolution, yResolution, unit, 'xmp_resolution', priority)
+}
+
+function parsePngTextChunk(chunkType: string, data: Buffer): string | null {
+  try {
+    if (chunkType === 'tEXt') {
+      const separator = data.indexOf(0)
+      return separator >= 0 ? data.subarray(separator + 1).toString('utf8') : data.toString('utf8')
+    }
+
+    if (chunkType === 'zTXt') {
+      const separator = data.indexOf(0)
+      if (separator < 0 || data[separator + 1] !== 0) return null
+      return inflateSync(data.subarray(separator + 2)).toString('utf8')
+    }
+
+    if (chunkType === 'iTXt') {
+      const keywordEnd = data.indexOf(0)
+      if (keywordEnd < 0 || keywordEnd + 3 > data.length) return null
+
+      const compressionFlag = data[keywordEnd + 1]
+      const compressionMethod = data[keywordEnd + 2]
+      let offset = keywordEnd + 3
+      const languageEnd = data.indexOf(0, offset)
+      if (languageEnd < 0) return null
+      offset = languageEnd + 1
+      const translatedKeywordEnd = data.indexOf(0, offset)
+      if (translatedKeywordEnd < 0) return null
+      offset = translatedKeywordEnd + 1
+
+      const textBuffer = data.subarray(offset)
+      if (compressionFlag === 1 && compressionMethod === 0) {
+        return inflateSync(textBuffer).toString('utf8')
+      }
+      if (compressionFlag === 0) {
+        return textBuffer.toString('utf8')
+      }
+    }
+  } catch {
+    return null
+  }
+
+  return null
+}
+
+export function parsePngInfo(buffer: Buffer) {
   if (buffer.length < 24) return null
+  if (!buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return null
+  }
+
   const width = buffer.readUInt32BE(16)
   const height = buffer.readUInt32BE(20)
-  let dpi = 0
+  const dpiCandidates: Array<DpiCandidate | null> = []
   let hasAlpha = false
 
   const colorType = buffer[25]
@@ -22,15 +187,24 @@ function parsePngInfo(buffer: Buffer) {
     const length = buffer.readUInt32BE(offset)
     const chunkType = buffer.toString('ascii', offset + 4, offset + 8)
     const dataOffset = offset + 8
+    if (dataOffset + length + 4 > buffer.length) break
+    const chunkData = buffer.subarray(dataOffset, dataOffset + length)
 
-    if (chunkType === 'pHYs' && dataOffset + 9 <= buffer.length) {
+    if (chunkType === 'pHYs' && length >= 9) {
       const pixelsPerUnitX = buffer.readUInt32BE(dataOffset)
       const pixelsPerUnitY = buffer.readUInt32BE(dataOffset + 4)
       const unitSpecifier = buffer[dataOffset + 8]
-      if (unitSpecifier === 1 && pixelsPerUnitX > 0 && pixelsPerUnitY > 0) {
-        const dpiX = pixelsPerUnitX * 0.0254
-        const dpiY = pixelsPerUnitY * 0.0254
-        dpi = Math.round((dpiX + dpiY) / 2)
+      dpiCandidates.push(
+        unitSpecifier === 1
+          ? buildDpiCandidate(pixelsPerUnitX, pixelsPerUnitY, 'pixelspermeter', 'png_phys', 80)
+          : null
+      )
+    }
+
+    if (chunkType === 'iTXt' || chunkType === 'tEXt' || chunkType === 'zTXt') {
+      const text = parsePngTextChunk(chunkType, chunkData)
+      if (text) {
+        dpiCandidates.push(parseXmpResolution(text))
       }
     }
 
@@ -38,10 +212,13 @@ function parsePngInfo(buffer: Buffer) {
     if (chunkType === 'IEND') break
   }
 
+  const dpiCandidate = chooseBestDpiCandidate(dpiCandidates)
+
   return {
     width,
     height,
-    dpi,
+    dpi: dpiCandidate?.dpi || 0,
+    dpiSource: dpiCandidate?.source || null,
     colorspace: 'sRGB',
     hasAlpha,
     format: 'PNG',
@@ -51,7 +228,7 @@ function parsePngInfo(buffer: Buffer) {
 function parseJpegInfo(buffer: Buffer) {
   if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) return null
 
-  let dpi = 0
+  const dpiCandidates: Array<DpiCandidate | null> = []
   let offset = 2
   while (offset + 4 <= buffer.length) {
     if (buffer[offset] !== 0xff) {
@@ -67,25 +244,43 @@ function parseJpegInfo(buffer: Buffer) {
 
     const segmentLength = buffer.readUInt16BE(offset + 2)
     if (segmentLength < 2 || offset + 2 + segmentLength > buffer.length) break
+    const segmentDataOffset = offset + 4
+    const segmentData = buffer.subarray(segmentDataOffset, offset + 2 + segmentLength)
 
     if (marker === 0xe0 && buffer.toString('ascii', offset + 4, offset + 9) === 'JFIF\0') {
       const units = buffer[offset + 11]
       const xDensity = buffer.readUInt16BE(offset + 12)
       const yDensity = buffer.readUInt16BE(offset + 14)
-      if (units === 1 && xDensity > 0 && yDensity > 0) {
-        dpi = Math.round((xDensity + yDensity) / 2)
-      } else if (units === 2 && xDensity > 0 && yDensity > 0) {
-        dpi = Math.round(((xDensity * 2.54) + (yDensity * 2.54)) / 2)
+      if (units === 1 || units === 2) {
+        dpiCandidates.push(
+          buildDpiCandidate(xDensity, yDensity, units === 2 ? 'centimeter' : 'inch', 'jpeg_jfif', 75)
+        )
+      }
+    }
+
+    if (marker === 0xe1) {
+      if (segmentData.subarray(0, 6).equals(Buffer.from('Exif\0\0', 'ascii'))) {
+        dpiCandidates.push(parseTiffResolutionCandidate(segmentData.subarray(6), 'exif_resolution', 90))
+      } else {
+        const xmpHeader = 'http://ns.adobe.com/xap/1.0/\0'
+        const header = segmentData.subarray(0, xmpHeader.length).toString('ascii')
+        if (header === xmpHeader) {
+          dpiCandidates.push(parseXmpResolution(segmentData.subarray(xmpHeader.length).toString('utf8')))
+        } else if (/xmp|rdf|resolution/i.test(segmentData.toString('utf8', 0, Math.min(segmentData.length, 512)))) {
+          dpiCandidates.push(parseXmpResolution(segmentData.toString('utf8')))
+        }
       }
     }
 
     if ((marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) || (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf)) {
       const height = buffer.readUInt16BE(offset + 5)
       const width = buffer.readUInt16BE(offset + 7)
+      const dpiCandidate = chooseBestDpiCandidate(dpiCandidates)
       return {
         width,
         height,
-        dpi,
+        dpi: dpiCandidate?.dpi || 0,
+        dpiSource: dpiCandidate?.source || null,
         colorspace: 'sRGB',
         hasAlpha: false,
         format: 'JPEG',
@@ -104,33 +299,107 @@ function parseWebpInfo(buffer: Buffer) {
     return null
   }
 
-  const chunkType = buffer.toString('ascii', 12, 16)
-  if (chunkType === 'VP8 ') {
-    const width = buffer.readUInt16LE(26) & 0x3fff
-    const height = buffer.readUInt16LE(28) & 0x3fff
-    return { width, height, dpi: 0, colorspace: 'sRGB', hasAlpha: false, format: 'WEBP' }
+  let width = 0
+  let height = 0
+  let hasAlpha = false
+  const dpiCandidates: Array<DpiCandidate | null> = []
+
+  let offset = 12
+  while (offset + 8 <= buffer.length) {
+    const chunkType = buffer.toString('ascii', offset, offset + 4)
+    const length = buffer.readUInt32LE(offset + 4)
+    const dataOffset = offset + 8
+    if (dataOffset + length > buffer.length) break
+
+    const data = buffer.subarray(dataOffset, dataOffset + length)
+
+    if (chunkType === 'VP8 ' && data.length >= 10) {
+      width = data.readUInt16LE(6) & 0x3fff
+      height = data.readUInt16LE(8) & 0x3fff
+    } else if (chunkType === 'VP8L' && data.length >= 5) {
+      const bits = data.readUInt32LE(1)
+      width = (bits & 0x3fff) + 1
+      height = ((bits >> 14) & 0x3fff) + 1
+      hasAlpha = ((bits >> 28) & 0x1) === 1
+    } else if (chunkType === 'VP8X' && data.length >= 10) {
+      const flags = data[0]
+      width = 1 + data.readUIntLE(4, 3)
+      height = 1 + data.readUIntLE(7, 3)
+      hasAlpha = (flags & 0x10) !== 0
+    } else if (chunkType === 'EXIF') {
+      if (data.subarray(0, 6).equals(Buffer.from('Exif\0\0', 'ascii'))) {
+        dpiCandidates.push(parseTiffResolutionCandidate(data.subarray(6), 'exif_resolution', 90))
+      } else {
+        dpiCandidates.push(parseTiffResolutionCandidate(data, 'exif_resolution', 90))
+      }
+    } else if (chunkType === 'XMP ') {
+      dpiCandidates.push(parseXmpResolution(data.toString('utf8')))
+    }
+
+    offset = dataOffset + length + (length % 2)
   }
 
-  if (chunkType === 'VP8L') {
-    const bits = buffer.readUInt32LE(21)
-    const width = (bits & 0x3fff) + 1
-    const height = ((bits >> 14) & 0x3fff) + 1
-    const alpha = (bits >> 28) & 0x1
-    return { width, height, dpi: 0, colorspace: 'sRGB', hasAlpha: alpha === 1, format: 'WEBP' }
-  }
-
-  if (chunkType === 'VP8X' && buffer.length >= 30) {
-    const width = 1 + buffer.readUIntLE(24, 3)
-    const height = 1 + buffer.readUIntLE(27, 3)
-    const flags = buffer[20]
+  if (width > 0 && height > 0) {
+    const dpiCandidate = chooseBestDpiCandidate(dpiCandidates)
     return {
       width,
       height,
-      dpi: 0,
+      dpi: dpiCandidate?.dpi || 0,
+      dpiSource: dpiCandidate?.source || null,
       colorspace: 'sRGB',
-      hasAlpha: (flags & 0x10) !== 0,
+      hasAlpha,
       format: 'WEBP',
     }
+  }
+
+  return null
+}
+
+function readPsdFixed16_16(buffer: Buffer, offset: number): number {
+  if (offset < 0 || offset + 4 > buffer.length) return 0
+  return buffer.readUInt32BE(offset) / 65536
+}
+
+function parsePsdResolutionCandidate(buffer: Buffer): DpiCandidate | null {
+  if (buffer.length < 30) return null
+
+  const colorModeLength = buffer.readUInt32BE(26)
+  let offset = 30 + colorModeLength
+  if (offset + 4 > buffer.length) return null
+
+  const resourcesLength = buffer.readUInt32BE(offset)
+  offset += 4
+  const resourcesEnd = Math.min(buffer.length, offset + resourcesLength)
+
+  while (offset + 12 <= resourcesEnd) {
+    const signature = buffer.toString('ascii', offset, offset + 4)
+    if (signature !== '8BIM' && signature !== '8B64') break
+
+    const resourceId = buffer.readUInt16BE(offset + 4)
+    offset += 6
+
+    const nameLength = buffer[offset] || 0
+    offset += 1 + nameLength
+    if ((1 + nameLength) % 2 !== 0) offset += 1
+    if (offset + 4 > resourcesEnd) break
+
+    const dataLength = buffer.readUInt32BE(offset)
+    offset += 4
+    if (offset + dataLength > resourcesEnd) break
+
+    if (resourceId === 1005 && dataLength >= 16) {
+      const xResolution = readPsdFixed16_16(buffer, offset)
+      const xResolutionUnit = buffer.readUInt16BE(offset + 4)
+      const yResolution = readPsdFixed16_16(buffer, offset + 8)
+      const yResolutionUnit = buffer.readUInt16BE(offset + 12)
+      const unit =
+        xResolutionUnit === 2 || yResolutionUnit === 2
+          ? 'centimeter'
+          : 'inch'
+      return buildDpiCandidate(xResolution, yResolution || xResolution, unit, 'psd_resolution', 90)
+    }
+
+    offset += dataLength + (dataLength % 2)
   }
 
   return null
@@ -143,6 +412,7 @@ function parsePsdInfo(buffer: Buffer) {
   const channels = buffer.readUInt16BE(12)
   const height = buffer.readUInt32BE(14)
   const width = buffer.readUInt32BE(18)
+  const dpiCandidate = parsePsdResolutionCandidate(buffer)
 
   if (!(width > 0) || !(height > 0)) {
     return null
@@ -151,7 +421,8 @@ function parsePsdInfo(buffer: Buffer) {
   return {
     width,
     height,
-    dpi: 0,
+    dpi: dpiCandidate?.dpi || 0,
+    dpiSource: dpiCandidate?.source || null,
     colorspace: 'PSD',
     hasAlpha: channels >= 4,
     format: 'PSD',
@@ -178,6 +449,60 @@ function readTiffRational(buffer: Buffer, offset: number, littleEndian: boolean)
     return null
   }
   return numerator / denominator
+}
+
+function parseTiffResolutionCandidate(
+  buffer: Buffer,
+  source: string,
+  priority: number
+): DpiCandidate | null {
+  if (buffer.length < 8) return null
+
+  const byteOrder = buffer.toString('ascii', 0, 2)
+  const littleEndian = byteOrder === 'II'
+  if (!littleEndian && byteOrder !== 'MM') return null
+
+  const magic = readTiffUInt(buffer, 2, 2, littleEndian)
+  if (magic !== 42) return null
+
+  const firstIfdOffset = readTiffUInt(buffer, 4, 4, littleEndian)
+  if (!(firstIfdOffset != null) || firstIfdOffset + 2 > buffer.length) return null
+
+  const entryCount = readTiffUInt(buffer, firstIfdOffset, 2, littleEndian)
+  if (!(entryCount != null)) return null
+
+  let xResolution = 0
+  let yResolution = 0
+  let resolutionUnit = 2
+
+  for (let index = 0; index < entryCount; index += 1) {
+    const entryOffset = firstIfdOffset + 2 + index * 12
+    if (entryOffset + 12 > buffer.length) break
+
+    const tag = readTiffUInt(buffer, entryOffset, 2, littleEndian)
+    const type = readTiffUInt(buffer, entryOffset + 2, 2, littleEndian)
+    const count = readTiffUInt(buffer, entryOffset + 4, 4, littleEndian)
+    const valueOrOffset = readTiffUInt(buffer, entryOffset + 8, 4, littleEndian)
+
+    if (tag == null || type == null || count == null || valueOrOffset == null) {
+      continue
+    }
+
+    const scalar = getTiffEntryScalar(
+      buffer,
+      entryOffset,
+      type,
+      count,
+      valueOrOffset,
+      littleEndian
+    )
+
+    if (tag === 282 && scalar) xResolution = scalar
+    if (tag === 283 && scalar) yResolution = scalar
+    if (tag === 296 && scalar) resolutionUnit = scalar
+  }
+
+  return buildDpiCandidate(xResolution, yResolution || xResolution, resolutionUnit, source, priority)
 }
 
 function getTiffEntryScalar(
@@ -275,19 +600,19 @@ function parseTiffInfo(buffer: Buffer) {
     return null
   }
 
-  let dpi = 0
-  if (xResolution > 0 && yResolution > 0) {
-    if (resolutionUnit === 3) {
-      dpi = Math.round(((xResolution * 2.54) + (yResolution * 2.54)) / 2)
-    } else {
-      dpi = Math.round((xResolution + yResolution) / 2)
-    }
-  }
+  const dpiCandidate = buildDpiCandidate(
+    xResolution,
+    yResolution || xResolution,
+    resolutionUnit,
+    'tiff_resolution',
+    90
+  )
 
   return {
     width,
     height,
-    dpi,
+    dpi: dpiCandidate?.dpi || 0,
+    dpiSource: dpiCandidate?.source || null,
     colorspace: 'TIFF',
     hasAlpha: samplesPerPixel >= 4,
     format: 'TIFF',
@@ -296,8 +621,27 @@ function parseTiffInfo(buffer: Buffer) {
 
 function parseSvgLength(rawValue: string | undefined, fallback: number): number {
   if (!rawValue) return fallback
-  const numeric = parseFloat(rawValue)
-  return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : fallback
+  const match = String(rawValue).trim().match(/^([\d.]+)\s*(in|cm|mm|pt|pc|px)?$/i)
+  if (!match) return fallback
+
+  const numeric = Number(match[1])
+  if (!Number.isFinite(numeric) || numeric <= 0) return fallback
+
+  const unit = (match[2] || 'px').toLowerCase()
+  const inches =
+    unit === 'in'
+      ? numeric
+      : unit === 'cm'
+        ? numeric / 2.54
+        : unit === 'mm'
+          ? numeric / 25.4
+          : unit === 'pt'
+            ? numeric / 72
+            : unit === 'pc'
+              ? numeric / 6
+              : null
+
+  return Math.round(inches != null ? inches * 72 : numeric)
 }
 
 async function getImageInfoWithoutImagemagick(filePath: string, mimeType: string) {
@@ -308,6 +652,7 @@ async function getImageInfoWithoutImagemagick(filePath: string, mimeType: string
         width: pdfInfo.width,
         height: pdfInfo.height,
         dpi: 300,
+        dpiSource: 'pdf_page_size',
         colorspace: 'PDF',
         hasAlpha: false,
         format: 'PDF',
@@ -332,6 +677,7 @@ async function getImageInfoWithoutImagemagick(filePath: string, mimeType: string
             width: Math.round((widthPt * 300) / 72),
             height: Math.round((heightPt * 300) / 72),
             dpi: 300,
+            dpiSource: 'postscript_bbox',
             colorspace: 'PostScript',
             hasAlpha: false,
             format: 'EPS',
@@ -381,6 +727,7 @@ async function getImageInfoWithoutImagemagick(filePath: string, mimeType: string
       width: parseSvgLength(widthMatch?.[1], fallbackWidth),
       height: parseSvgLength(heightMatch?.[1], fallbackHeight),
       dpi: 72,
+      dpiSource: 'svg_document_size',
       colorspace: 'sRGB',
       hasAlpha: true,
       format: 'SVG',
@@ -394,7 +741,7 @@ async function getImageInfoWithoutImagemagick(filePath: string, mimeType: string
 export interface PreflightCheck {
   name: string
   status: 'ok' | 'warning' | 'error'
-  value?: string | number
+  value?: string | number | boolean
   message?: string
   details?: Record<string, unknown>
 }
@@ -410,6 +757,7 @@ interface MeasuredImageInfo {
   width: number
   height: number
   dpi: number
+  dpiSource?: string | null
   colorspace: string
   hasAlpha: boolean
   format: string
@@ -556,6 +904,7 @@ export async function getImageInfo(filePath: string): Promise<{
   width: number
   height: number
   dpi: number
+  dpiSource?: string | null
   colorspace: string
   hasAlpha: boolean
   format: string
@@ -568,24 +917,32 @@ export async function getImageInfo(filePath: string): Promise<{
   try {
     // v4.5.0: No timeout - large files (10GB+) need unlimited time
     const { stdout } = await execAsync(
-      `identify -format "%w|%h|%x|%y|%[colorspace]|%[channels]|%m" "${filePath}[0]"`
+      `identify -format "%w|%h|%x|%y|%U|%[colorspace]|%[channels]|%m" "${filePath}[0]"`
     )
 
     const parts = stdout.trim().split('|')
     const width = parseInt(parts[0]) || 0
     const height = parseInt(parts[1]) || 0
-    const xDpi = parseFloat(parts[2]) || 72
-    const yDpi = parseFloat(parts[3]) || 72
-    const colorspace = parts[4] || 'unknown'
-    const channels = parts[5] || ''
-    const format = parts[6] || 'unknown'
+    const xDpi = parseFloat(parts[2]) || 0
+    const yDpi = parseFloat(parts[3]) || 0
+    const units = parts[4] || ''
+    const colorspace = parts[5] || 'unknown'
+    const channels = parts[6] || ''
+    const format = parts[7] || 'unknown'
 
-    // Native parsing wins when it can distinguish missing metadata from a real DPI value.
-    const identifiedDpi = Math.round((xDpi + yDpi) / 2)
-    const dpi =
-      nativeInfo && typeof nativeInfo.dpi === 'number'
-        ? nativeInfo.dpi
-        : identifiedDpi
+    const identifiedDpi = buildDpiCandidate(
+      xDpi,
+      yDpi,
+      units,
+      'imagemagick_density',
+      60
+    )
+    const nativeDpi = nativeInfo && nativeInfo.dpi > 0 ? nativeInfo.dpi : 0
+    const dpi = nativeDpi || identifiedDpi?.dpi || 0
+    const dpiSource =
+      nativeDpi > 0
+        ? nativeInfo?.dpiSource || 'document_dpi'
+        : identifiedDpi?.source || null
 
     // Check for alpha channel
     const hasAlpha =
@@ -595,6 +952,7 @@ export async function getImageInfo(filePath: string): Promise<{
       width: nativeInfo?.width || width,
       height: nativeInfo?.height || height,
       dpi,
+      dpiSource,
       colorspace,
       hasAlpha: nativeInfo?.hasAlpha != null ? nativeInfo.hasAlpha : hasAlpha,
       format,
@@ -953,6 +1311,7 @@ export async function runPreflightChecks(
     const trimmedBounds = await getTrimmedImageBounds(filePath, imageInfo)
     const effectiveDpi = imageInfo.dpi > 0 ? imageInfo.dpi : DEFAULT_DOCUMENT_FALLBACK_DPI
     const sizingSource = imageInfo.dpi > 0 ? 'document_dpi' : 'fallback_200dpi'
+    const sizingSourceDetail = imageInfo.dpiSource || sizingSource
     const measurementWidth = imageInfo.width
     const measurementHeight = imageInfo.height
 
@@ -963,6 +1322,7 @@ export async function runPreflightChecks(
         status: 'warning',
         value: imageInfo.dpi,
         message: `Embedded DPI metadata is missing. Document sizing uses ${effectiveDpi} DPI fallback.`,
+        details: { source: sizingSourceDetail },
       })
     } else if (imageInfo.dpi < config.requiredDPI) {
       checks.push({
@@ -970,6 +1330,7 @@ export async function runPreflightChecks(
         status: 'warning',
         value: imageInfo.dpi,
         message: `Embedded DPI (${imageInfo.dpi}) is below recommended (${config.requiredDPI}). Document sizing keeps the embedded DPI.`,
+        details: { source: sizingSourceDetail },
       })
       if (overall === 'ok') overall = 'warning'
     } else {
@@ -978,6 +1339,7 @@ export async function runPreflightChecks(
         status: 'ok',
         value: imageInfo.dpi,
         message: `DPI: ${imageInfo.dpi}`,
+        details: { source: sizingSourceDetail },
       })
     }
 
@@ -998,6 +1360,7 @@ export async function runPreflightChecks(
         measurementHeight,
         effectiveDpi,
         sizingSource,
+        sizingSourceDetail,
         measurementMode: 'full',
         widthIn: Number((measurementWidth / effectiveDpi).toFixed(2)),
         heightIn: Number((measurementHeight / effectiveDpi).toFixed(2)),
