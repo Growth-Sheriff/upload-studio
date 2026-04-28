@@ -2,7 +2,6 @@ import type { LoaderFunctionArgs } from '@remix-run/node'
 import { json } from '@remix-run/node'
 import {
   applyCustomerPricingDefaultsForShop,
-  getDtfPrintHouseProductCatalog,
   normalizeCustomerId,
   normalizeProductId,
   resolveCustomerPricingContext,
@@ -175,9 +174,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
     )
   )
   const productCandidates = buildProductCandidates(productId)
-  const productLabelById = new Map(
-    getDtfPrintHouseProductCatalog().map((item) => [normalizeProductId(item.productId) || item.productId, item.label])
-  )
+  const productLabelById = new Map<string, string>()
+  for (const status of settings.statuses) {
+    for (const rule of status.productRules) {
+      const normalizedRuleProductId = normalizeProductId(rule.productId) || rule.productId
+      if (normalizedRuleProductId && normalizedRuleProductId !== '*') {
+        productLabelById.set(normalizedRuleProductId, rule.productLabel || normalizedRuleProductId)
+      }
+    }
+  }
 
   const uploads = await prisma.upload.findMany({
     where: {

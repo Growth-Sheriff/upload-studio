@@ -2,9 +2,7 @@ import { PrismaClient, type Prisma } from '@prisma/client'
 import {
   buildDtfPrintHouseCustomerPricingSettings,
   buildCustomerPricingSettingsPayload,
-  DTF_PRINTHOUSE_DTF_UPLOAD_PRODUCT_ID,
   DTF_PRINTHOUSE_SHOP_DOMAIN,
-  DTF_PRINTHOUSE_UV_UPLOAD_PRODUCT_ID,
   type CustomerPricingAssignment,
 } from '../app/lib/customerPricing.server'
 
@@ -54,18 +52,13 @@ const VIP_CUSTOMERS: CustomerPricingAssignment[] = [
     customerEmail: 'shaq@swagprint.com',
     statusKey: 'vip',
     active: true,
-    pricePerInchOverride: 0.16,
-    productOverrides: [
-      {
-        productId: DTF_PRINTHOUSE_DTF_UPLOAD_PRODUCT_ID,
-        pricePerInch: 0.16,
-      },
-    ],
+    pricePerInchOverride: null,
+    productOverrides: [],
   },
 ]
 
 function buildAssignments(): CustomerPricingAssignment[] {
-  return BUSINESS_CUSTOMERS.map((customer) => ({
+  const businessAssignments: CustomerPricingAssignment[] = BUSINESS_CUSTOMERS.map((customer) => ({
     customerId: customer.customerId,
     customerName: customer.customerName,
     customerEmail: customer.customerEmail,
@@ -73,30 +66,15 @@ function buildAssignments(): CustomerPricingAssignment[] {
     active: true,
     pricePerInchOverride: null,
     productOverrides: [],
-  })).concat(VIP_CUSTOMERS)
-}
+  }))
 
-function mergeBuilderConfig(rawConfig: Prisma.JsonValue | null | undefined) {
-  const current =
-    rawConfig && typeof rawConfig === 'object' && !Array.isArray(rawConfig)
-      ? (rawConfig as Record<string, unknown>)
-      : {}
-
-  return {
-    ...current,
-    maxWidthIn: 22.5,
-    minWidthIn: 1,
-    maxHeightIn: 240,
-    minHeightIn: 1,
-    artboardMarginIn: 0,
-    imageMarginIn: 0,
-  }
+  return businessAssignments.concat(VIP_CUSTOMERS)
 }
 
 async function main() {
   const shop = await prisma.shop.findUnique({
     where: { shopDomain: DTF_PRINTHOUSE_SHOP_DOMAIN },
-    select: { id: true, settings: true },
+    select: { settings: true },
   })
 
   if (!shop) {
@@ -116,44 +94,6 @@ async function main() {
     data: { settings: nextSettings },
   })
 
-  for (const productId of [
-    DTF_PRINTHOUSE_DTF_UPLOAD_PRODUCT_ID,
-    DTF_PRINTHOUSE_UV_UPLOAD_PRODUCT_ID,
-  ]) {
-    const existing = await prisma.productConfig.findUnique({
-      where: {
-        shopId_productId: {
-          shopId: shop.id,
-          productId,
-        },
-      },
-      select: {
-        builderConfig: true,
-      },
-    })
-
-    await prisma.productConfig.upsert({
-      where: {
-        shopId_productId: {
-          shopId: shop.id,
-          productId,
-        },
-      },
-      update: {
-        uploadEnabled: true,
-        builderConfig: mergeBuilderConfig(existing?.builderConfig),
-      },
-      create: {
-        shopId: shop.id,
-        productId,
-        uploadEnabled: true,
-        mode: 'dtf',
-        enabled: true,
-        builderConfig: mergeBuilderConfig(null),
-      },
-    })
-  }
-
   console.log(
     JSON.stringify(
       {
@@ -161,7 +101,6 @@ async function main() {
         assignments: settings.assignments.length,
         businessCustomers: BUSINESS_CUSTOMERS.length,
         vipCustomers: VIP_CUSTOMERS.length,
-        productsUpdated: 2,
       },
       null,
       2

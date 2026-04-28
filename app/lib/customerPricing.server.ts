@@ -4,8 +4,6 @@ import {
 } from '~/lib/uploadLifecycle.server'
 
 export const DTF_PRINTHOUSE_SHOP_DOMAIN = 'e3bd2d-3.myshopify.com'
-export const DTF_PRINTHOUSE_DTF_UPLOAD_PRODUCT_ID = 'gid://shopify/Product/7605186560158'
-export const DTF_PRINTHOUSE_UV_UPLOAD_PRODUCT_ID = 'gid://shopify/Product/7717339562142'
 export const DTF_PRINTHOUSE_MAX_WIDTH_IN = 22.5
 
 export type CustomerPricingCustomerType = 'guest' | 'standard' | 'business' | 'vip'
@@ -124,17 +122,6 @@ const DEFAULT_MAX_WIDTH_IN = 22
 const DEFAULT_MAX_HEIGHT_IN = 240
 const DEFAULT_CUSTOMER_PRICING_VERSION = 2
 
-const DTF_PRINTHOUSE_PRODUCT_RULE_CATALOG: ProductRuleCatalogItem[] = [
-  {
-    productId: DTF_PRINTHOUSE_DTF_UPLOAD_PRODUCT_ID,
-    label: 'Upload DTF Gang Sheet',
-  },
-  {
-    productId: DTF_PRINTHOUSE_UV_UPLOAD_PRODUCT_ID,
-    label: 'Upload UV DTF Gang Sheet',
-  },
-]
-
 function toPositiveNumber(value: unknown, fallback = 0): number {
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
@@ -186,14 +173,15 @@ function normalizePricingMode(
 }
 
 function normalizeProductLabel(productId: string): string {
-  const match = DTF_PRINTHOUSE_PRODUCT_RULE_CATALOG.find((item) => item.productId === productId)
-  return match?.label || productId
+  if (isWildcardProductId(productId)) return 'All products'
+  return productId
 }
 
 function ensureProductId(value: unknown): string | null {
   if (value == null) return null
   const raw = String(value).trim()
   if (!raw) return null
+  if (isWildcardProductId(raw)) return '*'
   return raw.startsWith('gid://') ? raw : `gid://shopify/Product/${raw}`
 }
 
@@ -228,15 +216,6 @@ function ensureStatus(
   return statuses.map((status, index) => (index === existingIndex ? nextStatus : status))
 }
 
-function ensureStatusRule(
-  rules: CustomerPricingProductRule[],
-  nextRule: CustomerPricingProductRule
-): CustomerPricingProductRule[] {
-  const existingIndex = rules.findIndex((rule) => rule.productId === nextRule.productId)
-  if (existingIndex < 0) return rules.concat(nextRule)
-  return rules.map((rule, index) => (index === existingIndex ? nextRule : rule))
-}
-
 export function normalizeCustomerId(value: string | number | null | undefined): string | null {
   if (value == null) return null
   const raw = String(value).trim()
@@ -267,10 +246,6 @@ export function getMaxWidthLimitForShop(shopDomain: string | null | undefined): 
   return isDtfPrintHouseShop(shopDomain) ? DTF_PRINTHOUSE_MAX_WIDTH_IN : DEFAULT_MAX_WIDTH_IN
 }
 
-export function getDtfPrintHouseProductCatalog(): ProductRuleCatalogItem[] {
-  return DTF_PRINTHOUSE_PRODUCT_RULE_CATALOG.map((item) => ({ ...item }))
-}
-
 export function buildDtfPrintHouseCustomerPricingSettings(): CustomerPricingSettings {
   const standardStatus: CustomerPricingStatus = {
     id: 'standard',
@@ -289,24 +264,7 @@ export function buildDtfPrintHouseCustomerPricingSettings(): CustomerPricingSett
     type: 'business',
     active: true,
     pricePerInch: DEFAULT_BUSINESS_PRICE_PER_INCH,
-    productRules: [
-      {
-        id: 'business_dtf_upload',
-        productId: DTF_PRINTHOUSE_DTF_UPLOAD_PRODUCT_ID,
-        productLabel: 'Upload DTF Gang Sheet',
-        active: true,
-        pricingMode: 'variant_length',
-        pricePerInch: 0.2,
-      },
-      {
-        id: 'business_uv_upload',
-        productId: DTF_PRINTHOUSE_UV_UPLOAD_PRODUCT_ID,
-        productLabel: 'Upload UV DTF Gang Sheet',
-        active: true,
-        pricingMode: 'variant_length',
-        pricePerInch: 0.6,
-      },
-    ],
+    productRules: [],
   }
 
   const vipStatus: CustomerPricingStatus = {
@@ -316,24 +274,7 @@ export function buildDtfPrintHouseCustomerPricingSettings(): CustomerPricingSett
     type: 'vip',
     active: true,
     pricePerInch: DEFAULT_BUSINESS_PRICE_PER_INCH,
-    productRules: [
-      {
-        id: 'vip_dtf_upload',
-        productId: DTF_PRINTHOUSE_DTF_UPLOAD_PRODUCT_ID,
-        productLabel: 'Upload DTF Gang Sheet',
-        active: true,
-        pricingMode: 'measured_length',
-        pricePerInch: 0.2,
-      },
-      {
-        id: 'vip_uv_upload',
-        productId: DTF_PRINTHOUSE_UV_UPLOAD_PRODUCT_ID,
-        productLabel: 'Upload UV DTF Gang Sheet',
-        active: false,
-        pricingMode: 'measured_length',
-        pricePerInch: 0.2,
-      },
-    ],
+    productRules: [],
   }
 
   return {
@@ -397,20 +338,6 @@ export function normalizeCustomerPricingSettings(rawSettings: unknown): Customer
         })
         .filter((rule): rule is CustomerPricingProductRule => Boolean(rule))
 
-      const normalizedRules =
-        productRules.length || type === 'standard'
-          ? productRules
-          : [
-              {
-                id: `${key}_default`,
-                productId: '*',
-                productLabel: 'All products',
-                active: true,
-                pricingMode: defaultPricingMode,
-                pricePerInch,
-              },
-            ]
-
       return {
         id: String(value.id || key),
         key,
@@ -418,7 +345,7 @@ export function normalizeCustomerPricingSettings(rawSettings: unknown): Customer
         type,
         active: value.active !== false,
         pricePerInch,
-        productRules: normalizedRules,
+        productRules,
       } satisfies CustomerPricingStatus
     })
     .filter((status) => Boolean(status.id) && Boolean(status.label))
@@ -514,27 +441,6 @@ export function applyCustomerPricingDefaultsForShop(
 
     if (!currentStatus.label || currentStatus.label === currentStatus.key) {
       nextStatus = { ...nextStatus, label: defaultStatus.label }
-    }
-
-    for (const defaultRule of defaultStatus.productRules) {
-      const currentRule = currentStatus.productRules.find((rule) => rule.productId === defaultRule.productId)
-      if (!currentRule) {
-        nextStatus = {
-          ...nextStatus,
-          productRules: ensureStatusRule(nextStatus.productRules, defaultRule),
-        }
-        continue
-      }
-
-      const mergedRule: CustomerPricingProductRule = {
-        ...currentRule,
-        productLabel: currentRule.productLabel || defaultRule.productLabel,
-        pricingMode: currentRule.pricingMode || defaultRule.pricingMode,
-      }
-      nextStatus = {
-        ...nextStatus,
-        productRules: ensureStatusRule(nextStatus.productRules, mergedRule),
-      }
     }
 
     mergedStatuses = ensureStatus(mergedStatuses, nextStatus)
