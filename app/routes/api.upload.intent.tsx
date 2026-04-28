@@ -4,7 +4,6 @@ import { checkUploadAllowed, MAX_FILE_SIZE_MB } from '~/lib/billing.server'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
-import { normalizeProductId } from '~/lib/customerPricing.server'
 import {
   buildStorageKey,
   buildStorageKeyWithPrefix,
@@ -113,48 +112,6 @@ export async function action({ request }: ActionFunctionArgs) {
     return corsJson({ error: 'Shop not found' }, request, { status: 404 })
   }
 
-  const normalizedProductId = productId ? normalizeProductId(productId) : null
-  if (productId && !normalizedProductId) {
-    return corsJson(
-      {
-        error: 'Invalid productId. Expected a Shopify product ID, not a variant ID or handle.',
-        code: 'INVALID_PRODUCT_ID',
-      },
-      request,
-      { status: 400 }
-    )
-  }
-
-  if (normalizedProductId) {
-    const productConfig = await prisma.productConfig.findFirst({
-      where: {
-        shopId: shop.id,
-        OR: [{ productId: normalizedProductId }, { productId: String(productId) }],
-      },
-      select: {
-        uploadEnabled: true,
-        enabled: true,
-      },
-    })
-
-    if (productConfig && (!productConfig.uploadEnabled || !productConfig.enabled)) {
-      return corsJson(
-        {
-          error: 'Uploads are not enabled for this product.',
-          code: 'PRODUCT_UPLOAD_DISABLED',
-        },
-        request,
-        { status: 403 }
-      )
-    }
-
-    if (!productConfig) {
-      console.warn(
-        `[Upload Intent] productId ${normalizedProductId} has no ProductConfig for shop ${shop.id}; accepting for backwards compatibility`
-      )
-    }
-  }
-
   // Validate mode
   if (!['dtf', '3d_designer', 'classic', 'quick', 'builder'].includes(mode)) {
     return corsJson({ error: 'Invalid mode' }, request, { status: 400 })
@@ -255,9 +212,7 @@ export async function action({ request }: ActionFunctionArgs) {
     storageConfig: shop.storageConfig as Record<string, string> | null,
   })
 
-  console.log(
-    `[Upload Intent] Shop: ${shopDomain}, Storage: ${storageConfig.provider}, Product: ${normalizedProductId || 'none'}`
-  )
+  console.log(`[Upload Intent] Shop: ${shopDomain}, Storage: ${storageConfig.provider}`)
 
   // Build storage key (raw path without prefix - used for signed URL)
   const key = buildStorageKey(shopDomain, uploadId, itemId, fileName)
@@ -306,7 +261,7 @@ export async function action({ request }: ActionFunctionArgs) {
       data: {
         id: uploadId,
         shopId: shop.id,
-        productId: normalizedProductId,
+        productId,
         variantId,
         mode,
         status: 'draft',
@@ -361,7 +316,7 @@ export async function action({ request }: ActionFunctionArgs) {
       provider: uploadResult.provider as any,
       metadata: {
         mode,
-        productId: normalizedProductId,
+        productId,
         variantId,
         hasR2Fallback: !!uploadResult.fallbackUrls?.r2,
         hasLocalFallback: !!uploadResult.fallbackUrls?.local,
