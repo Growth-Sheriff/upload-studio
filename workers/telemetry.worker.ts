@@ -20,9 +20,25 @@ import { collectTelemetry } from '../app/lib/telemetry.server'
 // ──────────────────── Config ────────────────────
 
 const INTERVAL_MS = 60_000 // 60 seconds
-const TENANT_SLUG = process.env.TENANT_SLUG || 'unknown'
-const BILLING_PANEL_URL = process.env.BILLING_PANEL_URL || ''
-const BILLING_PANEL_KEY = process.env.BILLING_PANEL_KEY || ''
+
+// Prefer explicit TENANT_SLUG; otherwise derive from SHOPIFY_APP_URL subdomain
+// so telemetry labels and billing attribution never fall back to "unknown"
+// just because an env var was omitted from the container spec.
+function resolveTenantSlug(): string {
+  const raw = (process.env.TENANT_SLUG || '').trim()
+  if (raw && raw !== 'default' && raw !== 'unknown') return raw
+  const appUrl = (process.env.SHOPIFY_APP_URL || '').trim()
+  if (appUrl) {
+    const host = appUrl.replace(/^https?:\/\//, '').split('/')[0]
+    const sub = host.split('.')[0]
+    if (sub && sub !== 'localhost') return sub
+  }
+  return raw || 'unknown'
+}
+
+const TENANT_SLUG = resolveTenantSlug()
+const BILLING_PANEL_URL = (process.env.BILLING_PANEL_URL || '').trim()
+const BILLING_PANEL_KEY = (process.env.BILLING_PANEL_KEY || '').trim()
 
 // ──────────────────── Prisma ────────────────────
 
@@ -58,16 +74,31 @@ async function pushTelemetry(): Promise<void> {
       return
     }
 
-    const response = await fetch(BILLING_PANEL_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Tenant-Slug': TENANT_SLUG,
-        'X-Api-Key': BILLING_PANEL_KEY,
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(15_000), // 15s timeout
-    })
+    let response: Response
+    try {
+      response = await fetch(BILLING_PANEL_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Tenant-Slug': TENANT_SLUG,
+          'X-Api-Key': BILLING_PANEL_KEY,
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15_000), // 15s timeout
+      })
+    } catch (fetchErr) {
+      // Distinguish DNS/TCP/TLS/timeout from HTTP errors — previous logs
+      // swallowed this into a generic "fetch failed" which hid whether
+      // BILLING_PANEL_URL was misconfigured vs. the panel being unreachable.
+      const e = fetchErr as any
+      const cause = e && e.cause ? ` cause=${(e.cause as any).code || (e.cause as any).message}` : ''
+      const name = e && e.name ? ` (${e.name})` : ''
+      console.error(
+        `[Telemetry:${TENANT_SLUG}] Upstream unreachable${name}: ${e?.message || String(e)}${cause} url=${BILLING_PANEL_URL}`
+      )
+      consecutiveErrors++
+      return
+    }
 
     if (!response.ok) {
       const text = await response.text().catch(() => '')
@@ -130,11 +161,25 @@ process.on('SIGINT', shutdown)
 
 // ──────────────────── Start ────────────────────
 
-console.log(`[Telemetry:${TENANT_SLUG}] Starting (interval: ${INTERVAL_MS / 1000}s)`)
+const tenantSource = process.env.TENANT_SLUG
+  ? 'env'
+  : process.env.SHOPIFY_APP_URL
+    ? 'SHOPIFY_APP_URL'
+    : 'fallback'
+console.log(
+  `[Telemetry:${TENANT_SLUG}] Starting (interval: ${INTERVAL_MS / 1000}s, tenant_source=${tenantSource})`
+)
 if (BILLING_PANEL_URL) {
-  console.log(`[Telemetry:${TENANT_SLUG}] Target: ${BILLING_PANEL_URL}`)
+  console.log(
+    `[Telemetry:${TENANT_SLUG}] Target: ${BILLING_PANEL_URL} (api_key=${BILLING_PANEL_KEY ? 'set' : 'MISSING'})`
+  )
 } else {
   console.log(`[Telemetry:${TENANT_SLUG}] No BILLING_PANEL_URL - local logging only`)
+}
+if (TENANT_SLUG === 'unknown' || TENANT_SLUG === 'default') {
+  console.warn(
+    `[Telemetry:${TENANT_SLUG}] Tenant slug is a placeholder. Set TENANT_SLUG or SHOPIFY_APP_URL so metrics aren't attributed to a phantom tenant.`
+  )
 }
 
 // Initial push after 10s delay (let app start first)

@@ -5,7 +5,34 @@
 # ============================================
 set -e
 
+# Derive tenant from SHOPIFY_APP_URL subdomain when TENANT_SLUG is missing
+# or a placeholder. Previous deploys silently defaulted to "default" which
+# broke telemetry attribution and made the [TENANT GUARD] warning noisy,
+# while the correct tenant identity was already encoded in SHOPIFY_APP_URL
+# (e.g. https://dtfprinthouse.uploadstudio.app... -> dtfprinthouse).
+if [ -z "${TENANT_SLUG}" ] || [ "${TENANT_SLUG}" = "default" ] || [ "${TENANT_SLUG}" = "unknown" ]; then
+  if [ -n "${SHOPIFY_APP_URL}" ]; then
+    DERIVED_SLUG=$(echo "${SHOPIFY_APP_URL}" | sed -E 's|^https?://||' | cut -d. -f1)
+    if [ -n "${DERIVED_SLUG}" ] && [ "${DERIVED_SLUG}" != "localhost" ]; then
+      echo "[Init] TENANT_SLUG missing/placeholder, derived '${DERIVED_SLUG}' from SHOPIFY_APP_URL"
+      TENANT_SLUG="${DERIVED_SLUG}"
+    fi
+  fi
+fi
 TENANT_SLUG="${TENANT_SLUG:-default}"
+export TENANT_SLUG
+
+# Fail loudly in production when tenant is still not resolved — silent
+# "default" in production corrupts telemetry, billing attribution, and
+# multi-tenant scope guards without any visible symptom for days.
+if [ "${NODE_ENV}" = "production" ] && [ "${TENANT_SLUG}" = "default" ]; then
+  if [ "${ALLOW_DEFAULT_TENANT}" != "true" ]; then
+    echo "[Init] FATAL: TENANT_SLUG is 'default' in production and could not be derived from SHOPIFY_APP_URL." >&2
+    echo "[Init] Set TENANT_SLUG explicitly, or set ALLOW_DEFAULT_TENANT=true to bypass (not recommended)." >&2
+    exit 1
+  fi
+  echo "[Init] WARNING: running with TENANT_SLUG=default in production (ALLOW_DEFAULT_TENANT=true)."
+fi
 
 echo "============================================"
 echo "Upload Studio - Starting tenant: ${TENANT_SLUG}"
