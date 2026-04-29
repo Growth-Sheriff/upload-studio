@@ -34,6 +34,9 @@ export interface UploadLifecycleMetadata {
   measurementHeightPx: number
   effectiveDpi: number
   sizingSource: string | null
+  // Physical printable sheet width (inches) used to anchor inch dimensions
+  // from the artwork's pixel ratio. Set per-product from builder config.
+  sheetWidthIn?: number
   widthIn: number
   heightIn: number
   measurementMode: string | null
@@ -58,52 +61,48 @@ interface UploadItemLike {
   thumbnailKey?: string | null
 }
 
-const DEFAULT_EFFECTIVE_DPI = 200
+const DEFAULT_SHEET_WIDTH_IN = 22
 
 function parsePositiveNumber(value: unknown): number {
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
 }
 
+/**
+ * Compute physical inch dimensions from pixel size by anchoring the shorter
+ * pixel side to the printable sheet width. This is how gang-sheet presses
+ * actually output: the press width is fixed (e.g. 22") and the length scales.
+ *
+ * IMPORTANT: pricing depends on these values. Do not multiply, round, or
+ * alter the returned widthIn/heightIn except where explicitly required.
+ */
+export function computeSheetAnchoredInches(
+  widthPx: number,
+  heightPx: number,
+  sheetWidthInArg?: number
+): { widthIn: number; heightIn: number; effectiveDpi: number; sheetWidthIn: number } {
+  const sheetWidthIn =
+    typeof sheetWidthInArg === 'number' && sheetWidthInArg > 0
+      ? sheetWidthInArg
+      : DEFAULT_SHEET_WIDTH_IN
+
+  if (!(widthPx > 0) || !(heightPx > 0)) {
+    return { widthIn: 0, heightIn: 0, effectiveDpi: 0, sheetWidthIn }
+  }
+
+  const shortSidePx = Math.min(widthPx, heightPx)
+  const longSidePx = Math.max(widthPx, heightPx)
+  const isPortrait = heightPx >= widthPx
+  const longSideIn = (longSidePx / shortSidePx) * sheetWidthIn
+  const widthIn = Number((isPortrait ? sheetWidthIn : longSideIn).toFixed(2))
+  const heightIn = Number((isPortrait ? longSideIn : sheetWidthIn).toFixed(2))
+  const effectiveDpi = Math.round(shortSidePx / sheetWidthIn)
+  return { widthIn, heightIn, effectiveDpi, sheetWidthIn }
+}
+
 function normalizeSizingSource(value: unknown): string | null {
   const raw = String(value || '').trim()
   return raw || null
-}
-
-function resolveMeasurementSizing(metadata: {
-  dpi?: unknown
-  effectiveDpi?: unknown
-  sizingSource?: unknown
-}): { effectiveDpi: number; sizingSource: string } {
-  const documentDpi = parsePositiveNumber(metadata.dpi)
-  const storedEffectiveDpi = parsePositiveNumber(metadata.effectiveDpi)
-  const storedSizingSource = normalizeSizingSource(metadata.sizingSource)
-
-  if (storedSizingSource === 'document_dpi') {
-    return {
-      effectiveDpi: storedEffectiveDpi || documentDpi || DEFAULT_EFFECTIVE_DPI,
-      sizingSource: 'document_dpi',
-    }
-  }
-
-  if (storedSizingSource === 'fallback_200dpi') {
-    return {
-      effectiveDpi: storedEffectiveDpi || DEFAULT_EFFECTIVE_DPI,
-      sizingSource: 'fallback_200dpi',
-    }
-  }
-
-  if (documentDpi > 0) {
-    return {
-      effectiveDpi: documentDpi,
-      sizingSource: 'document_dpi',
-    }
-  }
-
-  return {
-    effectiveDpi: DEFAULT_EFFECTIVE_DPI,
-    sizingSource: 'fallback_200dpi',
-  }
 }
 
 function normalizeStageStatus(value: unknown): UploadStageStatus | null {
@@ -144,9 +143,9 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
   let trimmedOffsetYPx = 0
   let measurementWidthPx = 0
   let measurementHeightPx = 0
-  let effectiveDpi = DEFAULT_EFFECTIVE_DPI
   let sizingSource: string | null = null
   let measurementMode: string | null = null
+  let sheetWidthInFromDetails = 0
 
   for (const check of checks) {
     if (check.name === 'dimensions' && check.details && typeof check.details === 'object') {
@@ -159,9 +158,9 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
       trimmedOffsetYPx = parsePositiveNumber(details.trimmedOffsetY)
       measurementWidthPx = parsePositiveNumber(details.measurementWidth)
       measurementHeightPx = parsePositiveNumber(details.measurementHeight)
-      const resolvedSizing = resolveMeasurementSizing(details)
-      effectiveDpi = resolvedSizing.effectiveDpi
-      sizingSource = resolvedSizing.sizingSource
+      sheetWidthInFromDetails = parsePositiveNumber(details.sheetWidthIn)
+      const storedSizingSource = normalizeSizingSource(details.sizingSource)
+      sizingSource = storedSizingSource
       measurementMode =
         typeof details.measurementMode === 'string' && details.measurementMode
           ? details.measurementMode
@@ -182,6 +181,13 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
     measurementHeightPx = heightPx
   }
 
+  // Sheet-anchored physical size — pricing source of truth.
+  const anchored = computeSheetAnchoredInches(
+    measurementWidthPx,
+    measurementHeightPx,
+    sheetWidthInFromDetails
+  )
+
   return {
     widthPx,
     heightPx,
@@ -192,10 +198,11 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
     trimmedOffsetYPx,
     measurementWidthPx,
     measurementHeightPx,
-    effectiveDpi,
-    sizingSource,
-    widthIn: Number((measurementWidthPx / effectiveDpi).toFixed(2)),
-    heightIn: Number((measurementHeightPx / effectiveDpi).toFixed(2)),
+    effectiveDpi: anchored.effectiveDpi,
+    sizingSource: sizingSource || 'sheet_width_anchor',
+    sheetWidthIn: anchored.sheetWidthIn,
+    widthIn: anchored.widthIn,
+    heightIn: anchored.heightIn,
     measurementMode,
   }
 }
@@ -213,8 +220,13 @@ function extractMetadata(preflightResult: unknown, checks: Array<Record<string, 
     if (widthPx > 0 && heightPx > 0) {
       const measurementWidthPx = parsePositiveNumber(metadata.measurementWidthPx) || widthPx
       const measurementHeightPx = parsePositiveNumber(metadata.measurementHeightPx) || heightPx
-      const resolvedSizing = resolveMeasurementSizing(metadata)
-      const effectiveDpi = resolvedSizing.effectiveDpi
+      const sheetWidthInStored = parsePositiveNumber(metadata.sheetWidthIn)
+      const anchored = computeSheetAnchoredInches(
+        measurementWidthPx,
+        measurementHeightPx,
+        sheetWidthInStored
+      )
+      const storedSizingSource = normalizeSizingSource(metadata.sizingSource)
 
       return {
         widthPx,
@@ -226,10 +238,11 @@ function extractMetadata(preflightResult: unknown, checks: Array<Record<string, 
         trimmedOffsetYPx: parsePositiveNumber(metadata.trimmedOffsetYPx),
         measurementWidthPx,
         measurementHeightPx,
-        effectiveDpi,
-        sizingSource: resolvedSizing.sizingSource,
-        widthIn: Number((measurementWidthPx / effectiveDpi).toFixed(2)),
-        heightIn: Number((measurementHeightPx / effectiveDpi).toFixed(2)),
+        effectiveDpi: anchored.effectiveDpi,
+        sizingSource: storedSizingSource || 'sheet_width_anchor',
+        sheetWidthIn: anchored.sheetWidthIn,
+        widthIn: anchored.widthIn,
+        heightIn: anchored.heightIn,
         measurementMode:
           typeof metadata.measurementMode === 'string' && metadata.measurementMode
             ? metadata.measurementMode
@@ -246,17 +259,19 @@ export function applyFullCanvasMeasurementMetadata(
 ): UploadLifecycleMetadata | null {
   if (!metadata) return null
 
-  const resolvedSizing = resolveMeasurementSizing(metadata)
-  const effectiveDpi = resolvedSizing.effectiveDpi
+  const fullWidthPx = metadata.widthPx > 0 ? metadata.widthPx : metadata.measurementWidthPx
+  const fullHeightPx = metadata.heightPx > 0 ? metadata.heightPx : metadata.measurementHeightPx
+  const anchored = computeSheetAnchoredInches(fullWidthPx, fullHeightPx, metadata.sheetWidthIn)
 
   return {
     ...metadata,
-    measurementWidthPx: metadata.widthPx > 0 ? metadata.widthPx : metadata.measurementWidthPx,
-    measurementHeightPx: metadata.heightPx > 0 ? metadata.heightPx : metadata.measurementHeightPx,
-    effectiveDpi,
-    sizingSource: resolvedSizing.sizingSource,
-    widthIn: Number(((metadata.widthPx > 0 ? metadata.widthPx : metadata.measurementWidthPx) / effectiveDpi).toFixed(2)),
-    heightIn: Number(((metadata.heightPx > 0 ? metadata.heightPx : metadata.measurementHeightPx) / effectiveDpi).toFixed(2)),
+    measurementWidthPx: fullWidthPx,
+    measurementHeightPx: fullHeightPx,
+    effectiveDpi: anchored.effectiveDpi,
+    sizingSource: 'sheet_width_anchor',
+    sheetWidthIn: anchored.sheetWidthIn,
+    widthIn: anchored.widthIn,
+    heightIn: anchored.heightIn,
     measurementMode: 'full',
   }
 }

@@ -641,6 +641,38 @@ export async function prepareUploadJobContext(
   const stats = await fs.stat(originalPath)
   const detectedType = await detectFileType(originalPath)
 
+  // Pull product-specific sheet width (maxWidthIn) from ProductConfig so the
+  // preflight measurement anchors physical inches to the actual press width.
+  // Falls back to plan default when no product config exists.
+  let sheetWidthIn: number | undefined
+  try {
+    const upload = await prisma.upload.findUnique({
+      where: { id: uploadId },
+      select: { productId: true },
+    })
+    if (upload?.productId) {
+      const productConfig = await prisma.productConfig.findFirst({
+        where: { shopId, productId: upload.productId },
+        select: { builderConfig: true },
+      })
+      const builderConfig = productConfig?.builderConfig as Record<string, unknown> | null
+      const candidate = Number(builderConfig?.maxWidthIn)
+      if (Number.isFinite(candidate) && candidate > 0) {
+        sheetWidthIn = candidate
+      }
+    }
+  } catch (configError) {
+    workerLog.warn('SHEET_WIDTH_LOOKUP_FAILED', {
+      uploadId,
+      shopId,
+      error: configError instanceof Error ? configError.message : String(configError),
+    })
+  }
+
+  const baseConfig = PLAN_CONFIGS[shop.plan] || PLAN_CONFIGS.free
+  const config: PreflightConfig =
+    sheetWidthIn !== undefined ? { ...baseConfig, sheetWidthIn } : baseConfig
+
   return {
     uploadId,
     shopId,
@@ -648,7 +680,7 @@ export async function prepareUploadJobContext(
     storageKey,
     shop,
     item,
-    config: PLAN_CONFIGS[shop.plan] || PLAN_CONFIGS.free,
+    config,
     storageProvider,
     storageObjectKey,
     tempDir,

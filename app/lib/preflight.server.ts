@@ -6,7 +6,14 @@ import { promisify } from 'util'
 import { inflateSync } from 'zlib'
 
 const execAsync = promisify(exec)
-const DEFAULT_DOCUMENT_FALLBACK_DPI = 200
+
+// Default printable sheet width in inches when a product-specific value is
+// not available. Sheet width is the fixed dimension of the gang sheet press
+// output — every shop using gang-sheet products has this set in product
+// builder config (maxWidthIn). Fallback 22" matches the DTF industry default.
+// We use this — NOT a guessed DPI — to compute physical inch dimensions from
+// pixel ratios. Embedded DPI is treated as a quality signal only.
+const DEFAULT_SHEET_WIDTH_IN = 22
 
 interface DpiCandidate {
   dpi: number
@@ -779,6 +786,11 @@ export interface PreflightConfig {
   maxPages: number
   allowedFormats: string[]
   requireTransparency: boolean
+  // Physical printable sheet width in inches. Anchors size detection: the
+  // shorter pixel side of the artwork is taken to span this width, and the
+  // length is derived from the pixel aspect ratio. Set per-product from the
+  // shop's builder config (maxWidthIn). Falls back to DEFAULT_SHEET_WIDTH_IN.
+  sheetWidthIn?: number
 }
 
 export const PLAN_CONFIGS: Record<string, PreflightConfig> = {
@@ -1305,41 +1317,70 @@ export async function runPreflightChecks(
     }
   }
 
-  // 4. Image info checks (DPI, dimensions, transparency, color)
+  // 4. Image info checks (dimensions, DPI quality signal, transparency, color)
   try {
     const imageInfo = await getImageInfo(filePath)
     const trimmedBounds = await getTrimmedImageBounds(filePath, imageInfo)
-    const effectiveDpi = imageInfo.dpi > 0 ? imageInfo.dpi : DEFAULT_DOCUMENT_FALLBACK_DPI
-    const sizingSource = imageInfo.dpi > 0 ? 'document_dpi' : 'fallback_200dpi'
-    const sizingSourceDetail = imageInfo.dpiSource || sizingSource
     const measurementWidth = imageInfo.width
     const measurementHeight = imageInfo.height
 
-    // DPI check
-    if (imageInfo.dpi <= 0) {
+    // === Sheet-anchored physical size ===
+    // Gang-sheet prints have a FIXED printable width (e.g. 22") set by the
+    // press. Whatever the customer uploads, the shorter pixel side maps to
+    // that printable width; the longer side determines the length. This
+    // makes physical size deterministic regardless of (or absent) embedded
+    // DPI metadata. Embedded DPI, when present, is reported only as a
+    // print-quality signal.
+    const sheetWidthIn =
+      typeof config.sheetWidthIn === 'number' && config.sheetWidthIn > 0
+        ? config.sheetWidthIn
+        : DEFAULT_SHEET_WIDTH_IN
+    const shortSidePx = Math.min(measurementWidth, measurementHeight)
+    const longSidePx = Math.max(measurementWidth, measurementHeight)
+    const isPortrait = measurementHeight >= measurementWidth
+    const longSideIn = shortSidePx > 0
+      ? (longSidePx / shortSidePx) * sheetWidthIn
+      : sheetWidthIn
+    const widthIn = Number((isPortrait ? sheetWidthIn : longSideIn).toFixed(2))
+    const heightIn = Number((isPortrait ? longSideIn : sheetWidthIn).toFixed(2))
+
+    // Effective DPI is back-calculated from the sheet-anchor for quality
+    // checks only (e.g. "this artwork prints at ~72 DPI, blurry").
+    // It is NOT used to compute widthIn/heightIn.
+    const effectiveDpi = shortSidePx > 0
+      ? Math.round(shortSidePx / sheetWidthIn)
+      : 0
+    const sizingSource = 'sheet_width_anchor'
+    const sizingSourceDetail =
+      imageInfo.dpi > 0
+        ? `sheet_anchor (embedded_dpi=${imageInfo.dpi}, source=${imageInfo.dpiSource || 'unknown'})`
+        : 'sheet_anchor (no_embedded_dpi)'
+
+    // DPI quality check (informational — does not affect sizing)
+    if (effectiveDpi <= 0) {
       checks.push({
         name: 'dpi',
         status: 'warning',
-        value: imageInfo.dpi,
-        message: `Embedded DPI metadata is missing. Document sizing uses ${effectiveDpi} DPI fallback.`,
-        details: { source: sizingSourceDetail },
+        value: effectiveDpi,
+        message: 'Could not determine artwork resolution.',
+        details: { source: sizingSourceDetail, sheetWidthIn },
       })
-    } else if (imageInfo.dpi < config.requiredDPI) {
+    } else if (effectiveDpi < config.requiredDPI) {
       checks.push({
         name: 'dpi',
         status: 'warning',
-        value: imageInfo.dpi,
-        message: `Embedded DPI (${imageInfo.dpi}) is below recommended (${config.requiredDPI}). Document sizing keeps the embedded DPI.`,
-        details: { source: sizingSourceDetail },
+        value: effectiveDpi,
+        message: `Effective print DPI is ${effectiveDpi} (recommended ${config.requiredDPI}). Print may appear pixelated at full size.`,
+        details: { source: sizingSourceDetail, sheetWidthIn },
       })
       if (overall === 'ok') overall = 'warning'
     } else {
       checks.push({
         name: 'dpi',
         status: 'ok',
-        value: imageInfo.dpi,
-        message: `DPI: ${imageInfo.dpi}`,
-        details: { source: sizingSourceDetail },
+        value: effectiveDpi,
+        message: `Effective print DPI: ${effectiveDpi}`,
+        details: { source: sizingSourceDetail, sheetWidthIn },
       })
     }
 
@@ -1348,7 +1389,7 @@ export async function runPreflightChecks(
       name: 'dimensions',
       status: 'ok',
       value: `${imageInfo.width}x${imageInfo.height}`,
-      message: `Dimensions: ${imageInfo.width} x ${imageInfo.height} px`,
+      message: `Dimensions: ${imageInfo.width} x ${imageInfo.height} px (${widthIn}" x ${heightIn}")`,
       details: {
         width: imageInfo.width,
         height: imageInfo.height,
@@ -1361,9 +1402,10 @@ export async function runPreflightChecks(
         effectiveDpi,
         sizingSource,
         sizingSourceDetail,
+        sheetWidthIn,
         measurementMode: 'full',
-        widthIn: Number((measurementWidth / effectiveDpi).toFixed(2)),
-        heightIn: Number((measurementHeight / effectiveDpi).toFixed(2)),
+        widthIn,
+        heightIn,
       },
     })
 
