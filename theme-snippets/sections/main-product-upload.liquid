@@ -535,31 +535,53 @@
           return 'document_dpi';
         }
       }
-      return 'fallback_200dpi';
+      return 'sheet_width_anchor';
     }
 
     function getResolvedSizingDpi(value) {
-      if (!value || typeof value !== 'object') return 200;
-      var source = getResolvedSizingSource(value);
+      if (!value || typeof value !== 'object') return 0;
       var embeddedDpi = parseNonNegativeNumber(value.embeddedDpi);
       var effectiveDpi = parseNonNegativeNumber(value.effectiveDpi);
-      if (source === 'document_dpi') {
-        return embeddedDpi || effectiveDpi || 200;
-      }
-      return effectiveDpi || 200;
+      if (embeddedDpi > 0) return embeddedDpi;
+      if (effectiveDpi > 0) return effectiveDpi;
+      return 0;
     }
 
+    // Server now anchors physical size to the printable sheet width and treats
+    // DPI as a quality signal only. Surface that to the customer plainly:
+    // either show measured dimensions with the artwork's resolution, or report
+    // the anchored dimensions when no embedded DPI is present. The "DPI fallback"
+    // language is gone — it confused customers who saw "fallback" even when
+    // their file actually had embedded resolution.
     function getSizingMethodText(value) {
-      var embeddedDpi = value && typeof value === 'object' ? parseNonNegativeNumber(value.embeddedDpi) : 0;
-      var effectiveDpi = value && typeof value === 'object' ? parseNonNegativeNumber(value.effectiveDpi) : 0;
-      if (!(embeddedDpi > 0) && !(effectiveDpi > 0)) {
+      if (!value || typeof value !== 'object') {
         return 'Document size will be confirmed after upload measurement.';
       }
-      var sizingDpi = getResolvedSizingDpi(value);
-      if (getResolvedSizingSource(value) === 'document_dpi') {
-        return 'Document size calculated from embedded ' + sizingDpi + ' DPI.';
+      var embeddedDpi = parseNonNegativeNumber(value.embeddedDpi);
+      var effectiveDpi = parseNonNegativeNumber(value.effectiveDpi);
+      var widthIn = parseNonNegativeNumber(value.widthIn);
+      var heightIn = parseNonNegativeNumber(value.heightIn);
+      var source = getResolvedSizingSource(value);
+
+      if (!(widthIn > 0) || !(heightIn > 0)) {
+        return 'Document size will be confirmed after upload measurement.';
       }
-      return 'Document size estimated using ' + sizingDpi + ' DPI fallback.';
+
+      var sizeText = widthIn.toFixed(2) + '" × ' + heightIn.toFixed(2) + '"';
+
+      if (source === 'document_dpi' && embeddedDpi > 0) {
+        return 'Document size: ' + sizeText + ' (file resolution: ' + embeddedDpi + ' DPI).';
+      }
+
+      if (embeddedDpi > 0) {
+        return 'Document size: ' + sizeText + ' (file resolution: ' + embeddedDpi + ' DPI).';
+      }
+
+      if (effectiveDpi > 0) {
+        return 'Document size: ' + sizeText + ' (artwork prints at ~' + Math.round(effectiveDpi) + ' DPI).';
+      }
+
+      return 'Document size: ' + sizeText + '.';
     }
 
     var productJsonEl = document.getElementById({{ section_dom_id | append: '-product-json' | json }});
