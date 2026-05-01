@@ -787,10 +787,16 @@ export interface PreflightConfig {
   allowedFormats: string[]
   requireTransparency: boolean
   // Physical printable sheet width in inches. Anchors size detection: the
-  // shorter pixel side of the artwork is taken to span this width, and the
-  // length is derived from the pixel aspect ratio. Set per-product from the
-  // shop's builder config (maxWidthIn). Falls back to DEFAULT_SHEET_WIDTH_IN.
+  // shorter pixel side of the artwork is taken to span this width (or the
+  // shorter sheet side when sheetLengthIn is also set), and the length is
+  // derived from the pixel aspect ratio. Set per-product from the shop's
+  // builder config (maxWidthIn). Falls back to DEFAULT_SHEET_WIDTH_IN.
   sheetWidthIn?: number
+  // Second physical sheet dimension for fixed-size products (e.g. 12" for a
+  // 22"×12" PERSONAL GS). When present, the shorter of (sheetWidthIn,
+  // sheetLengthIn) is used as the anchor — this is what makes landscape
+  // files report correct dimensions on fixed sheets.
+  sheetLengthIn?: number
 }
 
 export const PLAN_CONFIGS: Record<string, PreflightConfig> = {
@@ -1335,20 +1341,29 @@ export async function runPreflightChecks(
       typeof config.sheetWidthIn === 'number' && config.sheetWidthIn > 0
         ? config.sheetWidthIn
         : DEFAULT_SHEET_WIDTH_IN
+    const sheetLengthIn =
+      typeof config.sheetLengthIn === 'number' && config.sheetLengthIn > 0
+        ? config.sheetLengthIn
+        : undefined
+    // For fixed-size sheets (both dims set), the shorter sheet side is the
+    // anchor — that's what makes a landscape file on a 22×12 sheet report
+    // 22×12 instead of 40×22.
+    const shortSheetIn =
+      sheetLengthIn !== undefined ? Math.min(sheetWidthIn, sheetLengthIn) : sheetWidthIn
     const shortSidePx = Math.min(measurementWidth, measurementHeight)
     const longSidePx = Math.max(measurementWidth, measurementHeight)
     const isPortrait = measurementHeight >= measurementWidth
     const longSideIn = shortSidePx > 0
-      ? (longSidePx / shortSidePx) * sheetWidthIn
-      : sheetWidthIn
-    const widthIn = Number((isPortrait ? sheetWidthIn : longSideIn).toFixed(2))
-    const heightIn = Number((isPortrait ? longSideIn : sheetWidthIn).toFixed(2))
+      ? (longSidePx / shortSidePx) * shortSheetIn
+      : shortSheetIn
+    const widthIn = Number((isPortrait ? shortSheetIn : longSideIn).toFixed(2))
+    const heightIn = Number((isPortrait ? longSideIn : shortSheetIn).toFixed(2))
 
     // Effective DPI is back-calculated from the sheet-anchor for quality
     // checks only (e.g. "this artwork prints at ~72 DPI, blurry").
     // It is NOT used to compute widthIn/heightIn.
     const effectiveDpi = shortSidePx > 0
-      ? Math.round(shortSidePx / sheetWidthIn)
+      ? Math.round(shortSidePx / shortSheetIn)
       : 0
     const sizingSource = 'sheet_width_anchor'
     const sizingSourceDetail =
@@ -1403,6 +1418,7 @@ export async function runPreflightChecks(
         sizingSource,
         sizingSourceDetail,
         sheetWidthIn,
+        sheetLengthIn,
         measurementMode: 'full',
         widthIn,
         heightIn,

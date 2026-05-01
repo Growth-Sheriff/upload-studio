@@ -37,6 +37,10 @@ export interface UploadLifecycleMetadata {
   // Physical printable sheet width (inches) used to anchor inch dimensions
   // from the artwork's pixel ratio. Set per-product from builder config.
   sheetWidthIn?: number
+  // For fixed-size sheets, the second sheet dimension (e.g. 12" for a 22×12
+  // PERSONAL GS). When set, the helper picks the shorter of the two sheet
+  // sides as the anchor, so landscape files report correct dimensions.
+  sheetLengthIn?: number
   widthIn: number
   heightIn: number
   measurementMode: string | null
@@ -69,9 +73,25 @@ function parsePositiveNumber(value: unknown): number {
 }
 
 /**
- * Compute physical inch dimensions from pixel size by anchoring the shorter
- * pixel side to the printable sheet width. This is how gang-sheet presses
- * actually output: the press width is fixed (e.g. 22") and the length scales.
+ * Compute physical inch dimensions from pixel size by anchoring the artwork's
+ * shorter pixel side to the sheet's shorter physical side and the longer
+ * pixel side to the sheet's longer physical side.
+ *
+ * Two product flavours are supported:
+ *
+ *   1. Variable-length gang sheets (e.g. "22" × any length"). Caller passes
+ *      only sheetWidthIn (= the press width, always the shorter side). The
+ *      length is derived from the artwork pixel ratio. This was the original
+ *      anchor mode and still works when sheetLengthIn is omitted.
+ *
+ *   2. Fixed-size sheets (e.g. "22" × 12" PERSONAL GS"). Caller passes both
+ *      sheetWidthIn AND sheetLengthIn. The function picks the shorter of the
+ *      two as the anchor, so a landscape file with the same aspect ratio
+ *      reports the correct fixed-sheet dimensions. If the artwork's pixel
+ *      aspect ratio doesn't match the sheet's aspect ratio, the dimensions
+ *      will not exceed the sheet bounds — the caller's UI surfaces an
+ *      "exceeds sheet" warning when widthIn > sheet width or heightIn >
+ *      sheet length.
  *
  * IMPORTANT: pricing depends on these values. Do not multiply, round, or
  * alter the returned widthIn/heightIn except where explicitly required.
@@ -79,25 +99,42 @@ function parsePositiveNumber(value: unknown): number {
 export function computeSheetAnchoredInches(
   widthPx: number,
   heightPx: number,
-  sheetWidthInArg?: number
-): { widthIn: number; heightIn: number; effectiveDpi: number; sheetWidthIn: number } {
+  sheetWidthInArg?: number,
+  sheetLengthInArg?: number
+): {
+  widthIn: number
+  heightIn: number
+  effectiveDpi: number
+  sheetWidthIn: number
+  sheetLengthIn?: number
+} {
   const sheetWidthIn =
     typeof sheetWidthInArg === 'number' && sheetWidthInArg > 0
       ? sheetWidthInArg
       : DEFAULT_SHEET_WIDTH_IN
+  const sheetLengthIn =
+    typeof sheetLengthInArg === 'number' && sheetLengthInArg > 0
+      ? sheetLengthInArg
+      : undefined
 
   if (!(widthPx > 0) || !(heightPx > 0)) {
-    return { widthIn: 0, heightIn: 0, effectiveDpi: 0, sheetWidthIn }
+    return { widthIn: 0, heightIn: 0, effectiveDpi: 0, sheetWidthIn, sheetLengthIn }
   }
+
+  // Sheet's shorter side is what the file's shorter pixel side maps to.
+  // For variable-length sheets, sheetLengthIn is unset and sheetWidthIn IS
+  // the shorter side by definition.
+  const shortSheetIn =
+    sheetLengthIn !== undefined ? Math.min(sheetWidthIn, sheetLengthIn) : sheetWidthIn
 
   const shortSidePx = Math.min(widthPx, heightPx)
   const longSidePx = Math.max(widthPx, heightPx)
   const isPortrait = heightPx >= widthPx
-  const longSideIn = (longSidePx / shortSidePx) * sheetWidthIn
-  const widthIn = Number((isPortrait ? sheetWidthIn : longSideIn).toFixed(2))
-  const heightIn = Number((isPortrait ? longSideIn : sheetWidthIn).toFixed(2))
-  const effectiveDpi = Math.round(shortSidePx / sheetWidthIn)
-  return { widthIn, heightIn, effectiveDpi, sheetWidthIn }
+  const longSideIn = (longSidePx / shortSidePx) * shortSheetIn
+  const widthIn = Number((isPortrait ? shortSheetIn : longSideIn).toFixed(2))
+  const heightIn = Number((isPortrait ? longSideIn : shortSheetIn).toFixed(2))
+  const effectiveDpi = Math.round(shortSidePx / shortSheetIn)
+  return { widthIn, heightIn, effectiveDpi, sheetWidthIn, sheetLengthIn }
 }
 
 function normalizeSizingSource(value: unknown): string | null {
@@ -146,6 +183,7 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
   let sizingSource: string | null = null
   let measurementMode: string | null = null
   let sheetWidthInFromDetails = 0
+  let sheetLengthInFromDetails = 0
 
   for (const check of checks) {
     if (check.name === 'dimensions' && check.details && typeof check.details === 'object') {
@@ -159,6 +197,7 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
       measurementWidthPx = parsePositiveNumber(details.measurementWidth)
       measurementHeightPx = parsePositiveNumber(details.measurementHeight)
       sheetWidthInFromDetails = parsePositiveNumber(details.sheetWidthIn)
+      sheetLengthInFromDetails = parsePositiveNumber(details.sheetLengthIn)
       const storedSizingSource = normalizeSizingSource(details.sizingSource)
       sizingSource = storedSizingSource
       measurementMode =
@@ -185,7 +224,8 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
   const anchored = computeSheetAnchoredInches(
     measurementWidthPx,
     measurementHeightPx,
-    sheetWidthInFromDetails
+    sheetWidthInFromDetails,
+    sheetLengthInFromDetails || undefined
   )
 
   return {
@@ -201,6 +241,7 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
     effectiveDpi: anchored.effectiveDpi,
     sizingSource: sizingSource || 'sheet_width_anchor',
     sheetWidthIn: anchored.sheetWidthIn,
+    sheetLengthIn: anchored.sheetLengthIn,
     widthIn: anchored.widthIn,
     heightIn: anchored.heightIn,
     measurementMode,
@@ -221,10 +262,12 @@ function extractMetadata(preflightResult: unknown, checks: Array<Record<string, 
       const measurementWidthPx = parsePositiveNumber(metadata.measurementWidthPx) || widthPx
       const measurementHeightPx = parsePositiveNumber(metadata.measurementHeightPx) || heightPx
       const sheetWidthInStored = parsePositiveNumber(metadata.sheetWidthIn)
+      const sheetLengthInStored = parsePositiveNumber(metadata.sheetLengthIn)
       const anchored = computeSheetAnchoredInches(
         measurementWidthPx,
         measurementHeightPx,
-        sheetWidthInStored
+        sheetWidthInStored,
+        sheetLengthInStored || undefined
       )
       const storedSizingSource = normalizeSizingSource(metadata.sizingSource)
 
@@ -241,6 +284,7 @@ function extractMetadata(preflightResult: unknown, checks: Array<Record<string, 
         effectiveDpi: anchored.effectiveDpi,
         sizingSource: storedSizingSource || 'sheet_width_anchor',
         sheetWidthIn: anchored.sheetWidthIn,
+        sheetLengthIn: anchored.sheetLengthIn,
         widthIn: anchored.widthIn,
         heightIn: anchored.heightIn,
         measurementMode:
@@ -261,7 +305,12 @@ export function applyFullCanvasMeasurementMetadata(
 
   const fullWidthPx = metadata.widthPx > 0 ? metadata.widthPx : metadata.measurementWidthPx
   const fullHeightPx = metadata.heightPx > 0 ? metadata.heightPx : metadata.measurementHeightPx
-  const anchored = computeSheetAnchoredInches(fullWidthPx, fullHeightPx, metadata.sheetWidthIn)
+  const anchored = computeSheetAnchoredInches(
+    fullWidthPx,
+    fullHeightPx,
+    metadata.sheetWidthIn,
+    metadata.sheetLengthIn
+  )
 
   return {
     ...metadata,
@@ -270,6 +319,7 @@ export function applyFullCanvasMeasurementMetadata(
     effectiveDpi: anchored.effectiveDpi,
     sizingSource: 'sheet_width_anchor',
     sheetWidthIn: anchored.sheetWidthIn,
+    sheetLengthIn: anchored.sheetLengthIn,
     widthIn: anchored.widthIn,
     heightIn: anchored.heightIn,
     measurementMode: 'full',

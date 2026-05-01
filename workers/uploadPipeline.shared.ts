@@ -641,10 +641,13 @@ export async function prepareUploadJobContext(
   const stats = await fs.stat(originalPath)
   const detectedType = await detectFileType(originalPath)
 
-  // Pull product-specific sheet width (maxWidthIn) from ProductConfig so the
-  // preflight measurement anchors physical inches to the actual press width.
-  // Falls back to plan default when no product config exists.
+  // Pull product-specific sheet dimensions from ProductConfig so the preflight
+  // measurement anchors physical inches to the actual press output. Both
+  // maxWidthIn and maxHeightIn matter: variable-length gang sheets only set
+  // maxWidthIn, but fixed-size sheets (e.g. PERSONAL GS 22×12) set both —
+  // and the shorter of the two becomes the anchor for landscape artwork.
   let sheetWidthIn: number | undefined
+  let sheetLengthIn: number | undefined
   try {
     const upload = await prisma.upload.findUnique({
       where: { id: uploadId },
@@ -656,9 +659,13 @@ export async function prepareUploadJobContext(
         select: { builderConfig: true },
       })
       const builderConfig = productConfig?.builderConfig as Record<string, unknown> | null
-      const candidate = Number(builderConfig?.maxWidthIn)
-      if (Number.isFinite(candidate) && candidate > 0) {
-        sheetWidthIn = candidate
+      const widthCandidate = Number(builderConfig?.maxWidthIn)
+      const lengthCandidate = Number(builderConfig?.maxHeightIn)
+      if (Number.isFinite(widthCandidate) && widthCandidate > 0) {
+        sheetWidthIn = widthCandidate
+      }
+      if (Number.isFinite(lengthCandidate) && lengthCandidate > 0) {
+        sheetLengthIn = lengthCandidate
       }
     }
   } catch (configError) {
@@ -670,8 +677,14 @@ export async function prepareUploadJobContext(
   }
 
   const baseConfig = PLAN_CONFIGS[shop.plan] || PLAN_CONFIGS.free
-  const config: PreflightConfig =
-    sheetWidthIn !== undefined ? { ...baseConfig, sheetWidthIn } : baseConfig
+  let config: PreflightConfig = baseConfig
+  if (sheetWidthIn !== undefined || sheetLengthIn !== undefined) {
+    config = {
+      ...baseConfig,
+      ...(sheetWidthIn !== undefined ? { sheetWidthIn } : {}),
+      ...(sheetLengthIn !== undefined ? { sheetLengthIn } : {}),
+    }
+  }
 
   return {
     uploadId,

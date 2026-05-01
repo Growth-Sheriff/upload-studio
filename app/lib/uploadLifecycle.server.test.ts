@@ -65,6 +65,41 @@ describe('computeSheetAnchoredInches', () => {
     expect(r.sheetWidthIn).toBe(22)
     expect(r.heightIn).toBe(60)
   })
+
+  // Fixed-size sheets (e.g. PERSONAL GS 22×12)
+  it('reports correct dimensions for a landscape file on a fixed-size 22"x12" sheet', () => {
+    // PERSONAL GS 22"x12" (10).png case — 2904x1584 file (landscape, ~22:12 ratio)
+    const result = computeSheetAnchoredInches(2904, 1584, 22, 12)
+    expect(result.widthIn).toBe(22) // long side -> 22 (longer sheet side)
+    expect(result.heightIn).toBe(12) // short side -> 12 (shorter sheet side, anchor)
+    expect(result.effectiveDpi).toBe(132) // 1584 / 12
+    expect(result.sheetWidthIn).toBe(22)
+    expect(result.sheetLengthIn).toBe(12)
+  })
+
+  it('reports correct dimensions for a portrait file on a fixed-size 22"x12" sheet', () => {
+    // Same artwork rotated 90° — 1584x2904 portrait
+    const result = computeSheetAnchoredInches(1584, 2904, 22, 12)
+    expect(result.widthIn).toBe(12) // short side -> 12 (anchor, sheet's shorter side)
+    expect(result.heightIn).toBe(22) // long side -> 22
+    expect(result.effectiveDpi).toBe(132)
+  })
+
+  it('still treats variable-length sheet correctly when sheetLengthIn is undefined', () => {
+    // Randle case (variable length) — only sheetWidthIn provided
+    const result = computeSheetAnchoredInches(1584, 4320, 22)
+    expect(result.widthIn).toBe(22)
+    expect(result.heightIn).toBe(60)
+    expect(result.sheetLengthIn).toBeUndefined()
+  })
+
+  it('uses shorter of two sheet dims even if caller passes them in opposite order', () => {
+    // Caller passes sheetWidthIn=12, sheetLengthIn=22 (e.g. config quirk)
+    const result = computeSheetAnchoredInches(2904, 1584, 12, 22)
+    // shorter sheet side is still 12 → file shorter (1584) anchors to 12
+    expect(result.heightIn).toBe(12)
+    expect(result.widthIn).toBe(22)
+  })
 })
 
 describe('applyFullCanvasMeasurementMetadata — sheet anchor preserved', () => {
