@@ -1,6 +1,7 @@
 import prisma from '~/lib/prisma.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
 import { getDownloadSignedUrl, getStorageConfig } from '~/lib/storage.server'
+import { computeSheetAnchoredInches } from '~/lib/uploadLifecycle.server'
 import {
   applyCustomerPricingDefaultsForShop,
   calculateMeasuredLengthQuote,
@@ -112,6 +113,8 @@ export interface CustomPricingJobItemInput {
   uploadId: string
   quantity: number
   selectedVariantId?: string | null
+  measurementPolicy?: string | null
+  rollWidthIn?: number | string | null
 }
 
 export interface PreparedCustomPricingJobQuote {
@@ -135,10 +138,45 @@ function parsePositiveNumber(value: unknown): number | null {
   return parsed
 }
 
+const MAIN_PRODUCT_MEASUREMENT_POLICY = 'main_product_roll_width'
+const DEFAULT_MAIN_PRODUCT_ROLL_WIDTH_IN = 22
+
+function normalizeMeasurementPolicy(value: unknown): string | null {
+  const raw = String(value || '').trim()
+  return raw || null
+}
+
+function applyMainProductMeasurementPolicy(
+  measurement: VipUploadMeasurement,
+  itemInput: CustomPricingJobItemInput
+): VipUploadMeasurement {
+  if (normalizeMeasurementPolicy(itemInput.measurementPolicy) !== MAIN_PRODUCT_MEASUREMENT_POLICY) {
+    return measurement
+  }
+
+  const measurementWidthPx =
+    measurement.widthPx > 0 ? measurement.widthPx : measurement.measurementWidthPx
+  const measurementHeightPx =
+    measurement.heightPx > 0 ? measurement.heightPx : measurement.measurementHeightPx
+  const rollWidthIn = parsePositiveNumber(itemInput.rollWidthIn) || DEFAULT_MAIN_PRODUCT_ROLL_WIDTH_IN
+  const anchored = computeSheetAnchoredInches(measurementWidthPx, measurementHeightPx, rollWidthIn)
+
+  return {
+    ...measurement,
+    measurementWidthPx,
+    measurementHeightPx,
+    effectiveDpi: anchored.effectiveDpi,
+    sizingSource: MAIN_PRODUCT_MEASUREMENT_POLICY,
+    widthIn: anchored.widthIn,
+    heightIn: anchored.heightIn,
+    measurementMode: 'full',
+  }
+}
+
 function buildEffectiveResolveConfig(
   builderConfig: Record<string, unknown> | null | undefined,
   shopDomain: string
-): BuilderResolveConfig {
+): BuilderResolveConfig & { maxWidthIn: number } {
   const configuredMaxWidth = parsePositiveNumber(builderConfig?.maxWidthIn) || 0
   const maxWidthLimit = getMaxWidthLimitForShop(shopDomain)
   return {
@@ -225,6 +263,8 @@ export async function prepareCustomPricingQuote({
   uploadId,
   quantity,
   selectedVariantId,
+  measurementPolicy,
+  rollWidthIn,
 }: {
   shopDomain: string
   loggedInCustomerId: string | null
@@ -232,12 +272,14 @@ export async function prepareCustomPricingQuote({
   uploadId: string
   quantity: number
   selectedVariantId?: string | null
+  measurementPolicy?: string | null
+  rollWidthIn?: number | string | null
 }): Promise<PreparedCustomPricingQuote> {
   const preparedJob = await prepareCustomPricingJobQuote({
     shopDomain,
     loggedInCustomerId,
     loggedInCustomerEmail,
-    items: [{ uploadId, quantity, selectedVariantId }],
+    items: [{ uploadId, quantity, selectedVariantId, measurementPolicy, rollWidthIn }],
   })
 
   return preparedJob.items[0]
@@ -262,6 +304,8 @@ export async function prepareCustomPricingJobQuote({
         item.selectedVariantId != null && String(item.selectedVariantId).trim()
           ? String(item.selectedVariantId).trim()
           : null,
+      measurementPolicy: normalizeMeasurementPolicy(item.measurementPolicy),
+      rollWidthIn: parsePositiveNumber(item.rollWidthIn),
     }))
     .filter((item) => item.uploadId)
 
@@ -281,15 +325,16 @@ export async function prepareCustomPricingJobQuote({
     },
   })
 
-  if (!shop?.accessToken) {
+  if (!shop || !shop.accessToken) {
     throw new Error('Shop not found')
   }
 
+  const activeShop = shop
   const normalizedLoggedInCustomerId = normalizeCustomerId(loggedInCustomerId)
-  const settings = applyCustomerPricingDefaultsForShop(shop.shopDomain, shop.settings)
+  const settings = applyCustomerPricingDefaultsForShop(activeShop.shopDomain, activeShop.settings)
   const storageConfig = getStorageConfig({
-    storageProvider: shop.storageProvider,
-    storageConfig: (shop.storageConfig as Record<string, string> | null) || null,
+    storageProvider: activeShop.storageProvider,
+    storageConfig: (activeShop.storageConfig as Record<string, string> | null) || null,
   })
   const productCache = new Map<
     string,
@@ -306,7 +351,7 @@ export async function prepareCustomPricingJobQuote({
     itemInput: CustomPricingJobItemInput
   ): Promise<PreparedCustomPricingQuote> {
     const upload = await prisma.upload.findFirst({
-      where: { id: itemInput.uploadId, shopId: shop.id },
+      where: { id: itemInput.uploadId, shopId: activeShop.id },
       select: {
         id: true,
         productId: true,
@@ -349,7 +394,10 @@ export async function prepareCustomPricingJobQuote({
       throw new Error('Custom pricing is not active for this customer and product')
     }
 
-    const measurement = extractVipUploadMeasurement(upload.items, shop.shopDomain)
+    const rawMeasurement = extractVipUploadMeasurement(upload.items, activeShop.shopDomain)
+    const measurement = rawMeasurement
+      ? applyMainProductMeasurementPolicy(rawMeasurement, itemInput)
+      : null
     if (!measurement) {
       throw new Error('Upload measurement is not ready')
     }
@@ -373,7 +421,7 @@ export async function prepareCustomPricingJobQuote({
       const [productConfig, productData] = await Promise.all([
         prisma.productConfig.findFirst({
           where: {
-            shopId: shop.id,
+            shopId: activeShop.id,
             OR: [{ productId: upload.productId || '' }, { productId }],
           },
           select: {
@@ -381,8 +429,8 @@ export async function prepareCustomPricingJobQuote({
           },
         }),
         shopifyGraphQL<ProductQueryResponse>(
-          shop.shopDomain,
-          shop.accessToken,
+          activeShop.shopDomain,
+          activeShop.accessToken,
           PRODUCT_VARIANTS_QUERY,
           {
             id: productId,
@@ -397,7 +445,7 @@ export async function prepareCustomPricingJobQuote({
       const builderConfig =
         (productConfig?.builderConfig as Record<string, unknown> | null) || null
       const { optionDefs, variants } = buildVariantMatrix(productData.product)
-      const variantLimits = buildVariantLimits(productData.product, builderConfig, shop.shopDomain)
+      const variantLimits = buildVariantLimits(productData.product, builderConfig, activeShop.shopDomain)
 
       cachedProduct = {
         builderConfig,
@@ -430,7 +478,7 @@ export async function prepareCustomPricingJobQuote({
         variants: cachedProduct.variants,
         optionDefs: cachedProduct.optionDefs,
         selectedVariantId: itemInput.selectedVariantId || null,
-        config: buildEffectiveResolveConfig(cachedProduct.builderConfig, shop.shopDomain),
+        config: buildEffectiveResolveConfig(cachedProduct.builderConfig, activeShop.shopDomain),
       })
 
       if (!resolution) {
@@ -453,9 +501,13 @@ export async function prepareCustomPricingJobQuote({
       const parsedSheetSize = parseSheetSizeFromTitle(resolution.selectedVariantTitle)
       const selectedSheetMaxWidth =
         parsedSheetSize?.widthIn != null
-          ? Math.max(parsedSheetSize.widthIn, getMaxWidthLimitForShop(shop.shopDomain))
+          ? Math.max(parsedSheetSize.widthIn, getMaxWidthLimitForShop(activeShop.shopDomain))
           : 0
-      if (!parsedSheetSize || measurement.widthIn > selectedSheetMaxWidth + 0.001) {
+      const validationWidthIn =
+        normalizeMeasurementPolicy(itemInput.measurementPolicy) === MAIN_PRODUCT_MEASUREMENT_POLICY
+          ? Math.min(measurement.widthIn, measurement.heightIn)
+          : measurement.widthIn
+      if (!parsedSheetSize || validationWidthIn > selectedSheetMaxWidth + 0.001) {
         throw new Error('Business design width exceeds the selected sheet width')
       }
 
@@ -471,9 +523,9 @@ export async function prepareCustomPricingJobQuote({
 
     return {
       shop: {
-        id: shop.id,
-        shopDomain: shop.shopDomain,
-        accessToken: shop.accessToken,
+        id: activeShop.id,
+        shopDomain: activeShop.shopDomain,
+        accessToken: activeShop.accessToken,
       },
       upload: {
         id: upload.id,

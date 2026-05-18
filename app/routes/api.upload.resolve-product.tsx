@@ -10,6 +10,12 @@ import {
   type ProductOptionDef,
   type ProductVariantDef,
 } from '~/lib/dtfSheetResolver.server'
+import {
+  applyFullCanvasMeasurementMetadata,
+  computeSheetAnchoredInches,
+  deriveUploadItemLifecycle,
+  type UploadLifecycleMetadata,
+} from '~/lib/uploadLifecycle.server'
 
 const PRODUCT_VARIANTS_QUERY = `
   query ResolveProductVariants($id: ID!) {
@@ -45,7 +51,8 @@ const DEFAULT_CONFIG = {
   maxWidthIn: 22,
 }
 
-const DEFAULT_DOCUMENT_FALLBACK_DPI = 200
+const MAIN_PRODUCT_MEASUREMENT_POLICY = 'main_product_roll_width'
+const DEFAULT_MAIN_PRODUCT_ROLL_WIDTH_IN = 22
 
 interface ResolveRequestBody {
   shopDomain?: string
@@ -54,6 +61,8 @@ interface ResolveRequestBody {
   quantity?: number | string
   selectedVariantId?: string | number | null
   maxUploadWidth?: number | string | null
+  measurementPolicy?: string | null
+  rollWidthIn?: number | string | null
 }
 
 interface ProductQueryResponse {
@@ -87,134 +96,56 @@ function normalizeProductId(productId: string | number): string {
   return asString.startsWith('gid://') ? asString : `gid://shopify/Product/${asString}`
 }
 
-function extractUploadDimensions(preflightResult: unknown) {
-  const result = (preflightResult || {}) as Record<string, unknown>
-  const metadata =
-    result.metadata && typeof result.metadata === 'object'
-      ? (result.metadata as Record<string, unknown>)
-      : null
-  const checks = Array.isArray(result.checks) ? (result.checks as Array<Record<string, unknown>>) : []
+function shouldUseMainProductRollPolicy(body: ResolveRequestBody): boolean {
+  return String(body.measurementPolicy || '').trim() === MAIN_PRODUCT_MEASUREMENT_POLICY
+}
 
-  let widthPx = 0
-  let heightPx = 0
-  let dpi = 0
-  let trimmedWidthPx = 0
-  let trimmedHeightPx = 0
-  let measurementWidthPx = 0
-  let measurementHeightPx = 0
-  let effectiveDpi = DEFAULT_DOCUMENT_FALLBACK_DPI
-  let sizingSource: string | null = null
-  let measurementMode = 'full'
-  let widthIn = 0
-  let heightIn = 0
+function getMainProductRollWidth(value: unknown): number {
+  return parsePositiveNumber(value) || DEFAULT_MAIN_PRODUCT_ROLL_WIDTH_IN
+}
 
-  if (metadata) {
-    widthPx = Number(metadata.widthPx || 0)
-    heightPx = Number(metadata.heightPx || 0)
-    dpi = Number(metadata.dpi || 0)
-    trimmedWidthPx = Number(metadata.trimmedWidthPx || 0)
-    trimmedHeightPx = Number(metadata.trimmedHeightPx || 0)
-    measurementWidthPx = Number(metadata.measurementWidthPx || 0)
-    measurementHeightPx = Number(metadata.measurementHeightPx || 0)
-    sizingSource =
-      typeof metadata.sizingSource === 'string' && metadata.sizingSource
-        ? String(metadata.sizingSource)
-        : sizingSource
-    measurementMode =
-      typeof metadata.measurementMode === 'string' && metadata.measurementMode
-        ? String(metadata.measurementMode)
-        : measurementMode
-  }
+function applyMainProductRollMeasurement(
+  metadata: UploadLifecycleMetadata | null,
+  rollWidthIn: number
+): UploadLifecycleMetadata | null {
+  if (!metadata) return null
 
-  for (const check of checks) {
-    if (check.name === 'dimensions' && check.details) {
-      const details = check.details as Record<string, unknown>
-      widthPx = Number(details.width || 0)
-      heightPx = Number(details.height || 0)
-      trimmedWidthPx = Number(details.trimmedWidth || 0)
-      trimmedHeightPx = Number(details.trimmedHeight || 0)
-      measurementWidthPx = Number(details.measurementWidth || 0)
-      measurementHeightPx = Number(details.measurementHeight || 0)
-      sizingSource =
-        typeof details.sizingSource === 'string' && details.sizingSource
-          ? String(details.sizingSource)
-          : sizingSource
-      measurementMode =
-        typeof details.measurementMode === 'string' && details.measurementMode
-          ? String(details.measurementMode)
-          : measurementMode
-    }
-    if (check.name === 'dpi' && typeof check.value === 'number') {
-      dpi = Number(check.value || 0)
-    }
-  }
-
-  if (!(widthPx > 0) || !(heightPx > 0)) {
-    return null
-  }
-
-  if (!(measurementWidthPx > 0) || !(measurementHeightPx > 0)) {
-    measurementWidthPx = widthPx
-    measurementHeightPx = heightPx
-  }
-
-  if (sizingSource === 'document_dpi' && dpi > 0) {
-    effectiveDpi = dpi
-  } else if (sizingSource === 'fallback_200dpi') {
-    effectiveDpi = DEFAULT_DOCUMENT_FALLBACK_DPI
-  } else if (dpi > 0) {
-    effectiveDpi = dpi
-    sizingSource = 'document_dpi'
-  } else {
-    effectiveDpi = DEFAULT_DOCUMENT_FALLBACK_DPI
-    sizingSource = 'fallback_200dpi'
-  }
-
-  widthIn = Number((measurementWidthPx / effectiveDpi).toFixed(2))
-  heightIn = Number((measurementHeightPx / effectiveDpi).toFixed(2))
+  const measurementWidthPx = metadata.widthPx > 0 ? metadata.widthPx : metadata.measurementWidthPx
+  const measurementHeightPx = metadata.heightPx > 0 ? metadata.heightPx : metadata.measurementHeightPx
+  const anchored = computeSheetAnchoredInches(measurementWidthPx, measurementHeightPx, rollWidthIn)
 
   return {
-    widthPx,
-    heightPx,
-    dpi,
-    trimmedWidthPx,
-    trimmedHeightPx,
+    ...metadata,
     measurementWidthPx,
     measurementHeightPx,
-    effectiveDpi,
-    sizingSource,
-    measurementMode,
-    widthIn,
-    heightIn,
+    effectiveDpi: anchored.effectiveDpi,
+    sizingSource: MAIN_PRODUCT_MEASUREMENT_POLICY,
+    sheetWidthIn: anchored.sheetWidthIn,
+    sheetLengthIn: anchored.sheetLengthIn,
+    widthIn: anchored.widthIn,
+    heightIn: anchored.heightIn,
+    measurementMode: 'full',
   }
 }
 
-function applyFullCanvasDimensions<T extends {
-  widthPx: number
-  heightPx: number
-  dpi: number
-  effectiveDpi: number
-  sizingSource: string | null
-  measurementWidthPx: number
-  measurementHeightPx: number
-  widthIn: number
-  heightIn: number
-  measurementMode: string
-}>(dimensions: T): T {
-  const effectiveDpi =
-    dimensions.effectiveDpi > 0 ? dimensions.effectiveDpi : DEFAULT_DOCUMENT_FALLBACK_DPI
-  const measurementWidthPx = dimensions.widthPx > 0 ? dimensions.widthPx : dimensions.measurementWidthPx
-  const measurementHeightPx = dimensions.heightPx > 0 ? dimensions.heightPx : dimensions.measurementHeightPx
+function metadataToUploadDimensions(metadata: UploadLifecycleMetadata | null) {
+  if (!metadata || !(metadata.widthPx > 0) || !(metadata.heightPx > 0)) return null
 
   return {
-    ...dimensions,
-    measurementWidthPx,
-    measurementHeightPx,
-    effectiveDpi,
-    sizingSource: dimensions.sizingSource || (dimensions.dpi > 0 ? 'document_dpi' : 'fallback_200dpi'),
-    widthIn: Number((measurementWidthPx / effectiveDpi).toFixed(2)),
-    heightIn: Number((measurementHeightPx / effectiveDpi).toFixed(2)),
-    measurementMode: 'full',
+    widthPx: metadata.widthPx,
+    heightPx: metadata.heightPx,
+    dpi: metadata.dpi,
+    trimmedWidthPx: metadata.trimmedWidthPx,
+    trimmedHeightPx: metadata.trimmedHeightPx,
+    trimmedOffsetXPx: metadata.trimmedOffsetXPx,
+    trimmedOffsetYPx: metadata.trimmedOffsetYPx,
+    measurementWidthPx: metadata.measurementWidthPx,
+    measurementHeightPx: metadata.measurementHeightPx,
+    effectiveDpi: metadata.effectiveDpi,
+    sizingSource: metadata.sizingSource,
+    measurementMode: metadata.measurementMode || 'full',
+    widthIn: metadata.widthIn,
+    heightIn: metadata.heightIn,
   }
 }
 
@@ -309,11 +240,19 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const firstItem = upload.items[0]
-    const rawDimensions = firstItem ? extractUploadDimensions(firstItem.preflightResult) : null
-    const dimensions =
-      rawDimensions && isDtfPrintHouseShop(shopDomain)
-        ? applyFullCanvasDimensions(rawDimensions)
-        : rawDimensions
+    const lifecycle = firstItem
+      ? deriveUploadItemLifecycle({
+          preflightStatus: firstItem.preflightStatus,
+          preflightResult: firstItem.preflightResult,
+        })
+      : null
+    const rawMetadata = lifecycle?.metadata || null
+    const resolvedMetadata = shouldUseMainProductRollPolicy(body)
+      ? applyMainProductRollMeasurement(rawMetadata, getMainProductRollWidth(body.rollWidthIn))
+      : isDtfPrintHouseShop(shopDomain)
+        ? applyFullCanvasMeasurementMetadata(rawMetadata)
+        : rawMetadata
+    const dimensions = metadataToUploadDimensions(resolvedMetadata)
     if (!dimensions) {
       return corsJson(
         { error: 'Upload metadata is not ready yet. Please retry in a moment.' },

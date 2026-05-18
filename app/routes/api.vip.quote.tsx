@@ -36,11 +36,14 @@ function parsePositiveInteger(value: unknown, fallback = 1): number {
 
 function normalizeQuoteItems(body: Record<string, unknown>) {
   const rawItems = Array.isArray(body.items) ? body.items : []
+  const fallbackMeasurementPolicy = String(body.measurementPolicy || '').trim() || null
+  const fallbackRollWidthIn = Number(body.rollWidthIn)
   const normalizedItems = rawItems
     .map((entry) => {
       const item = (entry || {}) as Record<string, unknown>
       const uploadId = String(item.uploadId || '').trim()
       if (!uploadId) return null
+      const itemRollWidthIn = Number(item.rollWidthIn)
       return {
         uploadId,
         quantity: parsePositiveInteger(item.quantity, 1),
@@ -48,12 +51,22 @@ function normalizeQuoteItems(body: Record<string, unknown>) {
           item.selectedVariantId != null && String(item.selectedVariantId).trim()
             ? String(item.selectedVariantId).trim()
             : null,
+        measurementPolicy:
+          String(item.measurementPolicy || '').trim() || fallbackMeasurementPolicy,
+        rollWidthIn:
+          Number.isFinite(itemRollWidthIn) && itemRollWidthIn > 0
+            ? itemRollWidthIn
+            : Number.isFinite(fallbackRollWidthIn) && fallbackRollWidthIn > 0
+              ? fallbackRollWidthIn
+              : null,
       }
     })
     .filter(Boolean) as Array<{
       uploadId: string
       quantity: number
       selectedVariantId: string | null
+      measurementPolicy: string | null
+      rollWidthIn: number | null
     }>
 
   if (normalizedItems.length) return normalizedItems
@@ -69,6 +82,9 @@ function normalizeQuoteItems(body: Record<string, unknown>) {
         body.selectedVariantId != null && String(body.selectedVariantId).trim()
           ? String(body.selectedVariantId).trim()
           : null,
+      measurementPolicy: fallbackMeasurementPolicy,
+      rollWidthIn:
+        Number.isFinite(fallbackRollWidthIn) && fallbackRollWidthIn > 0 ? fallbackRollWidthIn : null,
     },
   ]
 }
@@ -106,7 +122,11 @@ export async function action({ request }: ActionFunctionArgs) {
   const fallbackCustomerEmail = String(body.customerEmail || '').trim()
   const loggedInCustomerId =
     normalizeCustomerId(url.searchParams.get('logged_in_customer_id')) ||
-    normalizeCustomerId(body.customerId)
+    normalizeCustomerId(
+      typeof body.customerId === 'string' || typeof body.customerId === 'number'
+        ? body.customerId
+        : null
+    )
   const normalizedItems = normalizeQuoteItems(body)
 
   if (!normalizedItems.length) {
@@ -125,6 +145,8 @@ export async function action({ request }: ActionFunctionArgs) {
                 uploadId: normalizedItems[0].uploadId,
                 quantity: normalizedItems[0].quantity,
                 selectedVariantId: normalizedItems[0].selectedVariantId,
+                measurementPolicy: normalizedItems[0].measurementPolicy,
+                rollWidthIn: normalizedItems[0].rollWidthIn,
               }),
             ],
           }

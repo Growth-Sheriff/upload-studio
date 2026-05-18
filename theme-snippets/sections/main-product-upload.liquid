@@ -441,6 +441,8 @@
     var root = document.getElementById({{ section_dom_id | json }});
     if (!root || root.getAttribute('data-ul-main-product-bound') === 'true') return;
     root.setAttribute('data-ul-main-product-bound', 'true');
+    var MAIN_PRODUCT_MEASUREMENT_POLICY = 'main_product_roll_width';
+    var MAIN_PRODUCT_ROLL_WIDTH_IN = 22;
 
     function parseOptionalPositiveNumber(value) {
       var parsed = Number(value);
@@ -488,6 +490,21 @@
       return null;
     }
 
+    function applyMainProductRollMeasurement(target) {
+      if (!target || !(target.widthPx > 0) || !(target.heightPx > 0)) return false;
+      var shortSidePx = Math.min(target.widthPx, target.heightPx);
+      var longSidePx = Math.max(target.widthPx, target.heightPx);
+      if (!(shortSidePx > 0)) return false;
+      var isPortrait = target.heightPx >= target.widthPx;
+      var longSideIn = (longSidePx / shortSidePx) * MAIN_PRODUCT_ROLL_WIDTH_IN;
+      target.widthIn = Number((isPortrait ? MAIN_PRODUCT_ROLL_WIDTH_IN : longSideIn).toFixed(2));
+      target.heightIn = Number((isPortrait ? longSideIn : MAIN_PRODUCT_ROLL_WIDTH_IN).toFixed(2));
+      target.effectiveDpi = Math.round(shortSidePx / MAIN_PRODUCT_ROLL_WIDTH_IN);
+      target.sizingSource = MAIN_PRODUCT_MEASUREMENT_POLICY;
+      target.measurementMode = 'full';
+      return target.widthIn > 0 && target.heightIn > 0;
+    }
+
     function applyServerMeasurement(payload, targetState) {
       if (!payload) return false;
 
@@ -512,17 +529,17 @@
           ? String(nextMeasurementMode)
           : target.measurementMode;
 
-      var confirmedInches = getServerConfirmedUploadInches(payload);
-      if (!confirmedInches) return false;
-
       var measurementStatus = getMeasurementStageStatus(payload);
       if (measurementStatus && measurementStatus !== 'ready' && measurementStatus !== 'warning') {
         return false;
       }
 
-      target.widthIn = confirmedInches.widthIn;
-      target.heightIn = confirmedInches.heightIn;
-      return true;
+      var confirmedInches = getServerConfirmedUploadInches(payload);
+      if (confirmedInches) {
+        target.widthIn = confirmedInches.widthIn;
+        target.heightIn = confirmedInches.heightIn;
+      }
+      return applyMainProductRollMeasurement(target) || Boolean(confirmedInches);
     }
 
     function getResolvedSizingSource(value) {
@@ -2869,6 +2886,8 @@
               productId: String(productData.productId),
               customerId: themeCustomerId || '',
               customerEmail: themeCustomerEmail || '',
+              measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
+              rollWidthIn: MAIN_PRODUCT_ROLL_WIDTH_IN,
               items: [{
                 uploadId: workspaceItem.uploadId,
                 quantity: workspaceItem.requestedQuantity || 1,
@@ -2959,6 +2978,8 @@
                 productId: String(productData.productId),
                 customerId: themeCustomerId || '',
                 customerEmail: themeCustomerEmail || '',
+                measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
+                rollWidthIn: MAIN_PRODUCT_ROLL_WIDTH_IN,
                 items: [{
                   uploadId: queueItem.uploadId,
                   quantity: queueItem.requestedQuantity || 1,
@@ -3043,6 +3064,8 @@
           customerEmail: themeCustomerEmail || '',
           uploadId: state.uploadId,
           quantity: state.quantity,
+          measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
+          rollWidthIn: MAIN_PRODUCT_ROLL_WIDTH_IN,
           selectedVariantId:
             state.selectedResult && state.selectedResult.selectedVariantId
               ? state.selectedResult.selectedVariantId
@@ -3278,7 +3301,9 @@
               state.selectedVariantId ||
               (hiddenVariantInput ? hiddenVariantInput.value : '') ||
               null,
-            maxUploadWidth: effectiveRules.maxUploadWidth
+            maxUploadWidth: effectiveRules.maxUploadWidth,
+            measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
+            rollWidthIn: MAIN_PRODUCT_ROLL_WIDTH_IN
           })
         });
         var data = await response.json().catch(function() { return {}; });
@@ -3970,6 +3995,8 @@
               customerType: customerPricing.customerType,
               statusKey: customerPricing.statusKey,
               pricePerInch: customerPricing.pricePerInch,
+              measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
+              rollWidthIn: MAIN_PRODUCT_ROLL_WIDTH_IN,
               selectedVariantId:
                 customerPricing.quoteVariantId ||
                 (state.selectedResult && state.selectedResult.selectedVariantId) ||
