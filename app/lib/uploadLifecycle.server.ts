@@ -26,6 +26,8 @@ export interface UploadLifecycleMetadata {
   widthPx: number
   heightPx: number
   dpi: number
+  documentDpi?: number
+  documentDpiSource?: string | null
   trimmedWidthPx: number
   trimmedHeightPx: number
   trimmedOffsetXPx: number
@@ -34,12 +36,12 @@ export interface UploadLifecycleMetadata {
   measurementHeightPx: number
   effectiveDpi: number
   sizingSource: string | null
-  // Physical printable sheet width (inches) used to anchor inch dimensions
-  // from the artwork's pixel ratio. Set per-product from builder config.
+
+
   sheetWidthIn?: number
-  // For fixed-size sheets, the second sheet dimension (e.g. 12" for a 22×12
-  // PERSONAL GS). When set, the helper picks the shorter of the two sheet
-  // sides as the anchor, so landscape files report correct dimensions.
+
+
+
   sheetLengthIn?: number
   widthIn: number
   heightIn: number
@@ -72,30 +74,30 @@ function parsePositiveNumber(value: unknown): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
 }
 
-/**
- * Compute physical inch dimensions from pixel size by anchoring the artwork's
- * shorter pixel side to the sheet's shorter physical side and the longer
- * pixel side to the sheet's longer physical side.
- *
- * Two product flavours are supported:
- *
- *   1. Variable-length gang sheets (e.g. "22" × any length"). Caller passes
- *      only sheetWidthIn (= the press width, always the shorter side). The
- *      length is derived from the artwork pixel ratio. This was the original
- *      anchor mode and still works when sheetLengthIn is omitted.
- *
- *   2. Fixed-size sheets (e.g. "22" × 12" PERSONAL GS"). Caller passes both
- *      sheetWidthIn AND sheetLengthIn. The function picks the shorter of the
- *      two as the anchor, so a landscape file with the same aspect ratio
- *      reports the correct fixed-sheet dimensions. If the artwork's pixel
- *      aspect ratio doesn't match the sheet's aspect ratio, the dimensions
- *      will not exceed the sheet bounds — the caller's UI surfaces an
- *      "exceeds sheet" warning when widthIn > sheet width or heightIn >
- *      sheet length.
- *
- * IMPORTANT: pricing depends on these values. Do not multiply, round, or
- * alter the returned widthIn/heightIn except where explicitly required.
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 export function computeSheetAnchoredInches(
   widthPx: number,
   heightPx: number,
@@ -121,9 +123,9 @@ export function computeSheetAnchoredInches(
     return { widthIn: 0, heightIn: 0, effectiveDpi: 0, sheetWidthIn, sheetLengthIn }
   }
 
-  // Sheet's shorter side is what the file's shorter pixel side maps to.
-  // For variable-length sheets, sheetLengthIn is unset and sheetWidthIn IS
-  // the shorter side by definition.
+
+
+
   const shortSheetIn =
     sheetLengthIn !== undefined ? Math.min(sheetWidthIn, sheetLengthIn) : sheetWidthIn
 
@@ -137,9 +139,105 @@ export function computeSheetAnchoredInches(
   return { widthIn, heightIn, effectiveDpi, sheetWidthIn, sheetLengthIn }
 }
 
+export function computeDocumentDpiInches(
+  widthPx: number,
+  heightPx: number,
+  documentDpiArg?: number
+): {
+  widthIn: number
+  heightIn: number
+  effectiveDpi: number
+} | null {
+  const documentDpi = parsePositiveNumber(documentDpiArg)
+  if (!(widthPx > 0) || !(heightPx > 0) || !(documentDpi > 1) || documentDpi > 10000) {
+    return null
+  }
+
+  return {
+    widthIn: Number((widthPx / documentDpi).toFixed(2)),
+    heightIn: Number((heightPx / documentDpi).toFixed(2)),
+    effectiveDpi: Number(documentDpi.toFixed(4)),
+  }
+}
+
+export interface RollWidthSheetSize {
+  widthIn: number
+  heightIn: number
+}
+
+export function computeRollWidthAnchoredInches(
+  widthPx: number,
+  heightPx: number,
+  rollWidthInArg?: number,
+  sheetSizes: RollWidthSheetSize[] = []
+): {
+  widthIn: number
+  heightIn: number
+  effectiveDpi: number
+  sheetWidthIn: number
+  sheetLengthIn?: number
+} {
+  const rollWidthIn =
+    typeof rollWidthInArg === 'number' && rollWidthInArg > 0
+      ? rollWidthInArg
+      : DEFAULT_SHEET_WIDTH_IN
+
+  if (!(widthPx > 0) || !(heightPx > 0)) {
+    return { widthIn: 0, heightIn: 0, effectiveDpi: 0, sheetWidthIn: rollWidthIn }
+  }
+
+  const pixelRatio = Math.max(widthPx, heightPx) / Math.min(widthPx, heightPx)
+  const ratioTolerance = 0.01
+  const rollTolerance = 0.01
+  const exactSheet = sheetSizes
+    .map((sheet) => {
+      const widthIn = Number(sheet.widthIn)
+      const heightIn = Number(sheet.heightIn)
+      if (!(widthIn > 0) || !(heightIn > 0)) return null
+      if (Math.min(Math.abs(widthIn - rollWidthIn), Math.abs(heightIn - rollWidthIn)) > rollTolerance) {
+        return null
+      }
+
+      const sheetRatio = Math.max(widthIn, heightIn) / Math.min(widthIn, heightIn)
+      const delta = Math.abs(sheetRatio - pixelRatio)
+      return delta <= ratioTolerance ? { widthIn, heightIn, delta } : null
+    })
+    .filter((sheet): sheet is { widthIn: number; heightIn: number; delta: number } => Boolean(sheet))
+    .sort((a, b) => a.delta - b.delta)[0]
+
+  if (!exactSheet) {
+    return computeSheetAnchoredInches(widthPx, heightPx, rollWidthIn)
+  }
+
+  const shortSheetIn = Math.min(exactSheet.widthIn, exactSheet.heightIn)
+  const longSheetIn = Math.max(exactSheet.widthIn, exactSheet.heightIn)
+  const isLandscape = widthPx >= heightPx
+  const widthIn = isLandscape ? longSheetIn : shortSheetIn
+  const heightIn = isLandscape ? shortSheetIn : longSheetIn
+  const effectiveDpi = Math.round(Math.min(widthPx, heightPx) / shortSheetIn)
+
+  return {
+    widthIn: Number(widthIn.toFixed(2)),
+    heightIn: Number(heightIn.toFixed(2)),
+    effectiveDpi,
+    sheetWidthIn: rollWidthIn,
+    sheetLengthIn: Number((exactSheet.widthIn === rollWidthIn ? exactSheet.heightIn : exactSheet.widthIn).toFixed(2)),
+  }
+}
+
 function normalizeSizingSource(value: unknown): string | null {
   const raw = String(value || '').trim()
   return raw || null
+}
+
+function parseEmbeddedDpiFromSizingDetail(value: unknown): number {
+  const match = String(value || '').match(/embedded_dpi=([0-9.]+)/i)
+  return match ? parsePositiveNumber(match[1]) : 0
+}
+
+function parseEmbeddedDpiSourceFromSizingDetail(value: unknown): string | null {
+  const match = String(value || '').match(/\bsource=([^) ,]+)/i)
+  return match ? normalizeSizingSource(match[1]) : null
 }
 
 function normalizeStageStatus(value: unknown): UploadStageStatus | null {
@@ -174,6 +272,8 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
   let widthPx = 0
   let heightPx = 0
   let dpi = 0
+  let documentDpi = 0
+  let documentDpiSource: string | null = null
   let trimmedWidthPx = 0
   let trimmedHeightPx = 0
   let trimmedOffsetXPx = 0
@@ -198,6 +298,16 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
       measurementHeightPx = parsePositiveNumber(details.measurementHeight)
       sheetWidthInFromDetails = parsePositiveNumber(details.sheetWidthIn)
       sheetLengthInFromDetails = parsePositiveNumber(details.sheetLengthIn)
+      documentDpi =
+        parsePositiveNumber(details.documentDpi) ||
+        parsePositiveNumber(details.embeddedDpi) ||
+        parseEmbeddedDpiFromSizingDetail(details.sizingSourceDetail) ||
+        documentDpi
+      documentDpiSource =
+        normalizeSizingSource(details.documentDpiSource) ||
+        normalizeSizingSource(details.embeddedDpiSource) ||
+        parseEmbeddedDpiSourceFromSizingDetail(details.sizingSourceDetail) ||
+        documentDpiSource
       const storedSizingSource = normalizeSizingSource(details.sizingSource)
       sizingSource = storedSizingSource
       measurementMode =
@@ -220,7 +330,7 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
     measurementHeightPx = heightPx
   }
 
-  // Sheet-anchored physical size — pricing source of truth.
+
   const anchored = computeSheetAnchoredInches(
     measurementWidthPx,
     measurementHeightPx,
@@ -231,7 +341,9 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
   return {
     widthPx,
     heightPx,
-    dpi,
+    dpi: documentDpi || dpi,
+    documentDpi,
+    documentDpiSource,
     trimmedWidthPx,
     trimmedHeightPx,
     trimmedOffsetXPx,
@@ -263,6 +375,13 @@ function extractMetadata(preflightResult: unknown, checks: Array<Record<string, 
       const measurementHeightPx = parsePositiveNumber(metadata.measurementHeightPx) || heightPx
       const sheetWidthInStored = parsePositiveNumber(metadata.sheetWidthIn)
       const sheetLengthInStored = parsePositiveNumber(metadata.sheetLengthIn)
+      const documentDpi =
+        parsePositiveNumber(metadata.documentDpi) ||
+        parsePositiveNumber(metadata.embeddedDpi)
+      const documentDpiSource =
+        normalizeSizingSource(metadata.documentDpiSource) ||
+        normalizeSizingSource(metadata.embeddedDpiSource) ||
+        normalizeSizingSource(metadata.dpiSource)
       const anchored = computeSheetAnchoredInches(
         measurementWidthPx,
         measurementHeightPx,
@@ -274,7 +393,9 @@ function extractMetadata(preflightResult: unknown, checks: Array<Record<string, 
       return {
         widthPx,
         heightPx,
-        dpi: parsePositiveNumber(metadata.dpi),
+        dpi: documentDpi || parsePositiveNumber(metadata.dpi),
+        documentDpi,
+        documentDpiSource,
         trimmedWidthPx: parsePositiveNumber(metadata.trimmedWidthPx),
         trimmedHeightPx: parsePositiveNumber(metadata.trimmedHeightPx),
         trimmedOffsetXPx: parsePositiveNumber(metadata.trimmedOffsetXPx),

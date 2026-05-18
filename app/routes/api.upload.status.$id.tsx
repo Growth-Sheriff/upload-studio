@@ -16,7 +16,7 @@ import {
   deriveUploadOrderabilityStatus,
 } from '~/lib/uploadLifecycle.server'
 
-// Shopify File Query - Get file URL by ID
+
 const FILE_QUERY = `
   query getFile($id: ID!) {
     node(id: $id) {
@@ -35,7 +35,7 @@ const FILE_QUERY = `
   }
 `
 
-// Helper: Resolve Shopify fileId to URL
+
 async function resolveShopifyFileUrl(
   fileId: string,
   shopDomain: string,
@@ -59,10 +59,10 @@ async function resolveShopifyFileUrl(
 
     if (!node) return null
 
-    // MediaImage type
+
     if (node.image?.url) return node.image.url
     if (node.image?.originalSrc) return node.image.originalSrc
-    // GenericFile type
+
     if (node.url) return node.url
 
     return null
@@ -72,14 +72,14 @@ async function resolveShopifyFileUrl(
   }
 }
 
-// GET /api/upload/status/:id?shopDomain=xxx
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  // Handle CORS preflight
+
   if (request.method === 'OPTIONS') {
     return handleCorsOptions(request)
   }
 
-  // Rate limiting (using admin limit for status checks)
+
   const identifier = getIdentifier(request, 'customer')
   const rateLimitResponse = await rateLimitGuard(identifier, 'adminApi')
   if (rateLimitResponse) return rateLimitResponse
@@ -129,7 +129,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return corsJson({ error: 'Upload not found' }, request, { status: 404 })
   }
 
-  // Determine overall status based on legacy preflight statuses
+
   const itemStatuses = upload.items.map((i) => i.preflightStatus)
   let overallPreflight: 'pending' | 'ok' | 'warning' | 'error' = 'pending'
 
@@ -141,50 +141,50 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     overallPreflight = 'warning'
   }
 
-  // Build download URLs for local storage with signed tokens (WI-004)
-  // OR use Shopify URLs directly if storageKey is an external URL
-  // FIX: Use SHOPIFY_APP_URL (has correct domain) instead of HOST (0.0.0.0 for binding)
+
+
+
   const hostEnv = process.env.SHOPIFY_APP_URL || process.env.HOST
   const host = hostEnv?.startsWith('https://') ? hostEnv : `https://${hostEnv}`
   const firstItem = upload.items[0]
 
-  // Get storage config for this shop
+
   const storageConfig = getStorageConfig({
     storageProvider: shop.storageProvider,
     storageConfig: shop.storageConfig as Record<string, string> | null,
   })
 
-  // FAZ 2 - API-002: Extended token expiry to 30 DAYS for Shopify admin order viewing
-  // Previous: 1 hour was too short - orders stay in admin for weeks/months
-  const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000 // 30 days
+
+
+  const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000
   let downloadUrl: string | null = null
   let thumbnailUrl: string | null = null
 
-  // Check if storageKey is an external URL (Shopify, R2, S3)
+
   const isExternalUrl = (key: string | null | undefined): boolean => {
     if (!key) return false
     return key.startsWith('http://') || key.startsWith('https://')
   }
 
-  // Check if storageKey is a Bunny key (bunny:path/to/file)
+
   const isBunnyKey = (key: string | null | undefined): boolean => {
     if (!key) return false
     return key.startsWith('bunny:') || isBunnyUrl(key)
   }
 
-  // Check if storageKey is a Shopify fileId (shopify:gid://...)
+
   const isShopifyFileId = (key: string | null | undefined): boolean => {
     if (!key) return false
     return key.startsWith('shopify:')
   }
 
-  // Check if storageKey is an R2 key (r2:path/to/file)
+
   const isR2Key = (key: string | null | undefined): boolean => {
     if (!key) return false
     return key.startsWith('r2:')
   }
 
-  // Check if storageKey is a local key (local:path/to/file)
+
   const isLocalKey = (key: string | null | undefined): boolean => {
     if (!key) return false
     return key.startsWith('local:')
@@ -192,89 +192,89 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   if (firstItem?.storageKey) {
     if (isExternalUrl(firstItem.storageKey)) {
-      // Already a full URL - use directly
+
       downloadUrl = firstItem.storageKey
     } else if (isBunnyKey(firstItem.storageKey)) {
-      // Bunny storage - build CDN URL with proper encoding for special chars
+
       const bunnyKey = firstItem.storageKey.replace('bunny:', '')
       const cdnUrl =
         storageConfig.bunnyCdnUrl ||
         process.env.BUNNY_CDN_URL ||
         'https://customizerappdev.b-cdn.net'
-      // Encode each path segment to handle spaces and special characters
+
       const encodedPath = bunnyKey
         .split('/')
         .map((segment) => encodeURIComponent(segment))
         .join('/')
       downloadUrl = `${cdnUrl}/${encodedPath}`
     } else if (isR2Key(firstItem.storageKey)) {
-      // R2 storage - build public URL via Proxy
+
       const r2Key = firstItem.storageKey.replace('r2:', '')
-      
+
       const appHost = process.env.SHOPIFY_APP_URL!
       const encodedPath = r2Key
           .split('/')
           .map((segment) => encodeURIComponent(segment))
           .join('/')
-      
-      // Generate token for proxy access
-      const tokenExpiresAt = Date.now() + 365 * 24 * 3600 * 1000 // 1 year
+
+
+      const tokenExpiresAt = Date.now() + 365 * 24 * 3600 * 1000
       const token = generateLocalFileToken(`r2:${r2Key}`, tokenExpiresAt)
-      
+
       downloadUrl = `${appHost}/api/files/r2:${encodedPath}?token=${token}`
     } else if (isShopifyFileId(firstItem.storageKey)) {
-      // Shopify fileId - resolve to URL via API
+
       const fileId = firstItem.storageKey.replace('shopify:', '')
       const resolvedUrl = await resolveShopifyFileUrl(fileId, shop.shopDomain, shop.accessToken)
       if (resolvedUrl) {
         downloadUrl = resolvedUrl
-        // Update storageKey with resolved URL for future requests (cache)
+
         await prisma.uploadItem.updateMany({
           where: { id: firstItem.id, uploadId: upload.id },
           data: { storageKey: resolvedUrl },
         })
         console.log(`[Upload Status] Resolved Shopify fileId to URL: ${resolvedUrl}`)
       } else {
-        // Fallback: file still processing, return placeholder
+
         downloadUrl = null
         console.log(`[Upload Status] Shopify file still processing: ${fileId}`)
       }
     } else {
-      // Local storage - generate signed URL
-      // Strip local: prefix if present
-      const localKey = firstItem.storageKey.startsWith('local:') 
-        ? firstItem.storageKey.replace('local:', '') 
+
+
+      const localKey = firstItem.storageKey.startsWith('local:')
+        ? firstItem.storageKey.replace('local:', '')
         : firstItem.storageKey
       const token = generateLocalFileToken(localKey, expiresAt)
       downloadUrl = `${host}/api/files/${encodeURIComponent(localKey)}?token=${encodeURIComponent(token)}`
     }
   }
 
-  // Thumbnail URL logic - use Bunny Optimizer for CDN files
+
   if (firstItem?.thumbnailKey) {
     if (isExternalUrl(firstItem.thumbnailKey)) {
-      // If Bunny URL, add optimizer params
+
       if (isBunnyUrl(firstItem.thumbnailKey)) {
         thumbnailUrl = getThumbnailUrl(storageConfig, firstItem.thumbnailKey, 200)
       } else {
         thumbnailUrl = firstItem.thumbnailKey
       }
     } else if (isBunnyKey(firstItem.thumbnailKey)) {
-      // Bunny key - use optimizer
+
       thumbnailUrl = getThumbnailUrl(storageConfig, firstItem.thumbnailKey, 200)
     } else if (isR2Key(firstItem.thumbnailKey)) {
-      // R2 thumbnail - build public URL via Proxy
+
       const r2Key = firstItem.thumbnailKey.replace('r2:', '')
-      
-       // FORCE UPDATE: Always use main app domain for R2 proxy
+
+
       const appHost = process.env.SHOPIFY_APP_URL!
       const encodedPath = r2Key
           .split('/')
           .map((segment) => encodeURIComponent(segment))
           .join('/')
-      
-       // Generate token for proxy access
-      const tokenExpiresAt = Date.now() + 365 * 24 * 3600 * 1000 // 1 year
+
+
+      const tokenExpiresAt = Date.now() + 365 * 24 * 3600 * 1000
       const token = generateLocalFileToken(`r2:${r2Key}`, tokenExpiresAt)
 
       thumbnailUrl = `${appHost}/api/files/r2:${encodedPath}?token=${token}`
@@ -282,7 +282,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       const fileId = firstItem.thumbnailKey.replace('shopify:', '')
       thumbnailUrl = await resolveShopifyFileUrl(fileId, shop.shopDomain, shop.accessToken)
     } else {
-      // Local storage - strip local: prefix if present
+
       const localKey = firstItem.thumbnailKey.startsWith('local:')
         ? firstItem.thumbnailKey.replace('local:', '')
         : firstItem.thumbnailKey
@@ -290,12 +290,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       thumbnailUrl = `${host}/api/files/${encodeURIComponent(localKey)}?token=${encodeURIComponent(token)}`
     }
   }
-  // FIX: Remove fallbacks that return downloadUrl as thumbnail
-  // If no thumbnailKey exists, thumbnailUrl stays null
-  // This allows the widget to show spinner and poll for thumbnail
-  // Old code returned downloadUrl which made hasThumbnail always true for PSD/PDF etc.
 
-  // Extract canonical metadata plus per-item URLs for storefront consumers.
+
+
+
+
+
   const lifecycleItems = upload.items.map((item) =>
     deriveUploadItemLifecycle({
       preflightStatus: item.preflightStatus,
@@ -313,7 +313,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       ? applyFullCanvasMeasurementMetadata(lifecycle.metadata)
       : lifecycle.metadata
 
-    // v1.1.0: Compute per-item thumbnail URL
+
     let itemThumbnailUrl: string | null = null
     if (item.thumbnailKey) {
       if (isExternalUrl(item.thumbnailKey)) {
@@ -339,7 +339,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       }
     }
 
-    // v1.1.0: Compute per-item original/file URL
+
     let itemOriginalUrl: string | null = null
     if (item.storageKey) {
       if (isExternalUrl(item.storageKey)) {
@@ -371,6 +371,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       widthPx: metadata?.widthPx || 0,
       heightPx: metadata?.heightPx || 0,
       dpi: metadata?.dpi || 0,
+      documentDpi: metadata?.documentDpi || 0,
+      documentDpiSource: metadata?.documentDpiSource || null,
       trimmedWidthPx: metadata?.trimmedWidthPx || 0,
       trimmedHeightPx: metadata?.trimmedHeightPx || 0,
       trimmedOffsetXPx: metadata?.trimmedOffsetXPx || 0,
@@ -398,6 +400,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
             widthPx: metadata.widthPx,
             heightPx: metadata.heightPx,
             dpi: metadata.dpi,
+            documentDpi: metadata.documentDpi,
+            documentDpiSource: metadata.documentDpiSource,
             trimmedWidthPx: metadata.trimmedWidthPx,
             trimmedHeightPx: metadata.trimmedHeightPx,
             trimmedOffsetXPx: metadata.trimmedOffsetXPx,
@@ -472,6 +476,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
             width: primaryMetadata.measurementWidthPx,
             height: primaryMetadata.measurementHeightPx,
             dpi: primaryMetadata.dpi,
+            documentDpi: primaryMetadata.documentDpi,
+            documentDpiSource: primaryMetadata.documentDpiSource,
             widthPx: primaryMetadata.widthPx,
             heightPx: primaryMetadata.heightPx,
             trimmedWidthPx: primaryMetadata.trimmedWidthPx,

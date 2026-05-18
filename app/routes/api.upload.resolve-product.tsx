@@ -3,7 +3,11 @@ import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
-import { getMaxWidthLimitForShop, isDtfPrintHouseShop } from '~/lib/customerPricing.server'
+import {
+  getMaxWidthLimitForShop,
+  isDtfPrintHouseShop,
+  parseSheetSizeFromTitle,
+} from '~/lib/customerPricing.server'
 import {
   resolveSheetVariant,
   type BuilderResolveConfig,
@@ -12,8 +16,10 @@ import {
 } from '~/lib/dtfSheetResolver.server'
 import {
   applyFullCanvasMeasurementMetadata,
-  computeSheetAnchoredInches,
+  computeDocumentDpiInches,
+  computeRollWidthAnchoredInches,
   deriveUploadItemLifecycle,
+  type RollWidthSheetSize,
   type UploadLifecycleMetadata,
 } from '~/lib/uploadLifecycle.server'
 
@@ -106,13 +112,46 @@ function getMainProductRollWidth(value: unknown): number {
 
 function applyMainProductRollMeasurement(
   metadata: UploadLifecycleMetadata | null,
-  rollWidthIn: number
+  rollWidthIn: number,
+  sheetSizes: RollWidthSheetSize[] = []
 ): UploadLifecycleMetadata | null {
   if (!metadata) return null
 
   const measurementWidthPx = metadata.widthPx > 0 ? metadata.widthPx : metadata.measurementWidthPx
   const measurementHeightPx = metadata.heightPx > 0 ? metadata.heightPx : metadata.measurementHeightPx
-  const anchored = computeSheetAnchoredInches(measurementWidthPx, measurementHeightPx, rollWidthIn)
+  const documentDpi =
+    parsePositiveNumber(metadata.documentDpi) ||
+    (metadata.documentDpiSource ? parsePositiveNumber(metadata.dpi) : null)
+  const documentSized = computeDocumentDpiInches(
+    measurementWidthPx,
+    measurementHeightPx,
+    documentDpi || undefined
+  )
+
+  if (documentSized && documentDpi) {
+    return {
+      ...metadata,
+      dpi: documentDpi,
+      documentDpi,
+      documentDpiSource: metadata.documentDpiSource || 'document_dpi',
+      measurementWidthPx,
+      measurementHeightPx,
+      effectiveDpi: documentSized.effectiveDpi,
+      sizingSource: 'main_product_document_dpi',
+      sheetWidthIn: rollWidthIn,
+      sheetLengthIn: undefined,
+      widthIn: documentSized.widthIn,
+      heightIn: documentSized.heightIn,
+      measurementMode: 'full',
+    }
+  }
+
+  const anchored = computeRollWidthAnchoredInches(
+    measurementWidthPx,
+    measurementHeightPx,
+    rollWidthIn,
+    sheetSizes
+  )
 
   return {
     ...metadata,
@@ -128,6 +167,33 @@ function applyMainProductRollMeasurement(
   }
 }
 
+function getMainProductSheetSizes(variants: ProductVariantDef[]): RollWidthSheetSize[] {
+  const seen = new Set<string>()
+  const sizes: RollWidthSheetSize[] = []
+
+  for (const variant of variants) {
+    const values = [
+      variant.title,
+      variant.option1,
+      variant.option2,
+      variant.option3,
+      ...(variant.options || []),
+      ...(variant.selectedOptions || []).map((option) => option.value),
+    ]
+
+    for (const value of values) {
+      const parsed = parseSheetSizeFromTitle(value)
+      if (!parsed) continue
+      const key = `${parsed.widthIn}x${parsed.lengthIn}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      sizes.push({ widthIn: parsed.widthIn, heightIn: parsed.lengthIn })
+    }
+  }
+
+  return sizes
+}
+
 function metadataToUploadDimensions(metadata: UploadLifecycleMetadata | null) {
   if (!metadata || !(metadata.widthPx > 0) || !(metadata.heightPx > 0)) return null
 
@@ -135,6 +201,8 @@ function metadataToUploadDimensions(metadata: UploadLifecycleMetadata | null) {
     widthPx: metadata.widthPx,
     heightPx: metadata.heightPx,
     dpi: metadata.dpi,
+    documentDpi: metadata.documentDpi,
+    documentDpiSource: metadata.documentDpiSource,
     trimmedWidthPx: metadata.trimmedWidthPx,
     trimmedHeightPx: metadata.trimmedHeightPx,
     trimmedOffsetXPx: metadata.trimmedOffsetXPx,
@@ -247,19 +315,6 @@ export async function action({ request }: ActionFunctionArgs) {
         })
       : null
     const rawMetadata = lifecycle?.metadata || null
-    const resolvedMetadata = shouldUseMainProductRollPolicy(body)
-      ? applyMainProductRollMeasurement(rawMetadata, getMainProductRollWidth(body.rollWidthIn))
-      : isDtfPrintHouseShop(shopDomain)
-        ? applyFullCanvasMeasurementMetadata(rawMetadata)
-        : rawMetadata
-    const dimensions = metadataToUploadDimensions(resolvedMetadata)
-    if (!dimensions) {
-      return corsJson(
-        { error: 'Upload metadata is not ready yet. Please retry in a moment.' },
-        request,
-        { status: 409 }
-      )
-    }
 
     const rawBuilderConfig = (productConfig?.builderConfig || {}) as Record<string, unknown>
     const shopMaxWidthLimit = getMaxWidthLimitForShop(shopDomain)
@@ -321,6 +376,24 @@ export async function action({ request }: ActionFunctionArgs) {
         option3: node.selectedOptions?.[2]?.value || null,
       }
     })
+
+    const resolvedMetadata = shouldUseMainProductRollPolicy(body)
+      ? applyMainProductRollMeasurement(
+          rawMetadata,
+          getMainProductRollWidth(body.rollWidthIn),
+          getMainProductSheetSizes(variants)
+        )
+      : isDtfPrintHouseShop(shopDomain)
+        ? applyFullCanvasMeasurementMetadata(rawMetadata)
+        : rawMetadata
+    const dimensions = metadataToUploadDimensions(resolvedMetadata)
+    if (!dimensions) {
+      return corsJson(
+        { error: 'Upload metadata is not ready yet. Please retry in a moment.' },
+        request,
+        { status: 409 }
+      )
+    }
 
     const resolution = resolveSheetVariant({
       widthIn: dimensions.widthIn,

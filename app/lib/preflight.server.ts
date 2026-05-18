@@ -1,4 +1,4 @@
-// Preflight check utilities
+
 import { exec } from 'child_process'
 import fs from 'fs/promises'
 import path from 'path'
@@ -7,12 +7,12 @@ import { inflateSync } from 'zlib'
 
 const execAsync = promisify(exec)
 
-// Default printable sheet width in inches when a product-specific value is
-// not available. Sheet width is the fixed dimension of the gang sheet press
-// output — every shop using gang-sheet products has this set in product
-// builder config (maxWidthIn). Fallback 22" matches the DTF industry default.
-// We use this — NOT a guessed DPI — to compute physical inch dimensions from
-// pixel ratios. Embedded DPI is treated as a quality signal only.
+
+
+
+
+
+
 const DEFAULT_SHEET_WIDTH_IN = 22
 
 interface DpiCandidate {
@@ -86,11 +86,11 @@ function buildDpiCandidate(
   const maxDpi = Math.max(dpiX, dpiY)
   if (!(minDpi > 1) || maxDpi > 10000) return null
 
-  // Print files should have square pixels. A large X/Y mismatch is usually bad metadata.
+
   if (maxDpi / minDpi > 1.05) return null
 
   return {
-    dpi: Math.round((dpiX + dpiY) / 2),
+    dpi: Number(((dpiX + dpiY) / 2).toFixed(4)),
     source,
     priority,
   }
@@ -744,7 +744,7 @@ async function getImageInfoWithoutImagemagick(filePath: string, mimeType: string
   return null
 }
 
-// Preflight check result types
+
 export interface PreflightCheck {
   name: string
   status: 'ok' | 'warning' | 'error'
@@ -778,7 +778,7 @@ interface MeasuredImageInfo {
   measurementMode?: 'trimmed' | 'full'
 }
 
-// Plan-based configuration
+
 export interface PreflightConfig {
   maxFileSizeMB: number
   minDPI: number
@@ -786,16 +786,16 @@ export interface PreflightConfig {
   maxPages: number
   allowedFormats: string[]
   requireTransparency: boolean
-  // Physical printable sheet width in inches. Anchors size detection: the
-  // shorter pixel side of the artwork is taken to span this width (or the
-  // shorter sheet side when sheetLengthIn is also set), and the length is
-  // derived from the pixel aspect ratio. Set per-product from the shop's
-  // builder config (maxWidthIn). Falls back to DEFAULT_SHEET_WIDTH_IN.
+
+
+
+
+
   sheetWidthIn?: number
-  // Second physical sheet dimension for fixed-size products (e.g. 12" for a
-  // 22"×12" PERSONAL GS). When present, the shorter of (sheetWidthIn,
-  // sheetLengthIn) is used as the anchor — this is what makes landscape
-  // files report correct dimensions on fixed sheets.
+
+
+
+
   sheetLengthIn?: number
 }
 
@@ -874,7 +874,7 @@ export const PLAN_CONFIGS: Record<string, PreflightConfig> = {
   },
 }
 
-// Magic bytes for file type detection
+
 const MAGIC_BYTES: Record<string, Buffer> = {
   'image/png': Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
   'image/jpeg': Buffer.from([0xff, 0xd8, 0xff]),
@@ -886,7 +886,7 @@ const MAGIC_BYTES: Record<string, Buffer> = {
   'image/vnd.adobe.photoshop': Buffer.from([0x38, 0x42, 0x50, 0x53]), // 8BPS - PSD signature
 }
 
-// Detect file type from magic bytes
+
 export async function detectFileType(filePath: string): Promise<string | null> {
   const buffer = Buffer.alloc(16)
   const fd = await fs.open(filePath, 'r')
@@ -895,7 +895,7 @@ export async function detectFileType(filePath: string): Promise<string | null> {
 
   for (const [mimeType, magic] of Object.entries(MAGIC_BYTES)) {
     if (buffer.subarray(0, magic.length).equals(magic)) {
-      // Normalize TIFF big-endian to standard TIFF MIME type
+
       if (mimeType === 'image/tiff-be') {
         return 'image/tiff'
       }
@@ -903,13 +903,13 @@ export async function detectFileType(filePath: string): Promise<string | null> {
     }
   }
 
-  // Check for SVG (might start with <svg instead of <?xml)
+
   const start = buffer.toString('utf8', 0, 4)
   if (start === '<svg' || start === '<?xm') {
     return 'image/svg+xml'
   }
 
-  // Check for AI/EPS (PostScript)
+
   if (buffer.toString('utf8', 0, 2) === '%!') {
     return 'application/postscript'
   }
@@ -917,7 +917,7 @@ export async function detectFileType(filePath: string): Promise<string | null> {
   return null
 }
 
-// Get image info using ImageMagick identify
+
 export async function getImageInfo(filePath: string): Promise<{
   width: number
   height: number
@@ -933,7 +933,7 @@ export async function getImageInfo(filePath: string): Promise<{
     : null
 
   try {
-    // v4.5.0: No timeout - large files (10GB+) need unlimited time
+
     const { stdout } = await execAsync(
       `identify -format "%w|%h|%x|%y|%U|%[colorspace]|%[channels]|%m" "${filePath}[0]"`
     )
@@ -962,7 +962,7 @@ export async function getImageInfo(filePath: string): Promise<{
         ? nativeInfo?.dpiSource || 'document_dpi'
         : identifiedDpi?.source || null
 
-    // Check for alpha channel
+
     const hasAlpha =
       channels.toLowerCase().includes('a') || channels.toLowerCase().includes('alpha')
 
@@ -1043,21 +1043,21 @@ async function getTrimmedImageBounds(
   }
 }
 
-// Get PDF info using pdfinfo
+
 export async function getPdfInfo(filePath: string): Promise<{
   pages: number
   width: number
   height: number
 }> {
   try {
-    // v4.5.0: No timeout for PDF info extraction
+
     const { stdout } = await execAsync(`pdfinfo "${filePath}"`)
 
     const pagesMatch = stdout.match(/Pages:\s+(\d+)/)
     const sizeMatch = stdout.match(/Page size:\s+([\d.]+)\s+x\s+([\d.]+)/)
 
     const pages = pagesMatch ? parseInt(pagesMatch[1]) : 1
-    // PDF points to pixels (72 dpi base)
+
     const width = sizeMatch ? Math.round((parseFloat(sizeMatch[1]) * 300) / 72) : 0
     const height = sizeMatch ? Math.round((parseFloat(sizeMatch[2]) * 300) / 72) : 0
 
@@ -1068,21 +1068,21 @@ export async function getPdfInfo(filePath: string): Promise<{
   }
 }
 
-// Convert PDF to PNG using Ghostscript
-// Security: -dSAFER prevents file system access, -dNOCACHE prevents disk caching
-// -dNOPLATFONTS disables platform font access, -dSANDBOX enables full sandbox mode
+
+
+
 export async function convertPdfToPng(
   inputPath: string,
   outputPath: string,
   dpi: number = 300
 ): Promise<void> {
-  // Try multiple approaches for better PDF compatibility
+
   const commands = [
-    // Standard high-quality conversion
+
     `gs -dSAFER -dBATCH -dNOPAUSE -dNOCACHE -dNOPLATFONTS -dPARANOIDSAFER -sDEVICE=png16m -r${dpi} -dFirstPage=1 -dLastPage=1 -dMaxBitmap=500000000 -dBufferSpace=1000000 -sOutputFile="${outputPath}" "${inputPath}"`,
-    // Fallback: Lower DPI for problematic PDFs
+
     `gs -dSAFER -dBATCH -dNOPAUSE -sDEVICE=png16m -r150 -dFirstPage=1 -dLastPage=1 -sOutputFile="${outputPath}" "${inputPath}"`,
-    // Last resort: Use ImageMagick with density
+
     `convert -density 150 "${inputPath}[0]" -colorspace sRGB -flatten -quality 90 "${outputPath}"`,
   ]
 
@@ -1090,9 +1090,9 @@ export async function convertPdfToPng(
 
   for (const cmd of commands) {
     try {
-      // v4.5.0: No timeout - large PDF files need unlimited time
+
       await execAsync(cmd)
-      // Verify the output file exists and is valid
+
       const stats = await fs.stat(outputPath).catch(() => null)
       if (stats && stats.size > 100) {
         console.log('[Preflight] PDF conversion successful with command:', cmd.substring(0, 50))
@@ -1108,17 +1108,17 @@ export async function convertPdfToPng(
   throw lastError || new Error('PDF conversion failed')
 }
 
-// Get PDF page count using Ghostscript
+
 export async function getPdfPageCount(inputPath: string): Promise<number> {
   const cmd = `gs -q -dNODISPLAY -c "(${inputPath.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}) (r) file runpdfbegin pdfpagecount = quit"`
 
   try {
-    // v4.5.0: No timeout - large files need unlimited time
+
     const { stdout } = await execAsync(cmd)
     const pageCount = parseInt(stdout.trim(), 10)
     return isNaN(pageCount) ? 1 : pageCount
   } catch (error) {
-    // Fallback: try with pdfinfo if available
+
     try {
       const { stdout } = await execAsync(`pdfinfo "${inputPath}" | grep Pages`)
       const match = stdout.match(/Pages:\s*(\d+)/)
@@ -1130,19 +1130,19 @@ export async function getPdfPageCount(inputPath: string): Promise<number> {
   }
 }
 
-// Convert AI/EPS to PNG using Ghostscript
+
 export async function convertEpsToPng(
   inputPath: string,
   outputPath: string,
   dpi: number = 300
 ): Promise<void> {
-  // Try multiple approaches for better AI/EPS compatibility
+
   const commands = [
-    // Standard EPS conversion with crop
+
     `gs -dSAFER -dBATCH -dNOPAUSE -dNOCACHE -dNOPLATFONTS -dPARANOIDSAFER -sDEVICE=png16m -r${dpi} -dEPSCrop -dMaxBitmap=500000000 -dBufferSpace=1000000 -sOutputFile="${outputPath}" "${inputPath}"`,
-    // Fallback: Without EPS crop (for AI files that are PDF-based)
+
     `gs -dSAFER -dBATCH -dNOPAUSE -sDEVICE=png16m -r150 -dFirstPage=1 -dLastPage=1 -sOutputFile="${outputPath}" "${inputPath}"`,
-    // Last resort: ImageMagick (works for many AI files)
+
     `convert -density 150 "${inputPath}[0]" -colorspace sRGB -flatten -quality 90 "${outputPath}"`,
   ]
 
@@ -1150,9 +1150,9 @@ export async function convertEpsToPng(
 
   for (const cmd of commands) {
     try {
-      // v4.5.0: No timeout - AI/EPS files need unlimited time
+
       await execAsync(cmd)
-      // Verify the output file exists and is valid
+
       const stats = await fs.stat(outputPath).catch(() => null)
       if (stats && stats.size > 100) {
         console.log('[Preflight] AI/EPS conversion successful with command:', cmd.substring(0, 50))
@@ -1168,14 +1168,14 @@ export async function convertEpsToPng(
   throw lastError || new Error('EPS/AI conversion failed')
 }
 
-// Convert TIFF to PNG using ImageMagick
-// ImageMagick handles all TIFF variants (LZW, ZIP, uncompressed, CMYK, etc.)
+
+
 export async function convertTiffToPng(inputPath: string, outputPath: string): Promise<void> {
-  // Use [0] to get first page/layer, -colorspace sRGB to convert CMYK if needed
+
   const cmd = `convert "${inputPath}[0]" -colorspace sRGB -flatten -quality 100 "${outputPath}"`
 
   try {
-    // v4.5.0: No timeout - large TIFF files need unlimited time
+
     await execAsync(cmd)
   } catch (error) {
     console.error('[Preflight] TIFF conversion failed:', error)
@@ -1183,15 +1183,15 @@ export async function convertTiffToPng(inputPath: string, outputPath: string): P
   }
 }
 
-// Convert PSD to PNG using ImageMagick
-// ImageMagick's PSD support handles layers, CMYK, 16-bit depth, etc.
+
+
 export async function convertPsdToPng(inputPath: string, outputPath: string): Promise<void> {
-  // [0] gets the flattened composite, -flatten merges transparency
-  // -colorspace sRGB handles CMYK to RGB conversion
+
+
   const cmd = `convert "${inputPath}[0]" -colorspace sRGB -flatten -quality 100 "${outputPath}"`
 
   try {
-    // v4.5.0: No timeout - large PSD files (10GB+) need unlimited time
+
     await execAsync(cmd)
   } catch (error) {
     console.error('[Preflight] PSD conversion failed:', error)
@@ -1199,7 +1199,7 @@ export async function convertPsdToPng(inputPath: string, outputPath: string): Pr
   }
 }
 
-// Generate WebP thumbnail
+
 export async function generateThumbnail(
   inputPath: string,
   outputPath: string,
@@ -1208,9 +1208,9 @@ export async function generateThumbnail(
   const cmd = `convert "${inputPath}[0]" -thumbnail ${maxSize}x${maxSize}\\> -quality 85 "${outputPath}"`
 
   try {
-    // v4.5.0: No timeout - thumbnail generation needs time for large files
+
     await execAsync(cmd)
-    // Verify thumbnail was created and is valid
+
     const stats = await fs.stat(outputPath).catch(() => null)
     if (!stats || stats.size < 100) {
       throw new Error('Thumbnail file is empty or too small')
@@ -1218,10 +1218,10 @@ export async function generateThumbnail(
   } catch (error) {
     console.error('[Preflight] Thumbnail generation failed:', error)
 
-    // v4.5.0: Create a fallback placeholder thumbnail with file format label
+
     try {
       console.log('[Preflight] Creating fallback placeholder thumbnail with file format label')
-      // Detect file type label for better user experience
+
       const ext = path.extname(inputPath).toLowerCase().replace('.', '').toUpperCase() || 'FILE'
       const fallbackCmd = `convert -size ${maxSize}x${maxSize} xc:#f3f4f6 -gravity center -pointsize 64 -fill "#6b7280" -font "DejaVu-Sans-Bold" -annotate 0 "${ext}" -quality 85 "${outputPath}"`
       await execAsync(fallbackCmd)
@@ -1235,7 +1235,7 @@ export async function generateThumbnail(
   }
 }
 
-// Run all preflight checks
+
 export async function runPreflightChecks(
   filePath: string,
   mimeType: string,
@@ -1245,7 +1245,7 @@ export async function runPreflightChecks(
   const checks: PreflightCheck[] = []
   let overall: 'ok' | 'warning' | 'error' = 'ok'
 
-  // 1. File size check
+
   const sizeMB = fileSize / (1024 * 1024)
   if (sizeMB > config.maxFileSizeMB) {
     checks.push({
@@ -1264,11 +1264,11 @@ export async function runPreflightChecks(
     })
   }
 
-  // 2. Format check (magic bytes)
+
   const detectedType = await detectFileType(filePath)
 
-  // Check if detected type or its alternatives are allowed
-  // PSD can have multiple MIME types, check all variants
+
+
   const psdTypes = ['image/vnd.adobe.photoshop', 'application/x-photoshop', 'image/x-psd']
   const isPsd = psdTypes.includes(detectedType || '')
   const isPsdAllowed = psdTypes.some((t) => config.allowedFormats.includes(t))
@@ -1293,7 +1293,7 @@ export async function runPreflightChecks(
     message: `Format: ${detectedType}`,
   })
 
-  // 3. PDF-specific checks
+
   if (detectedType === 'application/pdf') {
     const pdfInfo = await getPdfInfo(filePath)
 
@@ -1323,20 +1323,20 @@ export async function runPreflightChecks(
     }
   }
 
-  // 4. Image info checks (dimensions, DPI quality signal, transparency, color)
+
   try {
     const imageInfo = await getImageInfo(filePath)
     const trimmedBounds = await getTrimmedImageBounds(filePath, imageInfo)
     const measurementWidth = imageInfo.width
     const measurementHeight = imageInfo.height
 
-    // === Sheet-anchored physical size ===
-    // Gang-sheet prints have a FIXED printable width (e.g. 22") set by the
-    // press. Whatever the customer uploads, the shorter pixel side maps to
-    // that printable width; the longer side determines the length. This
-    // makes physical size deterministic regardless of (or absent) embedded
-    // DPI metadata. Embedded DPI, when present, is reported only as a
-    // print-quality signal.
+
+
+
+
+
+
+
     const sheetWidthIn =
       typeof config.sheetWidthIn === 'number' && config.sheetWidthIn > 0
         ? config.sheetWidthIn
@@ -1345,9 +1345,9 @@ export async function runPreflightChecks(
       typeof config.sheetLengthIn === 'number' && config.sheetLengthIn > 0
         ? config.sheetLengthIn
         : undefined
-    // For fixed-size sheets (both dims set), the shorter sheet side is the
-    // anchor — that's what makes a landscape file on a 22×12 sheet report
-    // 22×12 instead of 40×22.
+
+
+
     const shortSheetIn =
       sheetLengthIn !== undefined ? Math.min(sheetWidthIn, sheetLengthIn) : sheetWidthIn
     const shortSidePx = Math.min(measurementWidth, measurementHeight)
@@ -1359,9 +1359,9 @@ export async function runPreflightChecks(
     const widthIn = Number((isPortrait ? shortSheetIn : longSideIn).toFixed(2))
     const heightIn = Number((isPortrait ? longSideIn : shortSheetIn).toFixed(2))
 
-    // Effective DPI is back-calculated from the sheet-anchor for quality
-    // checks only (e.g. "this artwork prints at ~72 DPI, blurry").
-    // It is NOT used to compute widthIn/heightIn.
+
+
+
     const effectiveDpi = shortSidePx > 0
       ? Math.round(shortSidePx / shortSheetIn)
       : 0
@@ -1371,7 +1371,7 @@ export async function runPreflightChecks(
         ? `sheet_anchor (embedded_dpi=${imageInfo.dpi}, source=${imageInfo.dpiSource || 'unknown'})`
         : 'sheet_anchor (no_embedded_dpi)'
 
-    // DPI quality check (informational — does not affect sizing)
+
     if (effectiveDpi <= 0) {
       checks.push({
         name: 'dpi',
@@ -1399,7 +1399,7 @@ export async function runPreflightChecks(
       })
     }
 
-    // Dimensions check
+
     checks.push({
       name: 'dimensions',
       status: 'ok',
@@ -1414,6 +1414,10 @@ export async function runPreflightChecks(
         trimmedOffsetY: trimmedBounds.trimmedOffsetY,
         measurementWidth,
         measurementHeight,
+        documentDpi: imageInfo.dpi,
+        documentDpiSource: imageInfo.dpiSource || null,
+        embeddedDpi: imageInfo.dpi,
+        embeddedDpiSource: imageInfo.dpiSource || null,
         effectiveDpi,
         sizingSource,
         sizingSourceDetail,
@@ -1425,7 +1429,7 @@ export async function runPreflightChecks(
       },
     })
 
-    // Transparency check
+
     checks.push({
       name: 'transparency',
       status: imageInfo.hasAlpha ? 'ok' : 'warning',
@@ -1436,7 +1440,7 @@ export async function runPreflightChecks(
       overall = 'warning'
     }
 
-    // Color profile check
+
     const goodColorspaces = ['sRGB', 'RGB', 'CMYK']
     const colorOk = goodColorspaces.some((cs) =>
       imageInfo.colorspace.toLowerCase().includes(cs.toLowerCase())

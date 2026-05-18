@@ -1,22 +1,14 @@
-<!--
-  Exact source bundle for the product page main-product section.
-  Included exactly as pulled from the theme:
-  1. sections/main-product.liquid
-  2. CSS/Tailwind-related source from layout/theme.liquid
-  Note: layout/theme.liquid references assets/theme.css, but that file is not present in the pulled theme copy.
--->
+
 
 {%- liquid
   assign section_dom_id = 'ul-main-product-' | append: section.id
   assign upload_input_id = section_dom_id | append: '-upload-input'
 -%}
 
-<!-- sections/main-product.liquid -->
 <div class="w-full bg-[#f3f3f3] pb-10" id="{{ section_dom_id }}" data-section-id="{{ section.id }}" data-product-id="{{ product.id }}" data-shop-domain="{{ shop.permanent_domain }}" data-api-base="/apps/customizer" data-customer-id="{{ customer.id | default: '' }}" data-customer-email="{{ customer.email | default: '' }}" data-customer-first-name="{{ customer.first_name | default: '' }}" data-customer-last-name="{{ customer.last_name | default: '' }}" data-customer-logged-in="{% if customer %}true{% else %}false{% endif %}">
   <div class="ul-main-shell max-w-2k w-full mx-auto px-4 py-6 font-amazon bg-white mt-4 mb-8 rounded shadow-sm">
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-      
-      <!-- Left Column - Images (4 cols) -->
+
       <div class="lg:col-span-4">
         <div class="ul-main-gallery-panel">
           <div class="aspect-square bg-gray-50 mb-4 relative border border-gray-200 p-2">
@@ -30,7 +22,6 @@
             </div>
           </div>
 
-          <!-- Thumbnails -->
           <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
             {% for image in product.images %}
               <button type="button" class="ul-main-thumb w-12 h-12 flex-shrink-0 border border-gray-300 hover:border-amazon-orange cursor-pointer js-thumb-click" data-image-url="{{ image | image_url: width: 800 }}" aria-label="Show product image {{ forloop.index }}">
@@ -77,7 +68,6 @@
         </div>
       </div>
 
-      <!-- Middle Column - Product Info (5 cols) -->
       <div class="lg:col-span-5">
         <h1 class="text-2xl font-normal text-gray-900 leading-tight mb-1">
           {{ product.title }}
@@ -122,7 +112,7 @@
             </div>
           </div>
         </div>
-        
+
         {% if section.settings.show_vendor %}
           <div class="text-sm text-amazon-link hover:text-amazon-link-hover hover:underline mb-2">
             Visit the {{ product.vendor }} Store
@@ -147,7 +137,6 @@
           {{ product.description | strip_html | truncatewords: 40 }}
         </div>
 
-        <!-- Custom DTF Features -->
         {% if section.settings.show_dtf_features %}
           <div class="grid grid-cols-2 gap-y-3 gap-x-4 mb-6 text-sm text-gray-900">
             <div class="flex items-center gap-2"><span class="w-4 h-4 bg-gray-200 rounded-sm flex items-center justify-center text-[10px] font-semibold">A</span> {{ section.settings.feature_1_text | escape }}</div>
@@ -157,7 +146,6 @@
           </div>
         {% endif %}
 
-        <!-- Upload Section -->
         {% if section.settings.show_upload_section %}
           <div class="border-2 border-dashed border-gray-300 bg-gray-50 rounded p-6 text-center mb-4 ul-main-upload-box">
             <input id="{{ upload_input_id }}" type="file" class="ul-main-upload-input sr-only" accept=".png,image/png" multiple>
@@ -237,7 +225,6 @@
           </div>
         {% endif %}
 
-        <!-- Accordions -->
         <div class="mt-8 border-t border-gray-200">
           {% for block in section.blocks %}
             <div class="border-b border-gray-200" {{ block.shopify_attributes }}>
@@ -250,7 +237,7 @@
               </div>
             </div>
           {% else %}
-            <!-- Default Accordions if no blocks added -->
+
             <div class="border-b border-gray-200">
               <button type="button" class="js-accordion-trigger w-full py-3 flex justify-between items-center font-bold text-sm text-gray-900 hover:text-amazon-orange cursor-pointer" data-target="acc-details" aria-expanded="false" aria-controls="acc-details">
                 Product Details
@@ -263,12 +250,10 @@
           {% endfor %}
         </div>
 
-        <!-- App Blocks -->
       </div>
 
-      <!-- Right Column - Buy Box (3 cols) -->
       <div class="lg:col-span-3">
-        <!-- Pricing Table -->
+
         {% if section.settings.show_pricing_table %}
           <div class="ul-main-variant-pricing border border-gray-200 rounded-md overflow-hidden mb-6">
             <div class="bg-amazon-yellow px-4 py-2">
@@ -505,6 +490,16 @@
       return target.widthIn > 0 && target.heightIn > 0;
     }
 
+    function applyMainProductDocumentDpiMeasurement(target) {
+      if (!target || !(target.widthPx > 0) || !(target.heightPx > 0) || !(target.embeddedDpi > 1)) return false;
+      target.widthIn = Number((target.widthPx / target.embeddedDpi).toFixed(2));
+      target.heightIn = Number((target.heightPx / target.embeddedDpi).toFixed(2));
+      target.effectiveDpi = target.embeddedDpi;
+      target.sizingSource = 'main_product_document_dpi';
+      target.measurementMode = 'full';
+      return target.widthIn > 0 && target.heightIn > 0;
+    }
+
     function applyServerMeasurement(payload, targetState) {
       if (!payload) return false;
 
@@ -516,7 +511,11 @@
       target.trimmedHeightPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedHeightPx')) || 0;
       target.trimmedOffsetXPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedOffsetXPx')) || 0;
       target.trimmedOffsetYPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedOffsetYPx')) || 0;
-      target.embeddedDpi = parseNonNegativeNumber(getPayloadField(payload, 'dpi')) || target.embeddedDpi || 0;
+      target.embeddedDpi =
+        parseNonNegativeNumber(getPayloadField(payload, 'documentDpi')) ||
+        parseNonNegativeNumber(getPayloadField(payload, 'dpi')) ||
+        target.embeddedDpi ||
+        0;
       target.effectiveDpi = parseNonNegativeNumber(getPayloadField(payload, 'effectiveDpi')) || target.effectiveDpi || 0;
       var nextSizingSource = getPayloadField(payload, 'sizingSource');
       target.sizingSource =
@@ -535,11 +534,15 @@
       }
 
       var confirmedInches = getServerConfirmedUploadInches(payload);
+      if (applyMainProductDocumentDpiMeasurement(target)) {
+        return true;
+      }
       if (confirmedInches) {
         target.widthIn = confirmedInches.widthIn;
         target.heightIn = confirmedInches.heightIn;
+        return true;
       }
-      return applyMainProductRollMeasurement(target) || Boolean(confirmedInches);
+      return applyMainProductRollMeasurement(target);
     }
 
     function getResolvedSizingSource(value) {
@@ -564,12 +567,6 @@
       return 0;
     }
 
-    // Server now anchors physical size to the printable sheet width and treats
-    // DPI as a quality signal only. Surface that to the customer plainly:
-    // either show measured dimensions with the artwork's resolution, or report
-    // the anchored dimensions when no embedded DPI is present. The "DPI fallback"
-    // language is gone — it confused customers who saw "fallback" even when
-    // their file actually had embedded resolution.
     function getSizingMethodText(value) {
       if (!value || typeof value !== 'object') {
         return 'Document size will be confirmed after upload measurement.';
@@ -646,10 +643,6 @@
 
     function sleepMs(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
 
-    // Robust upload: retries direct provider URL with exponential backoff,
-    // then falls back to the backend local-proxy endpoint if all direct attempts fail.
-    // This protects against transient CORS/CDN/network hiccups, expired presigned
-    // URLs, and in-app browser quirks without surfacing a misleading "silinme" UX.
     async function performUploadWithRetry(file, intent, onProgress) {
       var storageProvider = intent.storageProvider || 'local';
       var primaryMethod = intent.uploadMethod || (storageProvider === 'local' ? 'POST' : 'PUT');
@@ -679,7 +672,6 @@
         }
       }
 
-      // Try explicit fallbackUrls supplied by intent (Bunny path already populates these)
       var fallbackCandidates = [];
       if (intent.fallbackUrls) {
         if (intent.fallbackUrls.r2 && intent.fallbackUrls.r2.url && storageProvider !== 'r2') {
@@ -703,8 +695,6 @@
           });
         }
       }
-      // Always keep a final proxy fallback — /api/upload/local accepts multipart
-      // with (file, key, uploadId, itemId) and stores via the same storage layer.
       if (storageProvider !== 'local') {
         fallbackCandidates.push({
           label: 'proxy-local',
@@ -4435,7 +4425,6 @@
 }
 {% endschema %}
 
-<!-- layout/theme.liquid CSS/Tailwind source -->
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = {

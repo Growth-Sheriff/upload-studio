@@ -1,7 +1,11 @@
 import prisma from '~/lib/prisma.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
 import { getDownloadSignedUrl, getStorageConfig } from '~/lib/storage.server'
-import { computeSheetAnchoredInches } from '~/lib/uploadLifecycle.server'
+import {
+  computeDocumentDpiInches,
+  computeRollWidthAnchoredInches,
+  type RollWidthSheetSize,
+} from '~/lib/uploadLifecycle.server'
 import {
   applyCustomerPricingDefaultsForShop,
   calculateMeasuredLengthQuote,
@@ -148,7 +152,8 @@ function normalizeMeasurementPolicy(value: unknown): string | null {
 
 function applyMainProductMeasurementPolicy(
   measurement: VipUploadMeasurement,
-  itemInput: CustomPricingJobItemInput
+  itemInput: CustomPricingJobItemInput,
+  sheetSizes: RollWidthSheetSize[] = []
 ): VipUploadMeasurement {
   if (normalizeMeasurementPolicy(itemInput.measurementPolicy) !== MAIN_PRODUCT_MEASUREMENT_POLICY) {
     return measurement
@@ -159,7 +164,37 @@ function applyMainProductMeasurementPolicy(
   const measurementHeightPx =
     measurement.heightPx > 0 ? measurement.heightPx : measurement.measurementHeightPx
   const rollWidthIn = parsePositiveNumber(itemInput.rollWidthIn) || DEFAULT_MAIN_PRODUCT_ROLL_WIDTH_IN
-  const anchored = computeSheetAnchoredInches(measurementWidthPx, measurementHeightPx, rollWidthIn)
+  const documentDpi =
+    parsePositiveNumber(measurement.documentDpi) ||
+    (measurement.documentDpiSource ? parsePositiveNumber(measurement.dpi) : null)
+  const documentSized = computeDocumentDpiInches(
+    measurementWidthPx,
+    measurementHeightPx,
+    documentDpi || undefined
+  )
+
+  if (documentSized && documentDpi) {
+    return {
+      ...measurement,
+      dpi: documentDpi,
+      documentDpi,
+      documentDpiSource: measurement.documentDpiSource || 'document_dpi',
+      measurementWidthPx,
+      measurementHeightPx,
+      effectiveDpi: documentSized.effectiveDpi,
+      sizingSource: 'main_product_document_dpi',
+      widthIn: documentSized.widthIn,
+      heightIn: documentSized.heightIn,
+      measurementMode: 'full',
+    }
+  }
+
+  const anchored = computeRollWidthAnchoredInches(
+    measurementWidthPx,
+    measurementHeightPx,
+    rollWidthIn,
+    sheetSizes
+  )
 
   return {
     ...measurement,
@@ -171,6 +206,33 @@ function applyMainProductMeasurementPolicy(
     heightIn: anchored.heightIn,
     measurementMode: 'full',
   }
+}
+
+function getMainProductSheetSizes(variants: ProductVariantDef[]): RollWidthSheetSize[] {
+  const seen = new Set<string>()
+  const sizes: RollWidthSheetSize[] = []
+
+  for (const variant of variants) {
+    const values = [
+      variant.title,
+      variant.option1,
+      variant.option2,
+      variant.option3,
+      ...(variant.options || []),
+      ...(variant.selectedOptions || []).map((option) => option.value),
+    ]
+
+    for (const value of values) {
+      const parsed = parseSheetSizeFromTitle(value)
+      if (!parsed) continue
+      const key = `${parsed.widthIn}x${parsed.lengthIn}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      sizes.push({ widthIn: parsed.widthIn, heightIn: parsed.lengthIn })
+    }
+  }
+
+  return sizes
 }
 
 function buildEffectiveResolveConfig(
@@ -395,10 +457,7 @@ export async function prepareCustomPricingJobQuote({
     }
 
     const rawMeasurement = extractVipUploadMeasurement(upload.items, activeShop.shopDomain)
-    const measurement = rawMeasurement
-      ? applyMainProductMeasurementPolicy(rawMeasurement, itemInput)
-      : null
-    if (!measurement) {
+    if (!rawMeasurement) {
       throw new Error('Upload measurement is not ready')
     }
 
@@ -456,6 +515,12 @@ export async function prepareCustomPricingJobQuote({
       }
       productCache.set(productId, cachedProduct)
     }
+
+    const measurement = applyMainProductMeasurementPolicy(
+      rawMeasurement,
+      itemInput,
+      getMainProductSheetSizes(cachedProduct.variants)
+    )
 
     const pricePerInch = pricingContext.pricePerInch || pricingContext.businessPricePerInch
     let resolvedVariant: SheetVariantResolution | null = null
