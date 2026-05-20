@@ -165,6 +165,49 @@ export interface RollWidthSheetSize {
   heightIn: number
 }
 
+interface ResolvedDimensions {
+  widthIn: number
+  heightIn: number
+  effectiveDpi: number
+  sheetWidthIn: number
+  sheetLengthIn?: number
+  sizingSource: string
+}
+
+function resolveBestDimensions(
+  widthPx: number,
+  heightPx: number,
+  documentDpi: number,
+  anchored: {
+    widthIn: number
+    heightIn: number
+    effectiveDpi: number
+    sheetWidthIn: number
+    sheetLengthIn?: number
+  },
+  fallbackSizingSource: string
+): ResolvedDimensions {
+  const documentSized = computeDocumentDpiInches(widthPx, heightPx, documentDpi || undefined)
+  if (documentSized) {
+    return {
+      widthIn: documentSized.widthIn,
+      heightIn: documentSized.heightIn,
+      effectiveDpi: documentSized.effectiveDpi,
+      sheetWidthIn: anchored.sheetWidthIn,
+      sheetLengthIn: anchored.sheetLengthIn,
+      sizingSource: 'document_dpi',
+    }
+  }
+  return {
+    widthIn: anchored.widthIn,
+    heightIn: anchored.heightIn,
+    effectiveDpi: anchored.effectiveDpi,
+    sheetWidthIn: anchored.sheetWidthIn,
+    sheetLengthIn: anchored.sheetLengthIn,
+    sizingSource: fallbackSizingSource,
+  }
+}
+
 export function computeRollWidthAnchoredInches(
   widthPx: number,
   heightPx: number,
@@ -337,6 +380,13 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
     sheetWidthInFromDetails,
     sheetLengthInFromDetails || undefined
   )
+  const resolved = resolveBestDimensions(
+    measurementWidthPx,
+    measurementHeightPx,
+    documentDpi,
+    anchored,
+    sizingSource || 'sheet_width_anchor'
+  )
 
   return {
     widthPx,
@@ -350,12 +400,12 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
     trimmedOffsetYPx,
     measurementWidthPx,
     measurementHeightPx,
-    effectiveDpi: anchored.effectiveDpi,
-    sizingSource: sizingSource || 'sheet_width_anchor',
-    sheetWidthIn: anchored.sheetWidthIn,
-    sheetLengthIn: anchored.sheetLengthIn,
-    widthIn: anchored.widthIn,
-    heightIn: anchored.heightIn,
+    effectiveDpi: resolved.effectiveDpi,
+    sizingSource: resolved.sizingSource,
+    sheetWidthIn: resolved.sheetWidthIn,
+    sheetLengthIn: resolved.sheetLengthIn,
+    widthIn: resolved.widthIn,
+    heightIn: resolved.heightIn,
     measurementMode,
   }
 }
@@ -389,6 +439,13 @@ function extractMetadata(preflightResult: unknown, checks: Array<Record<string, 
         sheetLengthInStored || undefined
       )
       const storedSizingSource = normalizeSizingSource(metadata.sizingSource)
+      const resolved = resolveBestDimensions(
+        measurementWidthPx,
+        measurementHeightPx,
+        documentDpi,
+        anchored,
+        storedSizingSource || 'sheet_width_anchor'
+      )
 
       return {
         widthPx,
@@ -402,12 +459,12 @@ function extractMetadata(preflightResult: unknown, checks: Array<Record<string, 
         trimmedOffsetYPx: parsePositiveNumber(metadata.trimmedOffsetYPx),
         measurementWidthPx,
         measurementHeightPx,
-        effectiveDpi: anchored.effectiveDpi,
-        sizingSource: storedSizingSource || 'sheet_width_anchor',
-        sheetWidthIn: anchored.sheetWidthIn,
-        sheetLengthIn: anchored.sheetLengthIn,
-        widthIn: anchored.widthIn,
-        heightIn: anchored.heightIn,
+        effectiveDpi: resolved.effectiveDpi,
+        sizingSource: resolved.sizingSource,
+        sheetWidthIn: resolved.sheetWidthIn,
+        sheetLengthIn: resolved.sheetLengthIn,
+        widthIn: resolved.widthIn,
+        heightIn: resolved.heightIn,
         measurementMode:
           typeof metadata.measurementMode === 'string' && metadata.measurementMode
             ? metadata.measurementMode
@@ -432,17 +489,25 @@ export function applyFullCanvasMeasurementMetadata(
     metadata.sheetWidthIn,
     metadata.sheetLengthIn
   )
+  const documentDpi = parsePositiveNumber(metadata.documentDpi)
+  const resolved = resolveBestDimensions(
+    fullWidthPx,
+    fullHeightPx,
+    documentDpi,
+    anchored,
+    'sheet_width_anchor'
+  )
 
   return {
     ...metadata,
     measurementWidthPx: fullWidthPx,
     measurementHeightPx: fullHeightPx,
-    effectiveDpi: anchored.effectiveDpi,
-    sizingSource: 'sheet_width_anchor',
-    sheetWidthIn: anchored.sheetWidthIn,
-    sheetLengthIn: anchored.sheetLengthIn,
-    widthIn: anchored.widthIn,
-    heightIn: anchored.heightIn,
+    effectiveDpi: resolved.effectiveDpi,
+    sizingSource: resolved.sizingSource,
+    sheetWidthIn: resolved.sheetWidthIn,
+    sheetLengthIn: resolved.sheetLengthIn,
+    widthIn: resolved.widthIn,
+    heightIn: resolved.heightIn,
     measurementMode: 'full',
   }
 }

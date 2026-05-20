@@ -54,7 +54,10 @@ describe('parsePngInfo', () => {
 
     expect(info?.width).toBe(927)
     expect(info?.height).toBe(496)
-    expect(info?.dpi).toBe(300)
+    // pHYs stores ppm (integer); reading back at full precision yields 299.9994
+    // rather than exactly 300. We keep that precision intentionally so that
+    // pixels / dpi yields the file's true declared dimensions (Adobe-style).
+    expect(info?.dpi).toBeCloseTo(300, 2)
     expect(info?.dpiSource).toBe('png_phys')
   })
 

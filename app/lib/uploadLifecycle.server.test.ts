@@ -253,3 +253,125 @@ describe('computeDocumentDpiInches', () => {
     expect(computeDocumentDpiInches(6485, 2605, 20000)).toBeNull()
   })
 })
+
+describe('lifecycle prefers document DPI over sheet anchor when present', () => {
+  it('reads metreicin-style 118 DPI PNG as 54.77x22.00 (Adobe-exact), not 54.96x22.08 (anchored)', () => {
+    const lifecycle = deriveUploadItemLifecycle({
+      preflightStatus: 'ok',
+      preflightResult: {
+        overall: 'ok',
+        checks: [
+          {
+            name: 'dimensions',
+            status: 'ok',
+            value: '6485x2605',
+            details: {
+              width: 6485,
+              height: 2605,
+              measurementWidth: 6485,
+              measurementHeight: 2605,
+              documentDpi: 118.4148,
+              documentDpiSource: 'png_phys',
+              embeddedDpi: 118.4148,
+              embeddedDpiSource: 'png_phys',
+              sheetWidthIn: 22,
+            },
+          },
+        ],
+      },
+      thumbnailKey: 'preview/key',
+    })
+
+    expect(lifecycle.metadata?.widthIn).toBe(54.77)
+    expect(lifecycle.metadata?.heightIn).toBe(22)
+    expect(lifecycle.metadata?.sizingSource).toBe('document_dpi')
+    expect(lifecycle.metadata?.documentDpi).toBeCloseTo(118.4148, 2)
+    expect(lifecycle.metadata?.effectiveDpi).toBeCloseTo(118.4148, 2)
+  })
+
+  it('reads a 300 DPI PNG as its declared size (21.62x8.68), not anchored to 22"', () => {
+    const lifecycle = deriveUploadItemLifecycle({
+      preflightStatus: 'ok',
+      preflightResult: {
+        overall: 'ok',
+        checks: [
+          {
+            name: 'dimensions',
+            status: 'ok',
+            value: '6485x2605',
+            details: {
+              width: 6485,
+              height: 2605,
+              measurementWidth: 6485,
+              measurementHeight: 2605,
+              documentDpi: 299.9994,
+              documentDpiSource: 'png_phys',
+              sheetWidthIn: 22,
+            },
+          },
+        ],
+      },
+      thumbnailKey: 'preview/key',
+    })
+
+    expect(lifecycle.metadata?.widthIn).toBe(21.62)
+    expect(lifecycle.metadata?.heightIn).toBe(8.68)
+    expect(lifecycle.metadata?.sizingSource).toBe('document_dpi')
+  })
+
+  it('falls back to sheet anchor when documentDpi is missing (Genuity-style no-DPI PNG)', () => {
+    const lifecycle = deriveUploadItemLifecycle({
+      preflightStatus: 'ok',
+      preflightResult: {
+        overall: 'ok',
+        checks: [
+          {
+            name: 'dimensions',
+            status: 'ok',
+            value: '1494x668',
+            details: {
+              width: 1494,
+              height: 668,
+              measurementWidth: 1494,
+              measurementHeight: 668,
+              sheetWidthIn: 22,
+            },
+          },
+        ],
+      },
+      thumbnailKey: 'preview/key',
+    })
+
+    expect(lifecycle.metadata?.sizingSource).toBe('sheet_width_anchor')
+    expect(lifecycle.metadata?.heightIn).toBe(22)
+    expect(lifecycle.metadata?.documentDpi).toBe(0)
+  })
+})
+
+describe('applyFullCanvasMeasurementMetadata — uses documentDpi when present', () => {
+  it('overrides anchored dims with documentDpi-based dims when embedded DPI is reliable', () => {
+    const result = applyFullCanvasMeasurementMetadata({
+      widthPx: 6485,
+      heightPx: 2605,
+      dpi: 118.4148,
+      documentDpi: 118.4148,
+      documentDpiSource: 'png_phys',
+      trimmedWidthPx: 6485,
+      trimmedHeightPx: 2605,
+      trimmedOffsetXPx: 0,
+      trimmedOffsetYPx: 0,
+      measurementWidthPx: 6485,
+      measurementHeightPx: 2605,
+      effectiveDpi: 0,
+      sizingSource: null,
+      sheetWidthIn: 22,
+      widthIn: 0,
+      heightIn: 0,
+      measurementMode: 'full',
+    })
+
+    expect(result?.widthIn).toBe(54.77)
+    expect(result?.heightIn).toBe(22)
+    expect(result?.sizingSource).toBe('document_dpi')
+  })
+})
