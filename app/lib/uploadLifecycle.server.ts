@@ -174,6 +174,12 @@ interface ResolvedDimensions {
   sizingSource: string
 }
 
+// Adobe Photoshop/Illustrator assign 72 DPI when opening a PNG that has no
+// embedded resolution (pHYs/JFIF). Mirroring that behavior gives us the same
+// inch dimensions the user sees in their design tool — which is what they
+// expect when picking a sheet variant.
+const ADOBE_DEFAULT_DPI = 72
+
 function resolveBestDimensions(
   widthPx: number,
   heightPx: number,
@@ -198,6 +204,29 @@ function resolveBestDimensions(
       sizingSource: 'document_dpi',
     }
   }
+
+  // No embedded DPI. Try Adobe's 72 DPI default first — if the resulting size
+  // fits within the roll width, the file is almost certainly a smaller design
+  // (like a web-export from ImageReady at 72 DPI) and should map to a smaller
+  // variant. Only fall through to anchoring when even the 72 DPI reading is
+  // wider than the roll, which means the file genuinely is a full-width gang
+  // sheet design that needs to be sized to the roll.
+  const rollWidthIn = anchored.sheetWidthIn > 0 ? anchored.sheetWidthIn : 22
+  const adobeSized = computeDocumentDpiInches(widthPx, heightPx, ADOBE_DEFAULT_DPI)
+  if (adobeSized) {
+    const shortEdgeIn = Math.min(adobeSized.widthIn, adobeSized.heightIn)
+    if (shortEdgeIn <= rollWidthIn + 0.5) {
+      return {
+        widthIn: adobeSized.widthIn,
+        heightIn: adobeSized.heightIn,
+        effectiveDpi: adobeSized.effectiveDpi,
+        sheetWidthIn: anchored.sheetWidthIn,
+        sheetLengthIn: anchored.sheetLengthIn,
+        sizingSource: 'adobe_default_dpi',
+      }
+    }
+  }
+
   return {
     widthIn: anchored.widthIn,
     heightIn: anchored.heightIn,

@@ -125,7 +125,40 @@ describe('computeRollWidthAnchoredInches', () => {
 })
 
 describe('applyFullCanvasMeasurementMetadata — sheet anchor preserved', () => {
-  it('recomputes inch dims from full-canvas pixels via sheet anchor (not DPI)', () => {
+  it('falls back to sheet anchor when canvas pixels exceed Adobe 72 DPI roll width', () => {
+    // 7920 x 2904 px at 72 DPI would be 110 x 40 inches — both edges exceed the
+    // 22" roll, so the file is a full-width gang sheet design that needs
+    // anchoring (22 x 60 from the 60:22 aspect ratio).
+    const result = applyFullCanvasMeasurementMetadata({
+      widthPx: 7920,
+      heightPx: 2904,
+      dpi: 0,
+      trimmedWidthPx: 7920,
+      trimmedHeightPx: 2904,
+      trimmedOffsetXPx: 0,
+      trimmedOffsetYPx: 0,
+      measurementWidthPx: 7920,
+      measurementHeightPx: 2904,
+      effectiveDpi: 0,
+      sizingSource: null,
+      sheetWidthIn: 22,
+      widthIn: 0,
+      heightIn: 0,
+      measurementMode: 'trimmed',
+    })
+
+    expect(result?.measurementWidthPx).toBe(7920)
+    expect(result?.measurementHeightPx).toBe(2904)
+    expect(result?.widthIn).toBe(60)
+    expect(result?.heightIn).toBe(22)
+    expect(result?.measurementMode).toBe('full')
+    expect(result?.sizingSource).toBe('sheet_width_anchor')
+  })
+
+  it('uses Adobe 72 DPI default when the file fits within the roll natively', () => {
+    // 1584 x 4320 px at 72 DPI = 22 x 60 inches exactly — Adobe would show
+    // this size, so we honor the file's natural sizing instead of forcing the
+    // anchor path.
     const result = applyFullCanvasMeasurementMetadata({
       widthPx: 1584,
       heightPx: 4320,
@@ -144,12 +177,9 @@ describe('applyFullCanvasMeasurementMetadata — sheet anchor preserved', () => 
       measurementMode: 'trimmed',
     })
 
-    expect(result?.measurementWidthPx).toBe(1584)
-    expect(result?.measurementHeightPx).toBe(4320)
     expect(result?.widthIn).toBe(22)
     expect(result?.heightIn).toBe(60)
-    expect(result?.measurementMode).toBe('full')
-    expect(result?.sizingSource).toBe('sheet_width_anchor')
+    expect(result?.sizingSource).toBe('adobe_default_dpi')
   })
 
   it('returns null when input is null', () => {
@@ -319,7 +349,9 @@ describe('lifecycle prefers document DPI over sheet anchor when present', () => 
     expect(lifecycle.metadata?.sizingSource).toBe('document_dpi')
   })
 
-  it('falls back to sheet anchor when documentDpi is missing (Genuity-style no-DPI PNG)', () => {
+  it('uses Adobe 72 DPI default for a Genuity-style no-DPI PNG that fits the roll', () => {
+    // 1494 x 668 PNG with no pHYs (e.g. saved by Adobe ImageReady). Adobe
+    // shows this as 20.75 x 9.28 inches (72 DPI), which fits on a 22 sheet.
     const lifecycle = deriveUploadItemLifecycle({
       preflightStatus: 'ok',
       preflightResult: {
@@ -334,6 +366,38 @@ describe('lifecycle prefers document DPI over sheet anchor when present', () => 
               height: 668,
               measurementWidth: 1494,
               measurementHeight: 668,
+              sheetWidthIn: 22,
+            },
+          },
+        ],
+      },
+      thumbnailKey: 'preview/key',
+    })
+
+    expect(lifecycle.metadata?.sizingSource).toBe('adobe_default_dpi')
+    expect(lifecycle.metadata?.widthIn).toBe(20.75)
+    expect(lifecycle.metadata?.heightIn).toBe(9.28)
+    expect(lifecycle.metadata?.documentDpi).toBe(0)
+  })
+
+  it('falls back to sheet anchor when no DPI AND 72 DPI sizing exceeds the roll', () => {
+    // 6485 x 2605 PNG with no pHYs. At 72 DPI this would be 90.07 x 36.18 inches
+    // — both edges wider than the 22 roll, so the file is clearly a full-roll
+    // gang sheet design. Fall back to anchoring 22 x 54.77.
+    const lifecycle = deriveUploadItemLifecycle({
+      preflightStatus: 'ok',
+      preflightResult: {
+        overall: 'ok',
+        checks: [
+          {
+            name: 'dimensions',
+            status: 'ok',
+            value: '6485x2605',
+            details: {
+              width: 6485,
+              height: 2605,
+              measurementWidth: 6485,
+              measurementHeight: 2605,
               sheetWidthIn: 22,
             },
           },

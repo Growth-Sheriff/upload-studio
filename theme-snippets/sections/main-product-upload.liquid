@@ -511,9 +511,13 @@
       target.trimmedHeightPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedHeightPx')) || 0;
       target.trimmedOffsetXPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedOffsetXPx')) || 0;
       target.trimmedOffsetYPx = parseNonNegativeNumber(getPayloadField(payload, 'trimmedOffsetYPx')) || 0;
+      // embeddedDpi must come ONLY from the file's own metadata (documentDpi).
+      // The generic `dpi` field is the anchored fallback (e.g. shortEdgePx/22)
+      // and using it as embeddedDpi makes the client recompute dims with that
+      // reverse-engineered value (e.g. 1494/30 = 49.80 instead of the server's
+      // correctly anchored 49.20), masking the "no embedded DPI" case.
       target.embeddedDpi =
         parseNonNegativeNumber(getPayloadField(payload, 'documentDpi')) ||
-        parseNonNegativeNumber(getPayloadField(payload, 'dpi')) ||
         target.embeddedDpi ||
         0;
       target.effectiveDpi = parseNonNegativeNumber(getPayloadField(payload, 'effectiveDpi')) || target.effectiveDpi || 0;
