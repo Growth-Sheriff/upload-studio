@@ -408,6 +408,8 @@
 }
 </script>
 
+<script src="/apps/customizer/api/ext-assets/ul-multipart-uploader.js" defer></script>
+
 <script>
   (function() {
     try {
@@ -485,7 +487,7 @@
       target.widthIn = Number((isPortrait ? MAIN_PRODUCT_ROLL_WIDTH_IN : longSideIn).toFixed(2));
       target.heightIn = Number((isPortrait ? longSideIn : MAIN_PRODUCT_ROLL_WIDTH_IN).toFixed(2));
       target.effectiveDpi = Math.round(shortSidePx / MAIN_PRODUCT_ROLL_WIDTH_IN);
-      target.sizingSource = MAIN_PRODUCT_MEASUREMENT_POLICY;
+      target.sizingSource = 'sheet_width_anchor';
       target.measurementMode = 'full';
       return target.widthIn > 0 && target.heightIn > 0;
     }
@@ -495,7 +497,7 @@
       target.widthIn = Number((target.widthPx / target.embeddedDpi).toFixed(2));
       target.heightIn = Number((target.heightPx / target.embeddedDpi).toFixed(2));
       target.effectiveDpi = target.embeddedDpi;
-      target.sizingSource = 'main_product_document_dpi';
+      target.sizingSource = 'document_dpi';
       target.measurementMode = 'full';
       return target.widthIn > 0 && target.heightIn > 0;
     }
@@ -538,12 +540,12 @@
       }
 
       var confirmedInches = getServerConfirmedUploadInches(payload);
-      if (applyMainProductDocumentDpiMeasurement(target)) {
-        return true;
-      }
       if (confirmedInches) {
         target.widthIn = confirmedInches.widthIn;
         target.heightIn = confirmedInches.heightIn;
+        return true;
+      }
+      if (applyMainProductDocumentDpiMeasurement(target)) {
         return true;
       }
       return applyMainProductRollMeasurement(target);
@@ -648,6 +650,23 @@
     function sleepMs(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
 
     async function performUploadWithRetry(file, intent, onProgress) {
+      // Try parallel multipart upload first if intent advertises it (R2-only, large files)
+      if (intent.multipart && window.ULMultipartUploader && window.ULMultipartUploader.tryUpload) {
+        try {
+          var mpResult = await window.ULMultipartUploader.tryUpload(file, intent, {
+            shopDomain: shopDomain,
+            onProgress: onProgress,
+          });
+          if (mpResult) {
+            intent.publicUrl = mpResult.fileUrl || intent.publicUrl;
+            intent.storageProvider = mpResult.storageProvider;
+            return { via: 'r2-multipart', attempt: 1, partsUploaded: mpResult.partsUploaded };
+          }
+        } catch (mpErr) {
+          try { console.warn('[MainUpload] Multipart failed, falling back: ' + (mpErr && mpErr.message)); } catch (_) {}
+        }
+      }
+
       var storageProvider = intent.storageProvider || 'local';
       var primaryMethod = intent.uploadMethod || (storageProvider === 'local' ? 'POST' : 'PUT');
       var primaryHeaders = intent.uploadHeaders || null;

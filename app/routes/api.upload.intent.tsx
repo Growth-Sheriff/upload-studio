@@ -7,13 +7,17 @@ import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
 import {
   buildStorageKey,
   buildStorageKeyWithPrefix,
+  getR2MultipartInit,
   getStorageConfig,
   getUploadSignedUrl,
+  isR2FallbackAvailable,
+  MULTIPART_THRESHOLD_BYTES,
+  type R2MultipartInitResult,
   type UploadUrlResult,
 } from '~/lib/storage.server'
 import { uploadLogger } from '~/lib/uploadLogger.server'
 
-// GET handler - returns API info
+
 export async function loader({ request }: LoaderFunctionArgs) {
   if (request.method === 'OPTIONS') {
     return handleCorsOptions(request)
@@ -28,11 +32,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   )
 }
 
-// POST /api/upload/intent
-// Request: { shopDomain, productId?, variantId?, mode, contentType, fileName }
-// Response: { uploadId, itemId, uploadUrl, key, expiresIn }
+
+
+
 export async function action({ request }: ActionFunctionArgs) {
-  // Handle CORS preflight
+
   if (request.method === 'OPTIONS') {
     return handleCorsOptions(request)
   }
@@ -41,19 +45,19 @@ export async function action({ request }: ActionFunctionArgs) {
     return corsJson({ error: 'Method not allowed' }, request, { status: 405 })
   }
 
-  // Parse request body first to get shopDomain
+
   let body: any
   try {
     const contentType = request.headers.get('content-type') || ''
 
-    // App Proxy may send as form data or have empty body
+
     if (contentType.includes('application/json')) {
       body = await request.json()
     } else if (contentType.includes('form')) {
       const formData = await request.formData()
       body = Object.fromEntries(formData)
     } else {
-      // Try JSON first, fallback to empty
+
       const text = await request.text()
       if (text) {
         try {
@@ -85,7 +89,7 @@ export async function action({ request }: ActionFunctionArgs) {
     sessionId,
   } = body
 
-  // Validate required fields
+
   if (!shopDomain) {
     return corsJson({ error: 'Missing required field: shopDomain' }, request, { status: 400 })
   }
@@ -96,14 +100,14 @@ export async function action({ request }: ActionFunctionArgs) {
     })
   }
 
-  // Rate limit check (10/min per customer)
+
   const identifier = getIdentifier(request, 'customer')
   const rateLimitResponse = await rateLimitGuard(identifier, 'uploadIntent')
   if (rateLimitResponse) {
     return rateLimitResponse
   }
 
-  // Get shop from database
+
   const shop = await prisma.shop.findUnique({
     where: { shopDomain },
   })
@@ -112,12 +116,12 @@ export async function action({ request }: ActionFunctionArgs) {
     return corsJson({ error: 'Shop not found' }, request, { status: 404 })
   }
 
-  // Validate mode
+
   if (!['dtf', '3d_designer', 'classic', 'quick', 'builder'].includes(mode)) {
     return corsJson({ error: 'Invalid mode' }, request, { status: 400 })
   }
 
-  // Check billing / plan limits
+
   const fileSizeMB = fileSize ? fileSize / (1024 * 1024) : 0
   const billingCheck = await checkUploadAllowed(shop.id, mode, fileSizeMB)
 
@@ -132,49 +136,49 @@ export async function action({ request }: ActionFunctionArgs) {
     )
   }
 
-  // Validate content type - Support all major image formats
+
   const allowedTypes = [
-    // 🟢 Raster - Temel
+
     'image/png',
     'image/jpeg',
     'image/webp',
-    'image/tiff', // TIFF support
-    // 🟢 Profesyonel Raster
-    'image/vnd.adobe.photoshop', // PSD
-    'application/x-photoshop', // PSD alternative
-    'image/x-psd', // PSD alternative
-    'application/photoshop', // PSD alternative
-    'application/psd', // PSD alternative
-    // 🟡 Vektör
+    'image/tiff',
+
+    'image/vnd.adobe.photoshop',
+    'application/x-photoshop',
+    'image/x-psd',
+    'application/photoshop',
+    'application/psd',
+
     'image/svg+xml',
     'application/pdf',
-    'application/postscript', // AI/EPS
-    'application/illustrator', // AI
-    // 🟠 Fallback for unknown MIME types (check extension)
+    'application/postscript',
+    'application/illustrator',
+
     'application/octet-stream',
   ]
 
-  // Allowed file extensions for octet-stream fallback
+
   const allowedExtensions = [
     'png',
     'jpg',
     'jpeg',
     'webp',
     'tiff',
-    'tif', // Raster
-    'psd', // Photoshop
+    'tif',
+    'psd',
     'svg',
     'pdf',
     'ai',
-    'eps', // Vector
+    'eps',
   ]
 
-  // Check MIME type first
+
   if (!allowedTypes.includes(contentType)) {
     return corsJson({ error: 'Unsupported file type' }, request, { status: 400 })
   }
 
-  // For octet-stream, validate by extension
+
   if (contentType === 'application/octet-stream') {
     const ext = fileName.split('.').pop()?.toLowerCase() || ''
     if (!allowedExtensions.includes(ext)) {
@@ -189,7 +193,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
   }
 
-  // Check file size (universal limit)
+
   if (fileSize && fileSize > MAX_FILE_SIZE_MB * 1024 * 1024) {
     return corsJson(
       {
@@ -202,11 +206,11 @@ export async function action({ request }: ActionFunctionArgs) {
     )
   }
 
-  // Generate IDs
+
   const uploadId = nanoid(12)
   const itemId = nanoid(8)
 
-  // MULTI-STORAGE: Get config from shop settings
+
   const storageConfig = getStorageConfig({
     storageProvider: shop.storageProvider,
     storageConfig: shop.storageConfig as Record<string, string> | null,
@@ -214,11 +218,11 @@ export async function action({ request }: ActionFunctionArgs) {
 
   console.log(`[Upload Intent] Shop: ${shopDomain}, Storage: ${storageConfig.provider}`)
 
-  // Build storage key (raw path without prefix - used for signed URL)
+
   const key = buildStorageKey(shopDomain, uploadId, itemId, fileName)
-  
-  // Build storage key WITH provider prefix (stored in DB - used by preflight worker)
-  // CRITICAL: This ensures preflight always knows which provider to use
+
+
+
   const storageKeyWithPrefix = buildStorageKeyWithPrefix(
     storageConfig.provider,
     shopDomain,
@@ -228,8 +232,8 @@ export async function action({ request }: ActionFunctionArgs) {
   )
 
   try {
-    // Validate visitor/session belong to shop if provided
-    // Invalid IDs are silently ignored to avoid blocking the upload flow
+
+
     let validVisitorId = visitorId || null
     let validSessionId = sessionId || null
 
@@ -256,7 +260,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    // Create upload record with visitor tracking
+
     const upload = await prisma.upload.create({
       data: {
         id: uploadId,
@@ -272,16 +276,16 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     })
 
-    // Log visitor tracking if present
+
     if (validVisitorId) {
       console.log(
         `[Upload Intent] Upload ${uploadId} linked to visitor ${validVisitorId}, session ${validSessionId || 'N/A'}`
       )
     }
 
-    // Create upload item record
-    // CRITICAL: storageKey includes provider prefix (e.g., "bunny:shop/prod/...")
-    // This is the canonical format - preflight worker uses this directly
+
+
+
     await prisma.uploadItem.create({
       data: {
         id: itemId,
@@ -295,10 +299,10 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     })
 
-    // Generate signed upload URL (provider-aware) with fallback URLs
+
     const uploadResult: UploadUrlResult = await getUploadSignedUrl(storageConfig, key, contentType)
 
-    // Log fallback availability
+
     if (uploadResult.fallbackUrls) {
       console.log('[Upload Intent] Fallback URLs generated:', {
         r2: !!uploadResult.fallbackUrls.r2,
@@ -306,7 +310,26 @@ export async function action({ request }: ActionFunctionArgs) {
       })
     }
 
-    // Log intent creation
+
+    let multipart: R2MultipartInitResult | null = null
+    if (
+      fileSize &&
+      fileSize >= MULTIPART_THRESHOLD_BYTES &&
+      isR2FallbackAvailable()
+    ) {
+      try {
+        multipart = await getR2MultipartInit(storageConfig, key, contentType, fileSize)
+        if (multipart) {
+          console.log(
+            `[Upload Intent] Multipart enabled: ${multipart.totalParts} parts of ${Math.round(multipart.partSize / 1024 / 1024)}MB (uploadId=${multipart.uploadId.slice(0, 16)}...)`
+          )
+        }
+      } catch (multipartError) {
+        console.warn('[Upload Intent] Multipart init failed, falling back to single-shot:', multipartError)
+      }
+    }
+
+
     await uploadLogger.intentCreated(uploadId, {
       shopId: shop.id,
       shopDomain,
@@ -339,22 +362,23 @@ export async function action({ request }: ActionFunctionArgs) {
         storageProvider: uploadResult.provider,
         uploadMethod: uploadResult.method,
         uploadHeaders: uploadResult.headers || {},
-        // BULLETPROOF v3.0: Include fallback URLs and retry config
+
         fallbackUrls: uploadResult.fallbackUrls || {},
         retryConfig: uploadResult.retryConfig || { maxRetries: 3, retryDelayMs: 2000 },
+        multipart: multipart || undefined,
       },
       request
     )
   } catch (error) {
     console.error('[Upload Intent] Error:', error)
-    
-    // Log intent creation failure
+
+
     await uploadLogger.uploadFailed('intent_error', 'unknown', {
       code: 'INTENT_CREATION_FAILED',
       message: error instanceof Error ? error.message : 'Unknown error',
       details: { shopDomain, fileName },
     })
-    
+
     return corsJson({ error: 'Failed to create upload intent' }, request, { status: 500 })
   }
 }

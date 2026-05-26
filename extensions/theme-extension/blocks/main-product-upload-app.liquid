@@ -1,0 +1,220 @@
+{{ 'main-product-upload-app.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'ul-multipart-uploader.js' | asset_url }}" defer></script>
+<script src="{{ 'main-product-upload-app.js' | asset_url }}" defer></script>
+
+{%- assign ump_accept = block.settings.accepted_files | default: ".png" -%}
+{%- assign ump_roll_width = block.settings.roll_width_in | default: 22 -%}
+{%- assign ump_accent = block.settings.accent_color | default: "#4f7cff" -%}
+
+<section
+  class="ump"
+  data-ul-main-product-upload-app
+  data-section-id="{{ section.id }}"
+  data-product-id="{{ product.id }}"
+  data-product-title="{{ product.title | escape }}"
+  data-product-variants="{{ product.variants | json | escape }}"
+  data-product-options="{{ product.options_with_values | json | escape }}"
+  data-shop-domain="{{ shop.permanent_domain }}"
+  data-customer-id="{{ customer.id | default: '' }}"
+  data-customer-email="{{ customer.email | default: '' | escape }}"
+  data-api-base="/apps/customizer"
+  data-roll-width-in="{{ ump_roll_width }}"
+  data-accepted-files="{{ ump_accept | escape }}"
+  data-enable-checkout="{{ block.settings.enable_checkout_button }}"
+  style="--ump-accent: {{ ump_accent }};"
+>
+  <div class="ump__shell">
+    <div class="ump__workspace">
+      <div class="ump__drop" data-ump-dropzone>
+        <input class="ump__input" data-ump-input type="file" accept="{{ ump_accept | escape }}" />
+        <div class="ump__drop-grid" aria-hidden="true"></div>
+        <div class="ump__drop-main">
+          <div class="ump__icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3v12"></path>
+              <path d="m7 8 5-5 5 5"></path>
+              <path d="M5 15v4h14v-4"></path>
+            </svg>
+          </div>
+          <div>
+            <p class="ump__eyebrow">{{ block.settings.eyebrow | default: 'Print-ready upload' }}</p>
+            <h2 class="ump__title">{{ block.settings.heading | default: 'Upload your gang sheet' }}</h2>
+            <p class="ump__copy">{{ block.settings.subheading | default: 'We measure the file, select the right sheet, and unlock checkout when it is ready.' }}</p>
+          </div>
+          <button class="ump__upload-btn" type="button" data-ump-upload-trigger>
+            <span>{{ block.settings.upload_label | default: 'Upload file' }}</span>
+          </button>
+          <p class="ump__hint">{{ block.settings.support_text | default: 'PNG recommended. Drag and drop also works.' }}</p>
+        </div>
+      </div>
+
+      <div class="ump__status" data-ump-status-panel hidden>
+        <div class="ump__file">
+          <img class="ump__thumb" data-ump-thumb alt="" width="76" height="76" hidden>
+          <div>
+            <p class="ump__file-name" data-ump-file-name>Waiting for file</p>
+            <p class="ump__file-meta" data-ump-file-meta>Upload a file to detect the gang sheet size.</p>
+            <div class="ump__file-pills" data-ump-file-pills hidden>
+              <span class="ump__pill ump__pill--size" data-ump-pill-size></span>
+              <span class="ump__pill ump__pill--type" data-ump-pill-type></span>
+              <span class="ump__pill ump__pill--multipart" data-ump-pill-multipart hidden>⚡ Parallel</span>
+            </div>
+          </div>
+          <div class="ump__file-actions">
+            <button class="ump__cancel" type="button" data-ump-cancel hidden>Cancel</button>
+            <button class="ump__retry" type="button" data-ump-retry hidden>Try again</button>
+            <button class="ump__replace" type="button" data-ump-replace>Replace</button>
+          </div>
+        </div>
+        <div class="ump__progress" data-ump-progress-wrap hidden>
+          <div class="ump__progress-bar" data-ump-progress></div>
+        </div>
+        <div class="ump__progress-text" data-ump-progress-text hidden></div>
+        <div class="ump__stage" data-ump-stage hidden>
+          <span class="ump__stage-dot ump__stage-dot--upload" data-ump-stage-upload></span>
+          <span class="ump__stage-label" data-ump-stage-upload-label>Uploading</span>
+          <span class="ump__stage-sep">→</span>
+          <span class="ump__stage-dot ump__stage-dot--measure" data-ump-stage-measure></span>
+          <span class="ump__stage-label" data-ump-stage-measure-label>Measuring</span>
+          <span class="ump__stage-sep">→</span>
+          <span class="ump__stage-dot ump__stage-dot--ready" data-ump-stage-ready></span>
+          <span class="ump__stage-label" data-ump-stage-ready-label>Ready</span>
+        </div>
+      </div>
+    </div>
+
+    <aside class="ump__inspector" aria-live="polite">
+      <div class="ump__preview-card" data-ump-preview-card>
+        <div class="ump__preview-head">
+          <div>
+            <p class="ump__eyebrow">Detected size</p>
+            <h3 class="ump__size" data-ump-size>-- x --</h3>
+          </div>
+          <span class="ump__badge" data-ump-badge>Locked</span>
+        </div>
+
+        <div class="ump__sheet" data-ump-sheet>
+          <div class="ump__ruler ump__ruler--top" data-ump-ruler-top></div>
+          <div class="ump__ruler ump__ruler--side" data-ump-ruler-side></div>
+          <div class="ump__sheet-plane">
+            <div class="ump__art" data-ump-art>
+              <span data-ump-art-label>Upload preview</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="ump__metrics">
+          <div>
+            <span>Width</span>
+            <strong data-ump-width>--</strong>
+          </div>
+          <div>
+            <span>Height</span>
+            <strong data-ump-height>--</strong>
+          </div>
+          <div>
+            <span>Sheet</span>
+            <strong data-ump-sheet-label>--</strong>
+          </div>
+        </div>
+        <div class="ump__quality" data-ump-quality hidden>
+          <span class="ump__quality-badge" data-ump-quality-badge></span>
+          <span class="ump__quality-text" data-ump-quality-text></span>
+        </div>
+        <p class="ump__method" data-ump-method>Upload required before this product can be added to cart.</p>
+      </div>
+
+      <div class="ump__actions">
+        <button class="ump__cart" type="button" data-ump-add disabled>
+          <span>{{ block.settings.add_to_cart_label | default: 'Add to cart' }}</span>
+        </button>
+        {%- if block.settings.enable_checkout_button -%}
+          <button class="ump__checkout" type="button" data-ump-checkout disabled>
+            <span>{{ block.settings.checkout_label | default: 'Checkout' }}</span>
+          </button>
+        {%- endif -%}
+      </div>
+      <p class="ump__error" data-ump-error hidden></p>
+    </aside>
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Main product upload",
+  "target": "section",
+  "templates": ["product"],
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Upload-only main product section. It auto-detects gang sheet size, chooses the fitting sheet variant, then unlocks Add to cart and Checkout."
+    },
+    {
+      "type": "text",
+      "id": "eyebrow",
+      "label": "Eyebrow",
+      "default": "Print-ready upload"
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Upload your gang sheet"
+    },
+    {
+      "type": "textarea",
+      "id": "subheading",
+      "label": "Subheading",
+      "default": "We measure the file, select the right sheet, and unlock checkout when it is ready."
+    },
+    {
+      "type": "text",
+      "id": "upload_label",
+      "label": "Upload button label",
+      "default": "Upload file"
+    },
+    {
+      "type": "text",
+      "id": "support_text",
+      "label": "Support text",
+      "default": "PNG recommended. Drag and drop also works."
+    },
+    {
+      "type": "text",
+      "id": "accepted_files",
+      "label": "Accepted file extensions",
+      "default": ".png"
+    },
+    {
+      "type": "text",
+      "id": "roll_width_in",
+      "label": "Roll width in inches",
+      "default": "22"
+    },
+    {
+      "type": "color",
+      "id": "accent_color",
+      "label": "Accent color",
+      "default": "#4f7cff"
+    },
+    {
+      "type": "text",
+      "id": "add_to_cart_label",
+      "label": "Add to cart label",
+      "default": "Add to cart"
+    },
+    {
+      "type": "checkbox",
+      "id": "enable_checkout_button",
+      "label": "Show checkout button",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "checkout_label",
+      "label": "Checkout label",
+      "default": "Checkout"
+    }
+  ]
+}
+{% endschema %}

@@ -18,13 +18,12 @@
   data-product-id="{{ product.id }}"
   data-product-title="{{ product.title | escape }}"
 >
-  <!-- Loading State -->
+
   <div class="ul-loading active" id="ul-loading-{{ product.id }}">
     <div class="ul-loading-spinner"></div>
     <div>Loading configuration...</div>
   </div>
 
-  <!-- Error Display -->
   <div class="ul-error" id="ul-error-{{ product.id }}">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <circle cx="12" cy="12" r="10"/>
@@ -33,17 +32,14 @@
     <span id="ul-error-text-{{ product.id }}"></span>
   </div>
 
-  <!-- Main Content -->
   <div id="ul-content-{{ product.id }}" style="display: none;">
 
-    <!-- STEP 1: Upload Design -->
     <div class="ul-section" id="ul-upload-section-{{ product.id }}">
       <div class="ul-section-header ul-section-header--centered">
         <span class="ul-step-badge ul-step-badge--glow" id="ul-step-1-{{ product.id }}">1</span>
         <span class="ul-section-title ul-section-title--hero">Upload Your Design</span>
       </div>
 
-      <!-- Dropzone -->
       <div class="ul-dropzone" id="ul-dropzone-{{ product.id }}">
         <input type="file" id="ul-file-input-{{ product.id }}" accept=".png,.jpg,.jpeg,.webp,.tiff,.tif,.psd,.svg,.pdf,.ai,.eps">
         <svg class="ul-dropzone-icon ul-bounce-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -54,7 +50,6 @@
         <div class="ul-dropzone-hint">or click to browse • PNG, JPG, WEBP, TIFF, PSD, PDF, AI, EPS • Max 1GB</div>
       </div>
 
-      <!-- Upload Progress -->
       <div class="ul-upload-progress" id="ul-progress-{{ product.id }}">
         <div class="ul-progress-bar">
           <div class="ul-progress-fill" id="ul-progress-fill-{{ product.id }}"></div>
@@ -70,7 +65,6 @@
         </div>
       </div>
 
-      <!-- File Preview -->
       <div class="ul-file-preview" id="ul-preview-{{ product.id }}">
         <img class="ul-file-thumb" id="ul-thumb-{{ product.id }}" src="" alt="Preview" width="72" height="72">
         <div class="ul-file-info">
@@ -91,14 +85,12 @@
       </div>
     </div>
 
-    <!-- STEP 2: Select Options (Separate dropdown for each option) -->
     <div class="ul-section" id="ul-options-section-{{ product.id }}">
       <div class="ul-section-header">
         <span class="ul-step-badge" id="ul-step-2-{{ product.id }}">2</span>
         <span class="ul-section-title">Select Options</span>
       </div>
 
-      <!-- Render each product option as separate dropdown -->
       {% for option in product.options_with_values %}
         <div class="ul-option-dropdown-group" data-option-index="{{ forloop.index0 }}">
           <label class="ul-option-dropdown-label">{{ option.name }}</label>
@@ -125,22 +117,18 @@
         </div>
       {% endfor %}
 
-      <!-- Selected Variant Display -->
       <div class="ul-selected-variant-display" id="ul-selected-variant-{{ product.id }}">
         <span class="ul-variant-name-display" id="ul-variant-name-{{ product.id }}">{{ current_variant.title }}</span>
         <span class="ul-variant-price-display" id="ul-variant-price-{{ product.id }}">{{ current_variant.price | money_without_trailing_zeros }}</span>
       </div>
 
-      <!-- Hidden input for selected variant ID -->
       <input type="hidden" id="ul-size-select-{{ product.id }}" value="{{ current_variant.id }}" data-price-raw="{{ current_variant.price }}">
     </div>
 
-    <!-- Variant JSON Data for JS -->
     <script type="application/json" id="ul-variants-json-{{ product.id }}">
       {{ product.variants | json }}
     </script>
 
-    <!-- STEP 3: Quantity -->
     <div class="ul-section" id="ul-qty-section-{{ product.id }}">
       <div class="ul-section-header">
         <span class="ul-step-badge" id="ul-step-3-{{ product.id }}">3</span>
@@ -162,7 +150,6 @@
       </div>
     </div>
 
-    <!-- STEP 4: Extra Questions (Dynamic from API) -->
     <div class="ul-section" id="ul-questions-section-{{ product.id }}" style="display: none;">
       <div class="ul-section-header">
         <span class="ul-step-badge" id="ul-step-4-{{ product.id }}">4</span>
@@ -173,7 +160,6 @@
 
     <div class="ul-divider"></div>
 
-    <!-- Price Summary -->
     <div class="ul-price-summary" id="ul-price-summary-{{ product.id }}">
       <div class="ul-price-row">
         <span class="ul-price-label">Size (<span id="ul-selected-size-{{ product.id }}">-</span>)</span>
@@ -189,9 +175,8 @@
       </div>
     </div>
 
-    <!-- Action Buttons -->
     <div class="ul-buttons-stack">
-      <!-- T-Shirt Button (conditional) -->
+
       <button
         type="button"
         class="ul-btn ul-btn-secondary"
@@ -203,7 +188,6 @@
         <span class="ul-btn-text">I want this on a T-Shirt too!</span>
       </button>
 
-      <!-- Add to Cart Button -->
       <button
         type="button"
         class="ul-btn ul-btn-primary"
@@ -222,13 +206,11 @@
 
   </div>
 
-  <!-- Hidden Form Fields for Cart -->
   <input type="hidden" id="ul-upload-id-{{ product.id }}" value="">
   <input type="hidden" id="ul-upload-url-{{ product.id }}" value="">
   <input type="hidden" id="ul-thumbnail-url-{{ product.id }}" value="">
 </div>
 
-<!-- Toast Notification -->
 <div class="ul-toast" id="ul-toast">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
     <path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -236,10 +218,10 @@
   <span id="ul-toast-text">Added to cart!</span>
 </div>
 
-<!-- FAZ 8: Analytics (must load before components) -->
 <script src="{{ 'ul-analytics.js' | asset_url }}" defer></script>
-<!-- FAZ 7: Error Handler (must load before other scripts) -->
+
 <script src="{{ 'ul-error-handler.js' | asset_url }}" defer></script>
+<script src="{{ 'ul-multipart-uploader.js' | asset_url }}" defer></script>
 <script src="{{ 'dtf-uploader.js' | asset_url }}" defer></script>
 <script>
   document.addEventListener('DOMContentLoaded', function() {
