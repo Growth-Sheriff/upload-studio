@@ -1,24 +1,12 @@
-/**
- * Stripe Webhook Handler
- *
- * Receives Stripe webhook events for:
- * - checkout.session.completed - Payment successful via Checkout
- * - payment_intent.succeeded - Payment intent succeeded (auto-charge)
- * - payment_intent.payment_failed - Payment failed
- * - charge.refunded - Payment refunded
- *
- * This is a backup mechanism. The primary flow is:
- * 1. Merchant clicks "Pay with Stripe" → checkout → confirm-payment
- * 2. This webhook catches edge cases and auto-charge confirmations
- *
- * NO Shopify auth needed - this is called by Stripe servers
- */
 import type { ActionFunctionArgs } from '@remix-run/node';
 import { json } from '@remix-run/node';
-import { verifyWebhookEvent } from '~/lib/stripe.server';
 import type Stripe from 'stripe';
-import prisma from '~/lib/prisma.server';
-import { applySuccessfulStripeCheckout } from '~/lib/stripeCheckout.server';
+import { verifyWebhookEvent } from '~/lib/stripe.server';
+import { TENANT_SLUGS, getTenantInternalUrl, type TenantSlug } from '~/lib/tenants.server';
+import { dispatchEvent } from '~/lib/stripeWebhookHandlers.server';
+
+const INTERNAL_SECRET = process.env.INTERNAL_WEBHOOK_SECRET || '';
+const FAN_OUT_TIMEOUT_MS = 8_000;
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
@@ -31,8 +19,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const body = await request.text();
-
-  let event;
+  let event: Stripe.Event;
   try {
     event = verifyWebhookEvent(body, signature);
   } catch (err) {
@@ -40,178 +27,59 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: 'Invalid signature' }, { status: 401 });
   }
 
-  console.log(`[Stripe Webhook] Received: ${event.type} (${event.id})`);
+  console.log(`[Stripe Webhook] Verified: ${event.type} (${event.id})`);
 
-  switch (event.type) {
-    case 'checkout.session.completed':
-      await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session, event.id);
-      break;
-
-    case 'payment_intent.succeeded':
-      await handlePaymentIntentSucceeded(event.data.object as Stripe.PaymentIntent, event.id);
-      break;
-
-    case 'payment_intent.payment_failed':
-      await handlePaymentIntentFailed(event.data.object as Stripe.PaymentIntent, event.id);
-      break;
-
-    case 'charge.refunded':
-      await handleChargeRefunded(event.data.object as Stripe.Charge, event.id);
-      break;
-
-    default:
-      console.log(`[Stripe Webhook] Unhandled event type: ${event.type}`);
+  if (!INTERNAL_SECRET) {
+    console.warn('[Stripe Webhook] INTERNAL_WEBHOOK_SECRET not set, processing locally only');
+    const result = await dispatchEvent(event);
+    return json({ received: true, mode: 'local', matched: result.matched, detail: result.detail });
   }
 
-  // Always return 200 to Stripe
-  return json({ received: true });
-}
-
-/**
- * Handle checkout.session.completed
- * This is the backup for the confirm-payment endpoint
- */
-async function handleCheckoutCompleted(session: Stripe.Checkout.Session, eventId: string): Promise<void> {
-  if (!session.id) {
-    console.log('[Stripe Webhook] Missing checkout session ID');
-    return;
-  }
-
-  try {
-    const result = await applySuccessfulStripeCheckout(session.id, 'webhook', eventId);
-    console.log(
-      `[Stripe Webhook] Checkout completed for ${result.shopDomain}: ${result.markedCount} orders marked paid`
-    );
-  } catch (error) {
-    console.error('[Stripe Webhook] checkout.session.completed processing failed:', error);
-  }
-}
-
-/**
- * Handle payment_intent.succeeded (auto-charge confirmations)
- */
-async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent, eventId: string): Promise<void> {
-  const piId = paymentIntent.id;
-  const shopDomain = paymentIntent.metadata?.shopDomain;
-
-  if (!piId || !shopDomain) return;
-
-  // Check if already processed
-  const existing = await prisma.commission.findFirst({
-    where: { paymentRef: piId },
-  });
-
-  if (existing) {
-    console.log(`[Stripe Webhook] PaymentIntent ${piId} already processed`);
-    return;
-  }
-
-  // Find shop and log
-  const shop = await prisma.shop.findUnique({ where: { shopDomain } });
-  if (!shop) return;
-
-  await prisma.auditLog.create({
-    data: {
-      shopId: shop.id,
-      action: 'stripe_webhook_payment_succeeded',
-      resourceType: 'stripe_webhook',
-      resourceId: piId,
-      metadata: {
-        eventId,
-        paymentIntentId: piId,
-        amount: paymentIntent.amount,
-        type: paymentIntent.metadata?.type,
-      },
-    },
-  });
-
-  console.log(`[Stripe Webhook] PaymentIntent ${piId} succeeded for ${shopDomain}`);
-}
-
-/**
- * Handle payment_intent.payment_failed
- */
-async function handlePaymentIntentFailed(paymentIntent: Stripe.PaymentIntent, eventId: string): Promise<void> {
-  const piId = paymentIntent.id;
-  const shopDomain = paymentIntent.metadata?.shopDomain;
-
-  console.error(`[Stripe Webhook] Payment FAILED: ${piId} for ${shopDomain}`);
-
-  if (!shopDomain) return;
-
-  const shop = await prisma.shop.findUnique({ where: { shopDomain } });
-  if (!shop) return;
-
-  await prisma.auditLog.create({
-    data: {
-      shopId: shop.id,
-      action: 'stripe_webhook_payment_failed',
-      resourceType: 'stripe_webhook',
-      resourceId: piId || eventId,
-      metadata: {
-        eventId,
-        paymentIntentId: piId,
-        error: paymentIntent.last_payment_error?.message,
-      },
-    },
-  });
-}
-
-/**
- * Handle charge.refunded
- */
-async function handleChargeRefunded(charge: Stripe.Charge, eventId: string): Promise<void> {
-  const paymentIntentId = typeof charge.payment_intent === 'string'
-    ? charge.payment_intent
-    : charge.payment_intent?.id || null;
-  console.warn(`[Stripe Webhook] Charge REFUNDED: ${charge.id}, PI: ${paymentIntentId}`);
-
-  if (!paymentIntentId) return;
-
-  // Revert commissions to pending
-  const affectedCommissions = await prisma.commission.findMany({
-    where: { paymentRef: paymentIntentId },
-  });
-
-  if (affectedCommissions.length === 0) return;
-
-  // Verify all affected commissions belong to the same shop (tenant isolation)
-  const shopId = affectedCommissions[0].shopId;
-  const allSameShop = affectedCommissions.every((c) => c.shopId === shopId);
-  if (!allSameShop) {
-    console.error('[Stripe Webhook] Refund: Cross-tenant commission detected! Aborting.');
-    return;
-  }
-
-  await prisma.commission.updateMany({
-    where: {
-      paymentRef: paymentIntentId,
-      shopId: shopId,
-    },
-    data: {
-      status: 'pending',
-      paidAt: null,
-      paymentRef: null,
-      paymentProvider: null,
-    },
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      shopId: shopId,
-      action: 'stripe_webhook_charge_refunded',
-      resourceType: 'stripe_webhook',
-      resourceId: charge.id || eventId,
-      metadata: {
-        eventId,
-        chargeId: charge.id,
-        paymentIntentId,
-        revertedCount: affectedCommissions.length,
-      },
-    },
-  });
+  const fanOut = await fanOutToTenants(event);
+  const matched = fanOut.results.filter((r) => r.matched).map((r) => r.slug);
+  const failures = fanOut.results.filter((r) => r.error).map((r) => ({ slug: r.slug, error: r.error }));
 
   console.log(
-    `[Stripe Webhook] Refund: ${affectedCommissions.length} commissions reverted to pending`
+    `[Stripe Webhook] ${event.type} ${event.id}: matched=[${matched.join(',') || 'none'}] failures=${failures.length}`
   );
+
+  return json({
+    received: true,
+    mode: 'fanout',
+    matched,
+    failures,
+  });
+}
+
+type FanOutResult = { slug: TenantSlug; matched?: boolean; detail?: string; error?: string };
+
+async function fanOutToTenants(event: Stripe.Event): Promise<{ results: FanOutResult[] }> {
+  const payload = JSON.stringify(event);
+  const settled = await Promise.allSettled(
+    TENANT_SLUGS.map(async (slug): Promise<FanOutResult> => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), FAN_OUT_TIMEOUT_MS);
+      try {
+        const res = await fetch(getTenantInternalUrl(slug, '/api/webhooks/stripe-internal'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-internal-secret': INTERNAL_SECRET,
+          },
+          body: payload,
+          signal: controller.signal,
+        });
+        const data = (await res.json().catch(() => ({}))) as { matched?: boolean; detail?: string };
+        return { slug, matched: !!data.matched, detail: data.detail };
+      } catch (err) {
+        return { slug, error: err instanceof Error ? err.message : 'unknown' };
+      } finally {
+        clearTimeout(timeout);
+      }
+    })
+  );
+  const results = settled.map((s, i) =>
+    s.status === 'fulfilled' ? s.value : { slug: TENANT_SLUGS[i], error: String(s.reason) }
+  );
+  return { results };
 }

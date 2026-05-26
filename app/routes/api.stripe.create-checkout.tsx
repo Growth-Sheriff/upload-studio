@@ -1,9 +1,9 @@
-/**
- * Stripe Create Checkout Session API
- *
- * Called from billing page when merchant clicks "Pay with Stripe"
- * Creates a Stripe Checkout Session and returns the checkout URL
- */
+
+
+
+
+
+
 import type { ActionFunctionArgs } from '@remix-run/node';
 import { json } from '@remix-run/node';
 import { createCheckoutSession, isStripeConfigured } from '~/lib/stripe.server';
@@ -31,7 +31,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: 'Shop not found' }, { status: 404 });
   }
 
-  // Check if request body contains specific orderIds (per-month payment)
+
   let requestedOrderIds: string[] | null = null;
   let monthKey: string | null = null;
   try {
@@ -43,7 +43,7 @@ export async function action({ request }: ActionFunctionArgs) {
       monthKey = body.monthKey;
     }
   } catch {
-    // No body or invalid JSON — pay all pending (default behavior)
+
   }
 
   const {
@@ -59,7 +59,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const totalAmount = total.toFixed(2);
 
   try {
-    // Create audit entry for reference
+
     const auditEntry = await prisma.auditLog.create({
       data: {
         shopId: shop.id,
@@ -81,10 +81,11 @@ export async function action({ request }: ActionFunctionArgs) {
       shopDomain,
       description,
       auditEntry.id,
-      hasExistingPaymentMethod
+      hasExistingPaymentMethod,
+      shop.stripeEmail
     );
 
-    // Update audit log with session ID
+
     await prisma.auditLog.update({
       where: { id: auditEntry.id },
       data: {

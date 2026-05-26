@@ -1,21 +1,21 @@
-/**
- * Stripe Server Library
- *
- * Handles Stripe Checkout Sessions, Payment Intents, webhook verification,
- * and saved payment method (auto-charge) flows for order-fee billing.
- *
- * Mirrors paypal.server.ts structure for consistency.
- */
+
+
+
+
+
+
+
+
 import Stripe from 'stripe';
 
-// ── Config ──
+
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 const APP_URL = process.env.SHOPIFY_APP_URL!;
 const FAST_SHOP_DOMAIN = 'fast-dtf-transfer.myshopify.com';
 const FAST_CANONICAL_APP_URL = 'https://fastdtftransfer.uploadstudio.app.techifyboost.com';
 
-// ── Stripe Client (lazy singleton) ──
+
 let stripeClient: Stripe | null = null;
 
 function getStripeClient(): Stripe {
@@ -31,7 +31,7 @@ function getStripeClient(): Stripe {
   return stripeClient;
 }
 
-// ── Types ──
+
 export interface StripeCheckoutResult {
   sessionId: string;
   checkoutUrl: string;
@@ -57,11 +57,11 @@ export interface StripeAutoChargeResult {
   amount: number;
 }
 
-// ── Public Functions ──
 
-/**
- * Check if Stripe is configured
- */
+
+
+
+
 export function isStripeConfigured(): boolean {
   return Boolean(STRIPE_SECRET_KEY);
 }
@@ -74,17 +74,18 @@ export function resolveAppUrlForShop(shopDomain?: string | null): string {
   return APP_URL;
 }
 
-/**
- * Create a Stripe Checkout Session for order-fee payment.
- * Uses `setup_future_usage: 'off_session'` on first payment to save the card
- * for future auto-charges (mirrors PayPal vault behavior).
- */
+
+
+
+
+
 export async function createCheckoutSession(
   amount: string,
   shopDomain: string,
   description: string,
   referenceId: string,
-  hasExistingPaymentMethod: boolean
+  hasExistingPaymentMethod: boolean,
+  customerEmail?: string | null
 ): Promise<StripeCheckoutResult> {
   const stripe = getStripeClient();
   const amountCents = Math.round(parseFloat(amount) * 100);
@@ -118,10 +119,18 @@ export async function createCheckoutSession(
     client_reference_id: referenceId,
   };
 
-  // Save payment method on first payment for future auto-charges
+  if (customerEmail) {
+    sessionParams.customer_email = customerEmail;
+  }
+
   if (!hasExistingPaymentMethod) {
     sessionParams.payment_intent_data = {
       setup_future_usage: 'off_session',
+      ...(customerEmail ? { receipt_email: customerEmail } : {}),
+    };
+  } else if (customerEmail) {
+    sessionParams.payment_intent_data = {
+      receipt_email: customerEmail,
     };
   }
 
@@ -139,10 +148,10 @@ export async function createCheckoutSession(
   };
 }
 
-/**
- * Retrieve a completed Checkout Session and extract payment details.
- * Called after merchant returns from Stripe Checkout.
- */
+
+
+
+
 export async function retrieveCheckoutSession(
   sessionId: string
 ): Promise<StripeCaptureResult> {
@@ -176,16 +185,17 @@ export async function retrieveCheckoutSession(
   };
 }
 
-/**
- * Charge a saved payment method off-session (auto-charge).
- * Mirrors PayPal's chargeWithVault functionality.
- */
+
+
+
+
 export async function chargeWithSavedMethod(
   customerId: string,
   paymentMethodId: string,
   amount: string,
   shopDomain: string,
-  description: string
+  description: string,
+  receiptEmail?: string | null
 ): Promise<StripeAutoChargeResult> {
   const stripe = getStripeClient();
   const amountCents = Math.round(parseFloat(amount) * 100);
@@ -198,6 +208,7 @@ export async function chargeWithSavedMethod(
     off_session: true,
     confirm: true,
     description,
+    ...(receiptEmail ? { receipt_email: receiptEmail } : {}),
     metadata: {
       shopDomain,
       type: 'auto_charge_commission',
@@ -215,10 +226,10 @@ export async function chargeWithSavedMethod(
   };
 }
 
-/**
- * Verify Stripe webhook signature.
- * Returns the parsed event if valid, throws on invalid signature.
- */
+
+
+
+
 export function verifyWebhookEvent(
   payload: string | Buffer,
   signature: string
@@ -236,31 +247,31 @@ export function verifyWebhookEvent(
   );
 }
 
-/**
- * Create or get a Stripe Customer for a shop.
- * Used to link payment methods to the shop for future charges.
- */
+
+
+
+
 export async function getOrCreateCustomer(
   shopDomain: string,
   email?: string | null
 ): Promise<string> {
   const stripe = getStripeClient();
 
-  // Search for existing customer by metadata
+
   const existing = await stripe.customers.list({
     limit: 1,
     email: email || undefined,
   });
 
   if (existing.data.length > 0) {
-    // Verify it's the right shop
+
     const customer = existing.data.find(
       (c) => c.metadata?.shopDomain === shopDomain
     );
     if (customer) return customer.id;
   }
 
-  // Create new customer
+
   const customer = await stripe.customers.create({
     email: email || undefined,
     metadata: { shopDomain },

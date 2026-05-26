@@ -8,6 +8,9 @@ import {
 } from "@remix-run/node";
 import { isbot } from "isbot";
 import { addDocumentResponseHeaders } from "./shopify.server";
+import { initBillingScheduler } from "./lib/billingScheduler.server";
+
+initBillingScheduler();
 
 export const streamTimeout = 5000;
 
@@ -54,7 +57,7 @@ export default async function handleRequest(
       }
     );
 
-    // Automatically timeout the React renderer after 6 seconds
+
     setTimeout(abort, streamTimeout + 1000);
   });
 }

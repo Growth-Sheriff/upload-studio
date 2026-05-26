@@ -1,13 +1,13 @@
-/**
- * Auto-Charge API (PayPal + Stripe)
- *
- * Checks all shops with saved payment methods (PayPal vault OR Stripe).
- * If pending commission >= $49.99 threshold, charges automatically.
- *
- * Called by:
- * - Cron worker (commission.worker.ts) - daily
- * - Or manually via POST with secret header
- */
+
+
+
+
+
+
+
+
+
+
 import type { ActionFunctionArgs } from '@remix-run/node';
 import { json } from '@remix-run/node';
 import { chargeWithVault, isPayPalConfigured } from '~/lib/paypal.server';
@@ -23,7 +23,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: 'Method not allowed' }, { status: 405 });
   }
 
-  // Auth: require CRON_SECRET env var — no fallback
+
   if (!CRON_SECRET) {
     console.error('[PayPal Auto-Charge] CRON_SECRET env variable is not set');
     return json({ error: 'Server misconfiguration' }, { status: 500 });
@@ -38,7 +38,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: 'No payment provider configured' }, { status: 500 });
   }
 
-  // Find all shops with auto-charge enabled (PayPal vault OR Stripe saved method)
+
   const vaultedShops = await prisma.shop.findMany({
     where: {
       OR: [
@@ -78,7 +78,7 @@ export async function action({ request }: ActionFunctionArgs) {
         description,
       } = await getOutstandingFeeSelection(shop.id);
 
-      // Check threshold
+
       if (pendingAmount < AUTO_CHARGE_THRESHOLD) {
         results.push({
           shop: shop.shopDomain,
@@ -92,7 +92,7 @@ export async function action({ request }: ActionFunctionArgs) {
         `[AutoCharge] ${shop.shopDomain}: $${pendingAmount.toFixed(2)} pending (${pendingOrderIds.length} orders) - charging...`
       );
 
-      // Create audit entry for reference
+
       const auditEntry = await prisma.auditLog.create({
         data: {
           shopId: shop.id,
@@ -115,20 +115,21 @@ export async function action({ request }: ActionFunctionArgs) {
       let captureId: string;
       let provider: 'paypal' | 'stripe';
 
-      // Prefer Stripe if configured, fall back to PayPal
+
       if (shop.stripeCustomerId && shop.stripePaymentMethodId && isStripeConfigured()) {
-        // Charge via Stripe saved payment method
+
         const result = await chargeWithSavedMethod(
           shop.stripeCustomerId,
           shop.stripePaymentMethodId,
           totalAmount,
           shop.shopDomain,
-          description
+          description,
+          shop.stripeEmail
         );
         captureId = result.paymentIntentId;
         provider = 'stripe';
       } else if (shop.paypalVaultId && isPayPalConfigured()) {
-        // Charge via PayPal vault
+
         const capture = await chargeWithVault(
           shop.paypalVaultId,
           shop.paypalPayerId || '',
@@ -148,7 +149,7 @@ export async function action({ request }: ActionFunctionArgs) {
         throw new Error('No valid payment method available');
       }
 
-      // Mark all pending commissions as paid
+
       for (const orderId of pendingOrderIds) {
         const rate = feeByOrderId.get(orderId) || 0.10;
         await prisma.commission.upsert({
@@ -180,7 +181,7 @@ export async function action({ request }: ActionFunctionArgs) {
         });
       }
 
-      // Update audit log
+
       await prisma.auditLog.update({
         where: { id: auditEntry.id },
         data: {
@@ -209,7 +210,7 @@ export async function action({ request }: ActionFunctionArgs) {
       const errMsg = error instanceof Error ? error.message : 'Unknown error';
       console.error(`[AutoCharge] ❌ ${shop.shopDomain}: ${errMsg}`);
 
-      // Audit log for failure
+
       await prisma.auditLog.create({
         data: {
           shopId: shop.id,
@@ -223,7 +224,7 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       });
 
-      // If PayPal vault is invalid/expired, disable auto-charge
+
       if (
         errMsg.includes('INVALID_VAULT_ID') ||
         errMsg.includes('VAULT_NOT_FOUND') ||
@@ -239,7 +240,7 @@ export async function action({ request }: ActionFunctionArgs) {
         console.log(`[AutoCharge] Vault disabled for ${shop.shopDomain} (invalid/expired)`);
       }
 
-      // If Stripe payment method is invalid, disable Stripe auto-charge
+
       if (
         errMsg.includes('payment_method_not_available') ||
         errMsg.includes('card_declined') ||

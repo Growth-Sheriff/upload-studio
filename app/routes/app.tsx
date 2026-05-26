@@ -5,41 +5,76 @@ import { AppProvider } from "@shopify/shopify-app-remix/react";
 import { boundary } from "@shopify/shopify-app-remix/server";
 import { authenticate } from "~/shopify.server";
 import { AppFrame } from "~/components/AppFrame";
+import { PaymentSetupBanner } from "~/components/PaymentSetupBanner";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import prisma from "~/lib/prisma.server";
 import { useAppBridgeNavigation } from "~/hooks/useAppBridgeNavigation";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
-// Layout route for /app/* routes
-// Uses token exchange for embedded app authentication
+
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request);
 
-  // Get shop data for navigation badges
+
   const shop = await prisma.shop.findUnique({
     where: { shopDomain: session.shop },
   });
 
   let pendingUploads = 0;
   let pendingQueue = 0;
+  let billingBanner: {
+    pendingAmount: string;
+    pendingOrderCount: number;
+    hasOverdueRetry: boolean;
+    retryNextAt: string | null;
+  } | null = null;
 
   if (shop) {
-    // Count pending uploads (needs review)
+
     pendingUploads = await prisma.upload.count({
-      where: { 
-        shopId: shop.id, 
+      where: {
+        shopId: shop.id,
         status: { in: ["uploaded", "needs_review"] }
       },
     });
 
-    // Count pending queue items
+
     pendingQueue = await prisma.upload.count({
-      where: { 
-        shopId: shop.id, 
+      where: {
+        shopId: shop.id,
         status: "needs_review"
       },
     });
+
+    const hasVault = Boolean(
+      (shop.stripePaymentMethodId && shop.stripeAutoCharge) ||
+      (shop.paypalVaultId && shop.paypalAutoCharge)
+    );
+    const billingState = ((shop.settings as Record<string, any>)?.billing ?? {}) as {
+      retryNextAt?: string;
+      retryCount?: number;
+    };
+    const hasOverdueRetry =
+      Boolean(billingState.retryNextAt) && (billingState.retryCount || 0) > 0;
+
+    if (!hasVault || hasOverdueRetry) {
+      const pendingAgg = await prisma.commission.aggregate({
+        where: { shopId: shop.id, status: 'pending' },
+        _sum: { commissionAmount: true },
+        _count: true,
+      });
+      const amount = Number(pendingAgg._sum.commissionAmount ?? 0);
+      if (amount > 0 || hasOverdueRetry) {
+        billingBanner = {
+          pendingAmount: amount.toFixed(2),
+          pendingOrderCount: pendingAgg._count || 0,
+          hasOverdueRetry,
+          retryNextAt: billingState.retryNextAt ?? null,
+        };
+      }
+    }
   }
 
   return json({
@@ -47,19 +82,31 @@ export async function loader({ request }: LoaderFunctionArgs) {
     shop: session.shop,
     pendingUploads,
     pendingQueue,
+    billingBanner,
   });
 }
 
 export default function AppLayout() {
-  const { apiKey, shop, pendingUploads, pendingQueue } = useLoaderData<typeof loader>();
-  
-  // Sync Remix navigation with Shopify Admin history
+  const { apiKey, shop, pendingUploads, pendingQueue, billingBanner } =
+    useLoaderData<typeof loader>();
+
+
   useAppBridgeNavigation();
 
   return (
     <AppProvider isEmbeddedApp apiKey={apiKey}>
-      <AppFrame 
-        shop={shop} 
+      {billingBanner ? (
+        <div style={{ padding: '12px 16px 0' }}>
+          <PaymentSetupBanner
+            pendingAmount={billingBanner.pendingAmount}
+            pendingOrderCount={billingBanner.pendingOrderCount}
+            hasOverdueRetry={billingBanner.hasOverdueRetry}
+            retryNextAt={billingBanner.retryNextAt}
+          />
+        </div>
+      ) : null}
+      <AppFrame
+        shop={shop}
         pendingUploads={pendingUploads}
         pendingQueue={pendingQueue}
       />
@@ -67,7 +114,7 @@ export default function AppLayout() {
   );
 }
 
-// Shopify needs Remix to catch some thrown responses, so that their headers are included in the response.
+
 export function ErrorBoundary() {
   return boundary.error(useRouteError());
 }
