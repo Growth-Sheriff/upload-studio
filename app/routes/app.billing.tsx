@@ -44,15 +44,15 @@ interface OrderRecord {
   orderId: string
   orderNumber: string | null
   commissionAmount: number
-  status: string // pending, paid, waived
+  status: string
   createdAt: string
   paidAt: string | null
   paymentRef: string | null
 }
 
 interface MonthlyBreakdown {
-  monthKey: string // "2026-03"
-  monthLabel: string // "March 2026"
+  monthKey: string
+  monthLabel: string
   totalOrders: number
   pendingOrders: number
   paidOrders: number
@@ -109,7 +109,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     orderBy: { createdAt: 'desc' },
   })
 
-  // Calculate total transfer size from uploads
+
   const uploadStats = await prisma.uploadItem.aggregate({
     where: {
       upload: {
@@ -123,7 +123,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   })
 
   const totalTransferBytes = uploadStats._sum.fileSize || 0
-  const totalTransferGB = Number(totalTransferBytes) / (1024 * 1024 * 1024) // Convert to GB
+  const totalTransferGB = Number(totalTransferBytes) / (1024 * 1024 * 1024)
 
   const records: OrderRecord[] = allCommissions
     .map((commission) => ({
@@ -137,7 +137,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
-  // Group records by month
+
   const monthMap = new Map<string, OrderRecord[]>()
   for (const record of records) {
     const date = new Date(record.createdAt)
@@ -148,7 +148,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     monthMap.get(monthKey)!.push(record)
   }
 
-  // Build monthly breakdowns sorted by month descending (newest first)
+
   const monthlyBreakdowns: MonthlyBreakdown[] = [...monthMap.entries()]
     .sort((a, b) => b[0].localeCompare(a[0]))
     .map(([monthKey, orders]) => {
@@ -176,7 +176,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       }
     })
 
-  // Calculate summary
+
   const totalOrders = records.length
   const paidOrders = records.filter((r) => r.status === 'paid').length
   const pendingOrders = records.filter((r) => r.status === 'pending').length
@@ -217,6 +217,28 @@ export async function loader({ request }: LoaderFunctionArgs) {
     stripeAutoCharge: shop.stripeAutoCharge,
     stripeSaved: Boolean(shop.stripePaymentMethodId),
     stripeEmail: shop.stripeEmail || null,
+    stripeCard: (() => {
+      const billing =
+        ((shop.settings as Record<string, any> | null) || {}).billing ||
+        ({} as Record<string, any>)
+      const card = billing.card as
+        | {
+            brand?: string | null
+            last4?: string | null
+            expMonth?: number | null
+            expYear?: number | null
+            funding?: string | null
+          }
+        | undefined
+      if (!card || !card.last4) return null
+      return {
+        brand: card.brand || null,
+        last4: card.last4 || null,
+        expMonth: card.expMonth || null,
+        expYear: card.expYear || null,
+        funding: card.funding || null,
+      }
+    })(),
   })
 }
 
@@ -235,13 +257,13 @@ export async function action({ request }: ActionFunctionArgs) {
   const formData = await request.formData()
   const actionType = formData.get('_action') as string
 
-  // Toggle auto-charge on/off
+
   if (actionType === 'toggle_auto_charge') {
     const enabled = formData.get('enabled') === 'true'
     const provider = formData.get('provider') as string || 'paypal'
 
     if (provider === 'stripe') {
-      // Stripe auto-charge toggle
+
       if (enabled && !shop.stripePaymentMethodId) {
         return json(
           { error: 'No saved Stripe payment method. Complete a Stripe payment first.' },
@@ -254,7 +276,7 @@ export async function action({ request }: ActionFunctionArgs) {
         data: { stripeAutoCharge: enabled },
       })
     } else {
-      // PayPal auto-charge toggle
+
       if (enabled && !shop.paypalVaultId) {
         return json(
           { error: 'No saved payment method. Complete a PayPal payment first.' },
@@ -281,7 +303,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ success: true, message: `Auto-charge ${enabled ? 'enabled' : 'disabled'}` })
   }
 
-  // Mark orders as paid - creates/updates commission records
+
   if (actionType === 'mark_paid') {
     const paymentRef = formData.get('paymentRef') as string
     const orderIds = formData.get('orderIds') as string
@@ -297,7 +319,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: 'No outstanding billed orders found for this payment' }, { status: 400 })
     }
 
-    // Create or update commission records for each order
+
     for (const orderId of outstandingSelection.orderIds) {
       const rate = outstandingSelection.feeByOrderId.get(orderId) || COMMISSION_RATES.default
       await prisma.commission.upsert({
@@ -327,7 +349,7 @@ export async function action({ request }: ActionFunctionArgs) {
       })
     }
 
-    // Audit log
+
     await prisma.auditLog.create({
       data: {
         shopId: shop.id,
@@ -349,6 +371,23 @@ export async function action({ request }: ActionFunctionArgs) {
   return json({ error: 'Unknown action' }, { status: 400 })
 }
 
+function cardBrandLabel(brand: string | null | undefined): string {
+  if (!brand) return 'Card'
+  const map: Record<string, string> = {
+    visa: 'Visa',
+    mastercard: 'Mastercard',
+    amex: 'Amex',
+    discover: 'Discover',
+    diners: 'Diners',
+    jcb: 'JCB',
+    unionpay: 'UnionPay',
+    cartes_bancaires: 'CB',
+    troy: 'Troy',
+    unknown: 'Card',
+  }
+  return map[brand.toLowerCase()] || (brand.charAt(0).toUpperCase() + brand.slice(1))
+}
+
 export default function BillingPage() {
   const {
     shopDomain,
@@ -368,26 +407,27 @@ export default function BillingPage() {
     stripeAutoCharge,
     stripeSaved,
     stripeEmail,
+    stripeCard,
   } = useLoaderData<typeof loader>()
   const navigation = useNavigation()
   const isSubmitting = navigation.state === 'submitting'
 
-  // Payment modal state (manual flow)
+
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [paymentRef, setPaymentRef] = useState('')
 
-  // PayPal state
+
   const [paypalLoading, setPaypalLoading] = useState(false)
   const [paypalError, setPaypalError] = useState<string | null>(null)
   const [paypalSuccess, setPaypalSuccess] = useState(false)
   const [paypalCaptureId, setPaypalCaptureId] = useState<string | null>(null)
 
-  // Stripe state
+
   const [stripeLoading, setStripeLoading] = useState(false)
   const [stripeError, setStripeError] = useState<string | null>(null)
   const [stripeSuccess, setStripeSuccess] = useState(false)
 
-  // Monthly breakdown state
+
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
   const [monthPaymentLoading, setMonthPaymentLoading] = useState<string | null>(null)
 
@@ -450,7 +490,7 @@ export default function BillingPage() {
     setPaymentRef('')
   }, [])
 
-  // Check URL params for PayPal return
+
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
     const paypalStatus = urlParams.get('paypal')
@@ -458,11 +498,11 @@ export default function BillingPage() {
       setPaypalError('Payment was cancelled. You can try again.')
     }
 
-    // Check for Stripe return
+
     const stripeStatus = urlParams.get('stripe')
     const stripeSessionId = urlParams.get('session_id')
     if (stripeStatus === 'success' && stripeSessionId) {
-      // Confirm Stripe payment
+
       setStripeLoading(true)
       fetch('/api/stripe/confirm-payment', {
         method: 'POST',
@@ -489,13 +529,13 @@ export default function BillingPage() {
     }
   }, [])
 
-  // PayPal checkout flow
+
   const handlePayWithPayPal = useCallback(async () => {
     setPaypalLoading(true)
     setPaypalError(null)
 
     try {
-      // Step 1: Create PayPal order via our API
+
       const createResponse = await fetch('/api/paypal/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -507,16 +547,16 @@ export default function BillingPage() {
         throw new Error(createData.error || 'Failed to create PayPal order')
       }
 
-      // Step 2: Redirect to PayPal for approval
-      // PayPal will redirect back to /app/billing?paypal=success
+
+
       window.open(createData.approvalUrl, '_blank')
 
-      // Show instructions
+
       setPaypalError(null)
       setPaypalLoading(false)
 
-      // Poll for completion (the user completes payment in PayPal tab)
-      // Wait for user to click "I Completed Payment on PayPal"
+
+
       setPaypalCaptureId(createData.paypalOrderId)
     } catch (error) {
       console.error('PayPal error:', error)
@@ -525,7 +565,7 @@ export default function BillingPage() {
     }
   }, [])
 
-  // Capture PayPal payment after user confirms
+
   const handleCapturePayPal = useCallback(async () => {
     if (!paypalCaptureId) return
 
@@ -548,7 +588,7 @@ export default function BillingPage() {
       setPaypalSuccess(true)
       setPaypalCaptureId(null)
 
-      // Reload page to reflect paid status
+
       setTimeout(() => {
         window.location.href = '/app/billing'
       }, 2000)
@@ -559,7 +599,7 @@ export default function BillingPage() {
     }
   }, [paypalCaptureId])
 
-  // Stripe checkout flow
+
   const handlePayWithStripe = useCallback(async () => {
     setStripeLoading(true)
     setStripeError(null)
@@ -576,11 +616,11 @@ export default function BillingPage() {
         throw new Error(data.error || 'Failed to create Stripe checkout')
       }
 
-      // Shopify embedded apps run in an iframe — must break out to top frame
-      // or open in a new tab for Stripe Checkout to work
+
+
       const stripeWindow = window.open(data.checkoutUrl, '_blank')
       if (!stripeWindow) {
-        // Popup blocked — fallback to top-level navigation
+
         if (window.top) {
           window.top.location.href = data.checkoutUrl
         } else {
@@ -594,7 +634,7 @@ export default function BillingPage() {
     }
   }, [])
 
-  // Format date for display
+
   const formatDate = (iso: string) => {
     return new Date(iso).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -638,13 +678,13 @@ export default function BillingPage() {
     return { tone: 'success', label: 'Settled / Waived' } as const
   }
 
-  // Get pending order IDs for payment
+
   const pendingOrderIds = records
     .filter((r) => r.status === 'pending')
     .map((r) => r.orderId)
     .join(',')
 
-  // DataTable rows - simplified without order total
+
   const tableRows = records.map((r) => [
     r.orderNumber,
     formatMoney(r.commissionAmount),
@@ -658,7 +698,7 @@ export default function BillingPage() {
   return (
     <Page title="Billing & Order Fees" backAction={{ content: 'Dashboard', url: '/app' }}>
       <Layout>
-        {/* Billing Info */}
+
         <Layout.Section>
           <Banner tone="info">
             <p>
@@ -668,10 +708,10 @@ export default function BillingPage() {
           </Banner>
         </Layout.Section>
 
-        {/* Summary Cards */}
+
         <Layout.Section>
           <InlineStack gap="400" align="start" wrap={false}>
-            {/* App-Linked Orders */}
+
             <Box width="25%">
               <Card>
                 <BlockStack gap="200">
@@ -688,7 +728,7 @@ export default function BillingPage() {
               </Card>
             </Box>
 
-            {/* Outstanding Balance */}
+
             <Box width="25%">
               <Card>
                 <BlockStack gap="200">
@@ -705,7 +745,7 @@ export default function BillingPage() {
               </Card>
             </Box>
 
-            {/* Settled Charges */}
+
             <Box width="25%">
               <Card>
                 <BlockStack gap="200">
@@ -722,7 +762,7 @@ export default function BillingPage() {
               </Card>
             </Box>
 
-            {/* Waived Charges */}
+
             <Box width="25%">
               <Card>
                 <BlockStack gap="200">
@@ -748,12 +788,12 @@ export default function BillingPage() {
           </Box>
         </Layout.Section>
 
-        {/* Payment Instructions */}
+
         {summary.pendingAmount > 0 && (
           <Layout.Section>
             <Card>
               <BlockStack gap="400">
-                {/* PayPal Success Banner */}
+
                 {paypalSuccess && (
                   <Banner tone="success" onDismiss={() => setPaypalSuccess(false)}>
                     <p>
@@ -762,14 +802,14 @@ export default function BillingPage() {
                   </Banner>
                 )}
 
-                {/* PayPal Error Banner */}
+
                 {paypalError && (
                   <Banner tone="critical" onDismiss={() => setPaypalError(null)}>
                     <p>{paypalError}</p>
                   </Banner>
                 )}
 
-                {/* Stripe Success Banner */}
+
                 {stripeSuccess && (
                   <Banner tone="success" onDismiss={() => setStripeSuccess(false)}>
                     <p>
@@ -778,7 +818,7 @@ export default function BillingPage() {
                   </Banner>
                 )}
 
-                {/* Stripe Error Banner */}
+
                 {stripeError && (
                   <Banner tone="critical" onDismiss={() => setStripeError(null)}>
                     <p>{stripeError}</p>
@@ -796,7 +836,7 @@ export default function BillingPage() {
                     </Text>
                   </BlockStack>
                   <InlineStack gap="200">
-                    {/* Stripe Checkout Button */}
+
                     {stripeEnabled && (
                       <Button
                         variant="primary"
@@ -807,7 +847,7 @@ export default function BillingPage() {
                         💳 Pay with Card (Stripe)
                       </Button>
                     )}
-                    {/* PayPal Checkout Button */}
+
                     {paypalEnabled && !paypalCaptureId && (
                       <Button
                         variant="primary"
@@ -818,7 +858,7 @@ export default function BillingPage() {
                         💳 Pay with PayPal
                       </Button>
                     )}
-                    {/* Capture Button - shown after PayPal approval */}
+
                     {paypalCaptureId && (
                       <Button
                         variant="primary"
@@ -830,7 +870,7 @@ export default function BillingPage() {
                         ✅ I Completed Payment on PayPal
                       </Button>
                     )}
-                    {/* Manual Payment Button (always available as fallback) */}
+
                     <Button onClick={handlePaymentModalOpen}>
                       I've Made Payment Manually
                     </Button>
@@ -839,7 +879,7 @@ export default function BillingPage() {
 
                 <Divider />
 
-                {/* PayPal Instructions */}
+
                 {paypalEnabled && !paypalCaptureId && (
                   <Box background="bg-surface-secondary" padding="400" borderRadius="200">
                     <BlockStack gap="200">
@@ -855,7 +895,7 @@ export default function BillingPage() {
                   </Box>
                 )}
 
-                {/* PayPal Capture Instructions */}
+
                 {paypalCaptureId && (
                   <Banner tone="warning">
                     <p>
@@ -865,7 +905,7 @@ export default function BillingPage() {
                   </Banner>
                 )}
 
-                {/* Manual Payment Instructions */}
+
                 <Box background="bg-surface-secondary" padding="400" borderRadius="200">
                   <BlockStack gap="200">
                     <Text as="p" variant="bodyMd" fontWeight="semibold">
@@ -907,7 +947,7 @@ export default function BillingPage() {
           </Layout.Section>
         )}
 
-        {/* Auto-Charge Settings */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -932,18 +972,28 @@ export default function BillingPage() {
                 </BlockStack>
               </InlineStack>
 
-              {/* Stripe Auto-Pay Controls */}
+
               {stripeSaved && stripeEmail && (
                 <>
                   <Divider />
                   <Box background="bg-surface-secondary" padding="300" borderRadius="200">
-                    <InlineStack gap="400" blockAlign="center">
+                    <InlineStack gap="400" blockAlign="center" wrap>
                       <BlockStack gap="100">
                         <Text as="p" variant="bodySm" tone="subdued">
-                          Stripe Card
+                          Stripe payment method
                         </Text>
-                        <Text as="p" variant="bodyMd">
-                          Card ({stripeEmail})
+                        <Text as="p" variant="bodyMd" fontWeight="semibold">
+                          {stripeCard
+                            ? `${cardBrandLabel(stripeCard.brand)} •••• ${stripeCard.last4}`
+                            : 'Card on file'}
+                        </Text>
+                        {stripeCard && stripeCard.expMonth && stripeCard.expYear && (
+                          <Text as="p" variant="bodySm" tone="subdued">
+                            Expires {String(stripeCard.expMonth).padStart(2, '0')}/{String(stripeCard.expYear).slice(-2)}
+                          </Text>
+                        )}
+                        <Text as="p" variant="bodySm" tone="subdued">
+                          {stripeEmail}
                         </Text>
                       </BlockStack>
                       <BlockStack gap="100">
@@ -962,28 +1012,44 @@ export default function BillingPage() {
                           {stripeAutoCharge ? '✅ Auto-charging' : '⏸️ Paused'}
                         </Text>
                       </BlockStack>
-                      <Form method="post">
-                        <input type="hidden" name="_action" value="toggle_auto_charge" />
-                        <input type="hidden" name="provider" value="stripe" />
-                        <input
-                          type="hidden"
-                          name="enabled"
-                          value={stripeAutoCharge ? 'false' : 'true'}
-                        />
+                      <InlineStack gap="200">
+                        <Form method="post">
+                          <input type="hidden" name="_action" value="toggle_auto_charge" />
+                          <input type="hidden" name="provider" value="stripe" />
+                          <input
+                            type="hidden"
+                            name="enabled"
+                            value={stripeAutoCharge ? 'false' : 'true'}
+                          />
+                          <Button
+                            submit
+                            variant={stripeAutoCharge ? 'plain' : 'primary'}
+                            tone={stripeAutoCharge ? 'critical' : undefined}
+                          >
+                            {stripeAutoCharge ? 'Disable' : 'Enable'}
+                          </Button>
+                        </Form>
                         <Button
-                          submit
-                          variant={stripeAutoCharge ? 'plain' : 'primary'}
-                          tone={stripeAutoCharge ? 'critical' : undefined}
+                          onClick={async () => {
+                            try {
+                              const res = await fetch('/api/stripe/customer-portal', { method: 'POST' })
+                              const data = await res.json()
+                              if (data.url) window.open(data.url, '_blank', 'noopener,noreferrer')
+                              else alert(data.error || 'Failed to open Stripe customer portal')
+                            } catch (e) {
+                              alert((e as Error).message || 'Network error')
+                            }
+                          }}
                         >
-                          {stripeAutoCharge ? 'Disable' : 'Enable'}
+                          Manage payment method ↗
                         </Button>
-                      </Form>
+                      </InlineStack>
                     </InlineStack>
                   </Box>
                 </>
               )}
 
-              {/* PayPal Auto-Pay Controls */}
+
               {paypalVaulted && paypalPayerEmail && (
                 <>
                   <Divider />
@@ -1046,7 +1112,7 @@ export default function BillingPage() {
           </Card>
         </Layout.Section>
 
-        {/* Monthly Billing Breakdown */}
+
         {monthlyBreakdowns.length > 0 && (
           <Layout.Section>
             <Card>
@@ -1133,7 +1199,7 @@ export default function BillingPage() {
                           </InlineStack>
                         </InlineStack>
 
-                        {/* Progress indicator */}
+
                         <InlineStack gap="200">
                           {mb.paidOrders > 0 && (
                             <Text as="p" variant="bodySm" tone="success">
@@ -1170,7 +1236,7 @@ export default function BillingPage() {
           </Layout.Section>
         )}
 
-        {/* Order Fee History */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -1198,7 +1264,7 @@ export default function BillingPage() {
           </Card>
         </Layout.Section>
 
-        {/* How It Works */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -1231,7 +1297,7 @@ export default function BillingPage() {
         </Layout.Section>
       </Layout>
 
-      {/* Payment Confirmation Modal */}
+
       <Modal
         open={paymentModalOpen}
         onClose={handlePaymentModalClose}

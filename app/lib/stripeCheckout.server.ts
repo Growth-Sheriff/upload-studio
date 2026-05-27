@@ -1,6 +1,10 @@
 import prisma from '~/lib/prisma.server'
 import { getOutstandingFeeSelection } from '~/lib/billing.server'
-import { getOrCreateCustomer, retrieveCheckoutSession } from '~/lib/stripe.server'
+import {
+  getOrCreateCustomer,
+  getStripeClient,
+  retrieveCheckoutSession,
+} from '~/lib/stripe.server'
 
 type StripeCheckoutSource = 'confirm' | 'return' | 'webhook'
 
@@ -60,6 +64,45 @@ async function saveStripePaymentMethod(
 
   const ensuredCustomerId = customerId || (await getOrCreateCustomer(shopDomain, customerEmail))
 
+  // Fetch card brand/last4/exp from Stripe so billing UI can display it inline
+  let cardSnapshot: {
+    brand: string | null
+    last4: string | null
+    expMonth: number | null
+    expYear: number | null
+    funding: string | null
+    capturedAt: string
+  } | null = null
+  try {
+    const stripe = getStripeClient()
+    const pm = await stripe.paymentMethods.retrieve(paymentMethodId)
+    const card = pm.card
+    if (card) {
+      cardSnapshot = {
+        brand: card.brand || null,
+        last4: card.last4 || null,
+        expMonth: card.exp_month ?? null,
+        expYear: card.exp_year ?? null,
+        funding: card.funding || null,
+        capturedAt: new Date().toISOString(),
+      }
+    }
+  } catch (cardErr) {
+    console.warn('[stripeCheckout] Failed to retrieve card snapshot:', cardErr)
+  }
+
+  const existingShop = await prisma.shop.findUnique({
+    where: { id: shopId },
+    select: { settings: true },
+  })
+  const settings: Record<string, any> = { ...((existingShop?.settings as Record<string, any>) || {}) }
+  if (cardSnapshot) {
+    settings.billing = {
+      ...((settings.billing as Record<string, any>) || {}),
+      card: cardSnapshot,
+    }
+  }
+
   await prisma.shop.update({
     where: { id: shopId },
     data: {
@@ -68,6 +111,7 @@ async function saveStripePaymentMethod(
       stripeAutoCharge: true,
       stripeEmail: customerEmail,
       stripeSetupAt: new Date(),
+      settings,
     },
   })
 }

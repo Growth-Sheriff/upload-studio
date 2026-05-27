@@ -18,7 +18,7 @@ const FAST_CANONICAL_APP_URL = 'https://fastdtftransfer.uploadstudio.app.techify
 
 let stripeClient: Stripe | null = null;
 
-function getStripeClient(): Stripe {
+export function getStripeClient(): Stripe {
   if (!stripeClient) {
     if (!STRIPE_SECRET_KEY) {
       throw new Error('STRIPE_SECRET_KEY is not configured');
