@@ -270,6 +270,18 @@
       this.progressText.textContent = '';
       return;
     }
+    if (window.ULUploadTelemetry && window.ULUploadTelemetry.create) {
+      if (!this.state.uploadTelemetry) {
+        this.state.uploadTelemetry = window.ULUploadTelemetry.create();
+      }
+      var snapshot = this.state.uploadTelemetry.tick(loaded, total);
+      this.progressText.hidden = false;
+      this.progressText.innerHTML =
+        '<span><strong>' + snapshot.loadedText + '</strong> / ' + snapshot.totalText + '</span>' +
+        '<span>Your internet speed: ' + snapshot.speedText + (snapshot.etaText ? ' â€¢ ' + snapshot.etaText : '') + '</span>' +
+        (snapshot.advisory ? '<span>' + snapshot.advisory + '</span>' : '');
+      return;
+    }
     var elapsedSec = Math.max(0.001, (Date.now() - (this.state.uploadStartTime || Date.now())) / 1000);
     var speed = loaded / elapsedSec;
     var remaining = speed > 0 ? (total - loaded) / speed : 0;
@@ -566,6 +578,9 @@
     this.resetMeasurement(file);
     var currentToken = this.token;
     this.state.uploadStartTime = Date.now();
+    this.state.uploadTelemetry = window.ULUploadTelemetry && window.ULUploadTelemetry.create
+      ? window.ULUploadTelemetry.create()
+      : null;
     this.setError('');
     this.setProgress(8);
     this.setStage('upload');

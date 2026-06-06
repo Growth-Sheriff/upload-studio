@@ -1,18 +1,8 @@
-/**
- * DTF Transfer By Size — Upload + Modal + Price Calculator
- * =========================================================
- * Adapted from nosendgithubfortaslakexcentions taslak.
- * Upload pipeline: api.upload.intent → signed URL → api.upload.complete → poll status
- *
- * Version: 1.0.0
- */
+
 (function() {
   if (window.DtfUploadBlockInitialized) return;
   window.DtfUploadBlockInitialized = true;
 
-  /* ─────────────────────────────────────────────
-     FitCheck Mockup SVG Data (from taslak)
-     ───────────────────────────────────────────── */
   var FITCHECK_MOCKUPS = [
     {
       id: 'tshirt', name: 'T-Shirt', placement: 'Full Front',
@@ -106,9 +96,6 @@
     return num / 100;
   }
 
-  /* ─────────────────────────────────────────────
-     DtfUploadBlock Class
-     ───────────────────────────────────────────── */
   function DtfUploadBlock(config) {
     this.config = config || {};
     this.config.pricingMode = this.config.pricingMode === 'sheet' ? 'sheet' : 'area';
@@ -130,7 +117,6 @@
     this._configFetchPromise = null;
     this._configLoaded = false;
 
-    // Derive asset base URL from this script's src (same CDN folder)
     var scripts = document.querySelectorAll('script[src*="dtf-upload"]');
     var scriptSrc = scripts.length ? scripts[scripts.length - 1].src : '';
     this.mockupAssetBase = scriptSrc.replace(/dtf-upload\.js.*$/, '');
@@ -202,14 +188,13 @@
     this.fileInput.addEventListener('change', function(e) {
       if (e.target.files.length) {
         self.handleFileSelect(e.target.files[0]);
-        e.target.value = ''; // reset for re-upload
+        e.target.value = '';
       }
     });
 
     this.closeBtn.addEventListener('click', function() { self.closeModal(); });
     this.modal.querySelector('.dtf-modal__backdrop').addEventListener('click', function() { self.closeModal(); });
 
-    // ESC to close
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape' && !self.modal.hidden) {
         self.closeModal();
@@ -218,13 +203,9 @@
 
     this.addToCartBtn.addEventListener('click', function() { self.addToCart(); });
 
-    // Uploads button — open file picker for new upload
     this.uploadsBtn.addEventListener('click', function() { self.fileInput.click(); });
   };
 
-  /* ─────────────────────────────────────────────
-     Modal Open / Close
-     ───────────────────────────────────────────── */
   DtfUploadBlock.prototype.openModal = function() {
     this.modal.hidden = false;
     document.body.style.overflow = 'hidden';
@@ -274,14 +255,10 @@
     '</div>';
   };
 
-  /* ─────────────────────────────────────────────
-     File Handling — REAL upload pipeline
-     Uses: api.upload.intent → signed URL PUT → api.upload.complete → poll status
-     ───────────────────────────────────────────── */
   DtfUploadBlock.prototype.handleFileSelect = function(file) {
     var self = this;
     this.ensureConfigReady().then(function() {
-      // Client-side validations
+
       if (file.size > self.config.maxFileMb * 1024 * 1024) {
         alert('File exceeds ' + self.config.maxFileMb + 'MB limit.');
         return;
@@ -291,11 +268,10 @@
       self.state = 'UPLOADING';
       self.renderState();
 
-      // Read preview for client-side display
       self.readFileAsDataURL(file).then(function(previewUrl) {
-        // Read dimensions from image
+
         self.readClientDimensions(file, previewUrl, function(dims) {
-          // Start real upload
+
           self.startRealUpload(file, previewUrl, dims);
         });
       });
@@ -304,7 +280,7 @@
 
   DtfUploadBlock.prototype.readFileAsDataURL = function(file) {
     return new Promise(function(resolve) {
-      // Only read as data URL for supported preview formats
+
       var previewable = /\.(png|jpe?g|webp|svg|gif)$/i.test(file.name);
       if (!previewable) {
         resolve(null);
@@ -323,7 +299,7 @@
     }
     var img = new Image();
     img.onload = function() {
-      var dpi = 300; // assume 300 DPI default, will be corrected by preflight
+      var dpi = 300;
       var widthIn = parseFloat((img.naturalWidth / dpi).toFixed(2));
       var heightIn = parseFloat((img.naturalHeight / dpi).toFixed(2));
       callback({
@@ -345,7 +321,6 @@
     var apiBase = this.config.apiBase || '/apps/customizer';
     var shopDomain = this.config.shopDomain;
 
-    // Step 1: Get upload intent (signed URL)
     var intentBody = {
       shopDomain: shopDomain,
       productId: String(this.config.productId),
@@ -355,13 +330,11 @@
       fileSize: file.size
     };
 
-    // Add customer info if available
     if (window.ULCustomer) {
       if (window.ULCustomer.id) intentBody.customerId = String(window.ULCustomer.id);
       if (window.ULCustomer.email) intentBody.customerEmail = window.ULCustomer.email;
     }
 
-    // Add visitor info if available
     if (window.ULVisitor) {
       if (window.ULVisitor.visitorId) intentBody.visitorId = window.ULVisitor.visitorId;
       if (window.ULVisitor.sessionId) intentBody.sessionId = window.ULVisitor.sessionId;
@@ -377,7 +350,7 @@
       return res.json();
     })
     .then(function(intent) {
-      // Step 2: PUT file to signed URL with XHR for progress
+
       self.uploadToSignedUrl(intent, file, previewUrl, dims);
     })
     .catch(function(err) {
@@ -392,6 +365,9 @@
     var self = this;
     var xhr = new XMLHttpRequest();
     var apiBase = this.config.apiBase || '/apps/customizer';
+    var telemetry = window.ULUploadTelemetry && window.ULUploadTelemetry.create
+      ? window.ULUploadTelemetry.create()
+      : null;
 
     xhr.upload.addEventListener('progress', function(e) {
       if (e.lengthComputable) {
@@ -399,13 +375,26 @@
         var bar = document.getElementById('dtf-progress-bar');
         var pctEl = document.getElementById('dtf-progress-pct');
         if (bar) bar.style.width = pct + '%';
-        if (pctEl) pctEl.textContent = pct + '%';
+        if (pctEl) {
+          if (telemetry) {
+            var snapshot = telemetry.tick(e.loaded, e.total);
+            pctEl.textContent = pct + '% - Your internet speed: ' + snapshot.speedText +
+              (snapshot.etaText ? ' - ' + snapshot.etaText : '') +
+              (snapshot.advisory ? ' - ' + snapshot.advisory : '');
+          } else {
+            pctEl.textContent = pct + '%';
+          }
+        }
       }
     });
 
     xhr.addEventListener('load', function() {
       if (xhr.status >= 200 && xhr.status < 400) {
-        // Step 3: Notify server upload is complete
+        var pctEl = document.getElementById('dtf-progress-pct');
+        if (pctEl && telemetry) {
+          pctEl.textContent = telemetry.formatComplete(file.size);
+        }
+
         fetch(apiBase + '/api/upload/complete?shop=' + encodeURIComponent(self.config.shopDomain), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -421,7 +410,7 @@
           })
         })
         .then(function() {
-          // Create file entry with client-side dimensions
+
           var ratio = dims.widthIn > 0 && dims.heightIn > 0
             ? dims.widthIn / dims.heightIn
             : 1;
@@ -451,12 +440,11 @@
           self.state = 'EDITOR';
           self.renderState();
 
-          // Step 4: Poll for preflight results (DPI, real dimensions)
           self.pollPreflight(intent.uploadId, self.files.length - 1);
         })
         .catch(function(err) {
           console.error('[DTF Upload] Complete notify error:', err);
-          // Still show editor — upload is done, preflight may come later
+
           self.files.push({
             file: file, fileName: file.name, previewUrl: previewUrl,
             cdnUrl: intent.publicUrl || '', uploadId: intent.uploadId,
@@ -484,11 +472,9 @@
       self.renderState();
     });
 
-    // Use upload method from intent (PUT for Bunny, POST for local)
     var method = intent.uploadMethod || 'PUT';
     xhr.open(method, intent.uploadUrl, true);
 
-    // Set headers from intent
     if (intent.uploadHeaders) {
       var headers = intent.uploadHeaders;
       for (var key in headers) {
@@ -498,7 +484,6 @@
       }
     }
 
-    // Set content type
     if (method === 'PUT') {
       xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
     }
@@ -506,14 +491,11 @@
     xhr.send(file);
   };
 
-  /* ─────────────────────────────────────────────
-     Poll Preflight — get real DPI + dimensions from worker
-     ───────────────────────────────────────────── */
   DtfUploadBlock.prototype.pollPreflight = function(uploadId, fileIndex) {
     var self = this;
     var apiBase = this.config.apiBase || '/apps/customizer';
     var attempts = 0;
-    var maxAttempts = 40; // 40 × 3s = 2 min timeout
+    var maxAttempts = 40;
 
     var interval = setInterval(function() {
       attempts++;
@@ -528,11 +510,10 @@
         .then(function(data) {
           if (!data || !data.items || !data.items.length) return;
 
-          var item = data.items[0]; // first item
+          var item = data.items[0];
           var fileEntry = self.files[fileIndex];
           if (!fileEntry) { clearInterval(interval); return; }
 
-          // Update with server data if measurement metadata is available
           if ((item.measurementStatus && item.measurementStatus !== 'pending') ||
               (item.preflightStatus && item.preflightStatus !== 'pending')) {
             clearInterval(interval);
@@ -546,13 +527,11 @@
               (data.problems && data.problems[0] && data.problems[0].message) ||
               '';
 
-            // Update dimensions from preflight
             if (item.widthPx && item.widthPx > 0) fileEntry.widthPx = item.widthPx;
             if (item.heightPx && item.heightPx > 0) fileEntry.heightPx = item.heightPx;
             if (item.effectiveDpi && item.effectiveDpi > 0) fileEntry.dpi = item.effectiveDpi;
             else if (item.dpi && item.dpi > 0) fileEntry.dpi = item.dpi;
 
-            // Recalculate inch dimensions with server-side measurement metadata
             var measurementWidthPx = item.measurementWidthPx && item.measurementWidthPx > 0 ? item.measurementWidthPx : fileEntry.widthPx;
             var measurementHeightPx = item.measurementHeightPx && item.measurementHeightPx > 0 ? item.measurementHeightPx : fileEntry.heightPx;
             if (measurementWidthPx > 0 && measurementHeightPx > 0 && fileEntry.dpi > 0) {
@@ -561,11 +540,9 @@
               fileEntry.ratio = fileEntry.widthIn / fileEntry.heightIn;
             }
 
-            // Update thumbnail URL if available
             if (item.thumbnailUrl) fileEntry.previewUrl = item.thumbnailUrl;
             if (item.originalUrl) fileEntry.cdnUrl = item.originalUrl;
 
-            // Re-render if this file is currently selected
             if (self.activeFileIndex === fileIndex && self.state === 'EDITOR') {
               self.renderEditor();
             }
@@ -577,16 +554,12 @@
 
             console.log('[DTF Upload] Preflight done:', fileEntry.widthIn + 'x' + fileEntry.heightIn + 'in @' + fileEntry.dpi + 'DPI');
 
-            // Mockup generation disabled — FitCheck uses client-side PNG overlay
           }
         })
-        .catch(function() { /* ignore poll errors */ });
+        .catch(function() {  });
     }, 3000);
   };
 
-  /* ─────────────────────────────────────────────
-     Request Mockup Generation — enqueue job on worker
-     ───────────────────────────────────────────── */
   DtfUploadBlock.prototype.requestMockups = function(file) {
     var self = this;
     var apiBase = this.config.apiBase || '/apps/customizer';
@@ -609,13 +582,13 @@
       if (data.jobId) {
         console.log('[DTF Upload] Mockup job queued:', data.jobId);
         file._mockupJobId = data.jobId;
-        // Poll for mockup results
+
         self.pollMockups(file);
       }
     })
     .catch(function(err) {
       console.warn('[DTF Upload] Mockup request failed:', err.message);
-      // Non-critical — FitCheck SVGs still work as fallback
+
     });
   };
 
@@ -623,7 +596,7 @@
     var self = this;
     var apiBase = this.config.apiBase || '/apps/customizer';
     var attempts = 0;
-    var maxAttempts = 30; // 30 × 5s = 2.5min
+    var maxAttempts = 30;
 
     var interval = setInterval(function() {
       attempts++;
@@ -640,13 +613,13 @@
             clearInterval(interval);
             file._serverMockups = data.preflightSummary.mockups;
             console.log('[DTF Upload] Server mockups ready:', file._serverMockups.length);
-            // Re-render FitCheck if active
+
             if (self.currentTab === 'fitcheck' && self.state === 'EDITOR') {
               self.renderEditor();
             }
           }
         })
-        .catch(function() { /* ignore */ });
+        .catch(function() {  });
     }, 5000);
   };
 
@@ -1598,9 +1571,6 @@
     '</div>';
   };
 
-  /* ─────────────────────────────────────────────
-     Pricing — from taslak (client-side, no API)
-     ───────────────────────────────────────────── */
   DtfUploadBlock.prototype.getActiveTier = function(qty) {
     var tiers = [];
     try {
@@ -1633,11 +1603,7 @@
     };
   };
 
-  /* ─────────────────────────────────────────────
-     Editor Renderer (from taslak — with focus preservation)
-     ───────────────────────────────────────────── */
   DtfUploadBlock.prototype.renderEditor = function() {
-    // Preserve focus state
     var activeEl = document.activeElement;
     var activeId = activeEl ? activeEl.id : null;
     var selStart = null, selEnd = null;
@@ -1656,7 +1622,6 @@
     var maxWidthLimit = variantBounds ? Math.max(this.config.maxWidth, variantBounds.maxWidth) : this.config.maxWidth;
     var maxHeightLimit = variantBounds ? Math.max(this.config.maxHeight, variantBounds.maxHeight) : this.config.maxHeight;
 
-    // Validation
     var errors = [];
     if (file.widthIn > maxWidthLimit) errors.push('Width should be less than ' + maxWidthLimit + 'in');
     if (file.heightIn > maxHeightLimit) errors.push('Height should be less than ' + maxHeightLimit + 'in');
@@ -1675,7 +1640,6 @@
 
     this.addToCartBtn.disabled = errors.length > 0 || (this.isSheetPricingEnabled() && (!sheetPricing || !sheetPricing.selected));
 
-    // Build HTML
     var leftContent = '';
     if (this.currentTab === 'canvas') {
       leftContent =
@@ -1689,18 +1653,14 @@
           '</div>' +
         '</div>';
     } else {
-      // FitCheck — Progressive Enhancement
-      // Priority: 1) Server mockups (real composites) → 2) SVG with artwork overlay (fallback)
       var self = this;
       var serverMockups = file._serverMockups || [];
       var isMockupLoading = file._mockupJobId && !serverMockups.length;
       var mockupCards = '';
 
-      // Map server mockup garmentType → FITCHECK_MOCKUPS id for matching
       var serverMockupMap = {};
       for (var sm = 0; sm < serverMockups.length; sm++) {
         var sMockup = serverMockups[sm];
-        // Normalize: server uses 'totebag', SVG array uses 'tote'
         var normalizedType = sMockup.garmentType === 'totebag' ? 'tote' : sMockup.garmentType;
         serverMockupMap[normalizedType] = sMockup;
       }
@@ -1710,7 +1670,6 @@
         var serverMatch = serverMockupMap[mockup.id];
 
         {
-          // ═══ PNG FALLBACK (garment photo + artwork overlay) ═══
           var artworkWidth = Math.min((file.widthIn / mockup.printArea.maxInches) * 100, 100);
           mockupCards +=
             '<div class="dtf-mockup-card' + (isMockupLoading ? ' dtf-mockup-card--loading' : '') + '">' +
@@ -1723,7 +1682,6 @@
                     ? '<img src="' + file.previewUrl + '" class="dtf-mockup-artwork" style="width:' + artworkWidth + '%;" />'
                     : '') +
                 '</div>' +
-                // Loading shimmer overlay when mockups are being generated
                 (isMockupLoading
                   ? '<div class="dtf-mockup-shimmer"><div class="dtf-mockup-shimmer-bar"></div></div>'
                   : '') +
@@ -1761,13 +1719,11 @@
         '</div>';
     }
 
-    // Error banners
     var errorHtml = '';
     for (var e = 0; e < errors.length; e++) {
       errorHtml += '<div class="dtf-error-banner" role="alert">\u26A0 ' + errors[e] + '</div>';
     }
 
-    // Thumbnails
     var thumbsHtml = '<button class="dtf-thumb-add" id="dtf-add-more">+</button>';
     for (var t = 0; t < this.files.length; t++) {
       var f = this.files[t];
@@ -1831,7 +1787,6 @@
 
     this.bindEditorEvents();
 
-    // Restore focus
     if (activeId) {
       var el = document.getElementById(activeId);
       if (el) {
@@ -1843,15 +1798,11 @@
     }
   };
 
-  /* ─────────────────────────────────────────────
-     Editor Event Bindings
-     ───────────────────────────────────────────── */
   DtfUploadBlock.prototype.bindEditorEvents = function() {
     var self = this;
     var file = this.files[this.activeFileIndex];
     if (!file) return;
 
-    // Width/Height/Quantity inputs — debounced re-render
     var inputW = document.getElementById('dtf-input-w');
     var inputH = document.getElementById('dtf-input-h');
     var inputQ = document.getElementById('dtf-input-q');
@@ -1907,7 +1858,6 @@
       });
     }
 
-    // Tab switching
     var tabs = this.modalBody.querySelectorAll('.dtf-tab');
     for (var i = 0; i < tabs.length; i++) {
       tabs[i].addEventListener('click', function(e) {
@@ -1916,7 +1866,6 @@
       });
     }
 
-    // Color swatches
     var swatches = this.modalBody.querySelectorAll('.dtf-color-swatch');
     for (var s = 0; s < swatches.length; s++) {
       swatches[s].addEventListener('click', function(e) {
@@ -1925,7 +1874,6 @@
       });
     }
 
-    // Toggles
     var toggles = this.modalBody.querySelectorAll('input[type="checkbox"][data-key]');
     for (var t = 0; t < toggles.length; t++) {
       toggles[t].addEventListener('change', function(e) {
@@ -1934,7 +1882,6 @@
         if (key === 'keepRatio' && file.keepRatio && file.widthIn > 0 && file.heightIn > 0) {
           file.ratio = file.widthIn / file.heightIn;
         }
-        // Trigger remove background when toggled ON
         if (key === 'removeBg' && file.removeBg && file.cdnUrl) {
           self.removeBackground(file);
         }
@@ -1942,13 +1889,11 @@
       });
     }
 
-    // Add more button
     var addMore = document.getElementById('dtf-add-more');
     if (addMore) {
       addMore.addEventListener('click', function() { self.fileInput.click(); });
     }
 
-    // Thumbnail selection
     var thumbItems = this.modalBody.querySelectorAll('[data-file-index]');
     for (var ti = 0; ti < thumbItems.length; ti++) {
       thumbItems[ti].addEventListener('click', function(e) {
@@ -1960,15 +1905,9 @@
       });
     }
 
-    // Regenerate mockups button
     var regenBtn = document.getElementById('dtf-regen-mockups');
-    // Regenerate button removed — FitCheck is fully client-side
   };
 
-  /* ─────────────────────────────────────────────
-     Add to Cart — Shopify /cart/add.js
-     Uses variant from page, line item properties per spec
-     ───────────────────────────────────────────── */
   DtfUploadBlock.prototype.addToCart = function() {
     var self = this;
     var failedFiles = this.files.filter(function(f) {
@@ -2062,7 +2001,6 @@
       return;
     }
 
-    // Find variant ID per file (based on dimensions)
     var firstFile = readyFiles[0];
     var variantId = this.findVariantId(firstFile.widthIn, firstFile.heightIn);
     if (!variantId) {
@@ -2073,7 +2011,6 @@
     }
 
     var items = readyFiles.map(function(item) {
-      // Per-file variant matching
       var itemVariantId = self.findVariantId(item.widthIn, item.heightIn) || variantId;
       var lineItem = {
         id: itemVariantId,
@@ -2133,19 +2070,15 @@
       return resolvedSelection.variant.id;
     }
 
-    // Get all variants from product JSON on page
     var variants = this._getProductVariants();
     if (!variants || variants.length === 0) return null;
 
-    // If only 1 variant, use it
     if (variants.length === 1) return variants[0].id;
 
-    // Parse variant titles to extract W×H (supports: "10in x 10in", "10 x 10", "10x10", etc.)
     var parsed = [];
     for (var i = 0; i < variants.length; i++) {
       var v = variants[i];
       var title = (v.title || v.option1 || '').toLowerCase().replace(/\s+/g, '');
-      // Match patterns: "10inx10in", "10x10in", "10x10", "10.5inx12.3in"
       var match = title.match(/^([\d.]+)(?:in)?x([\d.]+)(?:in)?$/);
       if (match) {
         parsed.push({
@@ -2159,7 +2092,6 @@
     }
 
     if (parsed.length === 0) {
-      // No parseable variants — fallback to URL param or first variant
       var urlVariant = new URLSearchParams(window.location.search).get('variant');
       if (urlVariant) {
         for (var j = 0; j < variants.length; j++) {
@@ -2169,7 +2101,6 @@
       return variants[0].id;
     }
 
-    // Try exact match first (within 0.01in tolerance)
     for (var k = 0; k < parsed.length; k++) {
       if (Math.abs(parsed[k].w - widthIn) < 0.01 && Math.abs(parsed[k].h - heightIn) < 0.01) {
         console.log('[DTF] Exact variant match:', parsed[k].title);
@@ -2177,7 +2108,6 @@
       }
     }
 
-    // No exact match — find closest by area difference
     var targetArea = widthIn * heightIn;
     var bestIdx = 0;
     var bestDiff = Infinity;
@@ -2193,7 +2123,6 @@
     return parsed[bestIdx].id;
   };
 
-  // Cache product variants from page JSON
   DtfUploadBlock.prototype._getProductVariants = function() {
     if (this._cachedVariants) return this._cachedVariants;
 
@@ -2223,7 +2152,6 @@
       } catch(e) {}
     }
 
-    // Fallback: hidden form input
     var hiddenInput = document.querySelector(
       'form[action*="/cart/add"] input[name="id"][type="hidden"], ' +
       'form[action*="/cart/add"] select[name="id"]'
@@ -2236,9 +2164,6 @@
     return [];
   };
 
-  /* ─────────────────────────────────────────────
-     Utilities
-     ───────────────────────────────────────────── */
   DtfUploadBlock.prototype.showToast = function(message, type) {
     var toast = document.createElement('div');
     toast.style.cssText = 'position:fixed;top:20px;right:20px;z-index:999999;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:500;color:#fff;background:' + (type === 'success' ? '#22c55e' : '#ef4444') + ';box-shadow:0 4px 12px rgba(0,0,0,0.15);transition:opacity 300ms;';
@@ -2262,9 +2187,6 @@
       .catch(function() {});
   };
 
-  /* ─────────────────────────────────────────────
-     Remove Background — calls backend proxy
-     ───────────────────────────────────────────── */
   DtfUploadBlock.prototype.removeBackground = function(file) {
     var self = this;
     var apiBase = this.config.apiBase || '/apps/customizer';
@@ -2274,7 +2196,6 @@
       return;
     }
 
-    // Store original for undo
     if (!file._originalPreviewUrl) {
       file._originalPreviewUrl = file.previewUrl;
       file._originalCdnUrl = file.cdnUrl;
@@ -2311,9 +2232,6 @@
     });
   };
 
-  /* ─────────────────────────────────────────────
-     Fetch config fallback — get tiers from API if metafields empty
-     ───────────────────────────────────────────── */
   DtfUploadBlock.prototype.fetchConfigFallback = function() {
     var self = this;
     if (this._configFetchPromise) return this._configFetchPromise;
@@ -2381,9 +2299,6 @@
     return this._configFetchPromise;
   };
 
-  /* ─────────────────────────────────────────────
-     Initialization (from taslak — reads data attributes)
-     ───────────────────────────────────────────── */
   function init() {
     var root = document.getElementById('dtf-upload-root');
     if (root && !root.dataset.initialized) {
@@ -2414,12 +2329,10 @@
         enableFitcheck: root.dataset.enableFitcheck !== 'false'
       };
       window.dtfBlock = new DtfUploadBlock(config);
-      // Fetch config from API as fallback if metafields are empty
       window.dtfBlock.fetchConfigFallback();
     }
   }
 
-  // Export for dtf-listing.js to reuse
   window.DtfUploadBlock = DtfUploadBlock;
 
   document.addEventListener('DOMContentLoaded', init);

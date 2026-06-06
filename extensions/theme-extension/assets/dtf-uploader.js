@@ -779,6 +779,38 @@
       return new Promise((resolve) => setTimeout(resolve, ms))
     },
 
+    createUploadTelemetry() {
+      return window.ULUploadTelemetry && window.ULUploadTelemetry.create
+        ? window.ULUploadTelemetry.create()
+        : null
+    },
+
+    renderUploadProgress(elements, telemetry, loaded, total, suffix) {
+      if (!elements || !elements.progressText) return
+
+      if (telemetry) {
+        telemetry.tick(loaded, total)
+        elements.progressText.textContent = telemetry.formatProgress({ suffix })
+        return
+      }
+
+      const loadedMB = (loaded / (1024 * 1024)).toFixed(1)
+      const totalMB = (total / (1024 * 1024)).toFixed(1)
+      elements.progressText.textContent = `${loadedMB} / ${totalMB} MB${suffix ? ` ${suffix}` : ''}`
+    },
+
+    renderUploadComplete(elements, telemetry, fileSize) {
+      if (!elements || !elements.progressText) return
+
+      if (telemetry) {
+        elements.progressText.textContent = telemetry.formatComplete(fileSize)
+        return
+      }
+
+      const totalMB = (fileSize / (1024 * 1024)).toFixed(1)
+      elements.progressText.textContent = `✓ ${totalMB} MB uploaded`
+    },
+
     async uploadToStorage(productId, file, intentData) {
       const instance = this.instances[productId]
       const { elements, state } = instance
@@ -786,7 +818,7 @@
       // Try parallel multipart upload first (R2-only, large files)
       if (intentData.multipart && window.ULMultipartUploader && window.ULMultipartUploader.tryUpload) {
         try {
-          const mpStart = Date.now()
+          const mpTelemetry = this.createUploadTelemetry()
           const mpResult = await window.ULMultipartUploader.tryUpload(file, intentData, {
             shopDomain: instance.shopDomain || intentData.shopDomain,
             onProgress: (loaded, total) => {
@@ -794,6 +826,8 @@
               const ratio = total > 0 ? loaded / total : 0
               const percent = 15 + ratio * 60
               elements.progressFill.style.width = `${percent}%`
+              this.renderUploadProgress(elements, mpTelemetry, loaded, total, '(parallel)')
+              return
               const elapsed = (Date.now() - mpStart) / 1000
               const speed = elapsed > 0 ? loaded / elapsed : 0
               const remaining = speed > 0 ? (total - loaded) / speed : 0
@@ -972,6 +1006,7 @@
       const startTime = Date.now()
       const fileSize = file.size
       const instance = productId ? this.instances[productId] : null
+      const telemetry = this.createUploadTelemetry()
 
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest()
@@ -984,6 +1019,8 @@
           if (e.lengthComputable) {
             const percent = 15 + (e.loaded / e.total) * 60
             elements.progressFill.style.width = `${percent}%`
+            this.renderUploadProgress(elements, telemetry, e.loaded, e.total)
+            return
 
             const elapsed = (Date.now() - startTime) / 1000
             const speed = elapsed > 0 ? e.loaded / elapsed : 0
@@ -1004,6 +1041,9 @@
 
         xhr.addEventListener('load', () => {
           if (xhr.status >= 200 && xhr.status < 300) {
+            this.renderUploadComplete(elements, telemetry, fileSize)
+            resolve({ fileUrl: intentData.publicUrl })
+            return
             const duration = ((Date.now() - startTime) / 1000).toFixed(1)
             const totalMB = (fileSize / (1024 * 1024)).toFixed(1)
             elements.progressText.textContent = `✓ ${totalMB} MB uploaded in ${duration}s`
@@ -1070,6 +1110,7 @@
       const startTime = Date.now()
       const fileSize = file.size
       const instance = productId ? this.instances[productId] : null
+      const telemetry = this.createUploadTelemetry()
 
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest()
@@ -1082,6 +1123,8 @@
           if (e.lengthComputable) {
             const percent = 15 + (e.loaded / e.total) * 60
             elements.progressFill.style.width = `${percent}%`
+            this.renderUploadProgress(elements, telemetry, e.loaded, e.total)
+            return
 
             const elapsed = (Date.now() - startTime) / 1000
             const speed = elapsed > 0 ? e.loaded / elapsed : 0
@@ -1102,6 +1145,9 @@
 
         xhr.addEventListener('load', () => {
           if (xhr.status >= 200 && xhr.status < 300) {
+            this.renderUploadComplete(elements, telemetry, fileSize)
+            resolve({ fileUrl: intentData.publicUrl })
+            return
             const duration = ((Date.now() - startTime) / 1000).toFixed(1)
             const totalMB = (fileSize / (1024 * 1024)).toFixed(1)
             elements.progressText.textContent = `✓ ${totalMB} MB uploaded in ${duration}s`
@@ -1142,6 +1188,7 @@
       const startTime = Date.now()
       const fileSize = file.size
       const instance = productId ? this.instances[productId] : null
+      const telemetry = this.createUploadTelemetry()
 
       const formData = new FormData()
       formData.append('file', file)
@@ -1160,6 +1207,8 @@
           if (e.lengthComputable) {
             const percent = 15 + (e.loaded / e.total) * 60
             elements.progressFill.style.width = `${percent}%`
+            this.renderUploadProgress(elements, telemetry, e.loaded, e.total)
+            return
 
             const elapsed = (Date.now() - startTime) / 1000
             const speed = elapsed > 0 ? e.loaded / elapsed : 0
@@ -1180,6 +1229,9 @@
 
         xhr.addEventListener('load', () => {
           if (xhr.status >= 200 && xhr.status < 300) {
+            this.renderUploadComplete(elements, telemetry, fileSize)
+            resolve()
+            return
             const duration = ((Date.now() - startTime) / 1000).toFixed(1)
             const totalMB = (fileSize / (1024 * 1024)).toFixed(1)
             elements.progressText.textContent = `✓ ${totalMB} MB uploaded in ${duration}s`
