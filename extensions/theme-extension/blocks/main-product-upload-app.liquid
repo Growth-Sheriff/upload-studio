@@ -3,7 +3,11 @@
 <script src="{{ 'ul-multipart-uploader.js' | asset_url }}" defer></script>
 <script src="{{ 'main-product-upload-app.js' | asset_url }}" defer></script>
 
-{%- assign ump_accept = block.settings.accepted_files | default: ".png" -%}
+{%- assign ump_default_accept = ".png,.jpg,.jpeg,.webp,.tif,.tiff,.psd,.pdf,.ai,.eps,.svg,image/png,image/jpeg,image/webp,image/tiff,image/x-tiff,image/vnd.adobe.photoshop,application/vnd.adobe.photoshop,application/x-photoshop,image/x-psd,application/photoshop,application/psd,application/pdf,application/postscript,application/illustrator,application/vnd.adobe.illustrator,application/eps,application/x-eps,image/x-eps,image/svg+xml" -%}
+{%- assign ump_accept = block.settings.accepted_files | default: ump_default_accept -%}
+{%- if ump_accept == ".png" or ump_accept == ".png,image/png" -%}
+  {%- assign ump_accept = ump_default_accept -%}
+{%- endif -%}
 {%- assign ump_roll_width = block.settings.roll_width_in | default: 22 -%}
 {%- assign ump_accent = block.settings.accent_color | default: "#4f7cff" -%}
 
@@ -45,7 +49,7 @@
           <button class="ump__upload-btn" type="button" data-ump-upload-trigger>
             <span>{{ block.settings.upload_label | default: 'Upload files' }}</span>
           </button>
-          <p class="ump__hint">{{ block.settings.support_text | default: 'PNG recommended. You can upload one or more gang sheets.' }}</p>
+          <p class="ump__hint">{{ block.settings.support_text | default: 'PNG, JPG, TIFF, PSD, PDF, AI, EPS and SVG are supported. You can upload one or more gang sheets.' }}</p>
         </div>
       </div>
 
@@ -180,13 +184,13 @@
       "type": "text",
       "id": "support_text",
       "label": "Support text",
-      "default": "PNG recommended. You can upload one or more gang sheets."
+      "default": "PNG, JPG, TIFF, PSD, PDF, AI, EPS and SVG are supported. You can upload one or more gang sheets."
     },
     {
       "type": "text",
       "id": "accepted_files",
       "label": "Accepted file extensions",
-      "default": ".png"
+      "default": ".png,.jpg,.jpeg,.webp,.tif,.tiff,.psd,.pdf,.ai,.eps,.svg,image/png,image/jpeg,image/webp,image/tiff,image/x-tiff,image/vnd.adobe.photoshop,application/vnd.adobe.photoshop,application/x-photoshop,image/x-psd,application/photoshop,application/psd,application/pdf,application/postscript,application/illustrator,application/vnd.adobe.illustrator,application/eps,application/x-eps,image/x-eps,image/svg+xml"
     },
     {
       "type": "text",

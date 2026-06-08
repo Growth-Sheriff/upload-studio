@@ -143,8 +143,10 @@ export async function action({ request }: ActionFunctionArgs) {
     'image/jpeg',
     'image/webp',
     'image/tiff',
+    'image/x-tiff',
 
     'image/vnd.adobe.photoshop',
+    'application/vnd.adobe.photoshop',
     'application/x-photoshop',
     'image/x-psd',
     'application/photoshop',
@@ -154,6 +156,10 @@ export async function action({ request }: ActionFunctionArgs) {
     'application/pdf',
     'application/postscript',
     'application/illustrator',
+    'application/vnd.adobe.illustrator',
+    'application/eps',
+    'application/x-eps',
+    'image/x-eps',
 
     'application/octet-stream',
   ]
