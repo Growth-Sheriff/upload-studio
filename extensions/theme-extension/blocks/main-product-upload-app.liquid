@@ -27,7 +27,7 @@
   <div class="ump__shell">
     <div class="ump__workspace">
       <div class="ump__drop" data-ump-dropzone>
-        <input class="ump__input" data-ump-input type="file" accept="{{ ump_accept | escape }}" />
+        <input class="ump__input" data-ump-input type="file" accept="{{ ump_accept | escape }}" multiple />
         <div class="ump__drop-grid" aria-hidden="true"></div>
         <div class="ump__drop-main">
           <div class="ump__icon">
@@ -40,12 +40,12 @@
           <div>
             <p class="ump__eyebrow">{{ block.settings.eyebrow | default: 'Print-ready upload' }}</p>
             <h2 class="ump__title">{{ block.settings.heading | default: 'Upload your gang sheet' }}</h2>
-            <p class="ump__copy">{{ block.settings.subheading | default: 'We measure the file, select the right sheet, and unlock checkout when it is ready.' }}</p>
+            <p class="ump__copy">{{ block.settings.subheading | default: 'We measure each file, select the right sheet, and unlock checkout when every gang sheet is ready.' }}</p>
           </div>
           <button class="ump__upload-btn" type="button" data-ump-upload-trigger>
-            <span>{{ block.settings.upload_label | default: 'Upload file' }}</span>
+            <span>{{ block.settings.upload_label | default: 'Upload files' }}</span>
           </button>
-          <p class="ump__hint">{{ block.settings.support_text | default: 'PNG recommended. Drag and drop also works.' }}</p>
+          <p class="ump__hint">{{ block.settings.support_text | default: 'PNG recommended. You can upload one or more gang sheets.' }}</p>
         </div>
       </div>
 
@@ -82,6 +82,8 @@
           <span class="ump__stage-label" data-ump-stage-ready-label>Ready</span>
         </div>
       </div>
+
+      <div class="ump__queue" data-ump-queue hidden></div>
     </div>
 
     <aside class="ump__inspector" aria-live="polite">
@@ -126,11 +128,11 @@
       </div>
 
       <div class="ump__actions">
-        <button class="ump__cart" type="button" data-ump-add disabled>
+        <button class="ump__cart" type="button" data-ump-add data-default-label="{{ block.settings.add_to_cart_label | default: 'Add to cart' | escape }}" disabled>
           <span>{{ block.settings.add_to_cart_label | default: 'Add to cart' }}</span>
         </button>
         {%- if block.settings.enable_checkout_button -%}
-          <button class="ump__checkout" type="button" data-ump-checkout disabled>
+          <button class="ump__checkout" type="button" data-ump-checkout data-default-label="{{ block.settings.checkout_label | default: 'Checkout' | escape }}" disabled>
             <span>{{ block.settings.checkout_label | default: 'Checkout' }}</span>
           </button>
         {%- endif -%}
@@ -148,7 +150,7 @@
   "settings": [
     {
       "type": "paragraph",
-      "content": "Upload-only main product section. It auto-detects gang sheet size, chooses the fitting sheet variant, then unlocks Add to cart and Checkout."
+      "content": "Upload-only main product section. It auto-detects one or more gang sheets, chooses the fitting sheet variants, then unlocks Add to cart and Checkout."
     },
     {
       "type": "text",
@@ -166,19 +168,19 @@
       "type": "textarea",
       "id": "subheading",
       "label": "Subheading",
-      "default": "We measure the file, select the right sheet, and unlock checkout when it is ready."
+      "default": "We measure each file, select the right sheet, and unlock checkout when every gang sheet is ready."
     },
     {
       "type": "text",
       "id": "upload_label",
       "label": "Upload button label",
-      "default": "Upload file"
+      "default": "Upload files"
     },
     {
       "type": "text",
       "id": "support_text",
       "label": "Support text",
-      "default": "PNG recommended. Drag and drop also works."
+      "default": "PNG recommended. You can upload one or more gang sheets."
     },
     {
       "type": "text",

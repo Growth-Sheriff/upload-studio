@@ -128,7 +128,10 @@
       sizingSource: '',
       selectedResult: null,
       selectedVariantId: '',
-      status: 'idle'
+      status: 'idle',
+      items: [],
+      activeItemId: '',
+      batchToken: 0
     };
     this.bindDom();
     this.bindEvents();
@@ -153,6 +156,7 @@
     this.progressWrap = this.root.querySelector('[data-ump-progress-wrap]');
     this.progress = this.root.querySelector('[data-ump-progress]');
     this.progressText = this.root.querySelector('[data-ump-progress-text]');
+    this.queue = this.root.querySelector('[data-ump-queue]');
     this.stage = this.root.querySelector('[data-ump-stage]');
     this.stageUpload = this.root.querySelector('[data-ump-stage-upload]');
     this.stageMeasure = this.root.querySelector('[data-ump-stage-measure]');
@@ -198,7 +202,22 @@
     if (this.retry) {
       this.retry.addEventListener('click', function(event) {
         event.preventDefault();
-        if (self.state.lastFile) self.startUpload(self.state.lastFile);
+        if (self.state.lastFile) self.startUploads([self.state.lastFile]);
+      });
+    }
+    if (this.queue) {
+      this.queue.addEventListener('click', function(event) {
+        var removeButton = event.target.closest('[data-ump-remove-item]');
+        if (removeButton) {
+          event.preventDefault();
+          self.removeUploadItem(removeButton.getAttribute('data-ump-remove-item'));
+          return;
+        }
+        var selectButton = event.target.closest('[data-ump-select-item]');
+        if (selectButton) {
+          event.preventDefault();
+          self.selectUploadItem(selectButton.getAttribute('data-ump-select-item'));
+        }
       });
     }
     this.dropzone.addEventListener('click', function(event) {
@@ -206,9 +225,9 @@
       self.input.click();
     });
     this.input.addEventListener('change', function(event) {
-      var file = event.target.files && event.target.files[0];
+      var files = toFileArray(event.target.files);
       event.target.value = '';
-      if (file) self.startUpload(file);
+      if (files.length) self.startUploads(files);
     });
     this.dropzone.addEventListener('dragover', function(event) {
       event.preventDefault();
@@ -220,8 +239,8 @@
     this.dropzone.addEventListener('drop', function(event) {
       event.preventDefault();
       self.dropzone.classList.remove('is-dragover');
-      var file = event.dataTransfer.files && event.dataTransfer.files[0];
-      if (file) self.startUpload(file);
+      var files = toFileArray(event.dataTransfer.files);
+      if (files.length) self.startUploads(files);
     });
     this.addButton.addEventListener('click', function() {
       self.addToCart('/cart');
@@ -268,6 +287,17 @@
   function extFromName(name) {
     var i = String(name || '').lastIndexOf('.');
     return i >= 0 ? String(name).substring(i + 1).toLowerCase() : '';
+  }
+
+  function toFileArray(files) {
+    if (!files) return [];
+    return Array.prototype.slice.call(files).filter(function(file) {
+      return file && file.name;
+    });
+  }
+
+  function sameUploadId(a, b) {
+    return String(a || '') === String(b || '');
   }
 
   MainProductUpload.prototype.setProgressText = function(loaded, total) {
@@ -322,6 +352,7 @@
       try { this.state.abort(); } catch (_) {}
     }
     this.token += 1; // invalidate in-flight callbacks
+    this.state.batchToken = (this.state.batchToken || 0) + 1;
     this.state.status = 'idle';
     this.state.abort = null;
     this.setProgress(0);
@@ -360,9 +391,19 @@
   };
 
   MainProductUpload.prototype.resetMeasurement = function(file) {
+    if (this.state.abort) {
+      try { this.state.abort(); } catch (_) {}
+    }
     this.token += 1;
+    var savedItems = this.state.items || [];
+    var savedBatchToken = this.state.batchToken || 0;
+    var currentPreviewIsSaved = savedItems.some(function(item) {
+      return item && item.localPreviewUrl === this.state.localPreviewUrl;
+    }.bind(this));
     if (this.state.localPreviewUrl) {
-      try { URL.revokeObjectURL(this.state.localPreviewUrl); } catch (_) {}
+      if (!currentPreviewIsSaved) {
+        try { URL.revokeObjectURL(this.state.localPreviewUrl); } catch (_) {}
+      }
     }
     this.state = {
       uploadId: '',
@@ -385,7 +426,10 @@
       abort: null,
       isMultipart: false,
       uploadStartTime: 0,
-      uploadEndTime: 0
+      uploadEndTime: 0,
+      items: savedItems,
+      activeItemId: '',
+      batchToken: savedBatchToken
     };
   };
 
@@ -401,6 +445,182 @@
     this.state.documentDpi = toNumber(getField(payload, 'documentDpi')) || this.state.documentDpi;
     this.state.sizingSource = String(getField(payload, 'sizingSource') || this.state.sizingSource || '');
     return true;
+  };
+
+  MainProductUpload.prototype.createCurrentUploadItem = function() {
+    var lastFile = this.state.lastFile
+      ? { name: this.state.lastFile.name || this.state.fileName || '', size: this.state.lastFile.size || 0, type: this.state.lastFile.type || '' }
+      : null;
+    return {
+      uploadId: this.state.uploadId,
+      itemId: this.state.itemId,
+      fileName: this.state.fileName,
+      lastFile: lastFile,
+      localPreviewUrl: this.state.localPreviewUrl,
+      originalUrl: this.state.originalUrl,
+      thumbnailUrl: this.state.thumbnailUrl,
+      widthIn: this.state.widthIn,
+      heightIn: this.state.heightIn,
+      widthPx: this.state.widthPx,
+      heightPx: this.state.heightPx,
+      effectiveDpi: this.state.effectiveDpi,
+      documentDpi: this.state.documentDpi,
+      sizingSource: this.state.sizingSource,
+      selectedResult: this.state.selectedResult,
+      selectedVariantId: this.state.selectedVariantId,
+      status: this.state.status,
+      isMultipart: this.state.isMultipart,
+      uploadStartTime: this.state.uploadStartTime,
+      uploadEndTime: this.state.uploadEndTime
+    };
+  };
+
+  MainProductUpload.prototype.isCartReadyItem = function(item) {
+    return Boolean(item && item.uploadId && item.selectedResult && item.selectedVariantId);
+  };
+
+  MainProductUpload.prototype.rememberCurrentUpload = function() {
+    if (!this.isCartReadyItem(this.state)) return;
+    var snapshot = this.createCurrentUploadItem();
+    var items = (this.state.items || []).slice();
+    var replaced = false;
+    for (var i = 0; i < items.length; i += 1) {
+      if (sameUploadId(items[i].uploadId, snapshot.uploadId)) {
+        items[i] = snapshot;
+        replaced = true;
+        break;
+      }
+    }
+    if (!replaced) items.push(snapshot);
+    this.state.items = items;
+    this.state.activeItemId = snapshot.uploadId;
+  };
+
+  MainProductUpload.prototype.getReadyItems = function() {
+    var ready = (this.state.items || []).filter(this.isCartReadyItem.bind(this));
+    if (this.isCartReadyItem(this.state) && !ready.some(function(item) {
+      return sameUploadId(item.uploadId, this.state.uploadId);
+    }.bind(this))) {
+      ready.push(this.createCurrentUploadItem());
+    }
+    return ready;
+  };
+
+  MainProductUpload.prototype.getQueueItems = function() {
+    var items = (this.state.items || []).slice();
+    var hasCurrent = this.state.uploadId && items.some(function(item) {
+      return sameUploadId(item.uploadId, this.state.uploadId);
+    }.bind(this));
+    if ((this.state.uploadId || this.state.fileName) && !hasCurrent) {
+      items.push(this.createCurrentUploadItem());
+    }
+    return items;
+  };
+
+  MainProductUpload.prototype.loadUploadItem = function(item) {
+    if (!item) return;
+    this.state.uploadId = item.uploadId || '';
+    this.state.itemId = item.itemId || '';
+    this.state.fileName = item.fileName || '';
+    this.state.lastFile = item.lastFile || null;
+    this.state.localPreviewUrl = item.localPreviewUrl || '';
+    this.state.originalUrl = item.originalUrl || '';
+    this.state.thumbnailUrl = item.thumbnailUrl || '';
+    this.state.widthIn = toNumber(item.widthIn);
+    this.state.heightIn = toNumber(item.heightIn);
+    this.state.widthPx = toNumber(item.widthPx);
+    this.state.heightPx = toNumber(item.heightPx);
+    this.state.effectiveDpi = toNumber(item.effectiveDpi);
+    this.state.documentDpi = toNumber(item.documentDpi);
+    this.state.sizingSource = item.sizingSource || '';
+    this.state.selectedResult = item.selectedResult || null;
+    this.state.selectedVariantId = String(item.selectedVariantId || '');
+    this.state.status = item.status || (this.isCartReadyItem(item) ? 'ready' : 'idle');
+    this.state.isMultipart = Boolean(item.isMultipart);
+    this.state.uploadStartTime = item.uploadStartTime || 0;
+    this.state.uploadEndTime = item.uploadEndTime || 0;
+    this.state.activeItemId = item.uploadId || '';
+    this.state.abort = null;
+  };
+
+  MainProductUpload.prototype.selectUploadItem = function(uploadId) {
+    var item = (this.state.items || []).find(function(candidate) {
+      return sameUploadId(candidate.uploadId, uploadId);
+    });
+    if (!item) return;
+    this.loadUploadItem(item);
+    this.setProgress(0);
+    this.setProgressText(0, 0);
+    this.setStage(null);
+    this.render();
+  };
+
+  MainProductUpload.prototype.removeUploadItem = function(uploadId) {
+    var removed = null;
+    var items = (this.state.items || []).filter(function(item) {
+      var match = sameUploadId(item.uploadId, uploadId);
+      if (match) removed = item;
+      return !match;
+    });
+    if (removed && removed.localPreviewUrl) {
+      try { URL.revokeObjectURL(removed.localPreviewUrl); } catch (_) {}
+    }
+    this.state.items = items;
+    if (sameUploadId(this.state.uploadId, uploadId)) {
+      if (items.length) {
+        this.loadUploadItem(items[items.length - 1]);
+      } else {
+        this.resetMeasurement(null);
+        this.state.items = [];
+      }
+    }
+    this.render();
+  };
+
+  MainProductUpload.prototype.renderQueue = function() {
+    if (!this.queue) return;
+    var items = this.getQueueItems();
+    if (!items.length) {
+      this.queue.hidden = true;
+      this.queue.innerHTML = '';
+      return;
+    }
+    var readyCount = items.filter(this.isCartReadyItem.bind(this)).length;
+    this.queue.hidden = false;
+    this.queue.innerHTML =
+      '<div class="ump__queue-head">' +
+        '<span>Gang sheets</span>' +
+        '<strong>' + readyCount + '/' + items.length + ' ready</strong>' +
+      '</div>' +
+      '<div class="ump__queue-list">' +
+        items.map(function(item, index) {
+          var isActive = sameUploadId(item.uploadId, this.state.activeItemId || this.state.uploadId);
+          var isReady = this.isCartReadyItem(item);
+          var statusLabel = isReady ? 'Ready' : (item.status === 'error' ? 'Error' : (item.status === 'uploading' ? 'Uploading' : 'Measuring'));
+          var sheetLabel = item.selectedResult
+            ? (item.selectedResult.selectedSheetLabel || item.selectedResult.selectedVariantTitle || '')
+            : '';
+          var sizeText = item.widthIn && item.heightIn
+            ? formatInches(item.widthIn) + ' x ' + formatInches(item.heightIn)
+            : 'Measuring';
+          var thumbUrl = item.thumbnailUrl || item.localPreviewUrl || '';
+          return '' +
+            '<div class="ump__queue-item' + (isActive ? ' is-active' : '') + '">' +
+              '<button class="ump__queue-main" type="button" data-ump-select-item="' + escapeHtml(item.uploadId || '') + '">' +
+                '<span class="ump__queue-index">' + (index + 1) + '</span>' +
+                (thumbUrl
+                  ? '<span class="ump__queue-thumb" style="background-image:url(&quot;' + escapeHtml(thumbUrl.replace(/"/g, '%22')) + '&quot;)"></span>'
+                  : '<span class="ump__queue-thumb"></span>') +
+                '<span class="ump__queue-copy">' +
+                  '<span class="ump__queue-name">' + escapeHtml(item.fileName || 'Gang sheet') + '</span>' +
+                  '<span class="ump__queue-meta">' + escapeHtml(sizeText) + (sheetLabel ? ' / ' + escapeHtml(sheetLabel) : '') + '</span>' +
+                '</span>' +
+                '<span class="ump__queue-status' + (isReady ? ' is-ready' : '') + '">' + escapeHtml(statusLabel) + '</span>' +
+              '</button>' +
+              (isReady ? '<button class="ump__queue-remove" type="button" data-ump-remove-item="' + escapeHtml(item.uploadId || '') + '" aria-label="Remove ' + escapeHtml(item.fileName || 'gang sheet') + '">Remove</button>' : '') +
+            '</div>';
+        }.bind(this)).join('') +
+      '</div>';
   };
 
   MainProductUpload.prototype.getMethodText = function() {
@@ -451,7 +671,10 @@
   };
 
   MainProductUpload.prototype.render = function() {
-    var ready = Boolean(this.state.uploadId && this.state.selectedResult && this.state.selectedVariantId);
+    var readyItems = this.getReadyItems();
+    var queueItems = this.getQueueItems();
+    var hasBlockingWork = this.state.status === 'uploading' || this.state.status === 'error';
+    var ready = readyItems.length > 0 && !hasBlockingWork;
     var hasUpload = Boolean(this.state.uploadId || this.state.fileName);
     this.statusPanel.hidden = !hasUpload;
     this.fileName.textContent = this.state.fileName || 'Waiting for file';
@@ -485,9 +708,11 @@
     }
 
     this.renderFilePills(this.state.lastFile, this.state.isMultipart);
+    this.renderQueue();
 
     if (this.cancel) this.cancel.hidden = this.state.status !== 'uploading';
     if (this.retry) this.retry.hidden = this.state.status !== 'error';
+    if (this.replace) this.replace.textContent = queueItems.length ? 'Add more' : 'Replace';
 
     this.size.textContent = this.state.widthIn && this.state.heightIn
       ? formatInches(this.state.widthIn) + ' x ' + formatInches(this.state.heightIn)
@@ -515,7 +740,15 @@
     if (badgeClass) this.badge.classList.add(badgeClass);
 
     this.addButton.disabled = !ready;
+    if (this.addButton) {
+      var addLabel = this.addButton.getAttribute('data-default-label') || 'Add to cart';
+      this.addButton.textContent = readyItems.length > 1 ? 'Add ' + readyItems.length + ' gang sheets to cart' : addLabel;
+    }
     if (this.checkoutButton) this.checkoutButton.disabled = !ready;
+    if (this.checkoutButton) {
+      var checkoutLabel = this.checkoutButton.getAttribute('data-default-label') || 'Checkout';
+      this.checkoutButton.textContent = readyItems.length > 1 ? 'Checkout with ' + readyItems.length + ' gang sheets' : checkoutLabel;
+    }
     if (this.artLabel) this.artLabel.textContent = this.state.fileName || 'Upload preview';
     this.updatePreviewGeometry();
   };
@@ -581,8 +814,22 @@
     throw lastError || new Error('Upload failed');
   };
 
-  MainProductUpload.prototype.startUpload = async function(file) {
+  MainProductUpload.prototype.startUploads = async function(files) {
+    var list = toFileArray(files);
+    if (!list.length) return;
+    var batchToken = (this.state.batchToken || 0) + 1;
+    this.state.batchToken = batchToken;
+    for (var i = 0; i < list.length; i += 1) {
+      if (this.state.batchToken !== batchToken) return;
+      await this.startUpload(list[i], batchToken);
+      if (this.state.batchToken !== batchToken) return;
+      if (this.state.status === 'error') return;
+    }
+  };
+
+  MainProductUpload.prototype.startUpload = async function(file, batchToken) {
     this.resetMeasurement(file);
+    this.state.batchToken = batchToken || this.state.batchToken || 0;
     var currentToken = this.token;
     this.state.uploadStartTime = Date.now();
     this.state.uploadTelemetry = window.ULUploadTelemetry && window.ULUploadTelemetry.create
@@ -649,6 +896,9 @@
 
       this.setProgress(86);
       await this.pollStatus(currentToken);
+      if (currentToken !== this.token) return;
+      this.rememberCurrentUpload();
+      this.render();
     } catch (error) {
       if (currentToken !== this.token) return;
       this.state.status = 'error';
@@ -687,7 +937,12 @@
             this.state.uploadEndTime = Date.now();
             this.setProgress(100);
             this.setStage('ready');
-            setTimeout(function() { this.setProgress(0); this.setStage(null); this.render(); }.bind(this), 1200);
+            setTimeout(function() {
+              if (currentToken !== this.token) return;
+              this.setProgress(0);
+              this.setStage(null);
+              this.render();
+            }.bind(this), 1200);
             this.render();
             return;
           }
@@ -724,8 +979,13 @@
   };
 
   MainProductUpload.prototype.addToCart = async function(redirectTo) {
-    if (!(this.state.uploadId && this.state.selectedVariantId && this.state.selectedResult)) {
+    var readyItems = this.getReadyItems();
+    if (!readyItems.length) {
       this.setError('Please upload your design first.');
+      return;
+    }
+    if (this.state.status === 'uploading') {
+      this.setError('Please wait until every gang sheet is measured.');
       return;
     }
     this.setError('');
@@ -733,32 +993,44 @@
     if (this.checkoutButton) this.checkoutButton.disabled = true;
 
     try {
-      var quantity = Math.max(1, Number(this.state.selectedResult.sheetsNeeded) || 1);
-      var properties = {
-        _ul_upload_id: this.state.uploadId,
-        _ul_uploaded: 'true',
-        'Print READY': this.state.originalUrl || '',
-        'Design File': this.state.fileName || '',
-        _ul_width_in: String(this.state.widthIn || 0),
-        _ul_height_in: String(this.state.heightIn || 0),
-        _ul_resolution_dpi: String(this.state.documentDpi || 0),
-        _ul_effective_dpi: String(this.state.effectiveDpi || 0),
-        _ul_sizing_source: String(this.state.sizingSource || ''),
-        _ul_mode: 'main_product_sheet_app_extension',
-        _ul_sheet_name: this.state.selectedResult.selectedSheetLabel || this.state.selectedResult.selectedVariantTitle || '',
-        _ul_designs_per_sheet: String(this.state.selectedResult.designsPerSheet || ''),
-        _ul_sheets_needed: String(this.state.selectedResult.sheetsNeeded || '')
-      };
+      var cartItems = readyItems.map(function(item, index) {
+        var result = item.selectedResult || {};
+        var variantId = parseInt(item.selectedVariantId, 10);
+        if (!(variantId > 0)) throw new Error('A measured gang sheet has no matching variant.');
+        var quantity = Math.max(1, Number(result.sheetsNeeded) || 1);
+        var sheetLabel = result.selectedSheetLabel || result.selectedVariantTitle || '';
+        return {
+          id: variantId,
+          quantity: quantity,
+          properties: {
+            _ul_upload_id: item.uploadId,
+            _ul_uploaded: 'true',
+            'Print READY': item.originalUrl || '',
+            'Design File': item.fileName || '',
+            _ul_width_in: String(item.widthIn || 0),
+            _ul_height_in: String(item.heightIn || 0),
+            _ul_page_width_in: String(item.widthIn || 0),
+            _ul_page_length_in: String(item.heightIn || 0),
+            _ul_resolution_dpi: String(item.documentDpi || 0),
+            _ul_effective_dpi: String(item.effectiveDpi || 0),
+            _ul_sizing_source: String(item.sizingSource || ''),
+            _ul_measurement_mode: 'full',
+            _ul_mode: 'main_product_sheet_app_extension',
+            _ul_selected_variant_id: String(item.selectedVariantId || ''),
+            _ul_selected_variant_title: result.selectedVariantTitle || '',
+            _ul_selected_sheet_label: sheetLabel,
+            _ul_sheet_name: sheetLabel,
+            _ul_designs_per_sheet: String(result.designsPerSheet || ''),
+            _ul_sheets_needed: String(result.sheetsNeeded || ''),
+            _ul_multi_index: String(index + 1),
+            _ul_multi_count: String(readyItems.length)
+          }
+        };
+      });
       var response = await fetch('/cart/add.js', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          items: [{
-            id: parseInt(this.state.selectedVariantId, 10),
-            quantity: quantity,
-            properties: properties
-          }]
-        })
+        body: JSON.stringify({ items: cartItems })
       });
       var data = await response.json().catch(function() { return {}; });
       if (!response.ok) throw new Error(data.description || 'Failed to add to cart.');
