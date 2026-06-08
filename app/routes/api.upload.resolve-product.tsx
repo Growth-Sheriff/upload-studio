@@ -6,7 +6,6 @@ import { shopifyGraphQL } from '~/lib/shopify.server'
 import {
   getMaxWidthLimitForShop,
   isDtfPrintHouseShop,
-  parseSheetSizeFromTitle,
 } from '~/lib/customerPricing.server'
 import {
   resolveSheetVariant,
@@ -16,12 +15,16 @@ import {
 } from '~/lib/dtfSheetResolver.server'
 import {
   applyFullCanvasMeasurementMetadata,
-  computeDocumentDpiInches,
-  computeRollWidthAnchoredInches,
   deriveUploadItemLifecycle,
-  type RollWidthSheetSize,
   type UploadLifecycleMetadata,
 } from '~/lib/uploadLifecycle.server'
+import {
+  applyMainProductMeasurementPolicy,
+  getMainProductRollWidth,
+  getMainProductSheetSizes,
+  MAIN_PRODUCT_MEASUREMENT_POLICY,
+  shouldUseMainProductMeasurementPolicy,
+} from '~/lib/mainProductMeasurement.server'
 
 const PRODUCT_VARIANTS_QUERY = `
   query ResolveProductVariants($id: ID!) {
@@ -57,9 +60,6 @@ const DEFAULT_CONFIG = {
   maxWidthIn: 22,
 }
 
-const MAIN_PRODUCT_MEASUREMENT_POLICY = 'main_product_roll_width'
-const DEFAULT_MAIN_PRODUCT_ROLL_WIDTH_IN = 22
-
 interface ResolveRequestBody {
   shopDomain?: string
   productId?: string | number
@@ -91,6 +91,17 @@ interface ProductQueryResponse {
   } | null
 }
 
+interface ProductResolveData {
+  productData: ProductQueryResponse
+  optionDefs: ProductOptionDef[]
+  variants: ProductVariantDef[]
+  cachedAt: number
+}
+
+const PRODUCT_RESOLVE_CACHE_TTL_MS = 5 * 60 * 1000
+const PRODUCT_RESOLVE_CACHE_MAX_SIZE = 250
+const productResolveCache = new Map<string, ProductResolveData>()
+
 function parsePositiveNumber(value: unknown): number | null {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed <= 0) return null
@@ -100,98 +111,6 @@ function parsePositiveNumber(value: unknown): number | null {
 function normalizeProductId(productId: string | number): string {
   const asString = String(productId)
   return asString.startsWith('gid://') ? asString : `gid://shopify/Product/${asString}`
-}
-
-function shouldUseMainProductRollPolicy(body: ResolveRequestBody): boolean {
-  return String(body.measurementPolicy || '').trim() === MAIN_PRODUCT_MEASUREMENT_POLICY
-}
-
-function getMainProductRollWidth(value: unknown): number {
-  return parsePositiveNumber(value) || DEFAULT_MAIN_PRODUCT_ROLL_WIDTH_IN
-}
-
-function applyMainProductRollMeasurement(
-  metadata: UploadLifecycleMetadata | null,
-  rollWidthIn: number,
-  sheetSizes: RollWidthSheetSize[] = []
-): UploadLifecycleMetadata | null {
-  if (!metadata) return null
-
-  const measurementWidthPx = metadata.widthPx > 0 ? metadata.widthPx : metadata.measurementWidthPx
-  const measurementHeightPx = metadata.heightPx > 0 ? metadata.heightPx : metadata.measurementHeightPx
-  const documentDpi =
-    parsePositiveNumber(metadata.documentDpi) ||
-    (metadata.documentDpiSource ? parsePositiveNumber(metadata.dpi) : null)
-  const documentSized = computeDocumentDpiInches(
-    measurementWidthPx,
-    measurementHeightPx,
-    documentDpi || undefined
-  )
-
-  if (documentSized && documentDpi) {
-    return {
-      ...metadata,
-      dpi: documentDpi,
-      documentDpi,
-      documentDpiSource: metadata.documentDpiSource || 'document_dpi',
-      measurementWidthPx,
-      measurementHeightPx,
-      effectiveDpi: documentSized.effectiveDpi,
-      sizingSource: 'main_product_document_dpi',
-      sheetWidthIn: rollWidthIn,
-      sheetLengthIn: undefined,
-      widthIn: documentSized.widthIn,
-      heightIn: documentSized.heightIn,
-      measurementMode: 'full',
-    }
-  }
-
-  const anchored = computeRollWidthAnchoredInches(
-    measurementWidthPx,
-    measurementHeightPx,
-    rollWidthIn,
-    sheetSizes
-  )
-
-  return {
-    ...metadata,
-    measurementWidthPx,
-    measurementHeightPx,
-    effectiveDpi: anchored.effectiveDpi,
-    sizingSource: MAIN_PRODUCT_MEASUREMENT_POLICY,
-    sheetWidthIn: anchored.sheetWidthIn,
-    sheetLengthIn: anchored.sheetLengthIn,
-    widthIn: anchored.widthIn,
-    heightIn: anchored.heightIn,
-    measurementMode: 'full',
-  }
-}
-
-function getMainProductSheetSizes(variants: ProductVariantDef[]): RollWidthSheetSize[] {
-  const seen = new Set<string>()
-  const sizes: RollWidthSheetSize[] = []
-
-  for (const variant of variants) {
-    const values = [
-      variant.title,
-      variant.option1,
-      variant.option2,
-      variant.option3,
-      ...(variant.options || []),
-      ...(variant.selectedOptions || []).map((option) => option.value),
-    ]
-
-    for (const value of values) {
-      const parsed = parseSheetSizeFromTitle(value)
-      if (!parsed) continue
-      const key = `${parsed.widthIn}x${parsed.lengthIn}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      sizes.push({ widthIn: parsed.widthIn, heightIn: parsed.lengthIn })
-    }
-  }
-
-  return sizes
 }
 
 function metadataToUploadDimensions(metadata: UploadLifecycleMetadata | null) {
@@ -215,6 +134,89 @@ function metadataToUploadDimensions(metadata: UploadLifecycleMetadata | null) {
     widthIn: metadata.widthIn,
     heightIn: metadata.heightIn,
   }
+}
+
+function mapProductResolveData(productData: ProductQueryResponse): ProductResolveData {
+  const product = productData.product
+  const optionDefs: ProductOptionDef[] = (product?.options || []).map((option) => ({
+    name: option.name || '',
+    values: Array.isArray(option.values) ? option.values.map((value) => String(value || '')) : [],
+  }))
+
+  const variants: ProductVariantDef[] = (product?.variants.edges || []).map((edge) => {
+    const node = edge.node
+    const legacyId =
+      node.legacyResourceId != null && node.legacyResourceId !== ''
+        ? String(node.legacyResourceId)
+        : String(node.id || '').split('/').pop() || String(node.id || '')
+    return {
+      id: legacyId,
+      title: node.title || '',
+      price: node.price,
+      available: node.availableForSale !== false,
+      availableForSale: node.availableForSale !== false,
+      selectedOptions: Array.isArray(node.selectedOptions)
+        ? node.selectedOptions.map((option) => ({
+            name: option.name || '',
+            value: option.value || '',
+          }))
+        : [],
+      options: Array.isArray(node.selectedOptions)
+        ? node.selectedOptions.map((option) => option.value || '')
+        : [],
+      option1: node.selectedOptions?.[0]?.value || null,
+      option2: node.selectedOptions?.[1]?.value || null,
+      option3: node.selectedOptions?.[2]?.value || null,
+    }
+  })
+
+  return {
+    productData,
+    optionDefs,
+    variants,
+    cachedAt: Date.now(),
+  }
+}
+
+function getProductResolveCacheKey(shopDomain: string, productId: string): string {
+  return `${shopDomain}:${productId}`
+}
+
+function pruneProductResolveCache(now = Date.now()) {
+  for (const [key, value] of productResolveCache) {
+    if (now - value.cachedAt > PRODUCT_RESOLVE_CACHE_TTL_MS) {
+      productResolveCache.delete(key)
+    }
+  }
+
+  while (productResolveCache.size > PRODUCT_RESOLVE_CACHE_MAX_SIZE) {
+    const oldestKey = productResolveCache.keys().next().value
+    if (!oldestKey) break
+    productResolveCache.delete(oldestKey)
+  }
+}
+
+async function getProductResolveData(
+  shopDomain: string,
+  accessToken: string,
+  productId: string
+): Promise<ProductResolveData> {
+  const now = Date.now()
+  const cacheKey = getProductResolveCacheKey(shopDomain, productId)
+  const cached = productResolveCache.get(cacheKey)
+  if (cached && now - cached.cachedAt <= PRODUCT_RESOLVE_CACHE_TTL_MS && cached.productData.product) {
+    return cached
+  }
+
+  const productData = await shopifyGraphQL<ProductQueryResponse>(shopDomain, accessToken, PRODUCT_VARIANTS_QUERY, {
+    id: productId,
+  })
+  const mapped = mapProductResolveData(productData)
+  if (productData.product) {
+    productResolveCache.set(cacheKey, mapped)
+    pruneProductResolveCache(now)
+  }
+  return mapped
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -262,7 +264,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const productId = normalizeProductId(productIdRaw)
 
-    const [upload, productConfig, productData] = await Promise.all([
+    const [upload, productConfig, productResolveData] = await Promise.all([
       prisma.upload.findFirst({
         where: {
           id: uploadId,
@@ -291,9 +293,7 @@ export async function action({ request }: ActionFunctionArgs) {
           builderConfig: true,
         },
       }),
-      shopifyGraphQL<ProductQueryResponse>(shopDomain, shop.accessToken, PRODUCT_VARIANTS_QUERY, {
-        id: productId,
-      }),
+      getProductResolveData(shopDomain, shop.accessToken, productId),
     ])
 
     if (!upload) {
@@ -333,6 +333,9 @@ export async function action({ request }: ActionFunctionArgs) {
       artboardMarginIn: DEFAULT_CONFIG.artboardMarginIn,
       imageMarginIn: DEFAULT_CONFIG.imageMarginIn,
       fitToleranceIn: isDtfPrintHouseShop(shopDomain) ? 0.5 : 0,
+      selectionStrategy: shouldUseMainProductMeasurementPolicy(body.measurementPolicy)
+        ? 'smallest_fitting_sheet'
+        : null,
       maxWidthIn: Math.max(
         parsePositiveNumber(body.maxUploadWidth) || 0,
         parsePositiveNumber(rawBuilderConfig.maxWidthIn) || 0,
@@ -341,48 +344,19 @@ export async function action({ request }: ActionFunctionArgs) {
       ),
     }
 
-    if (!productData.product) {
+    if (!productResolveData.productData.product) {
       return corsJson({ error: 'Product not found' }, request, { status: 404 })
     }
 
-    const optionDefs: ProductOptionDef[] = (productData.product.options || []).map((option) => ({
-      name: option.name || '',
-      values: Array.isArray(option.values) ? option.values.map((value) => String(value || '')) : [],
-    }))
+    const optionDefs = productResolveData.optionDefs
+    const variants = productResolveData.variants
 
-    const variants: ProductVariantDef[] = (productData.product.variants.edges || []).map((edge) => {
-      const node = edge.node
-      const legacyId =
-        node.legacyResourceId != null && node.legacyResourceId !== ''
-          ? String(node.legacyResourceId)
-          : String(node.id || '').split('/').pop() || String(node.id || '')
-      return {
-        id: legacyId,
-        title: node.title || '',
-        price: node.price,
-        available: node.availableForSale !== false,
-        availableForSale: node.availableForSale !== false,
-        selectedOptions: Array.isArray(node.selectedOptions)
-          ? node.selectedOptions.map((option) => ({
-              name: option.name || '',
-              value: option.value || '',
-            }))
-          : [],
-        options: Array.isArray(node.selectedOptions)
-          ? node.selectedOptions.map((option) => option.value || '')
-          : [],
-        option1: node.selectedOptions?.[0]?.value || null,
-        option2: node.selectedOptions?.[1]?.value || null,
-        option3: node.selectedOptions?.[2]?.value || null,
-      }
-    })
-
-    const resolvedMetadata = shouldUseMainProductRollPolicy(body)
-      ? applyMainProductRollMeasurement(
-          rawMetadata,
-          getMainProductRollWidth(body.rollWidthIn),
-          getMainProductSheetSizes(variants)
-        )
+    const resolvedMetadata = shouldUseMainProductMeasurementPolicy(body.measurementPolicy)
+      ? applyMainProductMeasurementPolicy(rawMetadata, {
+          measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
+          rollWidthIn: getMainProductRollWidth(body.rollWidthIn),
+          sheetSizes: getMainProductSheetSizes(variants),
+        })
       : isDtfPrintHouseShop(shopDomain)
         ? applyFullCanvasMeasurementMetadata(rawMetadata)
         : rawMetadata

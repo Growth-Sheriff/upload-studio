@@ -208,6 +208,10 @@ export function parsePngInfo(buffer: Buffer) {
       )
     }
 
+    if (chunkType === 'tRNS') {
+      hasAlpha = true
+    }
+
     if (chunkType === 'iTXt' || chunkType === 'tEXt' || chunkType === 'zTXt') {
       const text = parsePngTextChunk(chunkType, chunkData)
       if (text) {
@@ -932,6 +936,15 @@ export async function getImageInfo(filePath: string): Promise<{
     ? await getImageInfoWithoutImagemagick(filePath, detectedType).catch(() => null)
     : null
 
+  if (
+    nativeInfo &&
+    nativeInfo.width > 0 &&
+    nativeInfo.height > 0 &&
+    (detectedType === 'image/png' || detectedType === 'image/jpeg' || detectedType === 'image/webp')
+  ) {
+    return nativeInfo
+  }
+
   try {
 
     const { stdout } = await execAsync(
@@ -956,11 +969,18 @@ export async function getImageInfo(filePath: string): Promise<{
       60
     )
     const nativeDpi = nativeInfo && nativeInfo.dpi > 0 ? nativeInfo.dpi : 0
-    const dpi = nativeDpi || identifiedDpi?.dpi || 0
+    // If the format-native parser found dimensions but no document DPI, do not
+    // promote ImageMagick's density into document metadata. For PNG/JPEG/etc.
+    // ImageMagick may report a synthetic/default density for files that do not
+    // actually contain pHYs/JFIF/Exif resolution data.
+    const canUseIdentifiedDpi = !nativeInfo || nativeDpi > 0
+    const dpi = nativeDpi || (canUseIdentifiedDpi ? identifiedDpi?.dpi || 0 : 0)
     const dpiSource =
       nativeDpi > 0
         ? nativeInfo?.dpiSource || 'document_dpi'
-        : identifiedDpi?.source || null
+        : canUseIdentifiedDpi
+          ? identifiedDpi?.source || null
+          : null
 
 
     const hasAlpha =

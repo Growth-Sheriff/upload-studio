@@ -92,6 +92,13 @@
     return new Promise(function(resolve) { setTimeout(resolve, ms); });
   }
 
+  function getStatusPollDelay(attempt) {
+    if (attempt < 6) return 350;
+    if (attempt < 14) return 700;
+    if (attempt < 28) return 1000;
+    return 1500;
+  }
+
   function MainProductUpload(root) {
     this.root = root;
     this.apiBase = root.getAttribute('data-api-base') || '/apps/customizer';
@@ -688,7 +695,7 @@
       }
       this.setProgress(Math.min(94, 86 + attempt));
       this.render();
-      await sleep(1500);
+      await sleep(getStatusPollDelay(attempt));
     }
     throw new Error('Upload finished, but the server did not confirm print size in time.');
   };

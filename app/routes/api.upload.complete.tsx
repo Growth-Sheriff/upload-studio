@@ -11,10 +11,10 @@ import {
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
 import { uploadLogger } from '~/lib/uploadLogger.server'
 
-// ============================================================================
-// FAZ 0 - API-001: Singleton Redis Connection
-// Prevents connection leak by reusing a single connection across all requests
-// ============================================================================
+
+
+
+
 let redisConnection: Redis | null = null
 
 const getRedisConnection = (): Redis => {
@@ -26,7 +26,7 @@ const getRedisConnection = (): Redis => {
       reconnectOnError: (err: Error) => {
         const targetError = 'READONLY'
         if (err.message.includes(targetError)) {
-          // Only reconnect on READONLY errors (failover scenario)
+
           return true
         }
         return false
@@ -43,16 +43,16 @@ const getRedisConnection = (): Redis => {
 
     redisConnection.on('close', () => {
       console.warn('[Redis] Connection closed')
-      redisConnection = null // Allow reconnection on next request
+      redisConnection = null
     })
   }
   return redisConnection
 }
 
-// POST /api/upload/complete
-// Request: { shopDomain, uploadId, items: [{ itemId, location, transform? }] }
+
+
 export async function action({ request }: ActionFunctionArgs) {
-  // Handle CORS preflight
+
   if (request.method === 'OPTIONS') {
     return handleCorsOptions(request)
   }
@@ -61,7 +61,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return corsJson({ error: 'Method not allowed' }, request, { status: 405 })
   }
 
-  // Rate limiting
+
   const identifier = getIdentifier(request, 'customer')
   const rateLimitResponse = await rateLimitGuard(identifier, 'preflight')
   if (rateLimitResponse) return rateLimitResponse
@@ -83,7 +83,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return corsJson({ error: 'Missing required field: uploadId' }, request, { status: 400 })
   }
 
-  // items is optional for quick mode - will use existing items from intent
+
 
   const shop = await prisma.shop.findUnique({
     where: { shopDomain },
@@ -93,11 +93,11 @@ export async function action({ request }: ActionFunctionArgs) {
     return corsJson({ error: 'Shop not found' }, request, { status: 404 })
   }
 
-  // Get shop settings for auto-approve feature
-  const shopSettings = (shop.settings as Record<string, any>) || {}
-  const autoApprove = shopSettings.autoApprove !== false // Default to true
 
-  // Verify upload belongs to shop
+  const shopSettings = (shop.settings as Record<string, any>) || {}
+  const autoApprove = shopSettings.autoApprove !== false
+
+
   const upload = await prisma.upload.findFirst({
     where: { id: uploadId, shopId: shop.id },
     include: { items: true },
@@ -112,11 +112,11 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   try {
-    // ========================================================================
-    // 0-BYTE FILE PROTECTION (SERVER-SIDE)
-    // Verify at least one item has a non-zero fileSize before accepting
-    // This prevents empty/corrupt files from entering the system
-    // ========================================================================
+
+
+
+
+
     if (items && Array.isArray(items) && items.length > 0) {
       const hasZeroByteFile = items.some(
         (item: any) => item.fileSize !== undefined && item.fileSize <= 0
@@ -134,8 +134,8 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    // Preserve the legacy "uploaded" handoff state so analytics/admin surfaces keep
-    // their "received" bucket until workers advance the upload lifecycle.
+
+
     await prisma.upload.update({
       where: { id: uploadId },
       data: {
@@ -143,8 +143,8 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     })
 
-    // Update items with location, transform, and fileUrl (for CDN uploads)
-    // If items array is provided, use it; otherwise skip item updates (quick mode)
+
+
     if (items && Array.isArray(items) && items.length > 0) {
       for (const item of items) {
         const updateData: Record<string, unknown> = {
@@ -152,60 +152,60 @@ export async function action({ request }: ActionFunctionArgs) {
           transform: item.transform || null,
         }
 
-        // Upload duration in milliseconds (from client)
+
         if (item.uploadDurationMs && typeof item.uploadDurationMs === 'number') {
           updateData.uploadDurationMs = Math.round(item.uploadDurationMs)
         }
 
-        // MULTI-STORAGE: Handle different storage providers
+
         const provider = item.storageProvider || 'local'
-        
-        // Log the complete call with actual provider info
+
+
         await uploadLogger.completeCalled(
           `complete_${uploadId}`,
           uploadId,
           provider as any,
           item.fileUrl || 'local'
         )
-        
+
         console.log(`[Upload Complete] Provider: ${provider}, FileUrl: ${item.fileUrl?.substring(0, 80) || 'N/A'}`)
 
-        // CRITICAL DATABASE-LEVEL FIX:
-        // storageKey is now set at INTENT time with correct provider prefix (e.g., "bunny:...")
-        // This ensures preflight worker ALWAYS has the correct key from the start
-        // 
-        // FALLBACK HANDLING: If client used a different provider than intent (fallback scenario),
-        // we MUST update the storageKey to reflect the ACTUAL storage location
+
+
+
+
+
+
         const existingItem = await prisma.uploadItem.findFirst({
           where: { id: item.itemId, uploadId },
           select: { storageKey: true },
         })
-        
+
         const currentStorageKey = existingItem?.storageKey || ''
-        
-        // Extract current prefix and check if it matches the actual provider
+
+
         const currentPrefix = currentStorageKey.split(':')[0]
         const hasProviderPrefix = ['bunny', 'r2', 'local', 'shopify'].includes(currentPrefix)
-        
-        // CRITICAL: Check if provider CHANGED (fallback scenario)
-        // If intent was bunny but client uploaded to r2, we MUST update the key
+
+
+
         const providerMismatch = hasProviderPrefix && currentPrefix !== provider
-        
+
         if (providerMismatch) {
-          // FALLBACK DETECTED: Provider changed, update storageKey to reflect actual location
+
           const pathWithoutPrefix = currentStorageKey.replace(/^(bunny|r2|local|shopify):/, '')
           updateData.storageKey = `${provider}:${pathWithoutPrefix}`
           console.log(`[Upload Complete] FALLBACK DETECTED: Changed from ${currentPrefix}: to ${provider}: - storageKey updated`)
         } else if (!hasProviderPrefix && item.fileUrl && provider === 'bunny') {
-          // Legacy: No prefix, add bunny prefix
+
           updateData.storageKey = `bunny:${item.fileUrl.replace(/^https?:\/\/[^/]+\//, '')}`
           console.log(`[Upload Complete] LEGACY FIX: Added bunny: prefix to storageKey`)
         } else if (!hasProviderPrefix && item.fileUrl && provider === 'r2') {
-          // Legacy: No prefix, add r2 prefix
+
           updateData.storageKey = `r2:${item.fileUrl.replace(/^https?:\/\/[^/]+\//, '')}`
           console.log(`[Upload Complete] LEGACY FIX: Added r2: prefix to storageKey`)
         } else if (!hasProviderPrefix && provider === 'local') {
-          // Legacy: No prefix, add local prefix
+
           const pathWithoutPrefix = currentStorageKey
           updateData.storageKey = `local:${pathWithoutPrefix}`
           console.log(`[Upload Complete] LEGACY FIX: Added local: prefix to storageKey`)
@@ -223,16 +223,16 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    // Enqueue measurement and preview jobs for each item
-    // FAZ 0 - API-001: Use singleton connection (don't create new connection per request)
+
+
     const connection = getRedisConnection()
     const measureQueue = new Queue(MEASURE_PREFLIGHT_QUEUE_NAME, { connection })
     const previewQueue = new Queue(PREVIEW_RENDER_QUEUE_NAME, { connection })
 
-    // CRITICAL: Re-fetch items from DB to get UPDATED storageKey values
-    // The upload.items contains STALE data from before the update loop above
-    // This was causing 404 errors because items updated with bunny: prefix
-    // weren't being used - instead old storageKey without prefix was sent to preflight
+
+
+
+
     const updatedItems = await prisma.uploadItem.findMany({
       where: { uploadId },
       select: { id: true, storageKey: true },
@@ -254,14 +254,19 @@ export async function action({ request }: ActionFunctionArgs) {
         storageKey: uploadItem.storageKey,
       }
 
-      await measureQueue.add('measure-preflight', payload)
-      await previewQueue.add('preview-render', payload)
+      await measureQueue.add('measure-preflight', payload, {
+        priority: 1,
+      })
+      await previewQueue.add('preview-render', payload, {
+        priority: 20,
+        delay: 1500,
+      })
     }
 
-    // FAZ 0 - API-001: DON'T close singleton connection - it's reused across requests
-    // await connection.quit(); // REMOVED - causes connection churn
 
-    // Trigger Flow event
+
+
+
     await triggerUploadReceived(shop.id, shop.shopDomain, {
       id: uploadId,
       mode: upload.mode,
@@ -272,10 +277,10 @@ export async function action({ request }: ActionFunctionArgs) {
       items: upload.items.map((i: { location: string }) => ({ location: i.location })),
     })
 
-    // 📊 Update visitor and session metrics if linked
+
     if (upload.visitorId) {
       try {
-        // Increment visitor's total uploads (scoped to shop)
+
         await prisma.visitor.updateMany({
           where: { id: upload.visitorId, shopId: shop.id },
           data: {
@@ -284,7 +289,7 @@ export async function action({ request }: ActionFunctionArgs) {
           },
         })
 
-        // Increment session's uploads count if session exists (scoped to shop)
+
         if (upload.sessionId) {
           await prisma.visitorSession.updateMany({
             where: { id: upload.sessionId, shopId: shop.id },
@@ -297,7 +302,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
         console.log(`[Upload Complete] Updated visitor ${upload.visitorId} metrics`)
       } catch (visitorErr) {
-        // Non-blocking: visitor tracking is optional
+
         console.warn('[Upload Complete] Failed to update visitor metrics:', visitorErr)
       }
     }
@@ -317,9 +322,9 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 }
 
-// GET /api/upload/complete?uploadId=xxx&shopDomain=xxx (get upload status)
+
 export async function loader({ request }: LoaderFunctionArgs) {
-  // Handle CORS preflight - loader handles GET but action handles OPTIONS
+
   if (request.method === 'OPTIONS') {
     return handleCorsOptions(request)
   }
