@@ -1,66 +1,60 @@
 {% comment %}
-  Upload Studio - Visitor Tracking Block
-  =====================================
-  Purpose: Load visitor tracking script for attribution & analytics
-
-  This block should be added to theme.liquid or any page where
-  visitor tracking is needed.
-
-  SAFE: This is a NEW file - does not modify any existing flows
-
-  Version: 1.0.0
+Upload Studio - Visitor Tracking Block
+=====================================
+Purpose: Load visitor tracking script for attribution & analytics
+This block should be added to theme.liquid or any page where
+visitor tracking is needed.
+SAFE: This is a NEW file - does not modify any existing flows
+Version: 1.0.0
 {% endcomment %}
-
 {% comment %}
-  Only load on storefront (not in theme editor preview)
+Only load on storefront (not in theme editor preview)
 {% endcomment %}
 {% unless request.design_mode %}
-  {% comment %}
-    Script loading order:
-    1. ul-visitor.js - Visitor identification & attribution
-    2. ul-consent.js - GDPR/CCPA consent banner (loads after visitor)
-  {% endcomment %}
-  <script
-    src="{{ 'ul-visitor.js' | asset_url }}"
-    defer
-    data-shop-domain="{{ shop.permanent_domain }}"
-    {% if block.settings.debug_mode %}data-debug="true"{% endif %}
-  ></script>
-
-  {% if block.settings.show_consent_banner %}
-  <script
-    src="{{ 'ul-consent.js' | asset_url }}"
-    defer
-  ></script>
-  {% endif %}
+{% comment %}
+Script loading order:
+1. ul-visitor.js - Visitor identification & attribution
+2. ul-consent.js - GDPR/CCPA consent banner (loads after visitor)
+{% endcomment %}
+<script
+src="{{ 'ul-visitor.js' | asset_url }}"
+defer
+data-shop-domain="{{ shop.permanent_domain }}"
+{% if block.settings.debug_mode %}data-debug="true"{% endif %}
+></script>
+{% if block.settings.show_consent_banner %}
+<script
+src="{{ 'ul-consent.js' | asset_url }}"
+defer
+></script>
+{% endif %}
 {% endunless %}
-
 {% schema %}
 {
-  "name": "UL Visitor Tracking",
-  "target": "body",
-  "javascript": "ul-visitor.js",
-  "settings": [
-    {
-      "type": "checkbox",
-      "id": "enabled",
-      "label": "Enable Visitor Tracking",
-      "default": true
-    },
-    {
-      "type": "checkbox",
-      "id": "show_consent_banner",
-      "label": "Show Consent Banner",
-      "default": false,
-      "info": "Show GDPR/CCPA consent banner for visitor tracking"
-    },
-    {
-      "type": "checkbox",
-      "id": "debug_mode",
-      "label": "Debug Mode",
-      "default": false,
-      "info": "Enable console logging for troubleshooting"
-    }
-  ]
+"name": "UL Visitor Tracking",
+"target": "body",
+"javascript": "ul-visitor.js",
+"settings": [
+{
+"type": "checkbox",
+"id": "enabled",
+"label": "Enable Visitor Tracking",
+"default": true
+},
+{
+"type": "checkbox",
+"id": "show_consent_banner",
+"label": "Show Consent Banner",
+"default": false,
+"info": "Show GDPR/CCPA consent banner for visitor tracking"
+},
+{
+"type": "checkbox",
+"id": "debug_mode",
+"label": "Debug Mode",
+"default": false,
+"info": "Enable console logging for troubleshooting"
+}
+]
 }
 {% endschema %}

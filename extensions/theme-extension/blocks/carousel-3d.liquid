@@ -1,137 +1,129 @@
 {% comment %}
-  3D Carousel Upload - Collection Based
-  Merchant selects a collection, products from that collection are displayed
+3D Carousel Upload - Collection Based
+Merchant selects a collection, products from that collection are displayed
 {% endcomment %}
-
 {{ 'ul-carousel.css' | asset_url | stylesheet_tag }}
-
 {% comment %} Check if we're in theme editor {% endcomment %}
 {% assign is_design_mode = false %}
 {% if request.design_mode %}
-  {% assign is_design_mode = true %}
+{% assign is_design_mode = true %}
 {% endif %}
-
 <div class="ul-carousel-section" data-block-id="{{ block.id }}" data-design-mode="{{ is_design_mode }}">
-  {% if block.settings.show_header %}
-  <div class="ul-section-header-4d">
-    <div class="ul-header-deco-wrap">
-      <div class="ul-header-side-deco ul-side-left"><span class="ul-deco-diamond"></span><span class="ul-deco-line"></span></div>
-      <div class="ul-header-4d-container">
-        <span class="ul-gold-corner ul-corner-tl"></span><span class="ul-gold-corner ul-corner-tr"></span>
-        <span class="ul-gold-corner ul-corner-bl"></span><span class="ul-gold-corner ul-corner-br"></span>
-        <div class="ul-header-4d-inner">
-          <span class="ul-header-tag">{{ block.settings.header_tag | default: '✨ LIMITED TIME' }}</span>
-          <h2 class="ul-header-title-4d">{{ block.settings.header_title | default: 'CUSTOM PRODUCTS' }}</h2>
-          <p class="ul-header-subtitle">{{ block.settings.header_subtitle | default: 'Upload your design and create unique products' }}</p>
-        </div>
-      </div>
-      <div class="ul-header-side-deco ul-side-right"><span class="ul-deco-line"></span><span class="ul-deco-diamond"></span></div>
-    </div>
-  </div>
-  {% endif %}
-
-  <div class="ul-carousel-container">
-    <div class="ul-carousel-track" id="ulTrack-{{ block.id }}">
-      {% assign max_products = block.settings.max_products | default: 6 %}
-      {% assign collection = block.settings.collection %}
-
-      {% if collection and collection.products.size > 0 %}
-        {% for p in collection.products limit: max_products %}
-        <div class="ul-carousel-card" data-product-id="{{ p.id }}" data-variant-id="{{ p.selected_or_first_available_variant.id }}" data-product-title="{{ p.title | escape }}" data-product-price="{{ p.price | money }}" data-product-image="{{ p.featured_image | image_url: width: 400 }}">
-          <span class="ul-4d-badge">4D</span>
-          <button class="ul-wishlist-btn" type="button"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>
-          <div class="ul-card-image"><a href="{{ p.url }}"><img src="{{ p.featured_image | image_url: width: 400 }}" alt="{{ p.title }}" width="400" height="400" loading="lazy"></a></div>
-          <div class="ul-card-info">
-            <span class="ul-card-vendor">{{ p.vendor | default: 'BRAND' }}</span>
-            <h3 class="ul-card-title"><a href="{{ p.url }}">{{ p.title }}</a></h3>
-            {% if block.settings.show_reviews %}<div class="ul-card-rating"><span class="ul-stars">★★★★★</span><span class="ul-rating-count">({{ p.id | modulo: 200 | plus: 50 }})</span></div>{% endif %}
-            <div class="ul-card-price">{% if p.compare_at_price > p.price %}<span class="ul-compare-price">{{ p.compare_at_price | money }}</span>{% endif %}<span class="ul-current-price">{{ p.price | money }}</span></div>
-            <button class="ul-upload-btn" type="button" {% unless is_design_mode %}onclick="openUL3DModal(this)"{% endunless %}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>Upload Design</span></button>
-          </div>
-        </div>
-        {% endfor %}
-      {% else %}
-        <p style="padding:30px;color:#666;text-align:center;width:100%;">Select a collection in block settings</p>
-      {% endif %}
-    </div>
-    <button class="ul-carousel-prev" onclick="slideUL3D('{{ block.id }}',-1)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
-    <button class="ul-carousel-next" onclick="slideUL3D('{{ block.id }}',1)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
-  </div>
+{% if block.settings.show_header %}
+<div class="ul-section-header-4d">
+<div class="ul-header-deco-wrap">
+<div class="ul-header-side-deco ul-side-left"><span class="ul-deco-diamond"></span><span class="ul-deco-line"></span></div>
+<div class="ul-header-4d-container">
+<span class="ul-gold-corner ul-corner-tl"></span><span class="ul-gold-corner ul-corner-tr"></span>
+<span class="ul-gold-corner ul-corner-bl"></span><span class="ul-gold-corner ul-corner-br"></span>
+<div class="ul-header-4d-inner">
+<span class="ul-header-tag">{{ block.settings.header_tag | default: '✨ LIMITED TIME' }}</span>
+<h2 class="ul-header-title-4d">{{ block.settings.header_title | default: 'CUSTOM PRODUCTS' }}</h2>
+<p class="ul-header-subtitle">{{ block.settings.header_subtitle | default: 'Upload your design and create unique products' }}</p>
 </div>
-
+</div>
+<div class="ul-header-side-deco ul-side-right"><span class="ul-deco-line"></span><span class="ul-deco-diamond"></span></div>
+</div>
+</div>
+{% endif %}
+<div class="ul-carousel-container">
+<div class="ul-carousel-track" id="ulTrack-{{ block.id }}">
+{% assign max_products = block.settings.max_products | default: 6 %}
+{% assign collection = block.settings.collection %}
+{% if collection and collection.products.size > 0 %}
+{% for p in collection.products limit: max_products %}
+<div class="ul-carousel-card" data-product-id="{{ p.id }}" data-variant-id="{{ p.selected_or_first_available_variant.id }}" data-product-title="{{ p.title | escape }}" data-product-price="{{ p.price | money }}" data-product-image="{{ p.featured_image | image_url: width: 400 }}">
+<span class="ul-4d-badge">4D</span>
+<button class="ul-wishlist-btn" type="button"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>
+<div class="ul-card-image"><a href="{{ p.url }}"><img src="{{ p.featured_image | image_url: width: 400 }}" alt="{{ p.title }}" width="400" height="400" loading="lazy"></a></div>
+<div class="ul-card-info">
+<span class="ul-card-vendor">{{ p.vendor | default: 'BRAND' }}</span>
+<h3 class="ul-card-title"><a href="{{ p.url }}">{{ p.title }}</a></h3>
+{% if block.settings.show_reviews %}<div class="ul-card-rating"><span class="ul-stars">★★★★★</span><span class="ul-rating-count">({{ p.id | modulo: 200 | plus: 50 }})</span></div>{% endif %}
+<div class="ul-card-price">{% if p.compare_at_price > p.price %}<span class="ul-compare-price">{{ p.compare_at_price | money }}</span>{% endif %}<span class="ul-current-price">{{ p.price | money }}</span></div>
+<button class="ul-upload-btn" type="button" {% unless is_design_mode %}onclick="openUL3DModal(this)"{% endunless %}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span>Upload Design</span></button>
+</div>
+</div>
+{% endfor %}
+{% else %}
+<p style="padding:30px;color:#666;text-align:center;width:100%;">Select a collection in block settings</p>
+{% endif %}
+</div>
+<button class="ul-carousel-prev" onclick="slideUL3D('{{ block.id }}',-1)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+<button class="ul-carousel-next" onclick="slideUL3D('{{ block.id }}',1)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
+</div>
+</div>
 <div class="ul-modal-overlay" id="ulModal-{{ block.id }}">
-  <div class="ul-modal">
-    <div class="ul-modal-header"><h3>Upload Your Design</h3><button class="ul-modal-close" onclick="closeUL3DModal('{{ block.id }}')">×</button></div>
-    <div class="ul-modal-body">
-      <div class="ul-modal-product"><img id="ulModalImg-{{ block.id }}" src="" alt="" width="60" height="60"><div><strong id="ulModalTitle-{{ block.id }}"></strong><span id="ulModalPrice-{{ block.id }}"></span></div></div>
-      <div class="ul-upload-zone" id="ulUploadZone-{{ block.id }}" onclick="document.getElementById('ulFileInput-{{ block.id }}').click()">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#7367f0" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        <p><strong>Drag & drop your design here</strong></p>
-        <span style="font-size:12px;color:#9ca3af;">or click to browse • PNG, JPG, WEBP, TIFF, PSD, PDF, AI, EPS • Max 10GB</span>
-        <input type="file" id="ulFileInput-{{ block.id }}" accept=".png,.jpg,.jpeg,.webp,.tiff,.tif,.psd,.svg,.pdf,.ai,.eps" style="display:none" onchange="handleUL3DFile(event,'{{ block.id }}')">
-      </div>
-      <div class="ul-preview-zone" id="ulPreviewZone-{{ block.id }}" style="display:none">
-        <img id="ulPreviewImg-{{ block.id }}" src="" alt="" width="200" height="200"><button class="ul-remove-btn" onclick="removeUL3DFile('{{ block.id }}')">×</button>
-      </div>
-      <div class="ul-size-section"><label>Sheet Size:</label>
-        <select class="ul-size-select" id="ulSizeSelect-{{ block.id }}" onchange="selectUL3DSize(this,'{{ block.id }}')">
-          <option value="22x6" data-price="7.50">22" x 6" - $7.50</option>
-          <option value="22x12" data-price="12.00" selected>22" x 12" - $12.00</option>
-          <option value="22x24" data-price="22.00">22" x 24" - $22.00</option>
-          <option value="22x60" data-price="50.00">22" x 60" - $50.00</option>
-        </select>
-      </div>
-      <div class="ul-qty-row"><span>Quantity:</span><div class="ul-qty-controls"><button onclick="changeUL3DQty('{{ block.id }}',-1)">−</button><input type="number" id="ulQtyInput-{{ block.id }}" value="1" min="1"><button onclick="changeUL3DQty('{{ block.id }}',1)">+</button></div></div>
-    </div>
-    <div class="ul-modal-footer"><button class="ul-modal-cart-btn" id="ulCartBtn-{{ block.id }}" onclick="addUL3DToCart('{{ block.id }}')" disabled>Upload design to continue</button></div>
-  </div>
+<div class="ul-modal">
+<div class="ul-modal-header"><h3>Upload Your Design</h3><button class="ul-modal-close" onclick="closeUL3DModal('{{ block.id }}')">×</button></div>
+<div class="ul-modal-body">
+<div class="ul-modal-product"><img id="ulModalImg-{{ block.id }}" src="" alt="" width="60" height="60"><div><strong id="ulModalTitle-{{ block.id }}"></strong><span id="ulModalPrice-{{ block.id }}"></span></div></div>
+<div class="ul-upload-zone" id="ulUploadZone-{{ block.id }}" onclick="document.getElementById('ulFileInput-{{ block.id }}').click()">
+<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#7367f0" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+<p><strong>Drag & drop your design here</strong></p>
+<span style="font-size:12px;color:#9ca3af;">or click to browse • PNG, JPG, WEBP, TIFF, PSD, PDF, AI, EPS • Max 10GB</span>
+<input type="file" id="ulFileInput-{{ block.id }}" accept=".png,.jpg,.jpeg,.webp,.tiff,.tif,.psd,.svg,.pdf,.ai,.eps" style="display:none" onchange="handleUL3DFile(event,'{{ block.id }}')">
 </div>
-
+<div class="ul-preview-zone" id="ulPreviewZone-{{ block.id }}" style="display:none">
+<img id="ulPreviewImg-{{ block.id }}" src="" alt="" width="200" height="200"><button class="ul-remove-btn" onclick="removeUL3DFile('{{ block.id }}')">×</button>
+</div>
+<div class="ul-size-section"><label>Sheet Size:</label>
+<select class="ul-size-select" id="ulSizeSelect-{{ block.id }}" onchange="selectUL3DSize(this,'{{ block.id }}')">
+<option value="22x6" data-price="7.50">22" x 6" - $7.50</option>
+<option value="22x12" data-price="12.00" selected>22" x 12" - $12.00</option>
+<option value="22x24" data-price="22.00">22" x 24" - $22.00</option>
+<option value="22x60" data-price="50.00">22" x 60" - $50.00</option>
+</select>
+</div>
+<div class="ul-qty-row"><span>Quantity:</span><div class="ul-qty-controls"><button onclick="changeUL3DQty('{{ block.id }}',-1)">−</button><input type="number" id="ulQtyInput-{{ block.id }}" value="1" min="1"><button onclick="changeUL3DQty('{{ block.id }}',1)">+</button></div></div>
+</div>
+<div class="ul-modal-footer"><button class="ul-modal-cart-btn" id="ulCartBtn-{{ block.id }}" onclick="addUL3DToCart('{{ block.id }}')" disabled>Upload design to continue</button></div>
+</div>
+</div>
 <script src="{{ 'ul-carousel.js' | asset_url }}" defer></script>
-
 {% schema %}
 {
-  "name": "3D Carousel Upload",
-  "target": "section",
-  "settings": [
-    {
-      "type": "checkbox",
-      "id": "show_header",
-      "label": "Show 4D Header",
-      "default": true
-    },
-    {
-      "type": "text",
-      "id": "header_tag",
-      "label": "Header Tag",
-      "default": "✨ LIMITED TIME"
-    },
-    {
-      "type": "text",
-      "id": "header_title",
-      "label": "Header Title",
-      "default": "CUSTOM PRODUCTS"
-    },
-    {
-      "type": "collection",
-      "id": "collection",
-      "label": "Product Collection"
-    },
-    {
-      "type": "range",
-      "id": "max_products",
-      "min": 3,
-      "max": 12,
-      "step": 1,
-      "default": 6,
-      "label": "Max Products to Show"
-    },
-    {
-      "type": "checkbox",
-      "id": "show_reviews",
-      "label": "Show Star Ratings",
-      "default": true
-    }
-  ]
+"name": "3D Carousel Upload",
+"target": "section",
+"settings": [
+{
+"type": "checkbox",
+"id": "show_header",
+"label": "Show 4D Header",
+"default": true
+},
+{
+"type": "text",
+"id": "header_tag",
+"label": "Header Tag",
+"default": "✨ LIMITED TIME"
+},
+{
+"type": "text",
+"id": "header_title",
+"label": "Header Title",
+"default": "CUSTOM PRODUCTS"
+},
+{
+"type": "collection",
+"id": "collection",
+"label": "Product Collection"
+},
+{
+"type": "range",
+"id": "max_products",
+"min": 3,
+"max": 12,
+"step": 1,
+"default": 6,
+"label": "Max Products to Show"
+},
+{
+"type": "checkbox",
+"id": "show_reviews",
+"label": "Show Star Ratings",
+"default": true
+}
+]
 }
 {% endschema %}

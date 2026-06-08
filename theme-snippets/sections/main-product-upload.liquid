@@ -3,7 +3,7 @@
 {%- liquid
   assign section_dom_id = 'ul-main-product-' | append: section.id
   assign upload_input_id = section_dom_id | append: '-upload-input'
-  assign ul_main_accept = '.png,.jpg,.jpeg,.webp,.tif,.tiff,.psd,.pdf,.ai,.eps,.svg,image/png,image/jpeg,image/webp,image/tiff,image/x-tiff,image/vnd.adobe.photoshop,application/vnd.adobe.photoshop,application/x-photoshop,image/x-psd,application/photoshop,application/psd,application/pdf,application/postscript,application/illustrator,application/vnd.adobe.illustrator,application/eps,application/x-eps,image/x-eps,image/svg+xml'
+  assign ul_main_accept = '.png,.jpg,.jpeg,.webp,.tif,.tiff,.psd,.pdf,.ai,.eps,.svg'
 -%}
 
 <div class="w-full bg-[#f3f3f3] pb-10" id="{{ section_dom_id }}" data-section-id="{{ section.id }}" data-product-id="{{ product.id }}" data-shop-domain="{{ shop.permanent_domain }}" data-api-base="/apps/customizer" data-customer-id="{{ customer.id | default: '' }}" data-customer-email="{{ customer.email | default: '' }}" data-customer-first-name="{{ customer.first_name | default: '' }}" data-customer-last-name="{{ customer.last_name | default: '' }}" data-customer-logged-in="{% if customer %}true{% else %}false{% endif %}">

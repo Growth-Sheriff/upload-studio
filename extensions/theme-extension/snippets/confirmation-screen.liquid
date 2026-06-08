@@ -1,364 +1,302 @@
 {% comment %}
-  Confirmation Screen Snippet
-  ============================
-  FAZ 3: Cart Confirmation Overlay
-  FAZ 4: Global State Integration
-  
-  Usage: {% render 'confirmation-screen' %}
-  
-  Features:
-  - Shows after successful cart addition
-  - Displays all cart items with details
-  - Shows cart total
-  - Proceed to Checkout button
-  - Continue Shopping button
-  - Global state sync (FAZ 4)
-  
-  Triggered by: ul:showConfirmation event
-  
-  Version: 1.1.0
-  Architecture: DTF_TSHIRT_MODAL_ARCHITECTURE.md
+Confirmation Screen Snippet
+============================
+FAZ 3: Cart Confirmation Overlay
+FAZ 4: Global State Integration
+Usage: {% render 'confirmation-screen' %}
+Features:
+- Shows after successful cart addition
+- Displays all cart items with details
+- Shows cart total
+- Proceed to Checkout button
+- Continue Shopping button
+- Global state sync (FAZ 4)
+Triggered by: ul:showConfirmation event
+Version: 1.1.0
+Architecture: DTF_TSHIRT_MODAL_ARCHITECTURE.md
 {% endcomment %}
-
 <!-- Load Separate CSS -->
 {{ 'confirmation-screen.css' | asset_url | stylesheet_tag }}
-
 <!-- Confirmation Screen HTML -->
 <div class="ul-confirm-overlay" id="ul-confirm-overlay">
-  <div class="ul-confirm-modal">
-    
-    <!-- Header -->
-    <div class="ul-confirm-header">
-      <div class="ul-confirm-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-          <path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </div>
-      <h2 class="ul-confirm-title">Added to Cart!</h2>
-      <p class="ul-confirm-subtitle" id="ul-confirm-subtitle">Your items are ready for checkout</p>
-    </div>
-    
-    <!-- Body / Cart Items -->
-    <div class="ul-confirm-body">
-      <div class="ul-confirm-cart-title">
-        Your Cart 
-        <span class="ul-confirm-cart-count" id="ul-confirm-cart-count">0</span>
-      </div>
-      
-      <!-- Cart Items Container -->
-      <div class="ul-confirm-items" id="ul-confirm-items">
-        <!-- Dynamically populated -->
-      </div>
-      
-      <!-- Empty State (hidden by default) -->
-      <div class="ul-confirm-empty" id="ul-confirm-empty" style="display: none;">
-        <div class="ul-confirm-empty-icon">🛒</div>
-        <div class="ul-confirm-empty-text">Your cart is empty</div>
-      </div>
-      
-      <!-- Cart Total -->
-      <div class="ul-confirm-total" id="ul-confirm-total">
-        <span class="ul-confirm-total-label">Cart Total</span>
-        <span class="ul-confirm-total-value" id="ul-confirm-total-value">$0.00</span>
-      </div>
-    </div>
-    
-    <!-- Footer / Actions -->
-    <div class="ul-confirm-footer">
-      <div class="ul-confirm-actions">
-        <button type="button" class="ul-confirm-btn primary" id="ul-confirm-checkout">
-          🛒 Proceed to Checkout
-        </button>
-        <button type="button" class="ul-confirm-btn secondary" id="ul-confirm-continue">
-          ← Continue Shopping
-        </button>
-      </div>
-    </div>
-    
-  </div>
+<div class="ul-confirm-modal">
+<!-- Header -->
+<div class="ul-confirm-header">
+<div class="ul-confirm-icon">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+<path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
 </div>
-
+<h2 class="ul-confirm-title">Added to Cart!</h2>
+<p class="ul-confirm-subtitle" id="ul-confirm-subtitle">Your items are ready for checkout</p>
+</div>
+<!-- Body / Cart Items -->
+<div class="ul-confirm-body">
+<div class="ul-confirm-cart-title">
+Your Cart
+<span class="ul-confirm-cart-count" id="ul-confirm-cart-count">0</span>
+</div>
+<!-- Cart Items Container -->
+<div class="ul-confirm-items" id="ul-confirm-items">
+<!-- Dynamically populated -->
+</div>
+<!-- Empty State (hidden by default) -->
+<div class="ul-confirm-empty" id="ul-confirm-empty" style="display: none;">
+<div class="ul-confirm-empty-icon">🛒</div>
+<div class="ul-confirm-empty-text">Your cart is empty</div>
+</div>
+<!-- Cart Total -->
+<div class="ul-confirm-total" id="ul-confirm-total">
+<span class="ul-confirm-total-label">Cart Total</span>
+<span class="ul-confirm-total-value" id="ul-confirm-total-value">$0.00</span>
+</div>
+</div>
+<!-- Footer / Actions -->
+<div class="ul-confirm-footer">
+<div class="ul-confirm-actions">
+<button type="button" class="ul-confirm-btn primary" id="ul-confirm-checkout">
+🛒 Proceed to Checkout
+</button>
+<button type="button" class="ul-confirm-btn secondary" id="ul-confirm-continue">
+← Continue Shopping
+</button>
+</div>
+</div>
+</div>
+</div>
 <!-- Confirmation Screen Script -->
 <script>
 (function() {
-  'use strict';
-
-  const ULConfirmation = {
-    isOpen: false,
-    cartData: null,
-
-    // DOM elements
-    el: {},
-
-    init() {
-      this.cacheElements();
-      this.bindEvents();
-      
-      // Subscribe to global state changes (FAZ 4)
-      if (window.ULState) {
-        window.ULState.subscribe('ui.confirmationOpen', (isOpen) => {
-          if (isOpen && !this.isOpen) {
-            this.show({});
-          } else if (!isOpen && this.isOpen) {
-            this.close();
-          }
-        });
-      }
-      
-      console.log('[ULConfirmation] Initialized v1.1.0');
-    },
-
-    cacheElements() {
-      this.el = {
-        overlay: document.getElementById('ul-confirm-overlay'),
-        subtitle: document.getElementById('ul-confirm-subtitle'),
-        cartCount: document.getElementById('ul-confirm-cart-count'),
-        itemsContainer: document.getElementById('ul-confirm-items'),
-        emptyState: document.getElementById('ul-confirm-empty'),
-        totalContainer: document.getElementById('ul-confirm-total'),
-        totalValue: document.getElementById('ul-confirm-total-value'),
-        checkoutBtn: document.getElementById('ul-confirm-checkout'),
-        continueBtn: document.getElementById('ul-confirm-continue')
-      };
-    },
-
-    bindEvents() {
-      // Listen for show event
-      document.addEventListener('ul:showConfirmation', (e) => {
-        this.show(e.detail);
-      });
-
-      // Checkout button
-      this.el.checkoutBtn?.addEventListener('click', () => {
-        this.proceedToCheckout();
-      });
-
-      // Continue shopping button
-      this.el.continueBtn?.addEventListener('click', () => {
-        this.close();
-      });
-
-      // Click outside to close
-      this.el.overlay?.addEventListener('click', (e) => {
-        if (e.target === this.el.overlay) {
-          this.close();
-        }
-      });
-
-      // Escape key to close
-      document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && this.isOpen) {
-          this.close();
-        }
-      });
-    },
-
-    async show(detail = {}) {
-      // Prevent opening in Shopify theme editor
-      if (window.Shopify && window.Shopify.designMode) return;
-      
-      // Prevent re-entry
-      if (this.isOpen) return;
-      this.isOpen = true;
-      
-      // Fetch current cart (with rate limit protection)
-      if (!this._lastFetch || Date.now() - this._lastFetch > 2000) {
-        await this.fetchCart();
-        this._lastFetch = Date.now();
-      }
-      
-      // Sync cart data to global state (FAZ 4)
-      if (window.ULState && this.cartData) {
-        window.ULState.set('cart.items', this.cartData.items);
-        window.ULState.set('cart.itemCount', this.cartData.item_count);
-        window.ULState.set('cart.totalPrice', this.cartData.total_price);
-      }
-      
-      // FAZ 8: Track confirmation shown
-      if (window.ULAnalytics && this.cartData) {
-        window.ULAnalytics.trackConfirmationShown({
-          source: detail.source || 'unknown',
-          itemCount: this.cartData.item_count,
-          cartTotal: this.cartData.total_price,
-          hasUploadLiftItems: this.cartData.items.some(item => 
-            item.properties && (item.properties['_ul_upload_id'] || item.properties['_ul_is_tshirt'])
-          )
-        });
-      }
-
-      // Update UI
-      this.render();
-
-      // Show overlay
-      this.el.overlay?.classList.add('active');
-      document.body.style.overflow = 'hidden';
-    },
-
-    close() {
-      if (!this.isOpen) return;
-      
-      this.el.overlay?.classList.remove('active');
-      this.isOpen = false;
-      document.body.style.overflow = '';
-      
-      // Sync with global state (FAZ 4)
-      if (window.ULState) {
-        window.ULState.set('ui.confirmationOpen', false);
-      }
-      
-      // FAZ 8: Track continue shopping
-      if (window.ULAnalytics) {
-        window.ULAnalytics.trackContinueShopping({
-          itemCount: this.cartData?.item_count || 0,
-          cartTotal: this.cartData?.total_price || 0
-        });
-      }
-      
-      // Emit global event (FAZ 4)
-      if (window.ULEvents) {
-        window.ULEvents.emit('hideConfirmation', {});
-      }
-    },
-
-    async fetchCart() {
-      try {
-        const response = await fetch('/cart.js', {
-          headers: { 'Accept': 'application/json' }
-        });
-        
-        if (!response.ok) throw new Error('Failed to fetch cart');
-        
-        this.cartData = await response.json();
-      } catch (error) {
-        console.error('[ULConfirmation] Cart fetch error:', error);
-        this.cartData = { items: [], total_price: 0, item_count: 0 };
-      }
-    },
-
-    render() {
-      if (!this.cartData) return;
-
-      const { items, total_price, item_count } = this.cartData;
-
-      // Update cart count
-      if (this.el.cartCount) {
-        this.el.cartCount.textContent = item_count;
-      }
-
-      // Update subtitle
-      if (this.el.subtitle) {
-        this.el.subtitle.textContent = item_count === 1 
-          ? '1 item in your cart' 
-          : `${item_count} items in your cart`;
-      }
-
-      // Render items
-      if (this.el.itemsContainer) {
-        if (items.length === 0) {
-          this.el.itemsContainer.style.display = 'none';
-          this.el.emptyState.style.display = 'block';
-          this.el.totalContainer.style.display = 'none';
-        } else {
-          this.el.itemsContainer.style.display = 'flex';
-          this.el.emptyState.style.display = 'none';
-          this.el.totalContainer.style.display = 'flex';
-          
-          this.el.itemsContainer.innerHTML = items.map(item => this.renderItem(item)).join('');
-        }
-      }
-
-      // Update total
-      if (this.el.totalValue) {
-        this.el.totalValue.textContent = this.formatMoney(total_price);
-      }
-    },
-
-    renderItem(item) {
-      // Determine icon based on item properties
-      const isUploadLift = item.properties && (
-        item.properties['_ul_upload_id'] || 
-        item.properties['_ul_is_tshirt'] ||
-        item.properties['_upload_id'] ||
-        item.properties['Uploaded File']
-      );
-      
-      const isTShirt = item.properties && item.properties['_ul_is_tshirt'] === 'true';
-      const icon = isTShirt ? '👕' : (isUploadLift ? '🖼️' : '📦');
-
-      // Build meta info
-      let meta = `Qty: ${item.quantity}`;
-      
-      if (isTShirt) {
-        const color = item.properties['_ul_tshirt_color'] || item.properties['T-Shirt Color'] || '';
-        const size = item.properties['_ul_tshirt_size'] || item.properties['T-Shirt Size'] || '';
-        const locations = item.properties['_ul_locations'] || item.properties['Print Locations'] || 'front';
-        
-        if (color || size) {
-          meta = `${color}${color && size ? ', ' : ''}${size} • Qty: ${item.quantity}`;
-        }
-        
-        const locNames = locations.split(',').map(l => {
-          const map = { front: 'Front', back: 'Back', left_sleeve: 'L.Sleeve', right_sleeve: 'R.Sleeve' };
-          return map[l.trim()] || l;
-        });
-        meta += ` • ${locNames.join(' + ')}`;
-      }
-
-      // Variant info
-      if (item.variant_title && item.variant_title !== 'Default Title') {
-        meta = `${item.variant_title} • Qty: ${item.quantity}`;
-      }
-
-      return `
-        <div class="ul-confirm-item">
-          <div class="ul-confirm-item-icon">${icon}</div>
-          <div class="ul-confirm-item-info">
-            <div class="ul-confirm-item-name">${this.escapeHtml(item.product_title)}</div>
-            <div class="ul-confirm-item-meta">${meta}</div>
-          </div>
-          <div class="ul-confirm-item-price">${this.formatMoney(item.final_line_price)}</div>
-        </div>
-      `;
-    },
-
-    formatMoney(cents) {
-      // Convert cents to dollars
-      const dollars = (cents / 100).toFixed(2);
-      return `$${dollars}`;
-    },
-
-    escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    },
-
-    proceedToCheckout() {
-      // FAZ 8: Track proceed to checkout
-      if (window.ULAnalytics) {
-        window.ULAnalytics.trackProceedCheckout({
-          itemCount: this.cartData?.item_count || 0,
-          cartTotal: this.cartData?.total_price || 0,
-          hasUploadLiftItems: this.cartData?.items?.some(item => 
-            item.properties && (item.properties['_ul_upload_id'] || item.properties['_ul_is_tshirt'])
-          ) || false
-        });
-      }
-      
-      this.close();
-      window.location.href = '/checkout';
-    }
-  };
-
-  // Initialize when DOM ready
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => ULConfirmation.init());
-  } else {
-    ULConfirmation.init();
-  }
-
-  // Expose globally
-  window.ULConfirmation = ULConfirmation;
-
+'use strict';
+const ULConfirmation = {
+isOpen: false,
+cartData: null,
+// DOM elements
+el: {},
+init() {
+this.cacheElements();
+this.bindEvents();
+// Subscribe to global state changes (FAZ 4)
+if (window.ULState) {
+window.ULState.subscribe('ui.confirmationOpen', (isOpen) => {
+if (isOpen && !this.isOpen) {
+this.show({});
+} else if (!isOpen && this.isOpen) {
+this.close();
+}
+});
+}
+console.log('[ULConfirmation] Initialized v1.1.0');
+},
+cacheElements() {
+this.el = {
+overlay: document.getElementById('ul-confirm-overlay'),
+subtitle: document.getElementById('ul-confirm-subtitle'),
+cartCount: document.getElementById('ul-confirm-cart-count'),
+itemsContainer: document.getElementById('ul-confirm-items'),
+emptyState: document.getElementById('ul-confirm-empty'),
+totalContainer: document.getElementById('ul-confirm-total'),
+totalValue: document.getElementById('ul-confirm-total-value'),
+checkoutBtn: document.getElementById('ul-confirm-checkout'),
+continueBtn: document.getElementById('ul-confirm-continue')
+};
+},
+bindEvents() {
+// Listen for show event
+document.addEventListener('ul:showConfirmation', (e) => {
+this.show(e.detail);
+});
+// Checkout button
+this.el.checkoutBtn?.addEventListener('click', () => {
+this.proceedToCheckout();
+});
+// Continue shopping button
+this.el.continueBtn?.addEventListener('click', () => {
+this.close();
+});
+// Click outside to close
+this.el.overlay?.addEventListener('click', (e) => {
+if (e.target === this.el.overlay) {
+this.close();
+}
+});
+// Escape key to close
+document.addEventListener('keydown', (e) => {
+if (e.key === 'Escape' && this.isOpen) {
+this.close();
+}
+});
+},
+async show(detail = {}) {
+// Prevent opening in Shopify theme editor
+if (window.Shopify && window.Shopify.designMode) return;
+// Prevent re-entry
+if (this.isOpen) return;
+this.isOpen = true;
+// Fetch current cart (with rate limit protection)
+if (!this._lastFetch || Date.now() - this._lastFetch > 2000) {
+await this.fetchCart();
+this._lastFetch = Date.now();
+}
+// Sync cart data to global state (FAZ 4)
+if (window.ULState && this.cartData) {
+window.ULState.set('cart.items', this.cartData.items);
+window.ULState.set('cart.itemCount', this.cartData.item_count);
+window.ULState.set('cart.totalPrice', this.cartData.total_price);
+}
+// FAZ 8: Track confirmation shown
+if (window.ULAnalytics && this.cartData) {
+window.ULAnalytics.trackConfirmationShown({
+source: detail.source || 'unknown',
+itemCount: this.cartData.item_count,
+cartTotal: this.cartData.total_price,
+hasUploadLiftItems: this.cartData.items.some(item =>
+item.properties && (item.properties['_ul_upload_id'] || item.properties['_ul_is_tshirt'])
+)
+});
+}
+// Update UI
+this.render();
+// Show overlay
+this.el.overlay?.classList.add('active');
+document.body.style.overflow = 'hidden';
+},
+close() {
+if (!this.isOpen) return;
+this.el.overlay?.classList.remove('active');
+this.isOpen = false;
+document.body.style.overflow = '';
+// Sync with global state (FAZ 4)
+if (window.ULState) {
+window.ULState.set('ui.confirmationOpen', false);
+}
+// FAZ 8: Track continue shopping
+if (window.ULAnalytics) {
+window.ULAnalytics.trackContinueShopping({
+itemCount: this.cartData?.item_count || 0,
+cartTotal: this.cartData?.total_price || 0
+});
+}
+// Emit global event (FAZ 4)
+if (window.ULEvents) {
+window.ULEvents.emit('hideConfirmation', {});
+}
+},
+async fetchCart() {
+try {
+const response = await fetch('/cart.js', {
+headers: { 'Accept': 'application/json' }
+});
+if (!response.ok) throw new Error('Failed to fetch cart');
+this.cartData = await response.json();
+} catch (error) {
+console.error('[ULConfirmation] Cart fetch error:', error);
+this.cartData = { items: [], total_price: 0, item_count: 0 };
+}
+},
+render() {
+if (!this.cartData) return;
+const { items, total_price, item_count } = this.cartData;
+// Update cart count
+if (this.el.cartCount) {
+this.el.cartCount.textContent = item_count;
+}
+// Update subtitle
+if (this.el.subtitle) {
+this.el.subtitle.textContent = item_count === 1
+? '1 item in your cart'
+: `${item_count} items in your cart`;
+}
+// Render items
+if (this.el.itemsContainer) {
+if (items.length === 0) {
+this.el.itemsContainer.style.display = 'none';
+this.el.emptyState.style.display = 'block';
+this.el.totalContainer.style.display = 'none';
+} else {
+this.el.itemsContainer.style.display = 'flex';
+this.el.emptyState.style.display = 'none';
+this.el.totalContainer.style.display = 'flex';
+this.el.itemsContainer.innerHTML = items.map(item => this.renderItem(item)).join('');
+}
+}
+// Update total
+if (this.el.totalValue) {
+this.el.totalValue.textContent = this.formatMoney(total_price);
+}
+},
+renderItem(item) {
+// Determine icon based on item properties
+const isUploadLift = item.properties && (
+item.properties['_ul_upload_id'] ||
+item.properties['_ul_is_tshirt'] ||
+item.properties['_upload_id'] ||
+item.properties['Uploaded File']
+);
+const isTShirt = item.properties && item.properties['_ul_is_tshirt'] === 'true';
+const icon = isTShirt ? '👕' : (isUploadLift ? '🖼️' : '📦');
+// Build meta info
+let meta = `Qty: ${item.quantity}`;
+if (isTShirt) {
+const color = item.properties['_ul_tshirt_color'] || item.properties['T-Shirt Color'] || '';
+const size = item.properties['_ul_tshirt_size'] || item.properties['T-Shirt Size'] || '';
+const locations = item.properties['_ul_locations'] || item.properties['Print Locations'] || 'front';
+if (color || size) {
+meta = `${color}${color && size ? ', ' : ''}${size} • Qty: ${item.quantity}`;
+}
+const locNames = locations.split(',').map(l => {
+const map = { front: 'Front', back: 'Back', left_sleeve: 'L.Sleeve', right_sleeve: 'R.Sleeve' };
+return map[l.trim()] || l;
+});
+meta += ` • ${locNames.join(' + ')}`;
+}
+// Variant info
+if (item.variant_title && item.variant_title !== 'Default Title') {
+meta = `${item.variant_title} • Qty: ${item.quantity}`;
+}
+return `
+<div class="ul-confirm-item">
+<div class="ul-confirm-item-icon">${icon}</div>
+<div class="ul-confirm-item-info">
+<div class="ul-confirm-item-name">${this.escapeHtml(item.product_title)}</div>
+<div class="ul-confirm-item-meta">${meta}</div>
+</div>
+<div class="ul-confirm-item-price">${this.formatMoney(item.final_line_price)}</div>
+</div>
+`;
+},
+formatMoney(cents) {
+// Convert cents to dollars
+const dollars = (cents / 100).toFixed(2);
+return `$${dollars}`;
+},
+escapeHtml(text) {
+const div = document.createElement('div');
+div.textContent = text;
+return div.innerHTML;
+},
+proceedToCheckout() {
+// FAZ 8: Track proceed to checkout
+if (window.ULAnalytics) {
+window.ULAnalytics.trackProceedCheckout({
+itemCount: this.cartData?.item_count || 0,
+cartTotal: this.cartData?.total_price || 0,
+hasUploadLiftItems: this.cartData?.items?.some(item =>
+item.properties && (item.properties['_ul_upload_id'] || item.properties['_ul_is_tshirt'])
+) || false
+});
+}
+this.close();
+window.location.href = '/checkout';
+}
+};
+// Initialize when DOM ready
+if (document.readyState === 'loading') {
+document.addEventListener('DOMContentLoaded', () => ULConfirmation.init());
+} else {
+ULConfirmation.init();
+}
+// Expose globally
+window.ULConfirmation = ULConfirmation;
 })();
 </script>
