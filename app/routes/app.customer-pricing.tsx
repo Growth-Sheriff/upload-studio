@@ -26,6 +26,13 @@ import type {
   CustomerPricingStatus,
   ProductRuleCatalogItem,
 } from '~/lib/customerPricing.server'
+import {
+  ALPHA_DTF_GANG_SHEET_PRO_PRODUCT_ID,
+  ALPHA_PRO_DISCOUNT_TIERS,
+  ALPHA_PRO_PRODUCT_IDS,
+  ALPHA_UV_GANG_SHEET_PRO_PRODUCT_ID,
+  isAlphaPrintShop,
+} from '~/lib/alphaProDiscounts'
 import { authenticate } from '~/shopify.server'
 
 const CUSTOMER_SEARCH_QUERY = `#graphql
@@ -96,6 +103,70 @@ interface StatusEditor {
   productRules: ProductRuleEditor[]
 }
 
+interface AlphaProProgramCustomer {
+  customerId: string
+  name: string
+  email: string
+  totalInches: number
+  dtfInches: number
+  uvInches: number
+  orders: number
+  lastOrder: string
+  lastOrderedAt: string
+}
+
+interface AlphaProProgramProduct {
+  productId: string
+  title: string
+  configured: boolean
+  unit: string
+  tierCount: number
+}
+
+interface AlphaProProgramTier {
+  min_qty: number
+  max_qty: number | null
+  price_per_sqin: number
+  price_per_inch: number
+  label: string
+  popular?: boolean
+}
+
+interface AlphaProProgram {
+  eligibleCustomerCount: number
+  customers: AlphaProProgramCustomer[]
+  products: AlphaProProgramProduct[]
+  tiers: AlphaProProgramTier[]
+}
+
+interface AlphaProTierEditor {
+  id: string
+  minQty: string
+  maxQty: string
+  pricePerInch: string
+  label: string
+  popular: boolean
+}
+
+interface AlphaProProductEditor {
+  id: string
+  productId: string
+  title: string
+}
+
+interface AlphaProCustomerEditor {
+  id: string
+  customerId: string
+  name: string
+  email: string
+  totalInches: string
+  dtfInches: string
+  uvInches: string
+  orders: string
+  lastOrder: string
+  lastOrderedAt: string
+}
+
 type CustomerPricingActionData = {
   success: boolean
   message?: string
@@ -141,6 +212,144 @@ function formatRate(value: number | null | undefined): string {
   return `$${formatted} / in`
 }
 
+function formatAlphaInches(value: number | null | undefined): string {
+  if (!Number.isFinite(value) || value == null) return '0 in'
+  return `${Math.round(Number(value)).toLocaleString()} in`
+}
+
+function formatAlphaTierRange(tier: { min_qty: number; max_qty: number | null }): string {
+  return tier.max_qty == null
+    ? `${tier.min_qty.toLocaleString()}+ inches`
+    : `${tier.min_qty.toLocaleString()}-${tier.max_qty.toLocaleString()} inches`
+}
+
+function toAlphaNumber(value: unknown): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
+}
+
+function cleanAlphaPanelName(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .replace(/^\d+\.\s*/, '')
+    .trim()
+}
+
+function alphaString(value: unknown): string {
+  return String(value || '').trim()
+}
+
+function alphaProgramProductTitleMap(): Record<string, string> {
+  return {
+    [ALPHA_DTF_GANG_SHEET_PRO_PRODUCT_ID]: 'DTF Gang Sheets Pro',
+    [ALPHA_UV_GANG_SHEET_PRO_PRODUCT_ID]: 'UV Gang Sheets Pro',
+  }
+}
+
+function defaultAlphaProgramProducts(): Array<{ productId: string; title: string }> {
+  const titleMap = alphaProgramProductTitleMap()
+  return ALPHA_PRO_PRODUCT_IDS.map((productId) => ({
+    productId,
+    title: titleMap[productId] || productId,
+  }))
+}
+
+function normalizeAlphaProgramProductEntry(
+  entry: unknown,
+  index: number
+): { productId: string; title: string } | null {
+  const raw = entry && typeof entry === 'object'
+    ? (entry as Record<string, unknown>)
+    : { productId: entry }
+  const productId = normalizeProductIdLocal(
+    raw.productId as string | number | null | undefined
+  ) || normalizeProductIdLocal(raw.gid as string | number | null | undefined)
+  if (!productId || productId === '*') return null
+
+  const fallbackTitle = alphaProgramProductTitleMap()[productId] || `Product ${index + 1}`
+  const title = alphaString(raw.title) || alphaString(raw.label) || fallbackTitle
+  return { productId, title }
+}
+
+function getAlphaProgramProductsFromSettings(
+  settings: Record<string, unknown>
+): Array<{ productId: string; title: string }> {
+  const rawDiscount = settings.alphaProDiscount && typeof settings.alphaProDiscount === 'object'
+    ? (settings.alphaProDiscount as Record<string, unknown>)
+    : {}
+  const rawProducts = Array.isArray(rawDiscount.products)
+    ? rawDiscount.products
+    : []
+  const products = rawProducts
+    .map((entry, index) => normalizeAlphaProgramProductEntry(entry, index))
+    .filter((entry): entry is { productId: string; title: string } => Boolean(entry))
+
+  if (!products.length) return defaultAlphaProgramProducts()
+
+  const seen = new Set<string>()
+  return products.filter((product) => {
+    if (seen.has(product.productId)) return false
+    seen.add(product.productId)
+    return true
+  })
+}
+
+function normalizeAlphaTierEntry(entry: unknown, index: number): AlphaProProgramTier | null {
+  const raw = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {}
+  const minQty = Math.max(1, Math.round(toAlphaNumber(raw.min_qty ?? raw.minQty ?? raw.minimum ?? 1)))
+  const maxSource = raw.max_qty ?? raw.maxQty ?? raw.maximum
+  const maxQty = maxSource == null || alphaString(maxSource).toLowerCase() === 'null' || alphaString(maxSource) === ''
+    ? null
+    : Math.max(minQty, Math.round(toAlphaNumber(maxSource)))
+  const pricePerInch = parseLocalizedPositiveNumber(
+    raw.price_per_inch ?? raw.pricePerInch ?? raw.price_per_sqin ?? raw.price,
+    0
+  )
+  if (!(pricePerInch > 0)) return null
+
+  const label = alphaString(raw.label) || formatAlphaTierRange({ min_qty: minQty, max_qty: maxQty })
+  return {
+    min_qty: minQty,
+    max_qty: maxQty,
+    price_per_sqin: pricePerInch,
+    price_per_inch: pricePerInch,
+    label,
+    popular: Boolean(raw.popular),
+  }
+}
+
+function normalizeAlphaTierList(rawTiers: unknown): AlphaProProgramTier[] {
+  const tiers = Array.isArray(rawTiers)
+    ? rawTiers
+        .map((entry, index) => normalizeAlphaTierEntry(entry, index))
+        .filter((entry): entry is AlphaProProgramTier => Boolean(entry))
+    : []
+
+  const normalized = tiers.length
+    ? tiers
+    : ALPHA_PRO_DISCOUNT_TIERS.map((tier) => ({ ...tier }))
+
+  return normalized.sort((left, right) => left.min_qty - right.min_qty)
+}
+
+function getAlphaTierSource(
+  rawDiscount: Record<string, unknown>,
+  productConfigs: Array<{ productId: string; builderConfig: unknown }>
+): AlphaProProgramTier[] {
+  const configWithTiers = productConfigs.find((config) => {
+    const builderConfig = config.builderConfig && typeof config.builderConfig === 'object'
+      ? (config.builderConfig as Record<string, unknown>)
+      : {}
+    return Array.isArray(builderConfig.volumeDiscountTiers) && builderConfig.volumeDiscountTiers.length
+  })
+  if (configWithTiers) {
+    const builderConfig = configWithTiers.builderConfig as Record<string, unknown>
+    return normalizeAlphaTierList(builderConfig.volumeDiscountTiers)
+  }
+
+  return normalizeAlphaTierList(rawDiscount.tiers)
+}
+
 function normalizeProductIdLocal(value: string | number | null | undefined): string | null {
   if (value == null) return null
   const raw = String(value).trim()
@@ -171,6 +380,54 @@ function buildUniqueStatusKey(statuses: Array<{ key: string }>, label: string): 
   return `${baseKey}-${index}`
 }
 
+function buildAlphaProProgram(
+  settings: Record<string, unknown>,
+  productConfigs: Array<{ productId: string; builderConfig: unknown }>
+): AlphaProProgram {
+  const rawDiscount = settings.alphaProDiscount && typeof settings.alphaProDiscount === 'object'
+    ? (settings.alphaProDiscount as Record<string, unknown>)
+    : {}
+  const rawCustomers = Array.isArray(rawDiscount.eligibleCustomers)
+    ? (rawDiscount.eligibleCustomers as Record<string, unknown>[])
+    : []
+  const configByProduct = new Map(
+    productConfigs.map((config) => [config.productId, config.builderConfig as Record<string, unknown>])
+  )
+  const products = getAlphaProgramProductsFromSettings(settings)
+  const tiers = getAlphaTierSource(rawDiscount, productConfigs)
+
+  return {
+    eligibleCustomerCount: rawCustomers.length,
+    tiers,
+    products: products.map((product) => {
+      const { productId } = product
+      const builderConfig = configByProduct.get(productId) || {}
+      const configuredTiers = Array.isArray(builderConfig.volumeDiscountTiers)
+        ? builderConfig.volumeDiscountTiers
+        : []
+
+      return {
+        productId,
+        title: product.title,
+        configured: Boolean(builderConfig.volumeDiscountTierUnit === 'linear_inches'),
+        unit: alphaString(builderConfig.volumeDiscountTierUnit) || 'linear_inches',
+        tierCount: configuredTiers.length || tiers.length,
+      }
+    }),
+    customers: rawCustomers.map((customer) => ({
+      customerId: alphaString(customer.customerId),
+      name: cleanAlphaPanelName(customer.name || customer.firstName || customer.email) || 'Unnamed customer',
+      email: alphaString(customer.email),
+      totalInches: toAlphaNumber(customer.totalInches),
+      dtfInches: toAlphaNumber(customer.dtfInches),
+      uvInches: toAlphaNumber(customer.uvInches),
+      orders: toAlphaNumber(customer.orders),
+      lastOrder: alphaString(customer.lastOrder),
+      lastOrderedAt: alphaString(customer.lastOrderedAt),
+    })),
+  }
+}
+
 function normalizeProductGidInput(value: string): string | null {
   const raw = value.trim()
   if (!raw) return null
@@ -194,7 +451,7 @@ function extractProductHandle(value: string): string | null {
       return decodeURIComponent(parts[productIndex + 1]).trim()
     }
   } catch {
-    // Not a full URL; handle the common handle/path formats below.
+
   }
 
   const withoutQuery = raw.split(/[?#]/)[0].replace(/^\/+|\/+$/g, '')
@@ -309,6 +566,168 @@ function serializeStatusesForSave(statuses: StatusEditor[]) {
   }))
 }
 
+function alphaEditorId(prefix: string): string {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+function toAlphaTierEditor(tier: AlphaProProgramTier, index: number): AlphaProTierEditor {
+  return {
+    id: `tier_${index}_${tier.min_qty}_${tier.max_qty ?? 'up'}`,
+    minQty: String(tier.min_qty),
+    maxQty: tier.max_qty == null ? '' : String(tier.max_qty),
+    pricePerInch: formatEditableRate(tier.price_per_inch),
+    label: tier.label || formatAlphaTierRange(tier),
+    popular: Boolean(tier.popular),
+  }
+}
+
+function toAlphaProductEditor(product: AlphaProProgramProduct, index: number): AlphaProProductEditor {
+  return {
+    id: `product_${index}_${product.productId.split('/').pop() || index}`,
+    productId: product.productId,
+    title: product.title,
+  }
+}
+
+function toAlphaCustomerEditor(customer: AlphaProProgramCustomer, index: number): AlphaProCustomerEditor {
+  return {
+    id: `customer_${index}_${customer.customerId || customer.email || index}`,
+    customerId: customer.customerId,
+    name: customer.name,
+    email: customer.email,
+    totalInches: formatEditableRate(customer.totalInches),
+    dtfInches: formatEditableRate(customer.dtfInches),
+    uvInches: formatEditableRate(customer.uvInches),
+    orders: String(Math.round(customer.orders || 0)),
+    lastOrder: customer.lastOrder,
+    lastOrderedAt: customer.lastOrderedAt,
+  }
+}
+
+function serializeAlphaProgramForSave(
+  products: AlphaProProductEditor[],
+  tiers: AlphaProTierEditor[],
+  customers: AlphaProCustomerEditor[]
+) {
+  return {
+    products: products.map((product) => ({
+      productId: product.productId,
+      title: product.title,
+    })),
+    tiers: tiers.map((tier) => ({
+      min_qty: tier.minQty,
+      max_qty: tier.maxQty,
+      price_per_inch: tier.pricePerInch,
+      label: tier.label,
+      popular: tier.popular,
+    })),
+    eligibleCustomers: customers.map((customer) => ({
+      customerId: customer.customerId,
+      name: customer.name,
+      email: customer.email,
+      totalInches: customer.totalInches,
+      dtfInches: customer.dtfInches,
+      uvInches: customer.uvInches,
+      orders: customer.orders,
+      lastOrder: customer.lastOrder,
+      lastOrderedAt: customer.lastOrderedAt,
+    })),
+  }
+}
+
+function sanitizeAlphaProgramPayload(payload: unknown) {
+  const raw = payload && typeof payload === 'object'
+    ? (payload as Record<string, unknown>)
+    : {}
+  const products = Array.isArray(raw.products)
+    ? raw.products
+        .map((entry, index) => normalizeAlphaProgramProductEntry(entry, index))
+        .filter((entry): entry is { productId: string; title: string } => Boolean(entry))
+    : []
+  const uniqueProducts = (products.length ? products : defaultAlphaProgramProducts()).filter(
+    (product, index, list) => list.findIndex((item) => item.productId === product.productId) === index
+  )
+
+  const tiers = normalizeAlphaTierList(raw.tiers)
+  const eligibleCustomers = Array.isArray(raw.eligibleCustomers)
+    ? raw.eligibleCustomers
+        .map((entry) => {
+          const customer = entry && typeof entry === 'object'
+            ? (entry as Record<string, unknown>)
+            : {}
+          const customerId = alphaString(customer.customerId)
+          const email = alphaString(customer.email).toLowerCase()
+          if (!customerId && !email) return null
+
+          return {
+            customerId,
+            name: cleanAlphaPanelName(customer.name) || email || customerId,
+            email,
+            totalInches: toAlphaNumber(String(customer.totalInches ?? '').replace(',', '.')),
+            dtfInches: toAlphaNumber(String(customer.dtfInches ?? '').replace(',', '.')),
+            uvInches: toAlphaNumber(String(customer.uvInches ?? '').replace(',', '.')),
+            orders: Math.round(toAlphaNumber(customer.orders)),
+            lastOrder: alphaString(customer.lastOrder),
+            lastOrderedAt: alphaString(customer.lastOrderedAt),
+          }
+        })
+        .filter((entry): entry is AlphaProProgramCustomer => Boolean(entry))
+    : []
+
+  return { products: uniqueProducts, tiers, eligibleCustomers }
+}
+
+function buildAlphaProductSettings(products: Array<{ productId: string; title: string }>) {
+  return products.map((product) => ({
+    gid: product.productId,
+    productId: product.productId,
+    legacyId: product.productId.split('/').pop() || product.productId,
+    title: product.title,
+  }))
+}
+
+function buildAlphaBuilderConfig(
+  existingBuilderConfig: unknown,
+  products: Array<{ productId: string; title: string }>,
+  tiers: AlphaProProgramTier[]
+): Prisma.InputJsonObject {
+  const base = existingBuilderConfig && typeof existingBuilderConfig === 'object'
+    ? (existingBuilderConfig as Record<string, unknown>)
+    : {}
+
+  return {
+    ...base,
+    pricingMode: base.pricingMode === 'sheet' ? 'sheet' : 'area',
+    volumeDiscountTierUnit: 'linear_inches',
+    volumeDiscountTiers: tiers as unknown as Prisma.InputJsonValue,
+    alphaProDiscount: {
+      enabled: true,
+      unit: 'linear_inches',
+      unitLabel: 'billable inches',
+      products: products.map((product) => product.productId),
+      source: 'customer_pricing_editor',
+    },
+  } as Prisma.InputJsonObject
+}
+
+function buildDisabledAlphaBuilderConfig(existingBuilderConfig: unknown): Prisma.InputJsonObject {
+  const base = existingBuilderConfig && typeof existingBuilderConfig === 'object'
+    ? (existingBuilderConfig as Record<string, unknown>)
+    : {}
+  const existingDiscount = base.alphaProDiscount && typeof base.alphaProDiscount === 'object'
+    ? (base.alphaProDiscount as Record<string, unknown>)
+    : {}
+
+  return {
+    ...base,
+    alphaProDiscount: {
+      ...existingDiscount,
+      enabled: false,
+      source: 'customer_pricing_editor',
+    },
+  } as Prisma.InputJsonObject
+}
+
 async function loadProductCatalog(
   admin: Awaited<ReturnType<typeof authenticate.admin>>['admin'],
   config: CustomerPricingSettings
@@ -374,12 +793,27 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const { session, admin } = await authenticate.admin(request)
   const shop = await prisma.shop.findUnique({
     where: { shopDomain: session.shop },
-    select: { settings: true },
+    select: { id: true, settings: true },
   })
 
+  const shopSettings = (shop?.settings as Record<string, unknown> | null) || {}
   const isDtf = isDtfPrintHouseShop(session.shop)
-  const config = applyCustomerPricingDefaultsForShop(session.shop, shop?.settings || {})
+  const config = applyCustomerPricingDefaultsForShop(session.shop, shopSettings)
   const productCatalog = await loadProductCatalog(admin, config)
+  const isAlpha = isAlphaPrintShop(session.shop)
+  const alphaProgramProducts = isAlpha ? getAlphaProgramProductsFromSettings(shopSettings) : []
+  const alphaProductConfigs = isAlpha && shop
+    ? await prisma.productConfig.findMany({
+        where: {
+          shopId: shop.id,
+          productId: { in: alphaProgramProducts.map((product) => product.productId) },
+        },
+        select: { productId: true, builderConfig: true },
+      })
+    : []
+  const alphaProProgram = isAlpha
+    ? buildAlphaProProgram(shopSettings, alphaProductConfigs)
+    : null
   const url = new URL(request.url)
   const search = String(url.searchParams.get('q') || '').trim()
   let searchResults: SearchCustomer[] = []
@@ -417,7 +851,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
-  return json({ isDtf, config, productCatalog, search, searchResults })
+  return json({ isDtf, config, productCatalog, search, searchResults, alphaProProgram })
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -433,7 +867,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const shop = await prisma.shop.findUnique({
     where: { shopDomain: session.shop },
-    select: { settings: true },
+    select: { id: true, settings: true },
   })
 
   if (!shop) {
@@ -442,6 +876,124 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const existingSettings = (shop.settings as Record<string, unknown> | null) || {}
   const existingConfig = applyCustomerPricingDefaultsForShop(session.shop, existingSettings)
+
+  if (intent === 'save-alpha-pro-program') {
+    if (!isAlphaPrintShop(session.shop)) {
+      return json({ success: false, error: 'This program is only available for the configured store.' }, { status: 403 })
+    }
+
+    let parsedPayload: unknown = {}
+    try {
+      parsedPayload = JSON.parse(String(formData.get('alphaProJson') || '{}'))
+    } catch {
+      return json({ success: false, error: 'Invalid Alpha program payload.' }, { status: 400 })
+    }
+
+    const alphaProgram = sanitizeAlphaProgramPayload(parsedPayload)
+    if (!alphaProgram.products.length) {
+      return json({ success: false, error: 'At least one product is required.' }, { status: 400 })
+    }
+    if (!alphaProgram.tiers.length) {
+      return json({ success: false, error: 'At least one inch tier is required.' }, { status: 400 })
+    }
+
+    const activeProductIds = alphaProgram.products.map((product) => product.productId)
+    const previousProductIds = getAlphaProgramProductsFromSettings(existingSettings).map(
+      (product) => product.productId
+    )
+    const touchedProductIds = Array.from(new Set(activeProductIds.concat(previousProductIds)))
+    const disabledProductIds = touchedProductIds.filter(
+      (productId) => !activeProductIds.includes(productId)
+    )
+
+    const existingProductConfigs = await prisma.productConfig.findMany({
+      where: {
+        shopId: shop.id,
+        productId: { in: touchedProductIds },
+      },
+      select: { productId: true, builderConfig: true },
+    })
+    const existingProductConfigMap = new Map(
+      existingProductConfigs.map((config) => [config.productId, config.builderConfig])
+    )
+    const existingAlphaDiscount = existingSettings.alphaProDiscount && typeof existingSettings.alphaProDiscount === 'object'
+      ? (existingSettings.alphaProDiscount as Record<string, unknown>)
+      : {}
+    const nextSettings = {
+      ...existingSettings,
+      alphaProDiscount: {
+        ...existingAlphaDiscount,
+        enabled: true,
+        version: 2,
+        unit: 'linear_inches',
+        unitLabel: 'billable inches',
+        products: buildAlphaProductSettings(alphaProgram.products),
+        tiers: alphaProgram.tiers,
+        eligibleCustomers: alphaProgram.eligibleCustomers,
+        updatedAt: new Date().toISOString(),
+        source: 'customer_pricing_editor',
+      },
+    } as unknown as Prisma.InputJsonObject
+
+    await prisma.$transaction([
+      prisma.shop.update({
+        where: { shopDomain: session.shop },
+        data: { settings: nextSettings },
+      }),
+      ...alphaProgram.products.map((product) =>
+        prisma.productConfig.upsert({
+          where: {
+            shopId_productId: {
+              shopId: shop.id,
+              productId: product.productId,
+            },
+          },
+          update: {
+            enabled: true,
+            uploadEnabled: true,
+            mode: 'dtf',
+            builderConfig: buildAlphaBuilderConfig(
+              existingProductConfigMap.get(product.productId),
+              alphaProgram.products,
+              alphaProgram.tiers
+            ),
+          },
+          create: {
+            shopId: shop.id,
+            productId: product.productId,
+            enabled: true,
+            uploadEnabled: true,
+            mode: 'dtf',
+            builderConfig: buildAlphaBuilderConfig(
+              null,
+              alphaProgram.products,
+              alphaProgram.tiers
+            ),
+          },
+        })
+      ),
+      ...disabledProductIds.filter((productId) => existingProductConfigMap.has(productId)).map((productId) =>
+        prisma.productConfig.update({
+          where: {
+            shopId_productId: {
+              shopId: shop.id,
+              productId,
+            },
+          },
+          data: {
+            builderConfig: buildDisabledAlphaBuilderConfig(
+              existingProductConfigMap.get(productId)
+            ),
+          },
+        })
+      ),
+    ])
+
+    return json({
+      success: true,
+      message: `Returning customer inch program saved for ${alphaProgram.products.length} product(s), ${alphaProgram.tiers.length} tier(s), and ${alphaProgram.eligibleCustomers.length} customer(s).`,
+    })
+  }
 
   if (intent === 'add-status') {
     const statusLabel = String(formData.get('statusLabel') || '').trim()
@@ -698,12 +1250,13 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function CustomerPricingPage() {
-  const { isDtf, config, productCatalog, search, searchResults } = useLoaderData<typeof loader>()
+  const { isDtf, config, productCatalog, search, searchResults, alphaProProgram } = useLoaderData<typeof loader>()
   const actionData = useActionData<CustomerPricingActionData>()
   const navigation = useNavigation()
   const isSubmitting = navigation.state === 'submitting'
   const [enabled, setEnabled] = useState(config.enabled)
   const [assignmentFilter, setAssignmentFilter] = useState('')
+  const [alphaProCustomerFilter, setAlphaProCustomerFilter] = useState('')
   const [searchInput, setSearchInput] = useState(search)
   const [statuses, setStatuses] = useState<StatusEditor[]>(
     config.statuses.map((status) => toStatusEditor(status))
@@ -713,6 +1266,15 @@ export default function CustomerPricingPage() {
   const [newRuleInputs, setNewRuleInputs] = useState<
     Record<string, { productInput: string; pricePerInch: string }>
   >({})
+  const [alphaProductEditors, setAlphaProductEditors] = useState<AlphaProProductEditor[]>(
+    () => (alphaProProgram?.products || []).map((product, index) => toAlphaProductEditor(product, index))
+  )
+  const [alphaTierEditors, setAlphaTierEditors] = useState<AlphaProTierEditor[]>(
+    () => (alphaProProgram?.tiers || []).map((tier, index) => toAlphaTierEditor(tier, index))
+  )
+  const [alphaCustomerEditors, setAlphaCustomerEditors] = useState<AlphaProCustomerEditor[]>(
+    () => (alphaProProgram?.customers || []).map((customer, index) => toAlphaCustomerEditor(customer, index))
+  )
 
   useEffect(() => {
     setEnabled(config.enabled)
@@ -720,7 +1282,10 @@ export default function CustomerPricingPage() {
     setStatuses(config.statuses.map((status) => toStatusEditor(status)))
     setNewRuleInputs({})
     setNewStatusLabel('')
-  }, [config, search])
+    setAlphaProductEditors((alphaProProgram?.products || []).map((product, index) => toAlphaProductEditor(product, index)))
+    setAlphaTierEditors((alphaProProgram?.tiers || []).map((tier, index) => toAlphaTierEditor(tier, index)))
+    setAlphaCustomerEditors((alphaProProgram?.customers || []).map((customer, index) => toAlphaCustomerEditor(customer, index)))
+  }, [config, search, alphaProProgram])
 
   const actionMessage = actionData?.message || null
   const actionError = actionData?.error || null
@@ -753,6 +1318,85 @@ export default function CustomerPricingPage() {
       .toLowerCase()
       .includes(needle)
   })
+  const filteredAlphaProCustomers = alphaCustomerEditors.filter((customer) => {
+    const needle = alphaProCustomerFilter.trim().toLowerCase()
+    if (!needle) return true
+    return [
+      customer.name,
+      customer.email,
+      customer.customerId,
+      customer.lastOrder,
+    ]
+      .join(' ')
+      .toLowerCase()
+      .includes(needle)
+  })
+
+  function updateAlphaProduct(id: string, field: keyof AlphaProProductEditor, value: string) {
+    setAlphaProductEditors((current) =>
+      current.map((product) => (product.id === id ? { ...product, [field]: value } : product))
+    )
+  }
+
+  function addAlphaProduct() {
+    setAlphaProductEditors((current) =>
+      current.concat({ id: alphaEditorId('product'), productId: '', title: '' })
+    )
+  }
+
+  function removeAlphaProduct(id: string) {
+    setAlphaProductEditors((current) => current.filter((product) => product.id !== id))
+  }
+
+  function updateAlphaTier(id: string, field: keyof AlphaProTierEditor, value: string | boolean) {
+    setAlphaTierEditors((current) =>
+      current.map((tier) => (tier.id === id ? { ...tier, [field]: value } : tier))
+    )
+  }
+
+  function addAlphaTier() {
+    setAlphaTierEditors((current) =>
+      current.concat({
+        id: alphaEditorId('tier'),
+        minQty: '',
+        maxQty: '',
+        pricePerInch: '',
+        label: '',
+        popular: false,
+      })
+    )
+  }
+
+  function removeAlphaTier(id: string) {
+    setAlphaTierEditors((current) => current.filter((tier) => tier.id !== id))
+  }
+
+  function updateAlphaCustomer(id: string, field: keyof AlphaProCustomerEditor, value: string) {
+    setAlphaCustomerEditors((current) =>
+      current.map((customer) => (customer.id === id ? { ...customer, [field]: value } : customer))
+    )
+  }
+
+  function addAlphaCustomer() {
+    setAlphaCustomerEditors((current) =>
+      current.concat({
+        id: alphaEditorId('customer'),
+        customerId: '',
+        name: '',
+        email: '',
+        totalInches: '',
+        dtfInches: '',
+        uvInches: '',
+        orders: '',
+        lastOrder: '',
+        lastOrderedAt: '',
+      })
+    )
+  }
+
+  function removeAlphaCustomer(id: string) {
+    setAlphaCustomerEditors((current) => current.filter((customer) => customer.id !== id))
+  }
 
   function updateStatusLabel(statusKey: string, label: string) {
     setStatuses((current) =>
@@ -861,6 +1505,293 @@ export default function CustomerPricingPage() {
             </Card>
           </InlineGrid>
         </Layout.Section>
+
+        {alphaProProgram ? (
+          <Layout.Section>
+            <Form method="post">
+              <input type="hidden" name="intent" value="save-alpha-pro-program" />
+              <input
+                type="hidden"
+                name="alphaProJson"
+                value={JSON.stringify(
+                  serializeAlphaProgramForSave(
+                    alphaProductEditors,
+                    alphaTierEditors,
+                    alphaCustomerEditors
+                  )
+                )}
+              />
+              <Card>
+                <BlockStack gap="500">
+                  <InlineStack align="space-between" blockAlign="start">
+                    <BlockStack gap="100">
+                      <InlineStack gap="200" blockAlign="center">
+                        <Text as="h2" variant="headingMd">Returning Customer Inch Discount Program</Text>
+                        <Badge tone="success">{`${alphaCustomerEditors.length} eligible customers`}</Badge>
+                      </InlineStack>
+                      <Text as="p" variant="bodyMd" tone="subdued">
+                        Fully editable store program for returning gang sheet customers. Product IDs, inch
+                        tiers, rates, and eligible customer records are saved into the live pricing config.
+                      </Text>
+                    </BlockStack>
+                    <InlineStack gap="200" blockAlign="center">
+                      <Badge tone="info">Store-specific</Badge>
+                      <Button
+                        submit
+                        variant="primary"
+                        loading={isSubmitting}
+                        disabled={!alphaProductEditors.length || !alphaTierEditors.length}
+                      >
+                        Save Program
+                      </Button>
+                    </InlineStack>
+                  </InlineStack>
+
+                  <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
+                    <Box padding="300" borderWidth="025" borderColor="border" borderRadius="200">
+                      <BlockStack gap="300">
+                        <InlineStack align="space-between" blockAlign="center">
+                          <Text as="h3" variant="headingSm">Configured Products</Text>
+                          <Button onClick={addAlphaProduct}>Add product</Button>
+                        </InlineStack>
+                        {alphaProductEditors.map((product) => (
+                          <Box
+                            key={product.id}
+                            padding="300"
+                            borderWidth="025"
+                            borderColor="border"
+                            borderRadius="200"
+                          >
+                            <BlockStack gap="300">
+                              <InlineStack align="space-between" blockAlign="center">
+                                <Badge tone={product.productId.trim() ? 'success' : 'critical'}>
+                                  {product.productId.trim() ? 'Editable' : 'Missing product'}
+                                </Badge>
+                                <Button tone="critical" onClick={() => removeAlphaProduct(product.id)}>
+                                  Remove
+                                </Button>
+                              </InlineStack>
+                              <TextField
+                                label="Product title"
+                                autoComplete="off"
+                                value={product.title}
+                                onChange={(value) => updateAlphaProduct(product.id, 'title', value)}
+                                placeholder="DTF Gang Sheets Pro"
+                              />
+                              <TextField
+                                label="Product GID or numeric ID"
+                                autoComplete="off"
+                                value={product.productId}
+                                onChange={(value) => updateAlphaProduct(product.id, 'productId', value)}
+                                placeholder="gid://shopify/Product/7453184196656"
+                              />
+                            </BlockStack>
+                          </Box>
+                        ))}
+                      </BlockStack>
+                    </Box>
+
+                    <Box padding="300" borderWidth="025" borderColor="border" borderRadius="200">
+                      <BlockStack gap="300">
+                        <InlineStack align="space-between" blockAlign="center">
+                          <Text as="h3" variant="headingSm">Inch Tiers</Text>
+                          <Button onClick={addAlphaTier}>Add tier</Button>
+                        </InlineStack>
+                        {alphaTierEditors.map((tier) => (
+                          <Box
+                            key={tier.id}
+                            padding="300"
+                            borderWidth="025"
+                            borderColor="border"
+                            borderRadius="200"
+                          >
+                            <BlockStack gap="300">
+                              <InlineStack align="space-between" blockAlign="center">
+                                <InlineStack gap="200" blockAlign="center">
+                                  <Badge tone="success">
+                                    {tier.pricePerInch ? `$${tier.pricePerInch} / in` : 'Rate missing'}
+                                  </Badge>
+                                  {tier.popular ? <Badge tone="attention">Most popular</Badge> : null}
+                                </InlineStack>
+                                <Button tone="critical" onClick={() => removeAlphaTier(tier.id)}>
+                                  Remove
+                                </Button>
+                              </InlineStack>
+                              <InlineGrid columns={{ xs: 1, md: 3 }} gap="300">
+                                <TextField
+                                  label="Minimum inches"
+                                  autoComplete="off"
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={tier.minQty}
+                                  onChange={(value) => updateAlphaTier(tier.id, 'minQty', value)}
+                                  placeholder="250"
+                                />
+                                <TextField
+                                  label="Maximum inches"
+                                  autoComplete="off"
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={tier.maxQty}
+                                  onChange={(value) => updateAlphaTier(tier.id, 'maxQty', value)}
+                                  placeholder="Blank means no cap"
+                                />
+                                <TextField
+                                  label="Price per inch"
+                                  autoComplete="off"
+                                  type="text"
+                                  inputMode="decimal"
+                                  prefix="$"
+                                  value={tier.pricePerInch}
+                                  onChange={(value) => updateAlphaTier(tier.id, 'pricePerInch', value)}
+                                  placeholder="0.20"
+                                />
+                              </InlineGrid>
+                              <InlineGrid columns={{ xs: 1, md: '2fr auto' }} gap="300">
+                                <TextField
+                                  label="Storefront label"
+                                  autoComplete="off"
+                                  value={tier.label}
+                                  onChange={(value) => updateAlphaTier(tier.id, 'label', value)}
+                                  placeholder="500+ inches"
+                                />
+                                <Checkbox
+                                  label="Highlight"
+                                  checked={tier.popular}
+                                  onChange={(value) => updateAlphaTier(tier.id, 'popular', value)}
+                                />
+                              </InlineGrid>
+                            </BlockStack>
+                          </Box>
+                        ))}
+                      </BlockStack>
+                    </Box>
+                  </InlineGrid>
+
+                  <BlockStack gap="300">
+                    <InlineStack align="space-between" blockAlign="end" gap="300">
+                      <BlockStack gap="100">
+                        <Text as="h3" variant="headingSm">Eligible Customers</Text>
+                        <Text as="p" variant="bodySm" tone="subdued">
+                          These records are editable. Customers match by Shopify customer ID first, then email.
+                        </Text>
+                      </BlockStack>
+                      <InlineStack gap="200" blockAlign="end">
+                        <div style={{ minWidth: 320 }}>
+                          <TextField
+                            label="Filter returning customers"
+                            autoComplete="off"
+                            value={alphaProCustomerFilter}
+                            onChange={setAlphaProCustomerFilter}
+                            placeholder="Search by name, email, customer ID, or order"
+                          />
+                        </div>
+                        <Button onClick={addAlphaCustomer}>Add customer</Button>
+                      </InlineStack>
+                    </InlineStack>
+
+                    {filteredAlphaProCustomers.length ? (
+                      <div style={{ maxHeight: 520, overflowY: 'auto', paddingRight: 4 }}>
+                        <BlockStack gap="200">
+                          {filteredAlphaProCustomers.map((customer) => (
+                            <Box
+                              key={customer.id}
+                              padding="300"
+                              borderWidth="025"
+                              borderColor="border"
+                              borderRadius="200"
+                            >
+                              <BlockStack gap="300">
+                                <InlineStack align="space-between" blockAlign="center">
+                                  <Badge tone={customer.email || customer.customerId ? 'info' : 'critical'}>
+                                    {customer.email || customer.customerId ? 'Matched customer' : 'Needs ID or email'}
+                                  </Badge>
+                                  <Button tone="critical" onClick={() => removeAlphaCustomer(customer.id)}>
+                                    Remove
+                                  </Button>
+                                </InlineStack>
+                                <InlineGrid columns={{ xs: 1, md: 3 }} gap="300">
+                                  <TextField
+                                    label="Customer name"
+                                    autoComplete="off"
+                                    value={customer.name}
+                                    onChange={(value) => updateAlphaCustomer(customer.id, 'name', value)}
+                                  />
+                                  <TextField
+                                    label="Email"
+                                    autoComplete="off"
+                                    value={customer.email}
+                                    onChange={(value) => updateAlphaCustomer(customer.id, 'email', value)}
+                                  />
+                                  <TextField
+                                    label="Customer ID"
+                                    autoComplete="off"
+                                    value={customer.customerId}
+                                    onChange={(value) => updateAlphaCustomer(customer.id, 'customerId', value)}
+                                  />
+                                </InlineGrid>
+                                <InlineGrid columns={{ xs: 1, md: 4 }} gap="300">
+                                  <TextField
+                                    label="Total inches"
+                                    autoComplete="off"
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={customer.totalInches}
+                                    onChange={(value) => updateAlphaCustomer(customer.id, 'totalInches', value)}
+                                  />
+                                  <TextField
+                                    label="DTF inches"
+                                    autoComplete="off"
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={customer.dtfInches}
+                                    onChange={(value) => updateAlphaCustomer(customer.id, 'dtfInches', value)}
+                                  />
+                                  <TextField
+                                    label="UV inches"
+                                    autoComplete="off"
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={customer.uvInches}
+                                    onChange={(value) => updateAlphaCustomer(customer.id, 'uvInches', value)}
+                                  />
+                                  <TextField
+                                    label="Orders"
+                                    autoComplete="off"
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={customer.orders}
+                                    onChange={(value) => updateAlphaCustomer(customer.id, 'orders', value)}
+                                  />
+                                </InlineGrid>
+                                <InlineGrid columns={{ xs: 1, md: 2 }} gap="300">
+                                  <TextField
+                                    label="Last order"
+                                    autoComplete="off"
+                                    value={customer.lastOrder}
+                                    onChange={(value) => updateAlphaCustomer(customer.id, 'lastOrder', value)}
+                                  />
+                                  <TextField
+                                    label="Last ordered at"
+                                    autoComplete="off"
+                                    value={customer.lastOrderedAt}
+                                    onChange={(value) => updateAlphaCustomer(customer.id, 'lastOrderedAt', value)}
+                                  />
+                                </InlineGrid>
+                              </BlockStack>
+                            </Box>
+                          ))}
+                        </BlockStack>
+                      </div>
+                    ) : (
+                      <Banner tone="info">No returning customers match this filter.</Banner>
+                    )}
+                  </BlockStack>
+                </BlockStack>
+              </Card>
+            </Form>
+          </Layout.Section>
+        ) : null}
 
         <Layout.Section>
           <Card>

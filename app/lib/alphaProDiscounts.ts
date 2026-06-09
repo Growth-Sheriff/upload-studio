@@ -11,13 +11,20 @@ export const ALPHA_PRO_PRODUCT_IDS = [
   ALPHA_UV_GANG_SHEET_PRO_PRODUCT_ID,
 ]
 
-export const ALPHA_PRO_DISCOUNT_TIERS = [
+export interface AlphaProDiscountTier {
+  min_qty: number
+  max_qty: number | null
+  price_per_sqin: number
+  price_per_inch: number
+  label: string
+  popular?: boolean
+}
+
+export const ALPHA_PRO_DISCOUNT_TIERS: AlphaProDiscountTier[] = [
   { min_qty: 1, max_qty: 249, price_per_sqin: 0.28, price_per_inch: 0.28, label: '1+ inches' },
   { min_qty: 250, max_qty: 499, price_per_sqin: 0.22, price_per_inch: 0.22, label: '250+ inches', popular: true },
   { min_qty: 500, max_qty: null, price_per_sqin: 0.2, price_per_inch: 0.2, label: '500+ inches' },
 ]
-
-export type AlphaProDiscountTier = (typeof ALPHA_PRO_DISCOUNT_TIERS)[number]
 
 interface AlphaProCustomerEntry {
   customerId?: string | number | null
@@ -66,6 +73,73 @@ export function isAlphaProProduct(productId: string | number | null | undefined)
   return ALPHA_PRO_PRODUCT_IDS.includes(normalized)
 }
 
+function alphaSettingsProductIds(settings: unknown): string[] {
+  const rawSettings = settings && typeof settings === 'object'
+    ? (settings as Record<string, unknown>)
+    : {}
+  const rawDiscount = rawSettings.alphaProDiscount && typeof rawSettings.alphaProDiscount === 'object'
+    ? (rawSettings.alphaProDiscount as Record<string, unknown>)
+    : {}
+  const rawProducts = Array.isArray(rawDiscount.products) ? rawDiscount.products : []
+
+  return rawProducts
+    .map((entry) => {
+      if (entry && typeof entry === 'object') {
+        const product = entry as Record<string, unknown>
+        return normalizeAlphaProductId(
+          (product.productId || product.gid || product.id) as string | number | null | undefined
+        )
+      }
+      return normalizeAlphaProductId(entry as string | number | null | undefined)
+    })
+    .filter((productId) => Boolean(productId))
+}
+
+function isAlphaProProductForSettings(
+  productId: string | number | null | undefined,
+  settings: unknown
+): boolean {
+  const normalized = normalizeAlphaProductId(productId)
+  const configuredProductIds = alphaSettingsProductIds(settings)
+  if (configuredProductIds.length) return configuredProductIds.includes(normalized)
+  return isAlphaProProduct(normalized)
+}
+
+function alphaSettingsTiers(settings: unknown): AlphaProDiscountTier[] {
+  const rawSettings = settings && typeof settings === 'object'
+    ? (settings as Record<string, unknown>)
+    : {}
+  const rawDiscount = rawSettings.alphaProDiscount && typeof rawSettings.alphaProDiscount === 'object'
+    ? (rawSettings.alphaProDiscount as Record<string, unknown>)
+    : {}
+  const rawTiers = Array.isArray(rawDiscount.tiers) ? rawDiscount.tiers : []
+  const tiers: AlphaProDiscountTier[] = []
+  for (const entry of rawTiers) {
+    const raw = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {}
+    const minQty = Number(raw.min_qty ?? raw.minQty)
+    const maxValue = raw.max_qty ?? raw.maxQty
+    const maxQty = maxValue == null || String(maxValue).trim() === ''
+      ? null
+      : Number(maxValue)
+    const price = Number(raw.price_per_inch ?? raw.pricePerInch ?? raw.price_per_sqin)
+    if (!Number.isFinite(minQty) || minQty < 1 || !Number.isFinite(price) || price <= 0) {
+      continue
+    }
+
+    tiers.push({
+        min_qty: Math.round(minQty),
+        max_qty: Number.isFinite(maxQty) && maxQty != null ? Math.round(maxQty) : null,
+        price_per_sqin: price,
+        price_per_inch: price,
+        label: String(raw.label || `${Math.round(minQty)}+ inches`),
+        popular: Boolean(raw.popular),
+    })
+  }
+  tiers.sort((left, right) => left.min_qty - right.min_qty)
+
+  return tiers.length ? tiers : ALPHA_PRO_DISCOUNT_TIERS
+}
+
 export function applyAlphaProBuilderDefaults(
   shopDomain: string | null | undefined,
   productId: string | number | null | undefined,
@@ -108,11 +182,11 @@ export function buildAlphaProCustomerOffer({
   customerEmail?: string | null
   customerName?: string | null
 }): Record<string, unknown> | null {
-  if (!isAlphaPrintShop(shopDomain) || !isAlphaProProduct(productId)) return null
-
   const rawSettings = settings && typeof settings === 'object'
     ? (settings as Record<string, unknown>)
     : {}
+  if (!isAlphaPrintShop(shopDomain) || !isAlphaProProductForSettings(productId, rawSettings)) return null
+
   const rawDiscount = rawSettings.alphaProDiscount && typeof rawSettings.alphaProDiscount === 'object'
     ? (rawSettings.alphaProDiscount as Record<string, unknown>)
     : null
@@ -148,6 +222,6 @@ export function buildAlphaProCustomerOffer({
     headline: `Dear valued customer ${displayName}, your returning-customer inch pricing is active.`,
     body: 'Your returning-customer pricing is calculated by billable gang-sheet inches and updates automatically as your measured length changes.',
     tierUnit: 'linear_inches',
-    tiers: ALPHA_PRO_DISCOUNT_TIERS,
+    tiers: alphaSettingsTiers(rawSettings),
   }
 }
