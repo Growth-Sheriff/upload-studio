@@ -136,6 +136,104 @@ function metadataToUploadDimensions(metadata: UploadLifecycleMetadata | null) {
   }
 }
 
+function isLinearInchBuilderConfig(builderConfig: Record<string, unknown>): boolean {
+  if (String(builderConfig.volumeDiscountTierUnit || '').trim() === 'linear_inches') return true
+  const discount = builderConfig.alphaProDiscount
+  if (discount && typeof discount === 'object') {
+    const raw = discount as Record<string, unknown>
+    return String(raw.unit || raw.tierUnit || '').trim() === 'linear_inches'
+  }
+  return false
+}
+
+function findUnitVariant(
+  variants: ProductVariantDef[],
+  selectedVariantId?: string | null
+): ProductVariantDef | null {
+  const availableVariants = variants.filter(
+    (variant) => variant.available !== false && variant.availableForSale !== false
+  )
+  const pool = availableVariants.length ? availableVariants : variants
+  if (!pool.length) return null
+
+  const selected = selectedVariantId
+    ? pool.find((variant) => String(variant.id) === String(selectedVariantId))
+    : null
+  if (selected) return selected
+
+  const inchUnit = pool.find((variant) => {
+    const haystack = [
+      variant.title,
+      variant.option1,
+      variant.option2,
+      variant.option3,
+      ...(variant.options || []),
+      ...(variant.selectedOptions || []).map((option) => option.value),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .replace(/\s+/g, '')
+
+    return /22["']?x1|22["']?×1|\(22["']?x1\)/.test(haystack)
+  })
+
+  return inchUnit || pool[0]
+}
+
+function normalizeVariantPriceToDollars(rawPrice: string | number | null | undefined): number {
+  if (rawPrice == null || rawPrice === '') return 0
+  if (typeof rawPrice === 'string') {
+    const parsed = Number(rawPrice)
+    if (Number.isFinite(parsed)) return parsed
+    const asInt = parseInt(rawPrice, 10)
+    return Number.isFinite(asInt) ? asInt / 100 : 0
+  }
+  const numeric = Number(rawPrice)
+  return Number.isFinite(numeric) ? numeric / 100 : 0
+}
+
+function resolveLinearInchVariant({
+  dimensions,
+  quantity,
+  variants,
+  selectedVariantId,
+}: {
+  dimensions: NonNullable<ReturnType<typeof metadataToUploadDimensions>>
+  quantity: number
+  variants: ProductVariantDef[]
+  selectedVariantId?: string | null
+}) {
+  const variant = findUnitVariant(variants, selectedVariantId)
+  if (!variant) return null
+
+  const pageWidthIn = Math.min(dimensions.widthIn, dimensions.heightIn)
+  const pageLengthIn = Math.max(dimensions.widthIn, dimensions.heightIn)
+  const requestedQuantity = Math.max(1, Math.floor(quantity))
+  const billableLengthIn = Number((pageLengthIn * requestedQuantity).toFixed(2))
+  const cartQuantity = Math.max(1, Math.ceil(billableLengthIn))
+  const unitPrice = normalizeVariantPriceToDollars(variant.price)
+
+  return {
+    selectedVariantId: variant.id,
+    selectedVariantTitle: variant.title || 'Measured inch unit',
+    selectedSheetLabel: `${cartQuantity} billable inches`,
+    designsPerSheet: 1,
+    sheetsNeeded: cartQuantity,
+    requestedQuantity,
+    widthIn: dimensions.widthIn,
+    heightIn: dimensions.heightIn,
+    pageWidthIn,
+    pageLengthIn,
+    billableLengthIn,
+    cartQuantity,
+    pricingMode: 'linear_inches',
+    unitPrice,
+    pricePerInch: unitPrice,
+    estimatedTotal: Number((cartQuantity * unitPrice).toFixed(2)),
+  }
+}
+
 function mapProductResolveData(productData: ProductQueryResponse): ProductResolveData {
   const product = productData.product
   const optionDefs: ProductOptionDef[] = (product?.options || []).map((option) => ({
@@ -366,6 +464,35 @@ export async function action({ request }: ActionFunctionArgs) {
         { error: 'Upload metadata is not ready yet. Please retry in a moment.' },
         request,
         { status: 409 }
+      )
+    }
+
+    const linearInchResolution = isLinearInchBuilderConfig(rawBuilderConfig)
+      ? resolveLinearInchVariant({
+          dimensions,
+          quantity,
+          variants,
+          selectedVariantId,
+        })
+      : null
+
+    if (linearInchResolution) {
+      return corsJson(
+        {
+          success: true,
+          upload: {
+            uploadId,
+            fileName: firstItem?.originalName || '',
+            ...dimensions,
+          },
+          resolution: linearInchResolution,
+          config: {
+            ...effectiveConfig,
+            pricingMode: 'linear_inches',
+            volumeDiscountTierUnit: 'linear_inches',
+          },
+        },
+        request
       )
     }
 
