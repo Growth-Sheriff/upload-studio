@@ -137,12 +137,13 @@ function metadataToUploadDimensions(metadata: UploadLifecycleMetadata | null) {
 }
 
 function isLinearInchBuilderConfig(builderConfig: Record<string, unknown>): boolean {
-  if (String(builderConfig.volumeDiscountTierUnit || '').trim() === 'linear_inches') return true
   const discount = builderConfig.alphaProDiscount
   if (discount && typeof discount === 'object') {
     const raw = discount as Record<string, unknown>
+    if (raw.enabled === false) return false
     return String(raw.unit || raw.tierUnit || '').trim() === 'linear_inches'
   }
+  if (String(builderConfig.volumeDiscountTierUnit || '').trim() === 'linear_inches') return true
   return false
 }
 
