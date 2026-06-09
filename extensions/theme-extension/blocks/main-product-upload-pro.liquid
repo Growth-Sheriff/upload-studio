@@ -1,0 +1,44 @@
+{{ 'main-product-upload-app.css' | asset_url | stylesheet_tag }}
+{{ 'main-product-upload-pro.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'ul-upload-telemetry.js' | asset_url }}" defer></script>
+<script src="{{ 'ul-multipart-uploader.js' | asset_url }}" defer></script>
+<script src="{{ 'main-product-upload-pro.js' | asset_url }}" defer></script>
+<script src="{{ 'main-product-upload-app.js' | asset_url }}" defer></script>
+
+{%- assign accept = block.settings.accepted_files | default: ".png,.jpg,.jpeg,.webp,.tif,.tiff,.psd,.pdf,.ai,.eps,.svg" -%}
+{%- assign roll_width = block.settings.roll_width_in | default: 22 -%}
+{%- assign accent = block.settings.accent_color | default: "#3c7d72" -%}
+
+<section
+  class="ump ump-pro"
+  data-ul-main-product-upload-app
+  data-ul-main-product-upload-pro
+  data-section-id="{{ section.id }}"
+  data-product-id="{{ product.id }}"
+  data-product-title="{{ product.title | escape }}"
+  data-product-variants="{{ product.variants | json | escape }}"
+  data-product-options="{{ product.options_with_values | json | escape }}"
+  data-shop-domain="{{ shop.permanent_domain }}"
+  data-customer-id="{{ customer.id | default: '' }}"
+  data-customer-email="{{ customer.email | default: '' | escape }}"
+  data-customer-name="{{ customer.name | default: '' | escape }}"
+  data-api-base="/apps/customizer"
+  data-roll-width-in="{{ roll_width }}"
+  data-accepted-files="{{ accept | escape }}"
+  data-enable-checkout="{{ block.settings.enable_checkout_button }}"
+  style="--ump-accent: {{ accent }};"
+></section>
+
+{% schema %}
+{
+  "name": "Main upload Pro",
+  "target": "section",
+  "templates": ["product"],
+  "settings": [
+    { "type": "text", "id": "accepted_files", "label": "Accepted files", "default": ".png,.jpg,.jpeg,.webp,.tif,.tiff,.psd,.pdf,.ai,.eps,.svg" },
+    { "type": "text", "id": "roll_width_in", "label": "Roll width", "default": "22" },
+    { "type": "color", "id": "accent_color", "label": "Accent color", "default": "#3c7d72" },
+    { "type": "checkbox", "id": "enable_checkout_button", "label": "Show checkout", "default": true }
+  ]
+}
+{% endschema %}

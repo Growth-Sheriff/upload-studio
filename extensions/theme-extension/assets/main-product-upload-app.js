@@ -133,6 +133,7 @@
       activeItemId: '',
       batchToken: 0
     };
+    this.root.__umpUpload = this;
     this.bindDom();
     this.bindEvents();
     this.render();
@@ -751,6 +752,7 @@
     }
     if (this.artLabel) this.artLabel.textContent = this.state.fileName || 'Upload preview';
     this.updatePreviewGeometry();
+    this.root.dispatchEvent(new CustomEvent('ump:render', { detail: { instance: this } }));
   };
 
   MainProductUpload.prototype.performUpload = async function(file, intent, onProgress) {
@@ -997,7 +999,7 @@
         var result = item.selectedResult || {};
         var variantId = parseInt(item.selectedVariantId, 10);
         if (!(variantId > 0)) throw new Error('A measured gang sheet has no matching variant.');
-        var quantity = Math.max(1, Number(result.sheetsNeeded) || 1);
+        var quantity = Math.max(1, Number(result.cartQuantity || result.sheetsNeeded) || 1);
         var sheetLabel = result.selectedSheetLabel || result.selectedVariantTitle || '';
         return {
           id: variantId,
@@ -1015,7 +1017,13 @@
             _ul_effective_dpi: String(item.effectiveDpi || 0),
             _ul_sizing_source: String(item.sizingSource || ''),
             _ul_measurement_mode: 'full',
-            _ul_mode: 'main_product_sheet_app_extension',
+            _ul_mode: result.pricingMode === 'linear_inches'
+              ? 'main_product_linear_inches_app_extension'
+              : 'main_product_sheet_app_extension',
+            _ul_pricing_mode: String(result.pricingMode || ''),
+            _ul_billable_length_in: result.billableLengthIn != null ? String(result.billableLengthIn) : '',
+            _ul_cart_quantity: String(quantity),
+            _ul_price_per_inch: result.pricePerInch != null ? String(result.pricePerInch) : '',
             _ul_selected_variant_id: String(item.selectedVariantId || ''),
             _ul_selected_variant_title: result.selectedVariantTitle || '',
             _ul_selected_sheet_label: sheetLabel,
