@@ -22,6 +22,38 @@
     return Math.abs(n - Math.round(n)) < 0.01 ? String(Math.round(n)) + '"' : n.toFixed(2) + '"';
   }
 
+  function normalizeVariantPrice(raw) {
+    if (raw == null || raw === '') return 0;
+    var numeric = Number(raw);
+    if (!isFinite(numeric) || numeric <= 0) return 0;
+    return numeric > 100 ? numeric / 100 : numeric;
+  }
+
+  function formatMoney(value, currency) {
+    var n = normalizeVariantPrice(value);
+    if (!n) return '--';
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: currency || 'USD'
+      }).format(n);
+    } catch (_) {
+      return '$' + n.toFixed(2);
+    }
+  }
+
+  function getVariantLabel(variant) {
+    var label = '';
+    if (variant) {
+      if (Array.isArray(variant.options) && variant.options.length) {
+        label = variant.options.filter(Boolean).join(' / ');
+      }
+      label = label || variant.title || variant.name || '';
+    }
+    label = String(label || '').trim();
+    return label && label.toLowerCase() !== 'default title' ? label : 'Sheet';
+  }
+
   function escapeHtml(value) {
     return String(value == null ? '' : value)
       .replace(/&/g, '&amp;')
@@ -109,6 +141,7 @@
     this.customerEmail = root.getAttribute('data-customer-email') || '';
     this.rollWidthIn = toNumber(root.getAttribute('data-roll-width-in')) || 22;
     this.enableCheckout = root.getAttribute('data-enable-checkout') === 'true';
+    this.currency = root.getAttribute('data-currency') || 'USD';
     this.variants = parseJson(root.getAttribute('data-product-variants'), []);
     this.productOptions = parseJson(root.getAttribute('data-product-options'), []);
     this.token = 0;
@@ -136,6 +169,7 @@
     this.root.__umpUpload = this;
     this.bindDom();
     this.bindEvents();
+    this.renderPriceStrip();
     this.render();
   }
 
@@ -181,7 +215,45 @@
     this.rulerSide = this.root.querySelector('[data-ump-ruler-side]');
     this.addButton = this.root.querySelector('[data-ump-add]');
     this.checkoutButton = this.root.querySelector('[data-ump-checkout]');
+    this.priceStrip = this.root.querySelector('[data-ump-price-strip]');
     this.error = this.root.querySelector('[data-ump-error]');
+  };
+
+  MainProductUpload.prototype.getPriceVariants = function() {
+    return (this.variants || []).filter(function(variant) {
+      return variant && variant.available !== false && variant.availableForSale !== false;
+    });
+  };
+
+  MainProductUpload.prototype.renderPriceStrip = function() {
+    if (!this.priceStrip) return;
+    var variants = this.getPriceVariants();
+    if (!variants.length) {
+      this.priceStrip.hidden = true;
+      this.priceStrip.innerHTML = '';
+      return;
+    }
+
+    var html = [
+      '<div class="ump__price-head">',
+        '<span>Sheet pricing</span>',
+        '<strong>Auto-selected after upload</strong>',
+      '</div>',
+      '<div class="ump__price-row" role="list">'
+    ];
+
+    variants.forEach(function(variant) {
+      html.push(
+        '<span class="ump__price-chip" role="listitem">',
+          '<small>', escapeHtml(getVariantLabel(variant)), '</small>',
+          '<strong>', escapeHtml(formatMoney(variant.price, this.currency)), '</strong>',
+        '</span>'
+      );
+    }, this);
+
+    html.push('</div>');
+    this.priceStrip.innerHTML = html.join('');
+    this.priceStrip.hidden = false;
   };
 
   MainProductUpload.prototype.bindEvents = function() {

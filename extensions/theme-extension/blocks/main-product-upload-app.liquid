@@ -17,6 +17,7 @@ data-product-id="{{ product.id }}"
 data-product-title="{{ product.title | escape }}"
 data-product-variants="{{ product.variants | json | escape }}"
 data-product-options="{{ product.options_with_values | json | escape }}"
+data-currency="{{ cart.currency.iso_code | default: shop.currency | default: 'USD' }}"
 data-shop-domain="{{ shop.permanent_domain }}"
 data-customer-id="{{ customer.id | default: '' }}"
 data-customer-email="{{ customer.email | default: '' | escape }}"
@@ -123,6 +124,7 @@ style="--ump-accent: {{ ump_accent }};"
 </div>
 <p class="ump__method" data-ump-method>Upload required before this product can be added to cart.</p>
 </div>
+<div class="ump__price-strip" data-ump-price-strip hidden></div>
 <div class="ump__actions">
 <button class="ump__cart" type="button" data-ump-add data-default-label="{{ block.settings.add_to_cart_label | default: 'Add to cart' | escape }}" disabled>
 <span>{{ block.settings.add_to_cart_label | default: 'Add to cart' }}</span>
