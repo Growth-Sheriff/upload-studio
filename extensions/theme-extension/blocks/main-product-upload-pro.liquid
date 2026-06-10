@@ -18,6 +18,7 @@
   data-product-title="{{ product.title | escape }}"
   data-product-variants="{{ product.variants | json | escape }}"
   data-product-options="{{ product.options_with_values | json | escape }}"
+  data-currency="{{ cart.currency.iso_code | default: shop.currency | default: 'USD' }}"
   data-shop-domain="{{ shop.permanent_domain }}"
   data-customer-id="{{ customer.id | default: '' }}"
   data-customer-email="{{ customer.email | default: '' | escape }}"

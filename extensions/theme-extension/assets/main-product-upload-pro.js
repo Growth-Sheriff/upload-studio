@@ -119,6 +119,7 @@
         '</div>',
         '<aside class="ump-pro__side" aria-live="polite">',
           '<div class="ump-pro__quote" data-umpp-quote-card><div><p class="ump__eyebrow" data-umpp-quote-kicker>Checkout summary</p><h3 data-umpp-quote-total>Upload required</h3><p data-umpp-quote-meta>Pricing unlocks after the server confirms every gang sheet.</p></div><div class="ump-pro__quote-grid"><span>Rate <strong data-umpp-rate>--</strong></span><span>Billable <strong data-umpp-billable>--</strong></span><span>Files <strong data-umpp-files>0</strong></span></div></div>',
+          '<div class="ump__price-strip ump-pro__price-strip" data-ump-price-strip hidden></div>',
           '<div class="ump__actions"><button class="ump__cart" type="button" data-ump-add data-default-label="Add to cart" disabled><span>Add to cart</span></button>' +
             (checkoutEnabled ? '<button class="ump__checkout" type="button" data-ump-checkout data-default-label="Checkout" disabled><span>Checkout</span></button>' : '') +
           '</div>',
