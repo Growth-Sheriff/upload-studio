@@ -1,7 +1,7 @@
-/**
- * Analytics - Attribution Page
- * UTM, Click IDs, and Traffic Source Analytics
- */
+
+
+
+
 
 import { json, type LoaderFunctionArgs } from '@remix-run/node'
 import { useLoaderData, useNavigate } from '@remix-run/react'
@@ -82,13 +82,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     })
   }
 
-  // Get period from URL
+
   const url = new URL(request.url)
   const period = url.searchParams.get('period') || '30d'
   const customStart = url.searchParams.get('startDate')
   const customEnd = url.searchParams.get('endDate')
 
-  // Calculate date range
+
   let endDate = new Date()
   let startDate: Date
 
@@ -279,7 +279,7 @@ export default function AnalyticsAttribution() {
     )
   }
 
-  // Prepare table rows
+
   const sourceRows = sources.map((s) => [
     s.source,
     s.sessions.toString(),
@@ -301,7 +301,7 @@ export default function AnalyticsAttribution() {
       backAction={{ url: '/app/analytics' }}
     >
       <Layout>
-        {/* Period Selector */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -359,7 +359,7 @@ export default function AnalyticsAttribution() {
           </Card>
         </Layout.Section>
 
-        {/* Overview Stats */}
+
         <Layout.Section>
           <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="400">
             <StatCard title="Total Sessions" value={stats.totalSessions} subtitle="Last 30 days" />
@@ -387,7 +387,7 @@ export default function AnalyticsAttribution() {
           </InlineGrid>
         </Layout.Section>
 
-        {/* 🧠 AI Marketing Recommendations */}
+
         {recommendations.length > 0 && (
           <Layout.Section>
             <Card>
@@ -485,7 +485,7 @@ export default function AnalyticsAttribution() {
           </Layout.Section>
         )}
 
-        {/* Ad Platform Breakdown */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -531,10 +531,10 @@ export default function AnalyticsAttribution() {
           </Card>
         </Layout.Section>
 
-        {/* Source & Medium Breakdown */}
+
         <Layout.Section>
           <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
-            {/* Traffic Sources */}
+
             <Card>
               <BlockStack gap="400">
                 <Text as="h3" variant="headingMd">
@@ -556,7 +556,7 @@ export default function AnalyticsAttribution() {
               </BlockStack>
             </Card>
 
-            {/* Medium Distribution */}
+
             <Card>
               <BlockStack gap="400">
                 <Text as="h3" variant="headingMd">
@@ -590,7 +590,7 @@ export default function AnalyticsAttribution() {
           </InlineGrid>
         </Layout.Section>
 
-        {/* Referrer Types */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -632,7 +632,7 @@ export default function AnalyticsAttribution() {
           </Card>
         </Layout.Section>
 
-        {/* Campaigns Table */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -668,7 +668,7 @@ export default function AnalyticsAttribution() {
           </Card>
         </Layout.Section>
 
-        {/* UTM Guide */}
+
         <Layout.Section>
           <Banner title="UTM Tracking Guide" tone="info">
             <BlockStack gap="200">

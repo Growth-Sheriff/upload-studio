@@ -50,7 +50,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const limit = 20
   const skip = (page - 1) * limit
 
-  // Build where clause
+
   const where: any = { shopId: shop.id }
   if (status) where.status = status
   if (mode) where.mode = mode
@@ -100,7 +100,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const totalPages = Math.ceil(total / limit)
 
-  // Generate signed URLs for thumbnails
+
   const storageConfig = getStorageConfig({
     storageProvider: shop.storageProvider,
     storageConfig: shop.storageConfig as Record<string, string> | null,
@@ -110,7 +110,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       let thumbnailUrl: string | null = null
       const firstItem = u.items[0]
 
-      // Use thumbnailKey if available, fallback to storageKey
+
       const thumbnailSource = firstItem?.thumbnailKey || firstItem?.storageKey
       if (thumbnailSource) {
         try {
@@ -120,16 +120,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
         }
       }
 
-      // Calculate total file size
+
       const totalFileSize = u.items.reduce((sum, item) => sum + (item.fileSize || 0), 0)
 
-      // Calculate total upload duration (sum of all items)
+
       const totalUploadDurationMs = u.items.reduce(
         (sum, item) => sum + (item.uploadDurationMs || 0),
         0
       )
 
-      // Build UTM info
+
       const utmInfo = u.session
         ? {
             source: u.session.utmSource,
@@ -140,7 +140,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
           }
         : null
 
-      // Build visitor info
+
       const visitorInfo = u.visitor
         ? {
             email: u.visitor.customerEmail,
@@ -193,7 +193,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  // Merchant-friendly status labels with positive tone
+
   const labelMap: Record<string, string> = {
     ok: 'Ready ✓',
     warning: 'Review',
@@ -226,7 +226,7 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge tone={toneMap[status] || 'info'}>{labelMap[status] || status}</Badge>
 }
 
-// Format bytes to human readable
+
 function formatBytes(bytes: number): string {
   if (!bytes || bytes === 0) return '-'
   const k = 1024
@@ -235,7 +235,7 @@ function formatBytes(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
 }
 
-// Format duration (ms to seconds)
+
 function formatDuration(ms: number): string {
   if (!ms || ms === 0) return '-'
   const seconds = ms / 1000
@@ -246,7 +246,7 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${remainingSeconds}s`
 }
 
-// UTM Badge component
+
 function UTMBadge({
   utmInfo,
 }: {
@@ -267,7 +267,7 @@ function UTMBadge({
 
   const { source, medium, campaign, referrerType, referrerDomain } = utmInfo
 
-  // Build display text
+
   let displayText = ''
   let tooltipContent = ''
 
@@ -306,7 +306,7 @@ function UTMBadge({
   )
 }
 
-// Visitor Info component
+
 function VisitorInfo({
   visitorInfo,
   customerEmail,
@@ -322,12 +322,12 @@ function VisitorInfo({
   customerEmail?: string | null
   customerId?: string | null
 }) {
-  // Priority: Upload.customerEmail > Visitor.customerEmail
+
   const email = customerEmail || visitorInfo?.email
-  // Priority: Upload.customerId > Visitor.shopifyCustomerId
+
   const customerId = uploadCustomerId || visitorInfo?.customerId
 
-  // Has customer info if email exists
+
   const isLoggedInCustomer = !!email
 
   if (!email && !customerId && !visitorInfo) {
@@ -345,7 +345,7 @@ function VisitorInfo({
   if (visitorInfo?.browser) tooltipParts.push(`Browser: ${visitorInfo.browser}`)
   if (visitorInfo?.country) tooltipParts.push(`Country: ${visitorInfo.country}`)
 
-  // Show email if available (truncate if long), otherwise show device type
+
   const displayText = email
     ? email.length > 20
       ? email.slice(0, 17) + '...'
@@ -419,7 +419,7 @@ export default function UploadsPage() {
   }, [setSearchParams])
 
   const rows = uploads.map((upload) => [
-    // Upload Preview & ID
+
     <InlineStack key={upload.id} gap="200" align="start">
       {upload.thumbnailUrl ? (
         <img
@@ -444,17 +444,17 @@ export default function UploadsPage() {
         {upload.id.slice(0, 10)}...
       </Button>
     </InlineStack>,
-    // Mode
+
     upload.mode,
-    // Status
+
     <StatusBadge key={`${upload.id}-status`} status={upload.status} />,
-    // Quality
+
     <StatusBadge key={`${upload.id}-preflight`} status={upload.preflightStatus} />,
-    // File Size (MB)
+
     <Text key={`${upload.id}-size`} as="span" variant="bodySm">
       {formatBytes(upload.totalFileSize)}
     </Text>,
-    // Upload Duration
+
     <Text
       key={`${upload.id}-duration`}
       as="span"
@@ -463,18 +463,18 @@ export default function UploadsPage() {
     >
       {formatDuration(upload.totalUploadDurationMs)}
     </Text>,
-    // Items
+
     upload.itemCount,
-    // UTM / Source
+
     <UTMBadge key={`${upload.id}-utm`} utmInfo={upload.utmInfo} />,
-    // Customer / Visitor
+
     <VisitorInfo
       key={`${upload.id}-visitor`}
       visitorInfo={upload.visitorInfo}
       customerEmail={upload.customerEmail}
       customerId={upload.customerId}
     />,
-    // Date
+
     new Date(upload.createdAt).toLocaleDateString(),
   ])
 
@@ -507,7 +507,7 @@ export default function UploadsPage() {
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
-              {/* Filters */}
+
               <Filters
                 queryValue=""
                 onQueryChange={() => {}}
@@ -558,7 +558,7 @@ export default function UploadsPage() {
                 appliedFilters={appliedFilters}
               />
 
-              {/* Table */}
+
               {uploads.length > 0 ? (
                 <DataTable
                   columnContentTypes={[
@@ -595,7 +595,7 @@ export default function UploadsPage() {
                 </Box>
               )}
 
-              {/* Pagination */}
+
               {pagination.totalPages > 1 && (
                 <InlineStack align="center">
                   <Pagination
@@ -621,10 +621,10 @@ export default function UploadsPage() {
             </BlockStack>
           </Card>
         </Layout.Section>
-        
-        <UploadDetailModal 
-            uploadId={selectedUploadId} 
-            onClose={() => setSelectedUploadId(null)} 
+
+        <UploadDetailModal
+            uploadId={selectedUploadId}
+            onClose={() => setSelectedUploadId(null)}
         />
       </Layout>
     </Page>

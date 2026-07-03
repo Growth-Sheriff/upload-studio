@@ -46,8 +46,8 @@ export default function LegalLayout() {
       background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
     }}>
       <style dangerouslySetInnerHTML={{ __html: css }} />
-      
-      {/* Header */}
+
+
       <header style={{
         background: "rgba(255,255,255,0.1)",
         backdropFilter: "blur(10px)",
@@ -81,7 +81,7 @@ export default function LegalLayout() {
         </div>
       </header>
 
-      {/* Main Container */}
+
       <div className="legal-container" style={{
         flex: 1,
         display: "flex",
@@ -91,7 +91,7 @@ export default function LegalLayout() {
         padding: "2rem",
         gap: "2rem",
       }}>
-        {/* Sidebar */}
+
         <aside className="legal-sidebar" style={{ width: "280px", flexShrink: 0, display: "flex", flexDirection: "column", gap: "1.5rem" }}>
           <nav style={{
             background: "rgba(255,255,255,0.98)",
@@ -154,7 +154,7 @@ export default function LegalLayout() {
           </div>
         </aside>
 
-        {/* Main Content */}
+
         <main style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             background: "rgba(255,255,255,0.99)",
@@ -168,7 +168,7 @@ export default function LegalLayout() {
         </main>
       </div>
 
-      {/* Footer */}
+
       <footer style={{
         background: "rgba(0,0,0,0.2)",
         backdropFilter: "blur(10px)",

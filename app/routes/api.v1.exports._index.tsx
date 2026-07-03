@@ -1,8 +1,8 @@
-/**
- * Public API v1 - Exports Endpoint
- * GET /api/v1/exports - List all exports for authenticated shop
- * POST /api/v1/exports - Create new export job
- */
+
+
+
+
+
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
@@ -18,12 +18,12 @@ const getRedisConnection = () => {
   });
 };
 
-// Hash API key for lookup
+
 function hashApiKey(key: string): string {
   return createHash("sha256").update(key).digest("hex");
 }
 
-// Helper to authenticate API request via API key
+
 async function authenticateRequest(request: Request) {
   const authHeader = request.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
@@ -46,13 +46,13 @@ async function authenticateRequest(request: Request) {
 
   if (!keyRecord) return null;
 
-  // Update last used
+
   await prisma.apiKey.update({
     where: { id: keyRecord.id },
     data: { lastUsedAt: new Date(), usageCount: { increment: 1 } },
   });
 
-  // Get shop
+
   const shop = await prisma.shop.findUnique({
     where: { id: keyRecord.shopId },
   });
@@ -60,9 +60,9 @@ async function authenticateRequest(request: Request) {
   return shop;
 }
 
-// GET /api/v1/exports
+
 export async function loader({ request }: LoaderFunctionArgs) {
-  // Rate limiting
+
   const identifier = getIdentifier(request, "shop");
   const rateLimitResponse = await rateLimitGuard(identifier, "adminApi");
   if (rateLimitResponse) return rateLimitResponse;
@@ -112,13 +112,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
 }
 
-// POST /api/v1/exports
+
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
     return json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  // Rate limiting
+
   const identifier = getIdentifier(request, "shop");
   const rateLimitResponse = await rateLimitGuard(identifier, "adminApi");
   if (rateLimitResponse) return rateLimitResponse;
@@ -141,7 +141,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: "uploadIds array is required." }, { status: 400 });
   }
 
-  // Verify all uploadIds belong to this shop
+
   const validUploads = await prisma.upload.findMany({
     where: { id: { in: uploadIds }, shopId: shop.id },
     select: { id: true },
@@ -152,17 +152,17 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: "No valid uploads found for this shop." }, { status: 400 });
   }
 
-  // Create export record
+
   const exportRecord = await prisma.exportJob.create({
     data: {
       shopId: shop.id,
       status: "pending",
       uploadIds: validIds,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     },
   });
 
-  // Queue export job
+
   try {
     const queue = new Queue("export", { connection: getRedisConnection() });
     await queue.add("process-export", {
@@ -173,7 +173,7 @@ export async function action({ request }: ActionFunctionArgs) {
     await queue.close();
   } catch (error) {
     console.error("[Export API] Failed to queue job:", error);
-    // Don't fail the request, export will be picked up by cron
+
   }
 
   return json({

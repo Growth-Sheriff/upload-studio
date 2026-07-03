@@ -1,14 +1,14 @@
 #!/bin/bash
-# ===========================================
-# Upload Studio - Multi-Tenant Deployment Script
-# ===========================================
-# Builds Docker image and restarts all tenant containers.
-# Usage: bash deploy/deploy.sh
-#
-# Prerequisites:
-#   - envs/.env.{slug} files generated (scripts/generate-tenant-envs.sh)
-#   - DB schemas initialized (scripts/init-tenant-schemas.sh)
-# ===========================================
+
+
+
+
+
+
+
+
+
+
 
 set -e
 
@@ -20,7 +20,7 @@ echo "=========================================="
 
 cd "$APP_DIR"
 
-# Check envs directory
+
 if [ ! -d envs ] || [ -z "$(ls envs/.env.* 2>/dev/null)" ]; then
   echo "ERROR: No tenant env files found in envs/"
   echo "Run: bash scripts/generate-tenant-envs.sh"

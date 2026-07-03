@@ -1,14 +1,14 @@
-/**
- * RBAC (Role-Based Access Control) System
- *
- * Roles:
- * - Owner: Full access, billing, delete shop
- * - Admin: All except billing
- * - Operator: Queue, uploads, exports
- * - Viewer: Read-only
- */
 
-// Role definitions
+
+
+
+
+
+
+
+
+
+
 export const ROLES = {
   OWNER: "owner",
   ADMIN: "admin",
@@ -18,61 +18,61 @@ export const ROLES = {
 
 export type Role = typeof ROLES[keyof typeof ROLES];
 
-// Permission definitions
+
 export const PERMISSIONS = {
-  // Shop
+
   SHOP_VIEW: "shop:view",
   SHOP_SETTINGS: "shop:settings",
   SHOP_BILLING: "shop:billing",
   SHOP_DELETE: "shop:delete",
 
-  // Products
+
   PRODUCTS_VIEW: "products:view",
   PRODUCTS_CONFIGURE: "products:configure",
 
-  // Asset Sets
+
   ASSET_SETS_VIEW: "asset_sets:view",
   ASSET_SETS_MANAGE: "asset_sets:manage",
 
-  // Uploads
+
   UPLOADS_VIEW: "uploads:view",
   UPLOADS_APPROVE: "uploads:approve",
   UPLOADS_REJECT: "uploads:reject",
   UPLOADS_DELETE: "uploads:delete",
 
-  // Queue
+
   QUEUE_VIEW: "queue:view",
   QUEUE_MANAGE: "queue:manage",
   QUEUE_BULK_ACTIONS: "queue:bulk_actions",
 
-  // Exports
+
   EXPORTS_VIEW: "exports:view",
   EXPORTS_CREATE: "exports:create",
   EXPORTS_DOWNLOAD: "exports:download",
 
-  // Analytics
+
   ANALYTICS_VIEW: "analytics:view",
   ANALYTICS_EXPORT: "analytics:export",
 
-  // API
+
   API_KEYS_VIEW: "api_keys:view",
   API_KEYS_MANAGE: "api_keys:manage",
 
-  // Team
+
   TEAM_VIEW: "team:view",
   TEAM_MANAGE: "team:manage",
 } as const;
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS];
 
-// Role → Permissions mapping
+
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   owner: [
-    // Full access
+
     ...Object.values(PERMISSIONS),
   ],
   admin: [
-    // All except billing and shop delete
+
     PERMISSIONS.SHOP_VIEW,
     PERMISSIONS.SHOP_SETTINGS,
     PERMISSIONS.PRODUCTS_VIEW,
@@ -97,7 +97,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.TEAM_MANAGE,
   ],
   operator: [
-    // Queue and uploads management
+
     PERMISSIONS.SHOP_VIEW,
     PERMISSIONS.PRODUCTS_VIEW,
     PERMISSIONS.ASSET_SETS_VIEW,
@@ -113,7 +113,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     PERMISSIONS.ANALYTICS_VIEW,
   ],
   viewer: [
-    // Read-only access
+
     PERMISSIONS.SHOP_VIEW,
     PERMISSIONS.PRODUCTS_VIEW,
     PERMISSIONS.ASSET_SETS_VIEW,
@@ -124,38 +124,38 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   ],
 };
 
-/**
- * Check if a role has a specific permission
- */
+
+
+
 export function hasPermission(role: Role, permission: Permission): boolean {
   const permissions = ROLE_PERMISSIONS[role];
   return permissions?.includes(permission) ?? false;
 }
 
-/**
- * Check if a role has any of the specified permissions
- */
+
+
+
 export function hasAnyPermission(role: Role, permissions: Permission[]): boolean {
   return permissions.some(p => hasPermission(role, p));
 }
 
-/**
- * Check if a role has all of the specified permissions
- */
+
+
+
 export function hasAllPermissions(role: Role, permissions: Permission[]): boolean {
   return permissions.every(p => hasPermission(role, p));
 }
 
-/**
- * Get all permissions for a role
- */
+
+
+
 export function getRolePermissions(role: Role): Permission[] {
   return ROLE_PERMISSIONS[role] || [];
 }
 
-/**
- * Permission guard for Remix loaders/actions
- */
+
+
+
 export function requirePermission(
   userRole: Role | undefined,
   requiredPermission: Permission
@@ -169,9 +169,9 @@ export function requirePermission(
   }
 }
 
-/**
- * Permission guard - returns boolean instead of throwing
- */
+
+
+
 export function checkPermission(
   userRole: Role | undefined,
   requiredPermission: Permission

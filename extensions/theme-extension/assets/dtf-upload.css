@@ -62,7 +62,6 @@
   text-transform: uppercase;
 }
 
-/* Modal */
 .dtf-modal {
   position: fixed;
   inset: 0;
@@ -148,7 +147,6 @@
   justify-content: flex-end;
 }
 
-/* Editor Layout */
 .dtf-editor-layout {
   display: grid;
   grid-template-columns: var(--dtf-modal-canvas-ratio) 1fr;
@@ -168,7 +166,6 @@
   gap: 24px;
 }
 
-/* Tabs */
 .dtf-tabs {
   display: flex;
   justify-content: center;
@@ -197,7 +194,6 @@
   color: white;
 }
 
-/* Canvas */
 .dtf-canvas-container {
   flex: 1;
   display: flex;
@@ -210,7 +206,6 @@
   align-items: stretch;
 }
 
-/* FitCheck Layout */
 .dtf-fitcheck-layout {
   display: flex;
   flex-direction: column;
@@ -336,7 +331,6 @@
   outline-offset: 2px;
 }
 
-/* Server Mockup Cards (real composites from worker) */
 .dtf-mockup-card--server .dtf-mockup-image-container {
   background: #f0fdf4;
   border-color: var(--dtf-color-success);
@@ -359,7 +353,6 @@
   margin-top: 4px;
 }
 
-/* Loading State (worker is generating) */
 .dtf-mockup-card--loading .dtf-mockup-image-container {
   border-style: dashed;
   border-color: #d1d5db;
@@ -401,7 +394,6 @@
   50%      { opacity: 0.5; }
 }
 
-/* Re-generate Button */
 .dtf-fitcheck-regen {
   display: inline-flex;
   align-items: center;
@@ -463,11 +455,61 @@
   font-weight: bold;
 }
 
-/* Toggles */
 .dtf-toggles {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.dtf-customer-offer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(0, 128, 96, 0.24);
+  border-radius: var(--dtf-radius-lg);
+  background: linear-gradient(135deg, #f3fcf8 0%, #ffffff 100%);
+  box-shadow: 0 8px 24px rgba(0, 128, 96, 0.08);
+}
+.dtf-customer-offer__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dtf-customer-offer__copy strong {
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--dtf-color-text);
+}
+.dtf-customer-offer__copy span,
+.dtf-customer-offer p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--dtf-color-text-subdued);
+}
+.dtf-customer-offer__stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.dtf-customer-offer__stats span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border: 1px solid rgba(0, 128, 96, 0.16);
+  border-radius: var(--dtf-radius-md);
+  background: #fff;
+}
+.dtf-customer-offer__stats small {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dtf-color-text-subdued);
+}
+.dtf-customer-offer__stats b {
+  font-size: 15px;
+  color: var(--dtf-color-success);
 }
 .dtf-toggle {
   display: flex;
@@ -509,7 +551,6 @@
   transform: translateX(16px);
 }
 
-/* Inputs */
 .dtf-inputs {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -556,7 +597,6 @@
   color: var(--dtf-color-text-subdued);
 }
 
-/* Errors */
 .dtf-error-banner {
   background: var(--dtf-color-critical);
   color: white;
@@ -568,7 +608,6 @@
   gap: 8px;
 }
 
-/* Thumbnails */
 .dtf-thumbnails {
   display: flex;
   gap: 12px;
@@ -622,7 +661,6 @@
   white-space: nowrap;
 }
 
-/* Price Calc */
 .dtf-price-calc {
   display: flex;
   flex-direction: column;
@@ -727,7 +765,6 @@
   color: var(--dtf-color-text-subdued);
 }
 
-/* Uploading State */
 .dtf-uploading {
   display: flex;
   flex-direction: column;
@@ -759,7 +796,6 @@
   transition: width 0.2s;
 }
 
-/* ─── Modal ──────────────────────────────── */
 .dtf-modal {
   position: fixed;
   inset: 0;
@@ -833,7 +869,6 @@
   flex-shrink: 0;
 }
 
-/* ─── Toggle Switches ────────────────────── */
 .dtf-toggle {
   display: flex;
   align-items: center;
@@ -882,7 +917,6 @@
   transform: translateX(18px);
 }
 
-/* ─── Uploading state ────────────────────── */
 .dtf-uploading {
   display: flex;
   align-items: center;

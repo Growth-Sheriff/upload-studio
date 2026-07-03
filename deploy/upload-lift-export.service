@@ -11,15 +11,15 @@ ExecStart=/usr/bin/pnpm run worker:export
 Restart=always
 RestartSec=5
 
-# Environment
+
 Environment=NODE_ENV=production
 EnvironmentFile=/var/www/upload-studio/.env
 
-# Logging
+
 StandardOutput=append:/var/log/upload-studio/export-worker.log
 StandardError=append:/var/log/upload-studio/export-worker-error.log
 
-# Security hardening
+
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes

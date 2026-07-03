@@ -1,17 +1,4 @@
-{% comment %}
-  Upload Studio - Cart Upload Display (App Embed)
-  =============================================
-  Auto-injects into cart pages to show upload info under line items
-
-  This is an app embed block that loads on ALL pages
-  The JavaScript will only activate on cart-related pages
-
-  Version: 1.0.0
-{% endcomment %}
-
-{% comment %} Load Cart Display Script {% endcomment %}
 <script src="{{ 'cart-upload-display.js' | asset_url }}" defer></script>
-
 {% schema %}
 {
   "name": "Cart Upload Display",

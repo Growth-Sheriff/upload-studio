@@ -2,17 +2,17 @@ import type { LoaderFunctionArgs } from '@remix-run/node'
 import { readFile } from 'fs/promises'
 import { join, basename, extname } from 'path'
 
-/**
- * GET /api/ext-assets/:filename
- * 
- * Serves theme extension assets (CSS, JS, PNG) from the local extension directory.
- * Used by standalone theme sections that can't access Shopify extension CDN.
- * 
- * Security: Only serves files from the extensions/theme-extension/assets directory.
- * Only allows whitelisted file extensions.
- * 
- * Cache: 1 hour in production, no-cache in dev.
- */
+
+
+
+
+
+
+
+
+
+
+
 
 const ALLOWED_EXTENSIONS = new Set(['.css', '.js', '.png', '.jpg', '.jpeg', '.svg', '.webp', '.woff', '.woff2'])
 
@@ -29,7 +29,7 @@ const MIME_TYPES: Record<string, string> = {
 }
 
 export async function loader({ params, request }: LoaderFunctionArgs) {
-  // CORS preflight
+
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
@@ -46,19 +46,19 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
     return new Response('Not found', { status: 404 })
   }
 
-  // Security: only allow basename (no path traversal)
+
   const safe = basename(filename)
   if (safe !== filename || filename.includes('..')) {
     return new Response('Forbidden', { status: 403 })
   }
 
-  // Security: only whitelisted extensions
+
   const ext = extname(safe).toLowerCase()
   if (!ALLOWED_EXTENSIONS.has(ext)) {
     return new Response('Forbidden file type', { status: 403 })
   }
 
-  // Resolve path to extension assets
+
   const assetsDir = join(process.cwd(), 'extensions', 'theme-extension', 'assets')
   const filePath = join(assetsDir, safe)
 

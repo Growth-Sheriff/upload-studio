@@ -7,7 +7,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const checks: Record<string, { status: string; latency?: number }> = {};
   const startTime = Date.now();
 
-  // Check database
+
   try {
     const dbStart = Date.now();
     await prisma.$queryRaw`SELECT 1`;
@@ -16,7 +16,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     checks.database = { status: "error" };
   }
 
-  // Check Redis
+
   try {
     const redisStart = Date.now();
     const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379", {

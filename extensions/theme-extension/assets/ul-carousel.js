@@ -1,5 +1,5 @@
 (function(){
-  // Prevent execution in Shopify theme editor
+
   if (window.Shopify && window.Shopify.designMode) {
     console.log('[UL Carousel] Disabled in theme editor');
     return;
@@ -13,43 +13,41 @@
   };
 
   window.openUL3DModal = function(btn) {
-    // Double-check for design mode
+
     if (window.Shopify && window.Shopify.designMode) return;
-    
+
     if (!btn) return;
-    
+
     var c = btn.closest('.ul-carousel-card');
     var sec = btn.closest('.ul-carousel-section');
-    
+
     if (!c || !sec) return;
-    
-    // Check data-design-mode attribute from Liquid
+
     if (sec.dataset.designMode === 'true') return;
-    
+
     var bid = sec.dataset.blockId;
     if (!bid) return;
-    
+
     var modal = document.getElementById('ulModal-' + bid);
     if (!modal) return;
-    
-    // Prevent opening if already open
+
     if (modal.classList.contains('active')) return;
-    
+
     ul3dData[bid] = {
       vid: c.dataset.variantId,
       file: null,
       size: '22x12',
       price: 12
     };
-    
+
     var img = document.getElementById('ulModalImg-' + bid);
     var title = document.getElementById('ulModalTitle-' + bid);
     var price = document.getElementById('ulModalPrice-' + bid);
-    
+
     if (img) img.src = c.dataset.productImage;
     if (title) title.textContent = c.dataset.productTitle;
     if (price) price.textContent = c.dataset.productPrice;
-    
+
     modal.classList.add('active');
     document.body.style.overflow = 'hidden';
   };
@@ -65,15 +63,15 @@
   window.handleUL3DFile = function(e, bid) {
     var f = e.target.files[0];
     if (!f) return;
-    
+
     if (!ul3dData[bid]) ul3dData[bid] = {};
     ul3dData[bid].file = f;
-    
+
     var zone = document.getElementById('ulUploadZone-' + bid);
     var preview = document.getElementById('ulPreviewZone-' + bid);
     var previewImg = document.getElementById('ulPreviewImg-' + bid);
     var cartBtn = document.getElementById('ulCartBtn-' + bid);
-    
+
     if (zone) zone.style.display = 'none';
     if (preview) preview.style.display = 'block';
     if (previewImg) previewImg.src = URL.createObjectURL(f);
@@ -85,12 +83,12 @@
 
   window.removeUL3DFile = function(bid) {
     if (ul3dData[bid]) ul3dData[bid].file = null;
-    
+
     var zone = document.getElementById('ulUploadZone-' + bid);
     var preview = document.getElementById('ulPreviewZone-' + bid);
     var fileInput = document.getElementById('ulFileInput-' + bid);
     var cartBtn = document.getElementById('ulCartBtn-' + bid);
-    
+
     if (zone) zone.style.display = '';
     if (preview) preview.style.display = 'none';
     if (fileInput) fileInput.value = '';
@@ -117,14 +115,14 @@
   window.addUL3DToCart = function(bid) {
     var btn = document.getElementById('ulCartBtn-' + bid);
     var qtyInput = document.getElementById('ulQtyInput-' + bid);
-    
+
     if (!btn || !ul3dData[bid]) return;
-    
+
     var qty = parseInt(qtyInput ? qtyInput.value : 1) || 1;
-    
+
     btn.disabled = true;
     btn.textContent = 'Adding...';
-    
+
     fetch('/cart/add.js', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -133,9 +131,9 @@
           id: ul3dData[bid].vid,
           quantity: qty,
           properties: {
-            // Hidden (internal)
+
             '_ul_upload_id': 'carousel_' + Date.now(),
-            // Visible (checkout)
+
             'File Name': ul3dData[bid].file ? ul3dData[bid].file.name : '',
             'Sheet Size': ul3dData[bid].size,
             'Unit Price': '$' + ul3dData[bid].price,
@@ -158,7 +156,6 @@
     });
   };
 
-  // Click outside to close
   document.addEventListener('click', function(e) {
     if (e.target && e.target.classList && e.target.classList.contains('ul-modal-overlay')) {
       var id = e.target.id;

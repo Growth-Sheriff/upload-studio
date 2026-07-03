@@ -3,20 +3,20 @@ import mime from 'mime-types'
 import prisma from '~/lib/prisma.server'
 import { isBunnyUrl, readLocalFile } from '~/lib/storage.server'
 
-/**
- * GET /api/upload/file/:id
- *
- * Public endpoint to serve uploaded files by upload ID
- * Used by storefront checkout to display uploaded file links
- *
- * This endpoint:
- * 1. Looks up the upload by ID
- * 2. Gets the first upload item's storage key
- * 3. For Bunny storage: Redirects to CDN
- * 4. For Local storage: Serves from filesystem
- */
+
+
+
+
+
+
+
+
+
+
+
+
 export async function loader({ params, request }: LoaderFunctionArgs) {
-  // Handle CORS preflight
+
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
@@ -43,7 +43,7 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
 
     let upload
     if (shopDomain) {
-      // Scoped access: verify upload belongs to shop
+
       const shop = await prisma.shop.findUnique({
         where: { shopDomain },
         select: { id: true },
@@ -64,7 +64,7 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
         },
       })
     } else {
-      // Legacy unscoped access — log warning for monitoring
+
       console.warn(`[API Upload File] Unscoped file access for uploadId: ${uploadId}`)
       upload = await prisma.upload.findUnique({
         where: { id: uploadId },
@@ -94,7 +94,7 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
       })
     }
 
-    // If storageKey is a Bunny URL or bunny: prefixed, redirect to CDN
+
     if (isBunnyUrl(storageKey) || storageKey.startsWith('bunny:')) {
       const cdnUrl = process.env.BUNNY_CDN_URL || 'https://customizerappdev.b-cdn.net'
       let redirectUrl: string
@@ -109,10 +109,10 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
       return Response.redirect(redirectUrl, 302)
     }
 
-    // Read file from local storage
+
     const buffer = await readLocalFile(storageKey)
 
-    // Determine content type from file extension or original name
+
     const ext = (item.originalName || storageKey).split('.').pop() || ''
     const contentType = item.mimeType || mime.lookup(ext) || 'application/octet-stream'
 

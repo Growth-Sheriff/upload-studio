@@ -8,14 +8,14 @@ const styles = {
   list: { paddingLeft: "1.5rem", color: "#4b5563", lineHeight: 1.8, margin: 0 },
   listItem: { marginBottom: "0.5rem" },
   btnRow: { display: "flex", flexWrap: "wrap" as const, gap: "0.75rem", marginBottom: "1.5rem" },
-  btn: { 
-    display: "inline-flex", 
-    alignItems: "center", 
+  btn: {
+    display: "inline-flex",
+    alignItems: "center",
     gap: "0.5rem",
-    padding: "10px 20px", 
-    borderRadius: "6px", 
-    textDecoration: "none", 
-    fontWeight: 500, 
+    padding: "10px 20px",
+    borderRadius: "6px",
+    textDecoration: "none",
+    fontWeight: 500,
     fontSize: "0.875rem",
     transition: "all 0.2s",
     border: "none",
@@ -23,10 +23,10 @@ const styles = {
   },
   btnPrimary: { background: "#667eea", color: "white" },
   btnSecondary: { background: "#f3f4f6", color: "#374151", border: "1px solid #e5e7eb" },
-  card: { 
-    background: "#f9fafb", 
-    borderRadius: "8px", 
-    padding: "1.25rem", 
+  card: {
+    background: "#f9fafb",
+    borderRadius: "8px",
+    padding: "1.25rem",
     marginBottom: "1rem",
     border: "1px solid #e5e7eb"
   },

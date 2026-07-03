@@ -25,7 +25,7 @@ import prisma from '~/lib/prisma.server'
 import { getStorageConfig, getUploadSignedUrl } from '~/lib/storage.server'
 import { authenticate } from '~/shopify.server'
 
-// Default print locations for T-Shirt
+
 const DEFAULT_PRINT_LOCATIONS = [
   {
     code: 'front',
@@ -89,7 +89,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     })
   }
 
-  // Check plan - 3D Designer requires Pro or Enterprise
+
   if (!['pro', 'enterprise'].includes(shop.plan)) {
     return json({
       error: 'upgrade_required',
@@ -98,13 +98,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     })
   }
 
-  // Get asset sets
+
   const assetSets = await prisma.assetSet.findMany({
     where: { shopId: shop.id },
     orderBy: { createdAt: 'desc' },
   })
 
-  // Count products using each asset set
+
   const productCounts = await prisma.productConfig.groupBy({
     by: ['assetSetId'],
     where: { shopId: shop.id, assetSetId: { not: null } },
@@ -161,7 +161,7 @@ export async function action({ request }: ActionFunctionArgs) {
       try {
         printLocations = JSON.parse(locationsJson)
       } catch {
-        // Use defaults
+
       }
     }
 
@@ -180,7 +180,7 @@ export async function action({ request }: ActionFunctionArgs) {
         directionalIntensity: 1,
       },
       uploadPolicy: {
-        maxFileSizeMB: 1024, // 1GB default
+        maxFileSizeMB: 1024,
         minDPI: 150,
         allowedFormats: [
           'image/png',
@@ -203,7 +203,7 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     })
 
-    // Audit log
+
     await prisma.auditLog.create({
       data: {
         shopId: shop.id,
@@ -239,7 +239,7 @@ export async function action({ request }: ActionFunctionArgs) {
       try {
         printLocations = JSON.parse(locationsJson)
       } catch {
-        // Keep existing
+
       }
     }
 
@@ -249,7 +249,7 @@ export async function action({ request }: ActionFunctionArgs) {
       printLocations,
     }
 
-    // SECURITY: Compound where prevents TOCTOU race condition
+
     await prisma.assetSet.update({
       where: { id: assetSetId, shopId: shop.id },
       data: {
@@ -259,7 +259,7 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     })
 
-    // Audit log
+
     await prisma.auditLog.create({
       data: {
         shopId: shop.id,
@@ -276,7 +276,7 @@ export async function action({ request }: ActionFunctionArgs) {
   if (action === 'delete') {
     const assetSetId = formData.get('assetSetId') as string
 
-    // Check if in use
+
     const inUse = await prisma.productConfig.count({
       where: { shopId: shop.id, assetSetId },
     })
@@ -285,12 +285,12 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: `Cannot delete: ${inUse} products are using this asset set` })
     }
 
-    // SECURITY: Compound where prevents TOCTOU race condition
+
     await prisma.assetSet.delete({
       where: { id: assetSetId, shopId: shop.id },
     })
 
-    // Audit log
+
     await prisma.auditLog.create({
       data: {
         shopId: shop.id,
@@ -306,7 +306,7 @@ export async function action({ request }: ActionFunctionArgs) {
   if (action === 'archive') {
     const assetSetId = formData.get('assetSetId') as string
 
-    // SECURITY: Compound where prevents TOCTOU race condition
+
     await prisma.assetSet.update({
       where: { id: assetSetId, shopId: shop.id },
       data: { status: 'archived' },
@@ -316,7 +316,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   if (action === 'get_upload_url') {
-    // Get signed URL for GLB model upload
+
     const fileName = formData.get('fileName') as string
     const contentType = formData.get('contentType') as string
 
@@ -358,7 +358,7 @@ export default function AssetSetsPage() {
   const [formName, setFormName] = useState('')
   const [formModelUrl, setFormModelUrl] = useState('')
 
-  // Check for upgrade required
+
   if ('error' in data && data.error === 'upgrade_required') {
     return (
       <Page title="Asset Sets">
@@ -439,7 +439,7 @@ export default function AssetSetsPage() {
       primaryAction={{ content: 'Create Asset Set', onAction: openCreateModal }}
     >
       <Layout>
-        {/* Action result banner */}
+
         {actionData && 'success' in actionData && (
           <Layout.Section>
             <Banner tone="success" onDismiss={() => {}}>
@@ -455,7 +455,7 @@ export default function AssetSetsPage() {
           </Layout.Section>
         )}
 
-        {/* Info Banner */}
+
         <Layout.Section>
           <Banner tone="info">
             Asset Sets define 3D models and print locations for the 3D Designer. Each set includes a
@@ -463,7 +463,7 @@ export default function AssetSetsPage() {
           </Banner>
         </Layout.Section>
 
-        {/* Asset Sets Table */}
+
         <Layout.Section>
           <Card>
             {assetSets.length > 0 ? (
@@ -485,7 +485,7 @@ export default function AssetSetsPage() {
         </Layout.Section>
       </Layout>
 
-      {/* Create Modal */}
+
       <Modal
         open={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
@@ -532,7 +532,7 @@ export default function AssetSetsPage() {
         </Modal.Section>
       </Modal>
 
-      {/* Edit Modal */}
+
       <Modal
         open={editModalOpen}
         onClose={() => setEditModalOpen(false)}

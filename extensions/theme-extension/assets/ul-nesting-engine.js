@@ -1,75 +1,10 @@
-/* ============================================================
-   UL Nesting Engine - Grid Strip-Packing Algorithm
-   Version: 1.0.0
-   Calculates optimal placement of designs on DTF sheets
-   Namespace: window.ULNestingEngine
-   ============================================================ */
+
 
 (function () {
   'use strict';
 
   if (window.ULNestingEngine) return;
 
-  /**
-   * @typedef {Object} NestingConfig
-   * @property {number} gapMm - Gap between designs in mm (default: 3)
-   * @property {number} marginMm - Sheet margin in mm (default: 5)
-   * @property {boolean} allowRotation - Allow 90° rotation (default: true)
-   * @property {'waste' | 'sheets' | 'balanced'} strategy - Optimization strategy
-   */
-
-  /**
-   * @typedef {Object} DesignSpec
-   * @property {number} widthInch - Design width in inches
-   * @property {number} heightInch - Design height in inches
-   * @property {number} quantity - Number of copies needed
-   */
-
-  /**
-   * @typedef {Object} SheetSpec
-   * @property {string} id - Variant identifier
-   * @property {string} name - Display name (e.g., "22\" × 30\"")
-   * @property {number} widthInch - Sheet width in inches
-   * @property {number} heightInch - Sheet height in inches
-   * @property {number} price - Price per sheet
-   * @property {number} variantId - Shopify variant ID
-   */
-
-  /**
-   * @typedef {Object} PlacedDesign
-   * @property {number} x - X position in inches (from left)
-   * @property {number} y - Y position in inches (from top)
-   * @property {number} width - Placed width in inches
-   * @property {number} height - Placed height in inches
-   * @property {boolean} rotated - Whether the design was rotated 90°
-   * @property {number} index - Design copy index (0-based)
-   */
-
-  /**
-   * @typedef {Object} SheetLayout
-   * @property {number} sheetIndex - Sheet number (0-based)
-   * @property {PlacedDesign[]} placements - Designs placed on this sheet
-   * @property {number} usedArea - Total used area in sq inches
-   * @property {number} totalArea - Total sheet area in sq inches
-   * @property {number} efficiency - Usage percentage (0-100)
-   */
-
-  /**
-   * @typedef {Object} NestingResult
-   * @property {SheetSpec} sheet - The sheet variant used
-   * @property {number} sheetsNeeded - Total sheets required
-   * @property {number} designsPerSheet - Designs fitting on one sheet
-   * @property {number} totalDesigns - Total designs placed
-   * @property {number} wastePercent - Average waste percentage
-   * @property {number} efficiency - Average efficiency percentage
-   * @property {SheetLayout[]} layouts - Per-sheet layout data
-   * @property {number} totalCost - Total cost (sheets × price)
-   * @property {number} costPerDesign - Cost per individual design
-   */
-
-  /**
-   * Default nesting configuration
-   */
   var DEFAULT_CONFIG = {
     gapMm: 3,
     marginMm: 5,
@@ -77,29 +12,14 @@
     strategy: 'balanced',
   };
 
-  /**
-   * Convert mm to inches
-   * @param {number} mm
-   * @returns {number}
-   */
   function mmToInch(mm) {
     return mm / 25.4;
   }
 
-  /**
-   * Calculate how many designs fit on a single sheet using grid strip packing
-   * This is the core algorithm that determines placement coordinates
-   * 
-   * @param {DesignSpec} design - Design dimensions
-   * @param {SheetSpec} sheet - Sheet dimensions
-   * @param {NestingConfig} config - Nesting configuration
-   * @returns {{count: number, placements: PlacedDesign[], rotated: boolean}}
-   */
   function calculateGridFit(design, sheet, config) {
     var gap = mmToInch(config.gapMm);
     var margin = mmToInch(config.marginMm);
 
-    // Usable area after margins
     var usableWidth = sheet.widthInch - 2 * margin;
     var usableHeight = sheet.heightInch - 2 * margin;
 
@@ -107,7 +27,6 @@
       return { count: 0, placements: [], rotated: false };
     }
 
-    // Try both orientations
     var normalResult = fitGrid(
       design.widthInch,
       design.heightInch,
@@ -132,7 +51,6 @@
       );
     }
 
-    // Also try mixed: some rows normal, some rotated
     var mixedResult = { count: 0, placements: [], rotated: false };
     if (config.allowRotation && design.widthInch !== design.heightInch) {
       mixedResult = fitGridMixed(
@@ -145,7 +63,6 @@
       );
     }
 
-    // Return the best result
     if (mixedResult.count >= normalResult.count && mixedResult.count >= rotatedResult.count) {
       return mixedResult;
     }
@@ -155,23 +72,11 @@
     return normalResult;
   }
 
-  /**
-   * Fit designs in a grid pattern (single orientation)
-   * @param {number} dw - Design width
-   * @param {number} dh - Design height
-   * @param {number} uw - Usable width
-   * @param {number} uh - Usable height
-   * @param {number} gap - Gap between designs
-   * @param {number} margin - Sheet margin
-   * @param {boolean} rotated - Whether designs are rotated
-   * @returns {{count: number, placements: PlacedDesign[], rotated: boolean}}
-   */
   function fitGrid(dw, dh, uw, uh, gap, margin, rotated) {
     if (dw <= 0 || dh <= 0 || dw > uw || dh > uh) {
       return { count: 0, placements: [], rotated: rotated };
     }
 
-    // How many fit in each direction
     var cols = Math.floor((uw + gap) / (dw + gap));
     var rows = Math.floor((uh + gap) / (dh + gap));
 
@@ -202,34 +107,21 @@
     };
   }
 
-  /**
-   * Try mixed orientation: alternate rows of normal and rotated designs
-   * This can sometimes pack more designs than a uniform grid
-   * @param {number} dw - Original design width
-   * @param {number} dh - Original design height
-   * @param {number} uw - Usable width
-   * @param {number} uh - Usable height
-   * @param {number} gap - Gap between designs
-   * @param {number} margin - Sheet margin
-   * @returns {{count: number, placements: PlacedDesign[], rotated: boolean}}
-   */
   function fitGridMixed(dw, dh, uw, uh, gap, margin) {
     var placements = [];
     var index = 0;
     var y = 0;
 
-    // Determine which orientation gives more per row
     var normalCols = dw > 0 ? Math.floor((uw + gap) / (dw + gap)) : 0;
     var rotatedCols = dh > 0 ? Math.floor((uw + gap) / (dh + gap)) : 0;
 
     while (y < uh) {
-      // Try normal row
+
       var normalFits = false;
       if (y + dh <= uh && normalCols > 0) {
         normalFits = true;
       }
 
-      // Try rotated row
       var rotatedFits = false;
       if (y + dw <= uh && rotatedCols > 0) {
         rotatedFits = true;
@@ -237,13 +129,12 @@
 
       if (!normalFits && !rotatedFits) break;
 
-      // Pick the row type that fits more designs
       var useRotated = false;
       var rowHeight = dh;
       var rowCols = normalCols;
 
       if (normalFits && rotatedFits) {
-        // Choose based on which packs more per row considering height consumed
+
         var normalDensity = normalCols / dh;
         var rotatedDensity = rotatedCols / dw;
         if (rotatedDensity > normalDensity) {
@@ -277,17 +168,10 @@
     return {
       count: placements.length,
       placements: placements,
-      rotated: false, // mixed
+      rotated: false,
     };
   }
 
-  /**
-   * Calculate full nesting result for a design × sheet × quantity combination
-   * @param {DesignSpec} design
-   * @param {SheetSpec} sheet
-   * @param {NestingConfig} config
-   * @returns {NestingResult}
-   */
   function nestDesigns(design, sheet, config) {
     config = Object.assign({}, DEFAULT_CONFIG, config || {});
 
@@ -312,7 +196,6 @@
     var quantity = design.quantity;
     var sheetsNeeded = Math.ceil(quantity / designsPerSheet);
 
-    // Generate layouts for each sheet
     var layouts = [];
     var totalUsedArea = 0;
     var designArea = design.widthInch * design.heightInch;
@@ -320,8 +203,7 @@
 
     for (var s = 0; s < sheetsNeeded; s++) {
       var designsOnThisSheet = Math.min(designsPerSheet, quantity - s * designsPerSheet);
-      
-      // Take only the placements needed for this sheet
+
       var sheetPlacements = [];
       for (var d = 0; d < designsOnThisSheet; d++) {
         var placement = Object.assign({}, gridResult.placements[d]);
@@ -358,14 +240,6 @@
     };
   }
 
-  /**
-   * Calculate nesting for ALL available sheet variants
-   * Returns sorted results with the best option first
-   * @param {DesignSpec} design
-   * @param {SheetSpec[]} sheets - All available sheet variants
-   * @param {NestingConfig} config
-   * @returns {NestingResult[]}
-   */
   function nestAllVariants(design, sheets, config) {
     if (!design || !sheets || sheets.length === 0) {
       return [];
@@ -382,26 +256,24 @@
       }
     }
 
-    // Sort based on strategy
     results.sort(function (a, b) {
       if (config.strategy === 'waste') {
-        // Minimize waste
+
         return a.wastePercent - b.wastePercent;
       }
       if (config.strategy === 'sheets') {
-        // Minimize sheet count, then waste
+
         if (a.sheetsNeeded !== b.sheetsNeeded) {
           return a.sheetsNeeded - b.sheetsNeeded;
         }
         return a.wastePercent - b.wastePercent;
       }
-      // 'balanced' - weighted score
+
       var scoreA = a.sheetsNeeded * 2 + a.wastePercent * 0.5 + (a.totalCost || 0) * 0.1;
       var scoreB = b.sheetsNeeded * 2 + b.wastePercent * 0.5 + (b.totalCost || 0) * 0.1;
       return scoreA - scoreB;
     });
 
-    // Mark best option
     if (results.length > 0) {
       results[0].recommended = true;
     }
@@ -409,23 +281,15 @@
     return results;
   }
 
-  /**
-   * Parse sheet dimensions from a variant name string
-   * Handles formats like: "22x30", "22\" x 30\"", "22 x 30 inch", "22×30"
-   * @param {string} variantName
-   * @returns {{widthInch: number, heightInch: number} | null}
-   */
   function parseSheetSize(variantName) {
     if (!variantName) return null;
 
-    // Remove quotes, inch symbols, "inch" text
     var cleaned = variantName
       .replace(/["""'']/g, '')
       .replace(/\binch(es)?\b/gi, '')
       .replace(/\bin\b/gi, '')
       .trim();
 
-    // Try matching patterns: "NUMBERxNUMBER" or "NUMBER × NUMBER"
     var match = cleaned.match(/(\d+(?:\.\d+)?)\s*[x×X]\s*(\d+(?:\.\d+)?)/);
     if (match) {
       return {
@@ -434,7 +298,6 @@
       };
     }
 
-    // Try matching "NUMBER by NUMBER"
     match = cleaned.match(/(\d+(?:\.\d+)?)\s*by\s*(\d+(?:\.\d+)?)/i);
     if (match) {
       return {
@@ -443,7 +306,6 @@
       };
     }
 
-    // Try matching "NUMBER NUMBER" (space separated, e.g. "22 6", "22 240")
     match = cleaned.match(/^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)$/);
     if (match) {
       return {
@@ -452,7 +314,6 @@
       };
     }
 
-    // Try matching "NUMBERxNUMBER" in a longer string (e.g. "DTF 22x30 Premium")
     match = cleaned.match(/(\d+(?:\.\d+)?)\s*[x×X]\s*(\d+(?:\.\d+)?)/i);
     if (match) {
       return {
@@ -461,7 +322,6 @@
       };
     }
 
-    // Try extracting any two numbers from the string
     var numbers = cleaned.match(/(\d+(?:\.\d+)?)/g);
     if (numbers && numbers.length >= 2) {
       return {
@@ -473,11 +333,6 @@
     return null;
   }
 
-  /**
-   * Build SheetSpec array from Shopify product variants
-   * @param {Array} variants - Shopify variant objects
-   * @returns {SheetSpec[]}
-   */
   function variantsToSheets(variants) {
     if (!variants || !Array.isArray(variants)) return [];
 
@@ -490,7 +345,6 @@
 
       if (!dims) continue;
 
-      // Skip if dimensions are unreasonably small
       if (dims.widthInch < 1 || dims.heightInch < 1) continue;
 
       sheets.push({
@@ -498,7 +352,7 @@
         name: dims.widthInch + '" × ' + dims.heightInch + '"',
         widthInch: dims.widthInch,
         heightInch: dims.heightInch,
-        price: parseFloat(v.price || 0) / 100, // Shopify price is in cents
+        price: parseFloat(v.price || 0) / 100,
         variantId: v.id,
       });
     }
@@ -506,27 +360,16 @@
     return sheets;
   }
 
-  /**
-   * Format area for display
-   * @param {number} sqInches
-   * @returns {string}
-   */
   function formatArea(sqInches) {
     return parseFloat(sqInches.toFixed(1)) + ' in²';
   }
 
-  /**
-   * Get efficiency tier for visual styling
-   * @param {number} efficiency - Percentage (0-100)
-   * @returns {'high' | 'medium' | 'low'}
-   */
   function getEfficiencyTier(efficiency) {
     if (efficiency >= 70) return 'high';
     if (efficiency >= 40) return 'medium';
     return 'low';
   }
 
-  // ── Public API ──
   window.ULNestingEngine = {
     nestDesigns: nestDesigns,
     nestAllVariants: nestAllVariants,

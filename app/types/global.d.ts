@@ -1,4 +1,4 @@
-// App Bridge web components
+
 declare global {
   namespace JSX {
     interface IntrinsicElements {

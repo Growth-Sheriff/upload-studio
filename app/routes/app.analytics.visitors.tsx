@@ -1,7 +1,7 @@
-/**
- * Analytics - Visitors Page
- * Rich Polaris UI with comprehensive visitor analytics
- */
+
+
+
+
 
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useNavigate } from "@remix-run/react";
@@ -120,13 +120,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
   }
 
-  // Get period from URL
+
   const url = new URL(request.url);
   const period = url.searchParams.get("period") || "30d";
   const customStart = url.searchParams.get("startDate");
   const customEnd = url.searchParams.get("endDate");
 
-  // Calculate date range
+
   let endDate = new Date();
   let startDate: Date;
 
@@ -153,7 +153,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
-  const dateRangeText = period === "all" 
+  const dateRangeText = period === "all"
     ? "All time"
     : `${startDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} - ${endDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
 
@@ -357,7 +357,7 @@ export default function AnalyticsVisitors() {
     );
   }
 
-  // Convert top visitors to table rows
+
   const visitorRows = topVisitors.map((v) => [
     v.id.slice(0, 8) + "...",
     v.email || "-",
@@ -376,7 +376,7 @@ export default function AnalyticsVisitors() {
       backAction={{ url: "/app/analytics" }}
     >
       <Layout>
-        {/* Period Selector */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -426,7 +426,7 @@ export default function AnalyticsVisitors() {
           </Card>
         </Layout.Section>
 
-        {/* Overview Stats */}
+
         <Layout.Section>
           <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="400">
             <MetricCard
@@ -457,7 +457,7 @@ export default function AnalyticsVisitors() {
           </InlineGrid>
         </Layout.Section>
 
-        {/* Conversion Stats */}
+
         <Layout.Section>
           <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="400">
             <MetricCard
@@ -487,7 +487,7 @@ export default function AnalyticsVisitors() {
           </InlineGrid>
         </Layout.Section>
 
-        {/* 🆕 Customer Metrics */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -594,7 +594,7 @@ export default function AnalyticsVisitors() {
           </Card>
         </Layout.Section>
 
-        {/* Device & Browser */}
+
         <Layout.Section>
           <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
             <ProgressCard
@@ -617,7 +617,7 @@ export default function AnalyticsVisitors() {
           </InlineGrid>
         </Layout.Section>
 
-        {/* OS & Screen Resolution */}
+
         <Layout.Section>
           <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
             <ProgressCard
@@ -640,7 +640,7 @@ export default function AnalyticsVisitors() {
           </InlineGrid>
         </Layout.Section>
 
-        {/* Language & Timezone */}
+
         <Layout.Section>
           <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
             <Card>
@@ -679,7 +679,7 @@ export default function AnalyticsVisitors() {
           </InlineGrid>
         </Layout.Section>
 
-        {/* Geographic Distribution */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -723,7 +723,7 @@ export default function AnalyticsVisitors() {
           </Card>
         </Layout.Section>
 
-        {/* Daily Activity Chart */}
+
         {dailyData.length > 0 && (
           <Layout.Section>
             <Card>
@@ -743,8 +743,8 @@ export default function AnalyticsVisitors() {
                           content={`${day.date}: ${day.visitors} visitors, ${day.sessions} sessions`}
                         >
                           <div
-                            style={{ 
-                              minWidth: "24px", 
+                            style={{
+                              minWidth: "24px",
                               height: `${height}px`,
                               backgroundColor: "#5C6AC4",
                               borderRadius: "4px",
@@ -768,7 +768,7 @@ export default function AnalyticsVisitors() {
           </Layout.Section>
         )}
 
-        {/* Top Visitors Table */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">

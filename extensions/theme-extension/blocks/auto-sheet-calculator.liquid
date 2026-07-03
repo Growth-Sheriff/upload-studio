@@ -1,24 +1,11 @@
-{% comment %}
-  Auto Sheet Size Calculator - Theme App Block
-  =============================================
-  Visible widget with its own upload area for calculating
-  the optimal DTF transfer sheet size.
-
-  Version: 2.0.0
-{% endcomment %}
-
 {{ 'ul-auto-sheet.css' | asset_url | stylesheet_tag }}
 <script src="{{ 'ul-dimension-reader.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-nesting-engine.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-sheet-optimizer.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-sheet-simulator.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-auto-sheet.js' | asset_url }}" defer></script>
-
-{% comment %} Visible Widget HTML {% endcomment %}
 <div class="ul-calc-widget" id="ulCalcWidget-{{ block.id }}" data-product-id="{{ product.id }}">
   <div class="ul-calc-card">
-
-    {% comment %} Header with icon {% endcomment %}
     <div class="ul-calc-header">
       <div class="ul-calc-icon">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -36,11 +23,7 @@
         <p class="ul-calc-subtitle">Find the best sheet for your design</p>
       </div>
     </div>
-
-    {% comment %} Description {% endcomment %}
     <p class="ul-calc-desc">{{ block.settings.description_text | default: 'Upload your design to instantly see which sheet size gives you the best value with minimum waste.' }}</p>
-
-    {% comment %} File preview (shown after file selected) {% endcomment %}
     <div class="ul-calc-preview" id="ulCalcPreview-{{ block.id }}">
       <img class="ul-calc-preview-thumb" id="ulCalcThumb-{{ block.id }}" src="" alt="Preview" width="56" height="56">
       <div class="ul-calc-preview-info">
@@ -51,8 +34,6 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-
-    {% comment %} Upload drop zone (shown when no file) {% endcomment %}
     <div class="ul-calc-dropzone" id="ulCalcDropzone-{{ block.id }}">
       <input type="file" class="ul-calc-file-input" id="ulCalcFileInput-{{ block.id }}" accept=".png,.jpg,.jpeg,.webp,.tiff,.tif,.psd,.pdf,.ai,.eps">
       <div class="ul-calc-dropzone-icon">
@@ -65,8 +46,6 @@
       <p class="ul-calc-dropzone-text">Drop your design here or <strong>browse</strong></p>
       <p class="ul-calc-dropzone-hint">PNG, JPG, WEBP, TIFF, PSD, PDF, AI, EPS</p>
     </div>
-
-    {% comment %} Calculate button {% endcomment %}
     <button type="button" class="ul-calc-btn" id="ulCalcBtn-{{ block.id }}" disabled>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -75,43 +54,30 @@
       </svg>
       <span>Calculate Best Sheet Size</span>
     </button>
-
-    {% comment %} Result summary (shown after calculation) {% endcomment %}
     <div class="ul-calc-result" id="ulCalcResult-{{ block.id }}">
       <p class="ul-calc-result-title">Recommended</p>
       <p class="ul-calc-result-text" id="ulCalcResultText-{{ block.id }}"></p>
     </div>
-
   </div>
 </div>
-
-{% comment %} Variants JSON for calculator {% endcomment %}
 <script type="application/json" id="ulCalcVariants-{{ block.id }}">
   {{ product.variants | json }}
 </script>
-
-{% comment %} Widget Controller {% endcomment %}
 <script>
   (function() {
     'use strict';
-
     var BLOCK_ID = '{{ block.id }}';
     var PRODUCT_ID = '{{ product.id }}';
     var SHOP_DOMAIN = '{{ shop.permanent_domain }}';
     var _selectedFile = null;
-
     function $(id) { return document.getElementById(id); }
-
     var _initAttempts = 0;
     var MAX_INIT_ATTEMPTS = 50; // 50 x 200ms = 10 seconds max wait
-
     function initWidget() {
       if (!window.ULAutoSheet || !window.ULDimensionReader || !window.ULNestingEngine) {
         setTimeout(initWidget, 200);
         return;
       }
-
-      // Wait for storefront config to be loaded from API
       var config = {};
       try {
         var sc = (window.ULState && typeof window.ULState.get === 'function')
@@ -119,7 +85,6 @@
         if (sc && sc.autoSheet) {
           config = sc.autoSheet;
         } else if (_initAttempts < MAX_INIT_ATTEMPTS) {
-          // Config not loaded yet, retry
           _initAttempts++;
           setTimeout(initWidget, 200);
           return;
@@ -128,19 +93,15 @@
         }
       } catch (e) {}
       window.ULAutoSheet.init(config);
-
-      // Bind events
       var fileInput = $('ulCalcFileInput-' + BLOCK_ID);
       var dropzone = $('ulCalcDropzone-' + BLOCK_ID);
       var calcBtn = $('ulCalcBtn-' + BLOCK_ID);
       var removeBtn = $('ulCalcRemove-' + BLOCK_ID);
-
       if (fileInput) {
         fileInput.addEventListener('change', function() {
           if (this.files && this.files[0]) handleFileSelected(this.files[0]);
         });
       }
-
       if (dropzone) {
         dropzone.addEventListener('dragover', function(e) {
           e.preventDefault();
@@ -157,42 +118,33 @@
           }
         });
       }
-
       if (calcBtn) {
         calcBtn.addEventListener('click', function(e) {
           e.preventDefault();
           if (_selectedFile) openCalculator();
         });
       }
-
       if (removeBtn) {
         removeBtn.addEventListener('click', function(e) {
           e.preventDefault();
           clearFile();
         });
       }
-
-      // Also listen for uploads from the main DTF uploader
       document.addEventListener('change', function(e) {
         var t = e.target;
         if (t && t.type === 'file' && t.files && t.files[0] && t.id !== 'ulCalcFileInput-' + BLOCK_ID) {
           handleFileSelected(t.files[0]);
         }
       }, true);
-
       if (window.ULEvents) {
         window.ULEvents.on('uploadComplete', function(data) {
           if (_selectedFile) {
-            // Already have file, just enable button
             var btn = $('ulCalcBtn-' + BLOCK_ID);
             if (btn) btn.disabled = false;
           }
         });
       }
-
-      console.log('[ULAutoSheet] Widget initialized for product', PRODUCT_ID);
     }
-
     function handleFileSelected(file) {
       _selectedFile = file;
       var preview = $('ulCalcPreview-' + BLOCK_ID);
@@ -201,17 +153,13 @@
       var nameEl = $('ulCalcFileName-' + BLOCK_ID);
       var metaEl = $('ulCalcFileMeta-' + BLOCK_ID);
       var calcBtn = $('ulCalcBtn-' + BLOCK_ID);
-
       if (preview) preview.classList.add('ul-calc-has-file');
       if (dropzone) dropzone.style.display = 'none';
       if (calcBtn) calcBtn.disabled = false;
-
       if (nameEl) nameEl.textContent = file.name;
       var sizeKB = (file.size / 1024).toFixed(0);
       var sizeMB = (file.size / (1024 * 1024)).toFixed(1);
       if (metaEl) metaEl.textContent = file.size > 1048576 ? sizeMB + ' MB' : sizeKB + ' KB';
-
-      // Generate thumb preview for images
       if (thumb && file.type && file.type.startsWith('image/')) {
         var reader = new FileReader();
         reader.onload = function(e) { thumb.src = e.target.result; };
@@ -221,7 +169,6 @@
         thumb.style.background = '#e2e8f0';
       }
     }
-
     function clearFile() {
       _selectedFile = null;
       var preview = $('ulCalcPreview-' + BLOCK_ID);
@@ -229,23 +176,19 @@
       var calcBtn = $('ulCalcBtn-' + BLOCK_ID);
       var result = $('ulCalcResult-' + BLOCK_ID);
       var fileInput = $('ulCalcFileInput-' + BLOCK_ID);
-
       if (preview) preview.classList.remove('ul-calc-has-file');
       if (dropzone) dropzone.style.display = '';
       if (calcBtn) calcBtn.disabled = true;
       if (result) result.classList.remove('ul-calc-has-result');
       if (fileInput) fileInput.value = '';
     }
-
     function openCalculator() {
       if (!_selectedFile || !window.ULAutoSheet) return;
-
       var variants = [];
       try {
         var vjson = $('ulCalcVariants-' + BLOCK_ID);
         if (vjson) variants = JSON.parse(vjson.textContent);
       } catch (e) {}
-
       window.ULAutoSheet.openModal({
         file: _selectedFile,
         variants: variants,
@@ -257,11 +200,8 @@
         },
       });
     }
-
     function handleResult(result) {
       if (!result || !result.variantId) return;
-
-      // Show result in widget
       var resultEl = $('ulCalcResult-' + BLOCK_ID);
       var resultText = $('ulCalcResultText-' + BLOCK_ID);
       if (resultEl && resultText) {
@@ -270,8 +210,6 @@
           (result.sheetsNeeded > 1 ? ' &times; ' + result.sheetsNeeded : '') +
           ' &mdash; ' + (result.efficiency || 0) + '% efficiency';
       }
-
-      // Update variant selector on page
       var selectors = document.querySelectorAll(
         'select[name="id"], #ul-option-' + PRODUCT_ID + '-0, .ul-variant-select, input[name="id"][value], .product-form__input select'
       );
@@ -290,8 +228,6 @@
           sel.dispatchEvent(new Event('change', { bubbles: true }));
         }
       }
-
-      // Update quantity
       if (result.sheetsNeeded > 1) {
         var qtyInputs = document.querySelectorAll(
           '#ul-qty-' + PRODUCT_ID + ', input[name="quantity"], .quantity-input'
@@ -301,7 +237,6 @@
           qtyInputs[k].dispatchEvent(new Event('change', { bubbles: true }));
         }
       }
-
       if (window.ULEvents) {
         window.ULEvents.emit('autoSheet:applied', {
           productId: PRODUCT_ID,
@@ -311,17 +246,12 @@
           efficiency: result.efficiency,
         });
       }
-
-      console.log('[ULAutoSheet] Applied:', result.sheetName, '×', result.sheetsNeeded);
     }
-
     function escapeHtml(str) {
       var d = document.createElement('div');
       d.textContent = str;
       return d.innerHTML;
     }
-
-    // Start
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', function() { setTimeout(initWidget, 500); });
     } else {
@@ -329,7 +259,6 @@
     }
   })();
 </script>
-
 {% schema %}
 {
   "name": "Auto Sheet Calculator",

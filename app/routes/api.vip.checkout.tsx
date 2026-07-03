@@ -49,6 +49,43 @@ function parsePositiveInteger(value: unknown, fallback = 1): number {
   return Math.max(1, Math.floor(parsed))
 }
 
+function normalizeDiscountCode(value: unknown): string {
+  return String(value ?? '').trim().replace(/\s+/g, '').slice(0, 64)
+}
+
+function normalizeDiscountCodes(body: Record<string, unknown>): string[] {
+  const rawCodes = Array.isArray(body.discountCodes)
+    ? body.discountCodes
+    : [body.discountCode, body.discount]
+  const seen = new Set<string>()
+  const codes: string[] = []
+
+  for (const raw of rawCodes) {
+    const code = normalizeDiscountCode(raw)
+    if (!code) continue
+    const key = code.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    codes.push(code)
+  }
+
+  return codes.slice(0, 5)
+}
+
+function toCustomerGid(customerId: string | null): string | null {
+  if (!customerId) return null
+  if (customerId.startsWith('gid://shopify/Customer/')) return customerId
+  return `gid://shopify/Customer/${customerId}`
+}
+
+function toVariantGid(variantId: string | null | undefined): string | null {
+  const raw = String(variantId || '').trim()
+  if (!raw) return null
+  if (raw.startsWith('gid://shopify/ProductVariant/')) return raw
+  const legacyId = raw.match(/(\d{6,})$/)?.[1] || raw.replace(/[^\d]/g, '')
+  return legacyId ? `gid://shopify/ProductVariant/${legacyId}` : null
+}
+
 function formatDecimalAmount(value: number, digits = 6): string {
   const safe = Number(value)
   if (!Number.isFinite(safe)) return '0'
@@ -143,6 +180,9 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const body = await parseBody(request)
   const fallbackCustomerEmail = String(body.customerEmail || '').trim()
+  const customerNote = String(body.customerNote || body.note || '').trim().slice(0, 500)
+  const checkoutIntent = String(body.checkoutIntent || '').trim()
+  const discountCodes = normalizeDiscountCodes(body)
   const loggedInCustomerId =
     normalizeCustomerId(url.searchParams.get('logged_in_customer_id')) ||
     normalizeCustomerId(
@@ -185,27 +225,60 @@ export async function action({ request }: ActionFunctionArgs) {
       ? 'Business custom checkout'
       : 'VIP custom checkout'
   const noteUploadIds = preparedItems.map((item) => item.upload.id).join(', ')
+  const customerGid = toCustomerGid(loggedInCustomerId || firstItem.pricingContext.customerId)
 
-  const draftOrderInput = {
-    note: `Custom pricing checkout for upload ${noteUploadIds}`,
+  const draftOrderInput: Record<string, unknown> = {
+    acceptAutomaticDiscounts: body.acceptAutomaticDiscounts !== false,
+    allowDiscountCodesInCheckout: true,
+    ...(discountCodes.length ? { discountCodes } : {}),
+    ...(fallbackCustomerEmail ? { email: fallbackCustomerEmail } : {}),
+    ...(customerGid
+      ? {
+          purchasingEntity: { customerId: customerGid },
+          useCustomerDefaultAddress: true,
+        }
+      : {}),
+    note:
+      `Custom pricing checkout for upload ${noteUploadIds}` +
+      (checkoutIntent ? `\nIntent: ${checkoutIntent}` : '') +
+      (discountCodes.length ? `\nDiscount code(s): ${discountCodes.join(', ')}` : '\nDiscounts: eligible automatic Shopify discounts accepted') +
+      (customerNote ? `\nCustomer note: ${customerNote}` : ''),
     lineItems: preparedItems.map((item, index) => {
+      const isMeasuredLength = item.pricingContext.pricingMode === 'measured_length'
+      const linkedVariantId = toVariantGid(
+        isMeasuredLength
+          ? normalizedItems[index]?.selectedVariantId ||
+              item.upload.variantId ||
+              item.resolvedVariant?.selectedVariantId
+          : item.upload.variantId ||
+              item.resolvedVariant?.selectedVariantId ||
+              normalizedItems[index]?.selectedVariantId
+      )
       const lineTitle =
         item.pricingContext.customerType === 'business'
           ? `${item.productTitle} - Business Pricing`
           : `${item.productTitle} - VIP Pricing`
       const requestedCopies = Math.max(1, item.requestedQuantity)
       const unitAmount = item.quote.totalPrice / requestedCopies
+      const unitPrice = {
+        amount: formatDecimalAmount(unitAmount),
+        currencyCode: item.currencyCode,
+      }
 
       return {
-        title:
-          lineTitle +
-          ` (${item.quote.pageWidthIn.toFixed(2)}" x ${item.quote.pageLengthIn.toFixed(2)}", ${requestedCopies} cop${requestedCopies === 1 ? 'y' : 'ies'})`,
+        ...(linkedVariantId
+          ? {
+              variantId: linkedVariantId,
+              priceOverride: unitPrice,
+            }
+          : {
+              title:
+                lineTitle +
+                ` (${item.quote.pageWidthIn.toFixed(2)}" x ${item.quote.pageLengthIn.toFixed(2)}", ${requestedCopies} cop${requestedCopies === 1 ? 'y' : 'ies'})`,
+              originalUnitPriceWithCurrency: unitPrice,
+            }),
         quantity: requestedCopies,
         requiresShipping: true,
-        originalUnitPriceWithCurrency: {
-          amount: formatDecimalAmount(unitAmount),
-          currencyCode: item.currencyCode,
-        },
         customAttributes: [
           { key: '_ul_upload_id', value: item.upload.id },
           { key: '_ul_uploaded', value: 'true' },
@@ -226,20 +299,27 @@ export async function action({ request }: ActionFunctionArgs) {
           { key: 'Requested Copies', value: String(item.requestedQuantity) },
           { key: 'Print READY', value: item.upload.uploadUrl || '' },
           { key: 'Design File', value: item.upload.fileName || '' },
+          { key: 'Customer Note', value: customerNote },
+          { key: '_ul_customer_note', value: customerNote },
+          { key: '_ul_discount_codes', value: discountCodes.join(', ') },
+          { key: '_ul_accepts_automatic_discounts', value: body.acceptAutomaticDiscounts === false ? 'false' : 'true' },
           {
             key: '_ul_selected_variant_id',
-            value: item.resolvedVariant?.selectedVariantId || normalizedItems[index]?.selectedVariantId || '',
+            value: isMeasuredLength
+              ? ''
+              : item.resolvedVariant?.selectedVariantId || normalizedItems[index]?.selectedVariantId || '',
           },
           {
             key: '_ul_selected_variant_title',
-            value:
-              item.resolvedVariant?.selectedVariantTitle ||
-              item.quote.sheetVariantTitle ||
-              '',
+            value: isMeasuredLength
+              ? ''
+              : item.resolvedVariant?.selectedVariantTitle ||
+                item.quote.sheetVariantTitle ||
+                '',
           },
           {
             key: '_ul_selected_sheet_label',
-            value: item.resolvedVariant?.selectedSheetLabel || '',
+            value: isMeasuredLength ? 'Exact measured length' : item.resolvedVariant?.selectedSheetLabel || '',
           },
           {
             key: '_ul_sheets_needed',
@@ -286,6 +366,8 @@ export async function action({ request }: ActionFunctionArgs) {
       quoteTotal: aggregateTotal,
       exactTotal: aggregateTotal,
       currency: firstItem.currencyCode,
+      discountCodes,
+      acceptAutomaticDiscounts: body.acceptAutomaticDiscounts !== false,
       items: preparedItems.map((item) => ({
         uploadId: item.upload.id,
         fileName: item.upload.fileName,

@@ -1,29 +1,29 @@
-/**
- * Telemetry Push Worker
- *
- * Runs every 60 seconds inside each tenant container.
- * Collects metrics from the local DB and POSTs them to the
- * central billing panel.
- *
- * Usage: npx tsx workers/telemetry.worker.ts
- *
- * Required ENV:
- *   TENANT_SLUG        - Container/tenant identifier
- *   DATABASE_URL       - PostgreSQL connection string
- *   BILLING_PANEL_URL  - Central panel endpoint (e.g. https://panel.techifyboost.com/api/telemetry)
- *   BILLING_PANEL_KEY  - Auth key for the billing panel
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { PrismaClient } from '@prisma/client'
 import { collectTelemetry } from '../app/lib/telemetry.server'
 
-// ──────────────────── Config ────────────────────
 
-const INTERVAL_MS = 60_000 // 60 seconds
 
-// Prefer explicit TENANT_SLUG; otherwise derive from SHOPIFY_APP_URL subdomain
-// so telemetry labels and billing attribution never fall back to "unknown"
-// just because an env var was omitted from the container spec.
+const INTERVAL_MS = 60_000
+
+
+
+
 function resolveTenantSlug(): string {
   const raw = (process.env.TENANT_SLUG || '').trim()
   if (raw && raw !== 'default' && raw !== 'unknown') return raw
@@ -40,20 +40,20 @@ const TENANT_SLUG = resolveTenantSlug()
 const BILLING_PANEL_URL = (process.env.BILLING_PANEL_URL || '').trim()
 const BILLING_PANEL_KEY = (process.env.BILLING_PANEL_KEY || '').trim()
 
-// ──────────────────── Prisma ────────────────────
+
 
 const prisma = new PrismaClient({
   log: ['error'],
 })
 
-// ──────────────────── State ────────────────────
+
 
 let isShuttingDown = false
 let intervalId: ReturnType<typeof setInterval> | null = null
 let consecutiveErrors = 0
 const MAX_CONSECUTIVE_ERRORS = 10
 
-// ──────────────────── Main Loop ────────────────────
+
 
 async function pushTelemetry(): Promise<void> {
   if (isShuttingDown) return
@@ -62,7 +62,7 @@ async function pushTelemetry(): Promise<void> {
     const payload = await collectTelemetry(prisma)
 
     if (!BILLING_PANEL_URL) {
-      // No panel configured - just log summary
+
       console.log(
         `[Telemetry:${TENANT_SLUG}] Collected: ` +
         `uploads=${payload.usage.uploads.total}, ` +
@@ -87,9 +87,9 @@ async function pushTelemetry(): Promise<void> {
         signal: AbortSignal.timeout(15_000), // 15s timeout
       })
     } catch (fetchErr) {
-      // Distinguish DNS/TCP/TLS/timeout from HTTP errors — previous logs
-      // swallowed this into a generic "fetch failed" which hid whether
-      // BILLING_PANEL_URL was misconfigured vs. the panel being unreachable.
+
+
+
       const e = fetchErr as any
       const cause = e && e.cause ? ` cause=${(e.cause as any).code || (e.cause as any).message}` : ''
       const name = e && e.name ? ` (${e.name})` : ''
@@ -118,18 +118,18 @@ async function pushTelemetry(): Promise<void> {
     console.error(`[Telemetry:${TENANT_SLUG}] Error: ${msg}`)
   }
 
-  // Back off if too many consecutive errors
+
   if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
     console.warn(
       `[Telemetry:${TENANT_SLUG}] ${MAX_CONSECUTIVE_ERRORS} consecutive errors, ` +
       `backing off for 5 minutes`
     )
     consecutiveErrors = 0
-    await sleep(300_000) // 5 min extra wait
+    await sleep(300_000)
   }
 }
 
-// ──────────────────── Helpers ────────────────────
+
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B'
@@ -143,7 +143,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-// ──────────────────── Lifecycle ────────────────────
+
 
 function shutdown(): void {
   if (isShuttingDown) return
@@ -159,7 +159,7 @@ function shutdown(): void {
 process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
 
-// ──────────────────── Start ────────────────────
+
 
 const tenantSource = process.env.TENANT_SLUG
   ? 'env'
@@ -182,7 +182,7 @@ if (TENANT_SLUG === 'unknown' || TENANT_SLUG === 'default') {
   )
 }
 
-// Initial push after 10s delay (let app start first)
+
 setTimeout(() => {
   pushTelemetry()
   intervalId = setInterval(pushTelemetry, INTERVAL_MS)

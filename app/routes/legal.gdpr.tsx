@@ -9,30 +9,30 @@ const styles = {
   list: { paddingLeft: "1.5rem", color: "#4b5563", lineHeight: 1.8, margin: 0 },
   listItem: { marginBottom: "0.5rem" },
   strong: { fontWeight: 600, color: "#1f2937" },
-  card: { 
-    background: "#f9fafb", 
-    borderRadius: "8px", 
-    padding: "1.5rem", 
+  card: {
+    background: "#f9fafb",
+    borderRadius: "8px",
+    padding: "1.5rem",
     marginBottom: "1.5rem",
     border: "1px solid #e5e7eb"
   },
-  webhookItem: { 
-    display: "flex", 
-    alignItems: "flex-start", 
-    gap: "0.75rem", 
+  webhookItem: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "0.75rem",
     padding: "1rem",
     background: "white",
     borderRadius: "6px",
     marginBottom: "0.75rem",
     border: "1px solid #e5e7eb"
   },
-  activeBadge: { 
-    background: "#dcfce7", 
-    color: "#166534", 
-    padding: "2px 8px", 
-    borderRadius: "4px", 
-    fontSize: "0.7rem", 
-    fontWeight: 600 
+  activeBadge: {
+    background: "#dcfce7",
+    color: "#166534",
+    padding: "2px 8px",
+    borderRadius: "4px",
+    fontSize: "0.7rem",
+    fontWeight: 600
   },
   webhookName: { fontWeight: 600, color: "#1f2937", marginBottom: "0.25rem", fontFamily: "monospace" },
   webhookDesc: { color: "#6b7280", fontSize: "0.875rem", lineHeight: 1.5 },
@@ -69,8 +69,8 @@ export default function GDPRCompliance() {
       <section style={styles.section}>
         <h2 style={styles.heading}>Overview</h2>
         <p style={styles.text}>
-          Upload Studio is fully compliant with the General Data Protection Regulation (GDPR) 
-          and other applicable data protection laws. We are committed to protecting the privacy and rights 
+          Upload Studio is fully compliant with the General Data Protection Regulation (GDPR)
+          and other applicable data protection laws. We are committed to protecting the privacy and rights
           of our users and their customers.
         </p>
       </section>
@@ -88,7 +88,7 @@ export default function GDPRCompliance() {
       <div style={styles.card}>
         <h2 style={styles.heading}>Shopify GDPR Webhooks</h2>
         <p style={styles.text}>We implement all required Shopify GDPR webhooks:</p>
-        
+
         {webhooks.map((wh, idx) => (
           <div key={idx} style={styles.webhookItem}>
             <span style={styles.activeBadge}>Active</span>
@@ -128,7 +128,7 @@ export default function GDPRCompliance() {
       <section style={styles.section}>
         <h2 style={styles.heading}>Data Processing Agreement (DPA)</h2>
         <p style={styles.text}>
-          A Data Processing Agreement is available for Enterprise customers upon request. 
+          A Data Processing Agreement is available for Enterprise customers upon request.
           Contact <a href="mailto:enterprise@uploadstudio.app.techifyboost.com" style={{ color: "#667eea" }}>enterprise@uploadstudio.app.techifyboost.com</a> for more information.
         </p>
       </section>

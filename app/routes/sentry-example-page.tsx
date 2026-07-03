@@ -17,7 +17,7 @@ export const meta = () => {
 export default function SentryExamplePage() {
   const [hasSentError, setHasSentError] = useState(false);
   const [isConnected, setIsConnected] = useState(true);
-  
+
   useEffect(() => {
     async function checkConnectivity() {
       const result = await Sentry.diagnoseSdkConnectivity();
@@ -38,7 +38,7 @@ export default function SentryExamplePage() {
         </h1>
 
         <p className="description">
-          Click the button below, and view the sample error on the Sentry <a target="_blank" rel="noreferrer" href="https://techify-boost-36.sentry.io/issues/?project=4510838504030208">Issues Page</a>. 
+          Click the button below, and view the sample error on the Sentry <a target="_blank" rel="noreferrer" href="https://techify-boost-36.sentry.io/issues/?project=4510838504030208">Issues Page</a>.
           For more details about setting up Sentry, <a target="_blank" rel="noreferrer" href="https://docs.sentry.io/platforms/javascript/guides/remix/">read our docs</a>.
         </p>
 
@@ -78,7 +78,7 @@ export default function SentryExamplePage() {
         <div className="flex-spacer" />
       </main>
 
-      {/* Not for production use! We're just saving you from having to delete an extra CSS file ;) */}
+
       <style dangerouslySetInnerHTML={{ __html: styles }}></style>
     </div>
   );
@@ -189,7 +189,7 @@ const styles = `
   .success_placeholder {
     height: 46px;
   }
-  
+
   .connectivity-error {
     padding: 12px 16px;
     background-color: #E50045;
@@ -200,7 +200,7 @@ const styles = `
     text-align: center;
     margin: 0;
   }
-  
+
   .connectivity-error a {
     color: #FFFFFF;
     text-decoration: underline;

@@ -1,29 +1,29 @@
-/**
- * ═══════════════════════════════════════════════════════════
- * Upload Studio — Mockup Generation Worker
- * ═══════════════════════════════════════════════════════════
- * 
- * GSB Engine'den tamamen izole çalışır.
- * Aynı VM'de ayrı systemd service olarak deploy edilir.
- * 
- * İş akışı:
- *   1. Upload Studio API → Redis queue'ya job atar
- *   2. Bu worker queue'yu dinler
- *   3. PSD/template'i R2'den çeker
- *   4. Sharp ile design'ı print area'ya composite eder
- *   5. Sonucu R2'ye yükler
- *   6. Upload Studio DB'yi günceller (metafield/mockup URL)
- * 
- * Kullanım:
- *   NODE_ENV=production tsx src/index.ts
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import "dotenv/config";
 import sharp from "sharp";
 import { MockupWorker } from "./mockup-worker.js";
 import { getRedisConnection } from "./redis.js";
 
-// Sharp optimizasyonları (GSB'den bağımsız)
+
 sharp.cache(false);
 sharp.concurrency(2);
 
@@ -40,19 +40,19 @@ async function bootstrap() {
   console.log(`[us-mockup] Sharp cache: disabled, concurrency: 2`);
   console.log("");
 
-  // Verify Redis connection
+
   const redis = getRedisConnection();
   await redis.ping();
   console.log("[us-mockup] ✅ Redis connected");
 
-  // Start worker
+
   const worker = new MockupWorker(CONCURRENCY);
   await worker.start();
   console.log("[us-mockup] ✅ MockupWorker started");
   console.log("[us-mockup] 🚀 Waiting for jobs...");
   console.log("");
 
-  // Graceful shutdown
+
   const shutdown = async (signal: string) => {
     console.log(`\n[us-mockup] ${signal} received. Shutting down...`);
     await worker.stop();

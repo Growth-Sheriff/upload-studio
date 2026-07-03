@@ -113,8 +113,8 @@ function getTypeBadge(type: string) {
 
 export default function ChangelogPage() {
   return (
-    <Page 
-      title="Changelog" 
+    <Page
+      title="Changelog"
       subtitle="Version history and release notes"
       backAction={{ content: "Dashboard", url: "/app" }}
     >
@@ -128,7 +128,7 @@ export default function ChangelogPage() {
                   {getTypeBadge(entry.type)}
                   <Text as="span" tone="subdued">{entry.date}</Text>
                 </InlineStack>
-                
+
                 <List type="bullet">
                   {entry.changes.map((change, changeIdx) => (
                     <List.Item key={changeIdx}>

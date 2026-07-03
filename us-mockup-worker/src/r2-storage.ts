@@ -1,7 +1,7 @@
-/**
- * R2 Storage Service — Cloudflare R2 via S3-compatible API
- * Used to fetch PSD templates and upload generated mockups
- */
+
+
+
+
 
 import {
   GetObjectCommand,
@@ -25,9 +25,9 @@ export function getR2Client(): S3Client {
   return s3Client;
 }
 
-/**
- * Download a file from R2 as Buffer
- */
+
+
+
 export async function downloadFromR2(key: string): Promise<Buffer> {
   const client = getR2Client();
   const bucket = process.env.R2_BUCKET_NAME || "us-mockups";
@@ -48,10 +48,10 @@ export async function downloadFromR2(key: string): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-/**
- * Upload a buffer to R2
- * Returns public URL
- */
+
+
+
+
 export async function uploadToR2(
   key: string,
   body: Buffer,

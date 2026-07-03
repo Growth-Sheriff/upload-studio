@@ -31,6 +31,7 @@ export interface BuilderResolveConfig {
   artboardMarginIn?: number | null
   imageMarginIn?: number | null
   fitToleranceIn?: number | null
+  selectionStrategy?: 'lowest_total_cost' | 'smallest_fitting_sheet' | null
 }
 
 interface Measurement {
@@ -613,6 +614,14 @@ export function resolveSheetVariant({
     })
     .filter((result): result is NonNullable<typeof result> => Boolean(result))
     .sort((a, b) => {
+      if (config.selectionStrategy === 'smallest_fitting_sheet') {
+        const areaA = a.family.widthInch * a.family.heightInch
+        const areaB = b.family.widthInch * b.family.heightInch
+        if (areaA !== areaB) return areaA - areaB
+        if (a.sheetsNeeded !== b.sheetsNeeded) return a.sheetsNeeded - b.sheetsNeeded
+        if (a.totalCost !== b.totalCost) return a.totalCost - b.totalCost
+        return b.efficiency - a.efficiency
+      }
       if (a.totalCost !== b.totalCost) return a.totalCost - b.totalCost
       if (a.sheetsNeeded !== b.sheetsNeeded) return a.sheetsNeeded - b.sheetsNeeded
       return b.efficiency - a.efficiency

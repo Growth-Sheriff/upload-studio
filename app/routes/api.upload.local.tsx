@@ -3,10 +3,10 @@ import { json } from "@remix-run/node";
 import { saveLocalFile } from "~/lib/storage.server";
 import { handleCorsOptions, corsJson } from "~/lib/cors.server";
 
-// POST /api/upload/local
-// Handles local file uploads when R2/S3 is not configured
+
+
 export async function action({ request }: ActionFunctionArgs) {
-  // Handle CORS preflight
+
   if (request.method === "OPTIONS") {
     return handleCorsOptions(request);
   }
@@ -24,17 +24,17 @@ export async function action({ request }: ActionFunctionArgs) {
       return corsJson({ error: "Missing file or key" }, request, { status: 400 });
     }
 
-    // Validate storage key format to prevent path traversal
-    // Expected format: shopDomain/uploadId/itemId/filename
+
+
     if (key.includes('..') || key.startsWith('/') || key.startsWith('\\')) {
       return corsJson({ error: "Invalid storage key" }, request, { status: 400 });
     }
 
-    // Convert file to buffer
+
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Save to local storage
+
     const filePath = await saveLocalFile(key, buffer);
 
     return corsJson({
@@ -48,7 +48,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 }
 
-// OPTIONS handler for CORS
+
 export async function loader({ request }: ActionFunctionArgs) {
   if (request.method === "OPTIONS") {
     return handleCorsOptions(request);

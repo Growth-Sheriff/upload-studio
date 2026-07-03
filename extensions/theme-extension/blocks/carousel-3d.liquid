@@ -1,16 +1,8 @@
-{% comment %}
-  3D Carousel Upload - Collection Based
-  Merchant selects a collection, products from that collection are displayed
-{% endcomment %}
-
 {{ 'ul-carousel.css' | asset_url | stylesheet_tag }}
-
-{% comment %} Check if we're in theme editor {% endcomment %}
 {% assign is_design_mode = false %}
 {% if request.design_mode %}
   {% assign is_design_mode = true %}
 {% endif %}
-
 <div class="ul-carousel-section" data-block-id="{{ block.id }}" data-design-mode="{{ is_design_mode }}">
   {% if block.settings.show_header %}
   <div class="ul-section-header-4d">
@@ -29,12 +21,10 @@
     </div>
   </div>
   {% endif %}
-
   <div class="ul-carousel-container">
     <div class="ul-carousel-track" id="ulTrack-{{ block.id }}">
       {% assign max_products = block.settings.max_products | default: 6 %}
       {% assign collection = block.settings.collection %}
-
       {% if collection and collection.products.size > 0 %}
         {% for p in collection.products limit: max_products %}
         <div class="ul-carousel-card" data-product-id="{{ p.id }}" data-variant-id="{{ p.selected_or_first_available_variant.id }}" data-product-title="{{ p.title | escape }}" data-product-price="{{ p.price | money }}" data-product-image="{{ p.featured_image | image_url: width: 400 }}">
@@ -58,7 +48,6 @@
     <button class="ul-carousel-next" onclick="slideUL3D('{{ block.id }}',1)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
   </div>
 </div>
-
 <div class="ul-modal-overlay" id="ulModal-{{ block.id }}">
   <div class="ul-modal">
     <div class="ul-modal-header"><h3>Upload Your Design</h3><button class="ul-modal-close" onclick="closeUL3DModal('{{ block.id }}')">×</button></div>
@@ -86,9 +75,7 @@
     <div class="ul-modal-footer"><button class="ul-modal-cart-btn" id="ulCartBtn-{{ block.id }}" onclick="addUL3DToCart('{{ block.id }}')" disabled>Upload design to continue</button></div>
   </div>
 </div>
-
 <script src="{{ 'ul-carousel.js' | asset_url }}" defer></script>
-
 {% schema %}
 {
   "name": "3D Carousel Upload",

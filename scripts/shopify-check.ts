@@ -1,41 +1,41 @@
 #!/usr/bin/env npx tsx
-/**
- * 🔍 Shopify Best Practices Checker
- * Proje genelinde Shopify kurallarını kontrol eder
- * 
- * Kullanım: npx tsx scripts/shopify-check.ts
- */
+
+
+
+
+
+
 
 import { readdirSync, readFileSync, statSync, existsSync } from 'fs';
 import { join, relative, extname } from 'path';
 
-// ═══════════════════════════════════════════════════════════════
-// 📌 CONFIGURATION
-// ═══════════════════════════════════════════════════════════════
+
+
+
 
 const CONFIG = {
-  // Required API version
+
   REQUIRED_API_VERSION: '2025-10',
-  
-  // Deprecated API versions
+
+
   DEPRECATED_VERSIONS: ['2024-01', '2024-04', '2024-07', '2024-10', '2023-01', '2023-04', '2023-07', '2023-10'],
-  
-  // Directories to scan
+
+
   SCAN_DIRS: ['app', 'workers', 'extensions', 'theme-snippets'],
-  
-  // Directories to skip
+
+
   SKIP_DIRS: ['node_modules', 'build', 'dist', '.git', '.next'],
-  
-  // File extensions to check
+
+
   CHECK_EXTENSIONS: ['.ts', '.tsx', '.js', '.jsx', '.liquid', '.json'],
-  
-  // Files to always check
+
+
   CONFIG_FILES: ['shopify.app.toml', 'shopify.app.fdt.toml', 'shopify.extension.toml'],
 };
 
-// ═══════════════════════════════════════════════════════════════
-// 📊 RESULT TYPES
-// ═══════════════════════════════════════════════════════════════
+
+
+
 
 interface CheckResult {
   file: string;
@@ -59,12 +59,12 @@ const results: CheckResult[] = [];
 let filesChecked = 0;
 let totalFiles = 0;
 
-// ═══════════════════════════════════════════════════════════════
-// 🔍 CHECK RULES
-// ═══════════════════════════════════════════════════════════════
+
+
+
 
 const RULES = {
-  // API Version Checks - Wrong version in code
+
   API_VERSION_WRONG: {
     name: 'api-version-wrong',
     description: 'Wrong API version in code (not matching required version)',
@@ -108,26 +108,26 @@ const RULES = {
     }],
   },
 
-  // REST API Check (GraphQL only rule)
-  // Note: graphql.json endpoints are GraphQL, not REST!
+
+
   REST_API_USAGE: {
     name: 'rest-api-forbidden',
     description: 'REST API usage detected (GraphQL only)',
     severity: 'error' as const,
     patterns: [{
-      // Match .json endpoints but NOT graphql.json
+
       regex: /\/admin\/api\/\d{4}-\d{2}\/(?!graphql)[a-z_]+\.json/g,
       message: 'REST API endpoint detected',
       suggestion: 'Use GraphQL API instead of REST endpoints',
     }, {
-      // Match REST resources like /products.json, /orders.json
+
       regex: /\/admin\/api\/\d{4}-\d{2}\/(products|orders|customers|collections|variants|metafields)\.json/g,
       message: 'REST API resource endpoint detected',
       suggestion: 'Use admin.graphql() with GraphQL queries instead',
     }],
   },
 
-  // Webhook Verification
+
   WEBHOOK_NO_HMAC: {
     name: 'webhook-no-hmac',
     description: 'Webhook handler without HMAC verification',
@@ -136,7 +136,7 @@ const RULES = {
     patterns: [{
       checkFn: (content: string) => {
         const hasWebhook = content.includes('webhook') || content.includes('Webhook');
-        const hasHmac = content.includes('hmac') || content.includes('HMAC') || 
+        const hasHmac = content.includes('hmac') || content.includes('HMAC') ||
                         content.includes('shopify.authenticate') || content.includes('authenticate.webhook');
         return hasWebhook && !hasHmac;
       },
@@ -145,7 +145,7 @@ const RULES = {
     }],
   },
 
-  // Session Token Check
+
   SESSION_NO_VERIFY: {
     name: 'session-no-verify',
     description: 'Session handling without proper verification',
@@ -157,7 +157,7 @@ const RULES = {
     }],
   },
 
-  // GDPR Compliance
+
   GDPR_MISSING_HANDLERS: {
     name: 'gdpr-handlers',
     description: 'GDPR webhook handlers check',
@@ -169,7 +169,7 @@ const RULES = {
         'api.gdpr.customers.redact',
         'api.gdpr.shop.redact',
       ];
-      const missing = requiredHandlers.filter(h => 
+      const missing = requiredHandlers.filter(h =>
         !allFiles.some(f => f.includes(h))
       );
       return missing.length === 0 ? null : {
@@ -179,7 +179,7 @@ const RULES = {
     },
   },
 
-  // Tenant Isolation
+
   TENANT_NO_SHOP_ID: {
     name: 'tenant-no-shop-id',
     description: 'Database query without shop_id filter',
@@ -191,7 +191,7 @@ const RULES = {
     }],
   },
 
-  // Direct File Streaming (forbidden)
+
   DIRECT_FILE_STREAM: {
     name: 'direct-file-stream',
     description: 'Backend file streaming detected',
@@ -203,7 +203,7 @@ const RULES = {
     }],
   },
 
-  // Polaris Import Check
+
   POLARIS_DEPRECATED: {
     name: 'polaris-deprecated',
     description: 'Deprecated Polaris component usage',
@@ -215,7 +215,7 @@ const RULES = {
     }],
   },
 
-  // App Bridge Version
+
   APP_BRIDGE_OLD: {
     name: 'app-bridge-old',
     description: 'Old App Bridge usage',
@@ -231,7 +231,7 @@ const RULES = {
     }],
   },
 
-  // Environment Variables
+
   ENV_HARDCODED_SECRET: {
     name: 'env-hardcoded-secret',
     description: 'Hardcoded secret/key detected',
@@ -243,7 +243,7 @@ const RULES = {
     }],
   },
 
-  // NGINX Usage (forbidden)
+
   NGINX_REFERENCE: {
     name: 'nginx-forbidden',
     description: 'NGINX reference detected (Caddy only)',
@@ -255,7 +255,7 @@ const RULES = {
     }],
   },
 
-  // SCP/RSYNC (forbidden)
+
   MANUAL_DEPLOY: {
     name: 'manual-deploy-forbidden',
     description: 'Manual deployment method detected',
@@ -267,7 +267,7 @@ const RULES = {
     }],
   },
 
-  // Theme Extension Checks
+
   THEME_MISSING_LOCALES: {
     name: 'theme-missing-locales',
     description: 'Theme extension locale check',
@@ -277,16 +277,16 @@ const RULES = {
       checkFn: (content: string) => {
         const hasT = content.includes('| t') || content.includes('| translate');
         const tKeys = content.match(/['"]([^'"]+)['"]\s*\|\s*t/g) || [];
-        return tKeys.length > 0 ? null : null; // Will be enhanced
+        return tKeys.length > 0 ? null : null;
       },
     }],
   },
 
-  // ═══════════════════════════════════════════════════════════════
-  // 🆕 NEW ADVANCED CHECKS
-  // ═══════════════════════════════════════════════════════════════
 
-  // Polaris v12+ Deprecated Components
+
+
+
+
   POLARIS_V12_DEPRECATED: {
     name: 'polaris-v12-deprecated',
     description: 'Polaris v12+ deprecated components',
@@ -310,7 +310,7 @@ const RULES = {
     }],
   },
 
-  // Webhook HMAC Verification
+
   WEBHOOK_HMAC_CHECK: {
     name: 'webhook-hmac-required',
     description: 'Webhook handler must verify HMAC signature',
@@ -318,19 +318,19 @@ const RULES = {
     filePattern: /webhooks\./,
     patterns: [{
       checkFn: (content: string) => {
-        // Check if it's a webhook handler
-        const isWebhookHandler = content.includes('ActionFunctionArgs') || 
+
+        const isWebhookHandler = content.includes('ActionFunctionArgs') ||
                                   content.includes('export const action');
         if (!isWebhookHandler) return null;
-        
-        // Check for proper authentication
-        const hasAuthenticate = content.includes('authenticate.webhook') || 
+
+
+        const hasAuthenticate = content.includes('authenticate.webhook') ||
                                 content.includes('shopify.authenticate.webhook') ||
                                 content.includes('verifyWebhook') ||
                                 content.includes('HMAC');
-        
+
         if (!hasAuthenticate) {
-          return true; // Missing HMAC verification
+          return true;
         }
         return null;
       },
@@ -339,13 +339,13 @@ const RULES = {
     }],
   },
 
-  // Environment Variable Leaks - Only check TRUE CLIENT-SIDE files
-  // Remix routes, workers, and .server files all run on server
+
+
   ENV_LEAK_CHECK: {
     name: 'env-leak',
     description: 'Environment variable leak in client code',
     severity: 'error' as const,
-    // Only check theme extension JS files that actually run on client
+
     filePattern: /extensions\/.*\.js$/,
     patterns: [{
       regex: /process\.env\.(SHOPIFY_API_SECRET|DATABASE_URL|REDIS_URL|R2_SECRET|AWS_SECRET)/g,
@@ -354,7 +354,7 @@ const RULES = {
     }],
   },
 
-  // Console.log of secrets check - applies to all files
+
   SECRET_LOG_CHECK: {
     name: 'secret-console-log',
     description: 'Logging sensitive data',
@@ -366,7 +366,7 @@ const RULES = {
     }],
   },
 
-  // Credentials serialization check (broader scope)
+
   CREDENTIALS_SERIALIZE: {
     name: 'credentials-serialize',
     description: 'Credentials serialization in client-exposed code',
@@ -379,7 +379,7 @@ const RULES = {
     }],
   },
 
-  // App Bridge Modern Usage
+
   APP_BRIDGE_MODERN: {
     name: 'app-bridge-modern',
     description: 'App Bridge modern patterns check',
@@ -399,7 +399,7 @@ const RULES = {
     }],
   },
 
-  // GraphQL Best Practices
+
   GRAPHQL_BEST_PRACTICES: {
     name: 'graphql-best-practices',
     description: 'GraphQL query best practices',
@@ -415,7 +415,7 @@ const RULES = {
     }],
   },
 
-  // Metafield Namespace Check
+
   METAFIELD_NAMESPACE: {
     name: 'metafield-namespace',
     description: 'Metafield namespace should be app-specific',
@@ -427,7 +427,7 @@ const RULES = {
     }],
   },
 
-  // Rate Limiting Check
+
   RATE_LIMIT_CHECK: {
     name: 'rate-limit-missing',
     description: 'API endpoint without rate limiting',
@@ -435,17 +435,17 @@ const RULES = {
     filePattern: /api\./,
     patterns: [{
       checkFn: (content: string) => {
-        const isApiRoute = content.includes('export const action') || 
+        const isApiRoute = content.includes('export const action') ||
                            content.includes('export const loader');
         if (!isApiRoute) return null;
-        
-        const hasRateLimit = content.includes('rateLimit') || 
+
+        const hasRateLimit = content.includes('rateLimit') ||
                              content.includes('RateLimit') ||
                              content.includes('throttle');
-        
-        // Skip internal APIs
+
+
         if (content.includes('authenticate.admin')) return null;
-        
+
         if (!hasRateLimit && content.includes('json(')) {
           return true;
         }
@@ -456,7 +456,7 @@ const RULES = {
     }],
   },
 
-  // Shopify Plus Feature Check
+
   PLUS_FEATURE_CHECK: {
     name: 'plus-feature-warning',
     description: 'Shopify Plus only feature usage',
@@ -468,7 +468,7 @@ const RULES = {
     }],
   },
 
-  // Liquid Security
+
   LIQUID_SECURITY: {
     name: 'liquid-security',
     description: 'Liquid template security check',
@@ -477,11 +477,11 @@ const RULES = {
     patterns: [{
       regex: /\{\{\s*[^}|]*\s*\}\}(?!\s*\|)/g,
       checkFn: (content: string) => {
-        // Check for unescaped output without filters
+
         const unescaped = content.match(/\{\{\s*(?![\s'"0-9])[^}|]+\s*\}\}/g) || [];
-        const dangerous = unescaped.filter(m => 
-          !m.includes('| escape') && 
-          !m.includes('| json') && 
+        const dangerous = unescaped.filter(m =>
+          !m.includes('| escape') &&
+          !m.includes('| json') &&
           !m.includes('| url_encode') &&
           !m.includes('settings.') &&
           !m.includes('block.') &&
@@ -496,7 +496,7 @@ const RULES = {
           !m.includes('forloop.') &&
           !m.includes('paginate.')
         );
-        // Only flag if more than 10 truly dangerous outputs
+
         return dangerous.length > 10 ? true : null;
       },
       message: 'Multiple unescaped Liquid outputs detected',
@@ -504,11 +504,11 @@ const RULES = {
     }],
   },
 
-  // CORS Security - Only flag if in route files (not debug/test files)
+
   CORS_CHECK: {
     name: 'cors-security',
     description: 'CORS configuration check',
-    severity: 'warning' as const,  // Changed to warning - some cases are intentional
+    severity: 'warning' as const,
     filePattern: /^(?!.*debug\.)(?!.*test\.).*routes.*\.tsx$/,
     patterns: [{
       regex: /Access-Control-Allow-Origin['":\s]+\*/g,
@@ -517,7 +517,7 @@ const RULES = {
     }],
   },
 
-  // SQL Injection Prevention (Prisma raw queries)
+
   SQL_INJECTION: {
     name: 'sql-injection-risk',
     description: 'Potential SQL injection in raw queries',
@@ -534,19 +534,19 @@ const RULES = {
   },
 };
 
-// ═══════════════════════════════════════════════════════════════
-// 🛠️ UTILITY FUNCTIONS
-// ═══════════════════════════════════════════════════════════════
+
+
+
 
 function getAllFiles(dir: string, files: string[] = []): string[] {
   if (!existsSync(dir)) return files;
-  
+
   const items = readdirSync(dir);
-  
+
   for (const item of items) {
     const fullPath = join(dir, item);
     const stat = statSync(fullPath);
-    
+
     if (stat.isDirectory()) {
       if (!CONFIG.SKIP_DIRS.includes(item)) {
         getAllFiles(fullPath, files);
@@ -558,23 +558,23 @@ function getAllFiles(dir: string, files: string[] = []): string[] {
       }
     }
   }
-  
+
   return files;
 }
 
 function checkFile(filePath: string, content: string): void {
   const relativePath = relative(process.cwd(), filePath);
   const lines = content.split('\n');
-  
+
   for (const [ruleName, rule] of Object.entries(RULES)) {
     if ('globalCheck' in rule && rule.globalCheck) continue;
-    
-    // Check file pattern filter
+
+
     if ('filePattern' in rule && rule.filePattern) {
       if (!rule.filePattern.test(relativePath)) continue;
     }
-    
-    // Special handling for API_VERSION_WRONG rule
+
+
     if (ruleName === 'API_VERSION_WRONG') {
       const versionRegex = /\/admin\/api\/(\d{4}-\d{2})\/graphql\.json/g;
       let match;
@@ -584,10 +584,10 @@ function checkFile(filePath: string, content: string): void {
           const beforeMatch = content.substring(0, match.index);
           const lineNumber = beforeMatch.split('\n').length;
           const line = lines[lineNumber - 1] || '';
-          
-          // Skip comments
+
+
           if (line.trim().startsWith('//') || line.trim().startsWith('*')) continue;
-          
+
           results.push({
             file: relativePath,
             line: lineNumber,
@@ -600,9 +600,9 @@ function checkFile(filePath: string, content: string): void {
       }
       continue;
     }
-    
+
     for (const pattern of rule.patterns || []) {
-      // Function-based check
+
       if ('checkFn' in pattern && pattern.checkFn) {
         const result = pattern.checkFn(content);
         if (result === true || (result !== null && result !== false)) {
@@ -617,23 +617,23 @@ function checkFile(filePath: string, content: string): void {
         }
         continue;
       }
-      
-      // Regex-based check
+
+
       if ('regex' in pattern && pattern.regex) {
         const regex = new RegExp(pattern.regex.source, pattern.regex.flags);
         let match;
-        
+
         while ((match = regex.exec(content)) !== null) {
-          // Find line number
+
           const beforeMatch = content.substring(0, match.index);
           const lineNumber = beforeMatch.split('\n').length;
-          
-          // Skip if in comment
+
+
           const line = lines[lineNumber - 1] || '';
           if (line.trim().startsWith('//') || line.trim().startsWith('*') || line.trim().startsWith('#')) {
             continue;
           }
-          
+
           results.push({
             file: relativePath,
             line: lineNumber,
@@ -651,7 +651,7 @@ function checkFile(filePath: string, content: string): void {
 function runGlobalChecks(allFiles: string[]): void {
   for (const [ruleName, rule] of Object.entries(RULES)) {
     if (!('globalCheck' in rule) || !rule.globalCheck) continue;
-    
+
     if ('checkFn' in rule && rule.checkFn) {
       const result = rule.checkFn(allFiles);
       if (result) {
@@ -669,17 +669,17 @@ function runGlobalChecks(allFiles: string[]): void {
 }
 
 function checkConfigFiles(rootDir: string): void {
-  // Check shopify.app.toml
+
   const tomlFiles = ['shopify.app.toml', 'shopify.app.fdt.toml'];
-  
+
   for (const tomlFile of tomlFiles) {
     const tomlPath = join(rootDir, tomlFile);
     if (!existsSync(tomlPath)) continue;
-    
+
     const content = readFileSync(tomlPath, 'utf-8');
     const relativePath = relative(process.cwd(), tomlPath);
-    
-    // Check API version
+
+
     const versionMatch = content.match(/api_version\s*=\s*["']?([^"'\s]+)["']?/);
     if (versionMatch) {
       const version = versionMatch[1];
@@ -703,15 +703,15 @@ function checkConfigFiles(rootDir: string): void {
       }
     }
   }
-  
-  // Check extension toml files
+
+
   const extensionDir = join(rootDir, 'extensions');
   if (existsSync(extensionDir)) {
     const extensionFiles = getAllFiles(extensionDir).filter(f => f.endsWith('.toml'));
     for (const extFile of extensionFiles) {
       const content = readFileSync(extFile, 'utf-8');
       const relativePath = relative(process.cwd(), extFile);
-      
+
       const versionMatch = content.match(/api_version\s*=\s*["']?([^"'\s]+)["']?/);
       if (versionMatch && versionMatch[1] !== CONFIG.REQUIRED_API_VERSION) {
         results.push({
@@ -727,9 +727,9 @@ function checkConfigFiles(rootDir: string): void {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 📊 REPORTING
-// ═══════════════════════════════════════════════════════════════
+
+
+
 
 function printResults(): CheckSummary {
   console.log('\n');
@@ -737,12 +737,12 @@ function printResults(): CheckSummary {
   console.log('║       🔍 SHOPIFY BEST PRACTICES CHECK                        ║');
   console.log('╚══════════════════════════════════════════════════════════════╝');
   console.log('');
-  
+
   const errors = results.filter(r => r.severity === 'error');
   const warnings = results.filter(r => r.severity === 'warning');
   const infos = results.filter(r => r.severity === 'info');
-  
-  // Print Errors
+
+
   if (errors.length > 0) {
     console.log('❌ ERRORS (' + errors.length + ')');
     console.log('─'.repeat(60));
@@ -755,8 +755,8 @@ function printResults(): CheckSummary {
       console.log('');
     }
   }
-  
-  // Print Warnings
+
+
   if (warnings.length > 0) {
     console.log('⚠️  WARNINGS (' + warnings.length + ')');
     console.log('─'.repeat(60));
@@ -769,8 +769,8 @@ function printResults(): CheckSummary {
       console.log('');
     }
   }
-  
-  // Print Info (successes)
+
+
   if (infos.length > 0) {
     console.log('ℹ️  INFO (' + infos.length + ')');
     console.log('─'.repeat(60));
@@ -779,8 +779,8 @@ function printResults(): CheckSummary {
     }
     console.log('');
   }
-  
-  // Summary
+
+
   console.log('═'.repeat(60));
   console.log('📊 SUMMARY');
   console.log('─'.repeat(60));
@@ -790,7 +790,7 @@ function printResults(): CheckSummary {
   console.log(`  ⚠️  Warnings:       ${warnings.length}`);
   console.log(`  ℹ️  Info:           ${infos.length}`);
   console.log('');
-  
+
   const passed = errors.length === 0;
   if (passed) {
     console.log('✅ All critical checks passed!');
@@ -799,7 +799,7 @@ function printResults(): CheckSummary {
   }
   console.log('═'.repeat(60));
   console.log('');
-  
+
   return {
     totalFiles,
     checkedFiles: filesChecked,
@@ -810,37 +810,37 @@ function printResults(): CheckSummary {
   };
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 🚀 MAIN
-// ═══════════════════════════════════════════════════════════════
+
+
+
 
 function main(): void {
   const rootDir = process.cwd();
   console.log(`\n🔍 Scanning: ${rootDir}`);
   console.log(`📌 Required API Version: ${CONFIG.REQUIRED_API_VERSION}`);
-  
-  // Collect all files
+
+
   let allFiles: string[] = [];
   for (const dir of CONFIG.SCAN_DIRS) {
     const dirPath = join(rootDir, dir);
     allFiles = allFiles.concat(getAllFiles(dirPath));
   }
-  
-  // Add root config files
+
+
   for (const configFile of CONFIG.CONFIG_FILES) {
     const configPath = join(rootDir, configFile);
     if (existsSync(configPath)) {
       allFiles.push(configPath);
     }
   }
-  
+
   totalFiles = allFiles.length;
   console.log(`📁 Found ${totalFiles} files to check\n`);
-  
-  // Check config files first
+
+
   checkConfigFiles(rootDir);
-  
-  // Check each file
+
+
   for (const file of allFiles) {
     try {
       const content = readFileSync(file, 'utf-8');
@@ -850,14 +850,14 @@ function main(): void {
       console.error(`Error reading ${file}: ${error}`);
     }
   }
-  
-  // Run global checks
+
+
   runGlobalChecks(allFiles);
-  
-  // Print results
+
+
   const summary = printResults();
-  
-  // Exit with error code if critical errors found
+
+
   process.exit(summary.passed ? 0 : 1);
 }
 

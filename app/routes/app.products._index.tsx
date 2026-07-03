@@ -1,7 +1,7 @@
-/**
- * Products Page - List products with configure links
- * Uses ResourceList for proper Polaris/React compatibility
- */
+
+
+
+
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
@@ -14,7 +14,7 @@ import { useState, useCallback } from "react";
 import { authenticate } from "~/shopify.server";
 import prisma from "~/lib/prisma.server";
 
-// GraphQL query to fetch products
+
 const PRODUCTS_QUERY = `
   query getProducts($first: Int!) {
     products(first: $first) {
@@ -46,7 +46,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const { session, admin } = await authenticate.admin(request);
   const shopDomain = session.shop;
 
-  // Get or create shop
+
   let shop = await prisma.shop.findUnique({
     where: { shopDomain },
   });
@@ -64,7 +64,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
   }
 
-  // Get product configs - cast to any to access new fields
+
   const productConfigs = await prisma.productConfig.findMany({
     where: { shopId: shop.id },
   }) as Array<{
@@ -74,7 +74,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     uploadEnabled?: boolean;
   }>;
 
-  // Fetch products from Shopify
+
   let shopifyProducts: Array<{
     id: string;
     title: string;
@@ -100,7 +100,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     console.error("Failed to fetch products:", error);
   }
 
-  // Merge with configs
+
   const products: ProductItem[] = shopifyProducts.map(product => {
     const config = productConfigs.find(c => c.productId === product.id);
     return {
@@ -148,7 +148,7 @@ export default function ProductsPage() {
     setQueryValue("");
   }, []);
 
-  // Filter products by search query
+
   const filteredProducts = products.filter(product =>
     product.title.toLowerCase().includes(queryValue.toLowerCase())
   );
@@ -184,7 +184,7 @@ export default function ProductsPage() {
       backAction={{ content: "Dashboard", url: "/app" }}
     >
       <Layout>
-        {/* Stats Card */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="200">
@@ -192,7 +192,7 @@ export default function ProductsPage() {
               <Text as="p" tone="subdued">
                 {configuredCount} of {products.length} products configured for upload
               </Text>
-              
+
               {shopPlan === "starter" && (
                 <Banner tone="info">
                   Starter plan active. Upgrade to Pro for 3D Designer and more features.
@@ -202,7 +202,7 @@ export default function ProductsPage() {
           </Card>
         </Layout.Section>
 
-        {/* Products List */}
+
         <Layout.Section>
           <Card padding="0">
             <ResourceList

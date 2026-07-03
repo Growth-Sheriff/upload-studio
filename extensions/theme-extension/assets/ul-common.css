@@ -1,38 +1,16 @@
-/**
- * UL Common Styles v4.1.0
- * ========================
- * FAZ 9: Shared CSS for Product 3D Customizer Theme Extension
- * 
- * This file contains common styles shared across:
- * - DTF Uploader
- * - T-Shirt Modal
- * - Confirmation Screen
- * 
- * Features:
- * - CSS Variables for theming
- * - Common utility classes
- * - Shared component styles
- * - Animation definitions
- * - Responsive breakpoints
- */
 
-/* ==========================================================================
-   CSS VARIABLES - THEMING
-   ========================================================================== */
 
 :root {
-  /* Primary Colors */
+
   --ul-primary: #2563eb;
   --ul-primary-hover: #1d4ed8;
   --ul-primary-light: #dbeafe;
   --ul-primary-dark: #1e40af;
-  
-  /* Secondary Colors */
+
   --ul-secondary: #64748b;
   --ul-secondary-hover: #475569;
   --ul-secondary-light: #f1f5f9;
-  
-  /* Status Colors */
+
   --ul-success: #22c55e;
   --ul-success-light: #dcfce7;
   --ul-warning: #f59e0b;
@@ -41,8 +19,7 @@
   --ul-error-light: #fee2e2;
   --ul-info: #3b82f6;
   --ul-info-light: #dbeafe;
-  
-  /* Neutral Colors */
+
   --ul-white: #ffffff;
   --ul-black: #000000;
   --ul-gray-50: #f9fafb;
@@ -55,8 +32,7 @@
   --ul-gray-700: #374151;
   --ul-gray-800: #1f2937;
   --ul-gray-900: #111827;
-  
-  /* Typography */
+
   --ul-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --ul-font-size-xs: 0.75rem;
   --ul-font-size-sm: 0.875rem;
@@ -65,34 +41,29 @@
   --ul-font-size-xl: 1.25rem;
   --ul-font-size-2xl: 1.5rem;
   --ul-font-size-3xl: 1.875rem;
-  
-  /* Spacing */
+
   --ul-spacing-xs: 0.25rem;
   --ul-spacing-sm: 0.5rem;
   --ul-spacing-md: 1rem;
   --ul-spacing-lg: 1.5rem;
   --ul-spacing-xl: 2rem;
   --ul-spacing-2xl: 3rem;
-  
-  /* Border Radius */
+
   --ul-radius-sm: 0.25rem;
   --ul-radius-md: 0.5rem;
   --ul-radius-lg: 0.75rem;
   --ul-radius-xl: 1rem;
   --ul-radius-full: 9999px;
-  
-  /* Shadows */
+
   --ul-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --ul-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   --ul-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   --ul-shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-  
-  /* Transitions */
+
   --ul-transition-fast: 150ms ease;
   --ul-transition-normal: 200ms ease;
   --ul-transition-slow: 300ms ease;
-  
-  /* Z-Index Scale */
+
   --ul-z-dropdown: 100;
   --ul-z-sticky: 200;
   --ul-z-fixed: 300;
@@ -103,20 +74,12 @@
   --ul-z-toast: 800;
 }
 
-/* ==========================================================================
-   BASE RESET
-   ========================================================================== */
-
 [class^="ul-"],
 [class*=" ul-"] {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
-
-/* ==========================================================================
-   TYPOGRAPHY UTILITIES
-   ========================================================================== */
 
 .ul-text-xs { font-size: var(--ul-font-size-xs); }
 .ul-text-sm { font-size: var(--ul-font-size-sm); }
@@ -140,10 +103,6 @@
 .ul-text-warning { color: var(--ul-warning); }
 .ul-text-error { color: var(--ul-error); }
 .ul-text-muted { color: var(--ul-gray-500); }
-
-/* ==========================================================================
-   SPACING UTILITIES
-   ========================================================================== */
 
 .ul-m-0 { margin: 0; }
 .ul-m-1 { margin: var(--ul-spacing-xs); }
@@ -171,10 +130,6 @@
 .ul-gap-2 { gap: var(--ul-spacing-sm); }
 .ul-gap-3 { gap: var(--ul-spacing-md); }
 .ul-gap-4 { gap: var(--ul-spacing-lg); }
-
-/* ==========================================================================
-   LAYOUT UTILITIES
-   ========================================================================== */
 
 .ul-flex { display: flex; }
 .ul-flex-col { flex-direction: column; }
@@ -208,10 +163,6 @@
 .ul-relative { position: relative; }
 .ul-absolute { position: absolute; }
 .ul-fixed { position: fixed; }
-
-/* ==========================================================================
-   SHARED BUTTON STYLES
-   ========================================================================== */
 
 .ul-btn {
   display: inline-flex;
@@ -302,10 +253,6 @@
   animation: ul-spin 0.8s linear infinite;
 }
 
-/* ==========================================================================
-   SHARED INPUT STYLES
-   ========================================================================== */
-
 .ul-input {
   width: 100%;
   padding: var(--ul-spacing-sm) var(--ul-spacing-md);
@@ -357,10 +304,6 @@
   cursor: pointer;
 }
 
-/* ==========================================================================
-   SHARED CARD STYLES
-   ========================================================================== */
-
 .ul-card {
   background: var(--ul-white);
   border: 1px solid var(--ul-gray-200);
@@ -390,10 +333,6 @@
   border-top: 1px solid var(--ul-gray-200);
   margin-top: var(--ul-spacing-md);
 }
-
-/* ==========================================================================
-   TOAST NOTIFICATIONS
-   ========================================================================== */
 
 .ul-toast {
   position: fixed;
@@ -435,10 +374,6 @@
   color: var(--ul-gray-900);
 }
 
-/* ==========================================================================
-   BADGE STYLES
-   ========================================================================== */
-
 .ul-badge {
   display: inline-flex;
   align-items: center;
@@ -473,10 +408,6 @@
   color: var(--ul-gray-700);
 }
 
-/* ==========================================================================
-   SPINNER / LOADING
-   ========================================================================== */
-
 .ul-spinner {
   width: 24px;
   height: 24px;
@@ -498,10 +429,6 @@
   border-width: 4px;
 }
 
-/* ==========================================================================
-   PROGRESS BAR
-   ========================================================================== */
-
 .ul-progress {
   width: 100%;
   height: 8px;
@@ -516,10 +443,6 @@
   border-radius: var(--ul-radius-full);
   transition: width var(--ul-transition-slow);
 }
-
-/* ==========================================================================
-   DIVIDER
-   ========================================================================== */
 
 .ul-divider {
   display: flex;
@@ -537,10 +460,6 @@
   height: 1px;
   background: var(--ul-gray-200);
 }
-
-/* ==========================================================================
-   ANIMATIONS
-   ========================================================================== */
 
 @keyframes ul-spin {
   to { transform: rotate(360deg); }
@@ -562,22 +481,22 @@
 }
 
 @keyframes ul-slide-up {
-  from { 
+  from {
     opacity: 0;
     transform: translateY(10px);
   }
-  to { 
+  to {
     opacity: 1;
     transform: translateY(0);
   }
 }
 
 @keyframes ul-scale-in {
-  from { 
+  from {
     opacity: 0;
     transform: scale(0.95);
   }
-  to { 
+  to {
     opacity: 1;
     transform: scale(1);
   }
@@ -590,19 +509,14 @@
 .ul-animate-slide-up { animation: ul-slide-up var(--ul-transition-slow); }
 .ul-animate-scale-in { animation: ul-scale-in var(--ul-transition-normal); }
 
-/* ==========================================================================
-   RESPONSIVE UTILITIES
-   ========================================================================== */
-
-/* Mobile First Breakpoints */
 @media (max-width: 480px) {
   .ul-hide-mobile { display: none !important; }
-  
-  .ul-btn { 
-    width: 100%; 
+
+  .ul-btn {
+    width: 100%;
     padding: var(--ul-spacing-md);
   }
-  
+
   .ul-grid-cols-2,
   .ul-grid-cols-3,
   .ul-grid-cols-4 {
@@ -612,7 +526,7 @@
 
 @media (min-width: 481px) and (max-width: 768px) {
   .ul-hide-tablet { display: none !important; }
-  
+
   .ul-grid-cols-4 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -621,10 +535,6 @@
 @media (min-width: 769px) {
   .ul-hide-desktop { display: none !important; }
 }
-
-/* ==========================================================================
-   ACCESSIBILITY
-   ========================================================================== */
 
 .ul-sr-only {
   position: absolute;
@@ -643,7 +553,6 @@
   outline-offset: 2px;
 }
 
-/* Reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -654,7 +563,6 @@
   }
 }
 
-/* High contrast mode */
 @media (prefers-contrast: high) {
   :root {
     --ul-primary: #0066cc;

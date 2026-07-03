@@ -1,18 +1,18 @@
-/**
- * Shopify Flow Triggers
- *
- * Events:
- * - upload_received: New upload submitted
- * - upload_approved: Upload approved
- * - upload_rejected: Upload rejected
- * - preflight_warning: Preflight check has warnings
- * - preflight_error: Preflight check failed
- * - export_completed: Export job finished
- */
+
+
+
+
+
+
+
+
+
+
+
 
 import prisma from "~/lib/prisma.server";
 
-// Flow event types
+
 export const FLOW_EVENTS = {
   UPLOAD_RECEIVED: "upload_received",
   UPLOAD_APPROVED: "upload_approved",
@@ -24,7 +24,42 @@ export const FLOW_EVENTS = {
 
 export type FlowEventType = typeof FLOW_EVENTS[keyof typeof FLOW_EVENTS];
 
-// Event payload types
+export const FLOW_TRIGGER_HANDLES: Record<FlowEventType, string> = {
+  [FLOW_EVENTS.UPLOAD_RECEIVED]: "upload-received",
+  [FLOW_EVENTS.UPLOAD_APPROVED]: "upload-approved",
+  [FLOW_EVENTS.UPLOAD_REJECTED]: "upload-rejected",
+  [FLOW_EVENTS.PREFLIGHT_WARNING]: "preflight-warning",
+  [FLOW_EVENTS.PREFLIGHT_ERROR]: "preflight-error",
+  [FLOW_EVENTS.EXPORT_COMPLETED]: "export-completed",
+};
+
+export function getFlowTriggerHandle(eventType: FlowEventType | string): string {
+  const mappedHandle = FLOW_TRIGGER_HANDLES[eventType as FlowEventType];
+  if (mappedHandle) {
+    return mappedHandle;
+  }
+
+  const normalizedHandle = eventType
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, "-")
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  if (!normalizedHandle) {
+    throw new Error(`Invalid Flow event type: ${eventType}`);
+  }
+
+  return normalizedHandle;
+}
+
+export function isShopifyFlowTriggersEnabled(): boolean {
+  const value = process.env.SHOPIFY_FLOW_TRIGGERS_ENABLED?.trim().toLowerCase();
+  return value === "1" || value === "true" || value === "yes" || value === "on";
+}
+
+
 interface BasePayload {
   timestamp: string;
   shopDomain: string;
@@ -62,9 +97,9 @@ interface ExportPayload extends BasePayload {
 
 type FlowPayload = UploadPayload | PreflightPayload | ExportPayload;
 
-/**
- * Queue a Flow trigger for processing
- */
+
+
+
 export async function queueFlowTrigger(
   shopId: string,
   eventType: FlowEventType,
@@ -72,6 +107,11 @@ export async function queueFlowTrigger(
   payload: FlowPayload
 ): Promise<void> {
   try {
+    if (!isShopifyFlowTriggersEnabled()) {
+      console.log(`[Flow] Skipped queue for ${eventType}; Shopify Flow trigger dispatch is disabled`);
+      return;
+    }
+
     await prisma.flowTrigger.create({
       data: {
         shopId,
@@ -88,10 +128,10 @@ export async function queueFlowTrigger(
   }
 }
 
-/**
- * Send Flow trigger to Shopify
- * Called by a worker or cron job
- */
+
+
+
+
 export async function sendFlowTrigger(triggerId: string, shopId?: string): Promise<boolean> {
   const whereClause = shopId
     ? { id: triggerId, shopId }
@@ -112,7 +152,20 @@ export async function sendFlowTrigger(triggerId: string, shopId?: string): Promi
   }
 
   try {
-    // Shopify Flow trigger API call
+    if (!isShopifyFlowTriggersEnabled()) {
+      await prisma.flowTrigger.updateMany({
+        where: { id: triggerId, shopId: trigger.shopId },
+        data: {
+          status: "skipped",
+          error: "Shopify Flow trigger dispatch disabled for this deployment",
+        },
+      });
+      return true;
+    }
+
+    const handle = getFlowTriggerHandle(trigger.eventType);
+
+
     const response = await fetch(
       `https://${trigger.shop.shopDomain}/admin/api/2025-10/graphql.json`,
       {
@@ -133,7 +186,7 @@ export async function sendFlowTrigger(triggerId: string, shopId?: string): Promi
             }
           `,
           variables: {
-            handle: `${process.env.FLOW_HANDLE_PREFIX || 'upload-studio'}/${trigger.eventType}`,
+            handle,
             payload: trigger.payload,
           },
         }),
@@ -150,7 +203,7 @@ export async function sendFlowTrigger(triggerId: string, shopId?: string): Promi
       );
     }
 
-    // Mark as sent
+
     await prisma.flowTrigger.updateMany({
       where: { id: triggerId, shopId: trigger.shopId },
       data: {
@@ -180,9 +233,9 @@ export async function sendFlowTrigger(triggerId: string, shopId?: string): Promi
   }
 }
 
-/**
- * Helper: Trigger upload received event
- */
+
+
+
 export async function triggerUploadReceived(
   shopId: string,
   shopDomain: string,
@@ -210,9 +263,9 @@ export async function triggerUploadReceived(
   });
 }
 
-/**
- * Helper: Trigger preflight warning/error event
- */
+
+
+
 export async function triggerPreflightResult(
   shopId: string,
   shopDomain: string,
@@ -241,9 +294,9 @@ export async function triggerPreflightResult(
   });
 }
 
-/**
- * Helper: Trigger export completed event
- */
+
+
+
 export async function triggerExportCompleted(
   shopId: string,
   shopDomain: string,
@@ -263,4 +316,3 @@ export async function triggerExportCompleted(
     status: exportJob.status,
   });
 }
-

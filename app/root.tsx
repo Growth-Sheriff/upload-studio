@@ -35,13 +35,13 @@ function App() {
 
 export function ErrorBoundary() {
   const error = useRouteError();
-  // Capture the error to Sentry FORCEFULLY
+
   if (error instanceof Error) {
     Sentry.captureException(error);
   } else {
     Sentry.captureException(new Error(`Unknown Remix Route Error: ${JSON.stringify(error)}`));
   }
-  
+
   captureRemixErrorBoundaryError(error);
 
   return (

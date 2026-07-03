@@ -12,7 +12,7 @@ import prisma from "~/lib/prisma.server";
 import { nanoid } from "nanoid";
 import crypto from "crypto";
 
-// API Permission options
+
 const API_PERMISSIONS = [
   { value: "uploads:read", label: "Uploads - Read" },
   { value: "uploads:write", label: "Uploads - Write (Approve/Reject)" },
@@ -83,7 +83,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: "Shop not found" }, { status: 404 });
   }
 
-  // Check pro plan for API access
+
   if (shop.plan !== "pro" && shop.plan !== "enterprise") {
     return json({ error: "Public API requires Pro plan" }, { status: 403 });
   }
@@ -104,8 +104,8 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: "At least one permission is required" });
     }
 
-    // Generate API key
-    const rawKey = `ulp_${nanoid(32)}`; // ulp = upload pro
+
+    const rawKey = `ulp_${nanoid(32)}`;
     const keyHash = crypto.createHash("sha256").update(rawKey).digest("hex");
     const keyPrefix = rawKey.slice(0, 12);
 
@@ -129,7 +129,7 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     });
 
-    // Return the raw key ONCE - won't be shown again
+
     return json({
       success: true,
       message: "API key created successfully",
@@ -225,7 +225,7 @@ export default function ApiKeysPage() {
       }
     >
         <Layout>
-          {/* New key display */}
+
           {actionData && "newKey" in actionData && actionData.newKey && (
             <Layout.Section>
               <Banner tone="warning" title="Save Your API Key">
@@ -246,7 +246,7 @@ export default function ApiKeysPage() {
             </Layout.Section>
           )}
 
-          {/* Action result banner */}
+
           {actionData && "success" in actionData && !("newKey" in actionData) && (
             <Layout.Section>
               <Banner tone="success" onDismiss={() => {}}>
@@ -262,7 +262,7 @@ export default function ApiKeysPage() {
             </Layout.Section>
           )}
 
-          {/* Plan restriction */}
+
           {!canUseApi && (
             <Layout.Section>
               <Banner tone="warning">
@@ -272,7 +272,7 @@ export default function ApiKeysPage() {
             </Layout.Section>
           )}
 
-          {/* API Documentation */}
+
           <Layout.Section>
             <Card>
               <BlockStack gap="300">
@@ -303,7 +303,7 @@ export default function ApiKeysPage() {
             </Card>
           </Layout.Section>
 
-          {/* API Keys list */}
+
           <Layout.Section>
             <Card>
               <BlockStack gap="400">
@@ -333,7 +333,7 @@ export default function ApiKeysPage() {
           </Layout.Section>
         </Layout>
 
-        {/* Create Key Modal */}
+
         <Modal
           open={createModalOpen}
           onClose={() => setCreateModalOpen(false)}

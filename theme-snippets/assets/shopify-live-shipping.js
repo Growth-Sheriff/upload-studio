@@ -1,20 +1,8 @@
-/**
- * Shopify Live Shipping Rates
- * Version: 2.0.0 - Fixed Province Issue
- *
- * Bu dosya Shopify'dan gerçek kargo oranlarını çeker.
- * DÜZELTMELER:
- * - Province parametresi ZIP'ten otomatik tespit edilir
- * - localStorage sandbox hatası düzeltildi
- * - Fiyat normalizasyonu düzeltildi
- */
+
 
 ;(function () {
   'use strict'
 
-  // ============================================
-  // SAFE LOCALSTORAGE HELPERS
-  // ============================================
   function safeGetItem(key) {
     try {
       return localStorage.getItem(key)
@@ -32,11 +20,8 @@
     }
   }
 
-  // ============================================
-  // ZIP TO STATE MAPPING (Comprehensive)
-  // ============================================
   const ZIP_TO_STATE = {
-    // New Jersey (070-089)
+
     '070': 'NJ',
     '071': 'NJ',
     '072': 'NJ',
@@ -58,7 +43,6 @@
     '088': 'NJ',
     '089': 'NJ',
 
-    // New York (100-149)
     100: 'NY',
     101: 'NY',
     102: 'NY',
@@ -110,7 +94,6 @@
     148: 'NY',
     149: 'NY',
 
-    // Pennsylvania (150-196)
     150: 'PA',
     151: 'PA',
     152: 'PA',
@@ -159,12 +142,10 @@
     195: 'PA',
     196: 'PA',
 
-    // Delaware (197-199)
     197: 'DE',
     198: 'DE',
     199: 'DE',
 
-    // DC & Maryland (200-219)
     200: 'DC',
     201: 'VA',
     202: 'DC',
@@ -185,7 +166,6 @@
     218: 'MD',
     219: 'MD',
 
-    // Virginia (220-246)
     220: 'VA',
     221: 'VA',
     222: 'VA',
@@ -214,7 +194,6 @@
     245: 'VA',
     246: 'VA',
 
-    // West Virginia (247-268)
     247: 'WV',
     248: 'WV',
     249: 'WV',
@@ -238,7 +217,6 @@
     267: 'WV',
     268: 'WV',
 
-    // North Carolina (270-289)
     270: 'NC',
     271: 'NC',
     272: 'NC',
@@ -260,7 +238,6 @@
     288: 'NC',
     289: 'NC',
 
-    // South Carolina (290-299)
     290: 'SC',
     291: 'SC',
     292: 'SC',
@@ -272,7 +249,6 @@
     298: 'SC',
     299: 'SC',
 
-    // Georgia (300-319)
     300: 'GA',
     301: 'GA',
     302: 'GA',
@@ -294,7 +270,6 @@
     318: 'GA',
     319: 'GA',
 
-    // Florida (320-349)
     320: 'FL',
     321: 'FL',
     322: 'FL',
@@ -323,7 +298,6 @@
     347: 'FL',
     349: 'FL',
 
-    // Alabama (350-369)
     350: 'AL',
     351: 'AL',
     352: 'AL',
@@ -344,7 +318,6 @@
     368: 'AL',
     369: 'AL',
 
-    // Tennessee (370-385)
     370: 'TN',
     371: 'TN',
     372: 'TN',
@@ -362,7 +335,6 @@
     384: 'TN',
     385: 'TN',
 
-    // Mississippi (386-397)
     386: 'MS',
     387: 'MS',
     388: 'MS',
@@ -376,7 +348,6 @@
     396: 'MS',
     397: 'MS',
 
-    // Kentucky (400-427)
     400: 'KY',
     401: 'KY',
     402: 'KY',
@@ -405,7 +376,6 @@
     426: 'KY',
     427: 'KY',
 
-    // Ohio (430-459)
     430: 'OH',
     431: 'OH',
     432: 'OH',
@@ -437,7 +407,6 @@
     458: 'OH',
     459: 'OH',
 
-    // Indiana (460-479)
     460: 'IN',
     461: 'IN',
     462: 'IN',
@@ -459,7 +428,6 @@
     478: 'IN',
     479: 'IN',
 
-    // Michigan (480-499)
     480: 'MI',
     481: 'MI',
     482: 'MI',
@@ -481,7 +449,6 @@
     498: 'MI',
     499: 'MI',
 
-    // Iowa (500-528)
     500: 'IA',
     501: 'IA',
     502: 'IA',
@@ -509,7 +476,6 @@
     527: 'IA',
     528: 'IA',
 
-    // Wisconsin (530-549)
     530: 'WI',
     531: 'WI',
     532: 'WI',
@@ -529,7 +495,6 @@
     548: 'WI',
     549: 'WI',
 
-    // Minnesota (550-567)
     550: 'MN',
     551: 'MN',
     553: 'MN',
@@ -548,7 +513,6 @@
     566: 'MN',
     567: 'MN',
 
-    // South Dakota (570-577)
     570: 'SD',
     571: 'SD',
     572: 'SD',
@@ -558,7 +522,6 @@
     576: 'SD',
     577: 'SD',
 
-    // North Dakota (580-588)
     580: 'ND',
     581: 'ND',
     582: 'ND',
@@ -569,7 +532,6 @@
     587: 'ND',
     588: 'ND',
 
-    // Montana (590-599)
     590: 'MT',
     591: 'MT',
     592: 'MT',
@@ -581,7 +543,6 @@
     598: 'MT',
     599: 'MT',
 
-    // Illinois (600-629)
     600: 'IL',
     601: 'IL',
     602: 'IL',
@@ -612,7 +573,6 @@
     628: 'IL',
     629: 'IL',
 
-    // Missouri (630-658)
     630: 'MO',
     631: 'MO',
     633: 'MO',
@@ -640,7 +600,6 @@
     657: 'MO',
     658: 'MO',
 
-    // Kansas (660-679)
     660: 'KS',
     661: 'KS',
     662: 'KS',
@@ -661,7 +620,6 @@
     678: 'KS',
     679: 'KS',
 
-    // Nebraska (680-693)
     680: 'NE',
     681: 'NE',
     683: 'NE',
@@ -676,7 +634,6 @@
     692: 'NE',
     693: 'NE',
 
-    // Louisiana (700-714)
     700: 'LA',
     701: 'LA',
     703: 'LA',
@@ -691,7 +648,6 @@
     713: 'LA',
     714: 'LA',
 
-    // Arkansas (716-729)
     716: 'AR',
     717: 'AR',
     718: 'AR',
@@ -707,7 +663,6 @@
     728: 'AR',
     729: 'AR',
 
-    // Oklahoma (730-749)
     730: 'OK',
     731: 'OK',
     733: 'OK',
@@ -727,7 +682,6 @@
     748: 'OK',
     749: 'OK',
 
-    // Texas (750-799, 885)
     750: 'TX',
     751: 'TX',
     752: 'TX',
@@ -779,7 +733,6 @@
     799: 'TX',
     885: 'TX',
 
-    // Colorado (800-816)
     800: 'CO',
     801: 'CO',
     802: 'CO',
@@ -798,7 +751,6 @@
     815: 'CO',
     816: 'CO',
 
-    // Wyoming (820-831)
     820: 'WY',
     821: 'WY',
     822: 'WY',
@@ -812,7 +764,6 @@
     830: 'WY',
     831: 'WY',
 
-    // Idaho (832-838)
     832: 'ID',
     833: 'ID',
     834: 'ID',
@@ -821,7 +772,6 @@
     837: 'ID',
     838: 'ID',
 
-    // Utah (840-847)
     840: 'UT',
     841: 'UT',
     842: 'UT',
@@ -831,7 +781,6 @@
     846: 'UT',
     847: 'UT',
 
-    // Arizona (850-865)
     850: 'AZ',
     852: 'AZ',
     853: 'AZ',
@@ -844,7 +793,6 @@
     864: 'AZ',
     865: 'AZ',
 
-    // New Mexico (870-884)
     870: 'NM',
     871: 'NM',
     872: 'NM',
@@ -860,7 +808,6 @@
     883: 'NM',
     884: 'NM',
 
-    // Nevada (889-898)
     889: 'NV',
     890: 'NV',
     891: 'NV',
@@ -870,7 +817,6 @@
     897: 'NV',
     898: 'NV',
 
-    // California (900-961)
     900: 'CA',
     901: 'CA',
     902: 'CA',
@@ -885,7 +831,7 @@
     912: 'CA',
     913: 'CA',
     914: 'CA',
-    915: 'TX', // El Paso TX
+    915: 'TX',
     916: 'CA',
     917: 'CA',
     918: 'CA',
@@ -898,7 +844,7 @@
     925: 'CA',
     926: 'CA',
     927: 'CA',
-    928: 'AZ', // Arizona exception
+    928: 'AZ',
     930: 'CA',
     931: 'CA',
     932: 'CA',
@@ -932,7 +878,6 @@
     960: 'CA',
     961: 'CA',
 
-    // Oregon (970-979)
     970: 'OR',
     971: 'OR',
     972: 'OR',
@@ -944,7 +889,6 @@
     978: 'OR',
     979: 'OR',
 
-    // Washington (980-994)
     980: 'WA',
     981: 'WA',
     982: 'WA',
@@ -960,18 +904,15 @@
     993: 'WA',
     994: 'WA',
 
-    // Alaska (995-999)
     995: 'AK',
     996: 'AK',
     997: 'AK',
     998: 'AK',
     999: 'AK',
 
-    // Hawaii (967-968)
     967: 'HI',
     968: 'HI',
 
-    // Connecticut (060-069)
     '060': 'CT',
     '061': 'CT',
     '062': 'CT',
@@ -983,7 +924,6 @@
     '068': 'CT',
     '069': 'CT',
 
-    // Massachusetts (010-027)
     '010': 'MA',
     '011': 'MA',
     '012': 'MA',
@@ -1003,11 +943,9 @@
     '026': 'MA',
     '027': 'MA',
 
-    // Rhode Island (028-029)
     '028': 'RI',
     '029': 'RI',
 
-    // New Hampshire (030-038)
     '030': 'NH',
     '031': 'NH',
     '032': 'NH',
@@ -1018,7 +956,6 @@
     '037': 'NH',
     '038': 'NH',
 
-    // Maine (039-049)
     '039': 'ME',
     '040': 'ME',
     '041': 'ME',
@@ -1031,7 +968,6 @@
     '048': 'ME',
     '049': 'ME',
 
-    // Vermont (050-059)
     '050': 'VT',
     '051': 'VT',
     '052': 'VT',
@@ -1043,7 +979,6 @@
     '058': 'VT',
     '059': 'VT',
 
-    // Puerto Rico (006-009)
     '006': 'PR',
     '007': 'PR',
     '008': 'PR',
@@ -1056,20 +991,14 @@
     return ZIP_TO_STATE[prefix] || 'NJ'
   }
 
-  // ============================================
-  // PRICE NORMALIZATION (FIXED)
-  // ============================================
   function normalizePrice(price) {
     const num = parseFloat(price)
     if (isNaN(num)) return 0
 
-    // Shopify bazen cent (1299), bazen dolar (12.99) formatında döner
-    // Eğer string'de nokta varsa zaten dolar formatındadır
     if (String(price).includes('.')) {
       return num
     }
-    // Ondalık yoksa ve 100'den büyükse cent olarak kabul et
-    // (99 cent = $0.99 olmalı, 1299 cent = $12.99 olmalı)
+
     return num >= 100 ? num / 100 : num
   }
 
@@ -1078,9 +1007,6 @@
     return '$' + normalized.toFixed(2)
   }
 
-  // ============================================
-  // SHOPIFY LIVE SHIPPING CLASS
-  // ============================================
   class ShopifyLiveShipping {
     constructor(options = {}) {
       this.debug = options.debug || false
@@ -1094,18 +1020,13 @@
       }
     }
 
-    /**
-     * Prepare rates - Shopify'a shipping rate hesaplatması için istek at
-     * @param {Object} address - { zip, province, country }
-     */
     async prepareRates(address) {
       const zip = address.zip
-      // KRITIK FIX: Province'ı ZIP'ten otomatik tespit et
+
       const state = address.province || address.state || getStateFromZip(zip)
 
       this.log('Preparing rates for:', { zip, state })
 
-      // Shopify expects "United States" not "US"
       const country = 'United States'
 
       const url = `/cart/prepare_shipping_rates.json?shipping_address[zip]=${encodeURIComponent(zip)}&shipping_address[country]=${encodeURIComponent(country)}&shipping_address[province]=${encodeURIComponent(state)}`
@@ -1135,28 +1056,21 @@
       }
     }
 
-    /**
-     * Get shipping rates after prepare
-     * @param {Object} address - { zip, province, country }
-     */
     async getShippingRates(address) {
       const zip = address.zip
-      // KRITIK FIX: Province'ı ZIP'ten otomatik tespit et
+
       const state = address.province || address.state || getStateFromZip(zip)
       const country = 'United States'
 
       this.log('Getting rates for:', { zip, state })
 
-      // First prepare the rates
       const prepareResult = await this.prepareRates({ zip, province: state, country })
       if (!prepareResult.success) {
         this.log('Prepare failed, trying direct fetch...')
       }
 
-      // Wait a moment for Shopify to calculate
       await new Promise((resolve) => setTimeout(resolve, 500))
 
-      // Now fetch the rates
       const url = `/cart/shipping_rates.json?shipping_address[zip]=${encodeURIComponent(zip)}&shipping_address[country]=${encodeURIComponent(country)}&shipping_address[province]=${encodeURIComponent(state)}`
 
       this.log('Fetch URL:', url)
@@ -1181,17 +1095,13 @@
           return { success: false, error: 'No rates available', rates: [] }
         }
 
-        // Process and normalize rates
         const rates = data.shipping_rates.map((rate) => this.processRate(rate))
 
-        // Sort by price
         rates.sort((a, b) => a.price - b.price)
 
-        // Mark cheapest and fastest
         if (rates.length > 0) {
           rates[0].isCheapest = true
 
-          // Find fastest
           const fastest = rates.reduce(
             (min, r) => ((r.delivery?.minDays || 99) < (min.delivery?.minDays || 99) ? r : min),
             rates[0]
@@ -1213,9 +1123,6 @@
       }
     }
 
-    /**
-     * Process a single rate from Shopify
-     */
     processRate(rate) {
       const normalized = normalizePrice(rate.price)
       const days = rate.delivery_days || this.estimateDeliveryDays(rate.name)
@@ -1240,9 +1147,6 @@
       }
     }
 
-    /**
-     * Estimate delivery days from rate name
-     */
     estimateDeliveryDays(name) {
       const n = (name || '').toLowerCase()
       if (
@@ -1271,9 +1175,6 @@
       return 5
     }
 
-    /**
-     * Extract carrier name from rate name
-     */
     extractCarrier(name) {
       const n = (name || '').toLowerCase()
       if (n.includes('ups')) return { name: 'UPS', icon: 'ups' }
@@ -1283,14 +1184,10 @@
       return { name: 'Standard', icon: 'package' }
     }
 
-    /**
-     * Add business days to a date
-     */
     addBusinessDays(date, days) {
       const result = new Date(date)
       let added = 0
 
-      // Check if past cutoff (2 PM ET)
       const etHour = this.getETHour()
       if (etHour >= 14) {
         result.setDate(result.getDate() + 1)
@@ -1300,16 +1197,13 @@
         result.setDate(result.getDate() + 1)
         const day = result.getDay()
         if (day !== 0 && day !== 6) {
-          // Skip weekends
+
           added++
         }
       }
       return result
     }
 
-    /**
-     * Get current hour in Eastern Time
-     */
     getETHour() {
       try {
         const options = { timeZone: 'America/New_York', hour: 'numeric', hour12: false }
@@ -1319,9 +1213,6 @@
       }
     }
 
-    /**
-     * Format date as "Mon, Jan 20"
-     */
     formatDate(date) {
       return date.toLocaleDateString('en-US', {
         weekday: 'short',
@@ -1330,18 +1221,12 @@
       })
     }
 
-    /**
-     * Format delivery range text
-     */
     formatDeliveryRange(days) {
       const minDate = this.addBusinessDays(new Date(), days)
       const maxDate = this.addBusinessDays(new Date(), days + 1)
       return `${this.formatDate(minDate)} - ${this.formatDate(maxDate)}`
     }
 
-    /**
-     * Format countdown text
-     */
     formatCountdown(days) {
       if (days === 1) return 'Tomorrow'
       if (days === 2) return 'In 2 days'
@@ -1349,15 +1234,11 @@
     }
   }
 
-  // ============================================
-  // EXPOSE TO WINDOW
-  // ============================================
   window.ShopifyLiveShipping = ShopifyLiveShipping
   window.getStateFromZip = getStateFromZip
   window.normalizeShippingPrice = normalizePrice
   window.formatShippingPrice = formatPrice
 
-  // Safe storage helpers
   window.safeGetItem = safeGetItem
   window.safeSetItem = safeSetItem
 

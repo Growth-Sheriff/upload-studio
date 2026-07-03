@@ -716,13 +716,17 @@ export function parseSheetSizeFromTitle(title: string | null | undefined): Parse
     .replace(/["']/g, '')
     .replace(/[×xX]/g, 'x')
     .replace(/\s+/g, '')
-  const parts = normalized.split('x').map((part) => Number(part))
-  if (parts.length < 2 || !Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) {
-    return null
+  let match = normalized.match(/(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)/i)
+  if (!match) {
+    const numbers = raw.match(/(\d+(?:\.\d+)?)/g)
+    if (numbers && numbers.length >= 2) {
+      match = [numbers.join(' '), numbers[0], numbers[1]]
+    }
   }
+  if (!match) return null
 
-  const widthIn = Number(parts[0])
-  const lengthIn = Number(parts[1])
+  const widthIn = Number(match[1])
+  const lengthIn = Number(match[2])
   if (!(widthIn > 0) || !(lengthIn > 0)) return null
 
   return {

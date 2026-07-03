@@ -1,7 +1,7 @@
-/**
- * Custom Upload for Products Design - Admin Panel Frame
- * Polaris Frame with Navigation sidebar
- */
+
+
+
+
 
 import { Link, Outlet, useLocation } from '@remix-run/react'
 import { Frame, Navigation, Text, TopBar } from '@shopify/polaris'
@@ -44,10 +44,10 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFram
     return location.pathname.startsWith(path)
   }
 
-  // Navigation structure
+
   const navigationMarkup = (
     <Navigation location={location.pathname}>
-      {/* Logo / Brand */}
+
       <div style={{ padding: '16px 20px', borderBottom: '1px solid #e1e3e5' }}>
         <Text variant="headingMd" as="h1">
           🎨 Custom Upload
@@ -57,7 +57,7 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFram
         </Text>
       </div>
 
-      {/* Analytics Section */}
+
       <Navigation.Section
         title="Analytics"
         items={[
@@ -104,7 +104,7 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFram
         ]}
       />
 
-      {/* Manage Section */}
+
       <Navigation.Section
         title="Manage"
         items={[
@@ -143,7 +143,7 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFram
         ]}
       />
 
-      {/* Settings Section */}
+
       <Navigation.Section
         title="Settings"
         separator
@@ -193,7 +193,7 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFram
         ]}
       />
 
-      {/* Resources Section */}
+
       <Navigation.Section
         title="Resources"
         separator
@@ -209,7 +209,7 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFram
     </Navigation>
   )
 
-  // Footer markup - displayed at bottom of main content area
+
   const footerMarkup = (
     <div
       style={{
@@ -269,7 +269,7 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFram
     </div>
   )
 
-  // TopBar for mobile
+
   const topBarMarkup = (
     <TopBar showNavigationToggle onNavigationToggle={toggleMobileNavigationActive} />
   )

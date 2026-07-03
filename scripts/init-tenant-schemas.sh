@@ -1,25 +1,25 @@
 #!/bin/bash
-# ============================================
-# Upload Studio - Initialize Tenant DB Schemas
-# ============================================
-# Creates PostgreSQL schemas for each tenant and runs Prisma migrations.
-# Must be run BEFORE starting Docker Compose for the first time.
-#
-# Prerequisites:
-#   - PostgreSQL accessible
-#   - envs/.env.{slug} files generated
-#   - psql CLI available
-#
-# Usage: bash scripts/init-tenant-schemas.sh
-# ============================================
+
+
+
+
+
+
+
+
+
+
+
+
+
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# ─────────────────────────────────────────────
-# Database config (override with env vars)
-# ─────────────────────────────────────────────
+
+
+
 DB_HOST="${DB_HOST:-34.44.26.92}"
 DB_PORT="${DB_PORT:-5432}"
 DB_USER="${DB_USER:-postgres}"
@@ -27,9 +27,9 @@ DB_PASS="${DB_PASS:-CHANGE_ME}"
 DB_NAME="${DB_NAME:-defaultdb}"
 DB_SSL="${DB_SSL:-prefer}"
 
-# ─────────────────────────────────────────────
-# Tenant slugs (= schema names)
-# ─────────────────────────────────────────────
+
+
+
 SCHEMAS=(
   fastdtftransfer
   everydaycustomprint
@@ -51,9 +51,9 @@ echo "Host: ${DB_HOST}:${DB_PORT}"
 echo "Database: ${DB_NAME}"
 echo ""
 
-# ─────────────────────────────────────────────
-# Step 1: Create schemas
-# ─────────────────────────────────────────────
+
+
+
 echo "[1/2] Creating PostgreSQL schemas..."
 
 for schema in "${SCHEMAS[@]}"; do
@@ -73,9 +73,9 @@ done
 
 echo ""
 
-# ─────────────────────────────────────────────
-# Step 2: Run Prisma migrations per schema
-# ─────────────────────────────────────────────
+
+
+
 echo "[2/2] Pushing Prisma schema to each tenant..."
 
 cd "$PROJECT_DIR"

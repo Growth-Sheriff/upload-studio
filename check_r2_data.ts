@@ -5,8 +5,8 @@ const prisma = new PrismaClient()
 
 async function main() {
   console.log('Fetching recent uploads with suspected R2 content...')
-  
-  // Fetch last 50 uploads to scan
+
+
   const uploads = await prisma.upload.findMany({
     take: 50,
     orderBy: { createdAt: 'desc' },
@@ -20,7 +20,7 @@ async function main() {
 
   for (const upload of uploads) {
     if (!upload.orderId) continue;
-    
+
     let hasR2 = false;
     const r2Items = [];
 
@@ -38,7 +38,7 @@ async function main() {
       console.log(`\n📦 Order #${upload.orderId}`);
       console.log(`   Upload ID: ${upload.id}`);
       console.log(`   Created At: ${upload.createdAt.toISOString()}`);
-      
+
       for (const item of r2Items) {
         console.log(`   - StorageKey: ${item.storageKey}`);
       }

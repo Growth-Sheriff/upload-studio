@@ -4,16 +4,16 @@ import prisma from '~/lib/prisma.server'
 import { deleteFile, getStorageConfig } from '~/lib/storage.server'
 import { authenticate } from '~/shopify.server'
 
-// GDPR: Shop redact
-// POST /api/gdpr/shop/redact
+
+
 export async function action({ request }: ActionFunctionArgs) {
-  // Verify Shopify webhook HMAC signature
+
   const { shop, topic } = await authenticate.webhook(request)
 
   console.log(`[GDPR] ${topic} for shop: ${shop}`)
 
   try {
-    // Find shop and all associated files
+
     const shopRecord = await prisma.shop.findUnique({
       where: { shopDomain: shop },
       include: {
@@ -28,7 +28,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ ok: true })
     }
 
-    // Delete files from storage
+
     const storageConfig = getStorageConfig({
       storageProvider: shopRecord.storageProvider,
       storageConfig: shopRecord.storageConfig as Record<string, string> | null,
@@ -56,7 +56,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     console.log(`[GDPR] Deleted ${deletedFiles} files (${failedFiles} failed) for shop ${shop}`)
 
-    // Delete all shop data (cascade will handle related records)
+
     await prisma.shop.delete({
       where: { shopDomain: shop },
     })
@@ -66,6 +66,6 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ ok: true, deletedFiles, failedFiles })
   } catch (error) {
     console.error('[GDPR] Error processing shop redact:', error)
-    return json({ ok: true }) // Still return 200 to acknowledge
+    return json({ ok: true })
   }
 }

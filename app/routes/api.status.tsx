@@ -1,7 +1,7 @@
-/**
- * API Status Endpoint
- * GET /api/status - App-wide status with queue and storage health
- */
+
+
+
+
 
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
@@ -12,7 +12,7 @@ import { Queue } from "bullmq";
 export async function loader({ request }: LoaderFunctionArgs) {
   const startTime = Date.now();
 
-  // Check components health
+
   const checks = await Promise.allSettled([
     checkDatabase(),
     checkRedis(),
@@ -25,9 +25,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const redisHealth = redisResult.status === "fulfilled" ? redisResult.value : { status: "error", error: String(redisResult.reason) };
   const queuesHealth = queuesResult.status === "fulfilled" ? queuesResult.value : { status: "error", error: String(queuesResult.reason) };
 
-  const allHealthy = 
-    dbHealth.status === "ok" && 
-    redisHealth.status === "ok" && 
+  const allHealthy =
+    dbHealth.status === "ok" &&
+    redisHealth.status === "ok" &&
     queuesHealth.status === "ok";
 
   const responseTime = Date.now() - startTime;
@@ -81,7 +81,7 @@ async function checkRedis() {
     await redis.ping();
     const latency = Date.now() - start;
 
-    // Get some info
+
     const info = await redis.info("memory");
     const usedMemory = info.match(/used_memory_human:(\S+)/)?.[1] || "unknown";
 

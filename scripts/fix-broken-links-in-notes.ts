@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client'
 import fs from 'fs'
 import path from 'path'
 
-// Force load env
+
 const envPath = path.resolve(process.cwd(), '.env')
 if (fs.existsSync(envPath)) {
   const envConfig = fs.readFileSync(envPath, 'utf8')
@@ -11,7 +11,7 @@ if (fs.existsSync(envPath)) {
     const match = line.match(/^([^=]+)=(.*)$/)
     if (match) {
       const key = match[1].trim()
-      const value = match[2].trim().replace(/^["']|["']$/g, '') 
+      const value = match[2].trim().replace(/^["']|["']$/g, '')
       if (!process.env[key]) process.env[key] = value
     }
   })
@@ -31,7 +31,7 @@ async function updateOrderNote(shopDomain: string, accessToken: string, orderId:
   ];
 
   try {
-    // 1. Get current note
+
     const getRes = await fetch(`https://${shopDomain}/admin/api/${API_VERSION}/orders/${orderId}.json`, {
       headers: { 'X-Shopify-Access-Token': accessToken }
     });
@@ -43,8 +43,8 @@ async function updateOrderNote(shopDomain: string, accessToken: string, orderId:
 
     const orderData = await getRes.json();
     const currentNote = orderData.order.note || "";
-    
-    // Check duplication
+
+
     if (links.some(l => currentNote.includes(l.split(': ')[1]))) {
         console.log('   ⚠️  Links already in note. Skipping.')
         return
@@ -52,7 +52,7 @@ async function updateOrderNote(shopDomain: string, accessToken: string, orderId:
 
     const updatedNote = currentNote + noteLines.join('\n');
 
-    // 2. Update note
+
     const updateRes = await fetch(`https://${shopDomain}/admin/api/${API_VERSION}/orders/${orderId}.json`, {
       method: 'PUT',
       headers: {
@@ -61,7 +61,7 @@ async function updateOrderNote(shopDomain: string, accessToken: string, orderId:
       },
       body: JSON.stringify({
         order: {
-          id: orderData.order.id, // Use numeric ID for REST
+          id: orderData.order.id,
           note: updatedNote
         }
       })
@@ -137,14 +137,14 @@ async function main() {
       let hasNextPage = true
       let cursor = null
       let processedCount = 0
-      
+
       while (hasNextPage && processedCount < 200) { // Limit to 200 recent orders
         const data = await fetchOrders(shop.shopDomain, shop.accessToken, cursor)
         if (!data) break
-    
+
         const orders = data.edges
         if (orders.length === 0) break
-    
+
         for (const { node: order } of orders) {
           processedCount++
           const correctedLinks: string[] = []
@@ -152,14 +152,14 @@ async function main() {
           for (const { node: item } of order.lineItems.edges) {
             for (const attr of item.customAttributes) {
               if (attr.value && attr.value.includes('pub-') && attr.value.includes('.r2.dev')) {
-                // Extract path: https://pub-xxx.r2.dev/PATH
+
                 const parts = attr.value.split('.r2.dev/')
                 if (parts.length > 1) {
-                    const r2Key = parts[1] // The path after /
-                    // Encode ONLY the path segments? URI is already likely encoded or not.
-                    // Usually safe to take as is if it was a valid URL, but our proxy expects r2:KEY
-                    // key should not start with slash.
-                    // New URL: 
+                    const r2Key = parts[1]
+
+
+
+
                     const newUrl = `${PROXY_BASE}${r2Key}`
                     correctedLinks.push(`${item.title}: ${newUrl}`)
                 }
@@ -172,12 +172,12 @@ async function main() {
             await updateOrderNote(shop.shopDomain, shop.accessToken, order.legacyResourceId, correctedLinks)
           }
         }
-    
+
         hasNextPage = data.pageInfo.hasNextPage
         cursor = data.pageInfo.endCursor
       }
   }
-  
+
   await prisma.$disconnect()
 }
 

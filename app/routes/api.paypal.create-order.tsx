@@ -1,9 +1,9 @@
-/**
- * PayPal Create Order API
- *
- * Called from billing page when merchant clicks "Pay with PayPal"
- * Creates a PayPal order and returns the approval URL
- */
+
+
+
+
+
+
 import type { ActionFunctionArgs } from '@remix-run/node';
 import { json } from '@remix-run/node';
 import { createPayPalOrder, createPayPalOrderWithVault, isPayPalConfigured } from '~/lib/paypal.server';
@@ -31,7 +31,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: 'Shop not found' }, { status: 404 });
   }
 
-  // Check if request body contains specific orderIds (per-month payment)
+
   let requestedOrderIds: string[] | null = null;
   let monthKey: string | null = null;
   try {
@@ -43,7 +43,7 @@ export async function action({ request }: ActionFunctionArgs) {
       monthKey = body.monthKey;
     }
   } catch {
-    // No body or invalid JSON — pay all pending (default behavior)
+
   }
 
   const {
@@ -59,7 +59,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const totalAmount = total.toFixed(2);
 
   try {
-    // First, save order IDs to audit log and get the reference ID
+
     const auditEntry = await prisma.auditLog.create({
       data: {
         shopId: shop.id,
@@ -74,13 +74,13 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     });
 
-    // Use audit log ID as custom_id (short, unique reference)
-    // If shop doesn't have a PayPal vault yet, create order WITH vault to save payment method
+
+
     const hasVault = Boolean(shop.paypalVaultId);
     let order;
 
     if (hasVault) {
-      // Already vaulted - normal order
+
       order = await createPayPalOrder(
         totalAmount,
         shopDomain,
@@ -88,7 +88,7 @@ export async function action({ request }: ActionFunctionArgs) {
         auditEntry.id
       );
     } else {
-      // No vault yet - try with vault first, fallback to normal if vault not enabled
+
       try {
         order = await createPayPalOrderWithVault(
           totalAmount,
@@ -107,7 +107,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    // Find the approval URL
+
     const approvalLink = order.links.find((link) => link.rel === 'approve');
 
     if (!approvalLink) {
@@ -115,8 +115,8 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: 'PayPal did not return an approval URL' }, { status: 500 });
     }
 
-    // Store the PayPal order ID with pending order IDs for later capture
-    // Update the audit log entry with the PayPal order ID
+
+
     await prisma.auditLog.update({
       where: { id: auditEntry.id },
       data: {

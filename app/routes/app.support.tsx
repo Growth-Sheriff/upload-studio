@@ -13,8 +13,8 @@ import { sendTicketReply, sendTicketStatusUpdate } from "~/lib/email.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request);
-  
-  // Only allow admin access (you can add role check here)
+
+
   const shop = await prisma.shop.findUnique({
     where: { shopDomain: session.shop },
   });
@@ -27,7 +27,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const status = url.searchParams.get("status") || "all";
   const category = url.searchParams.get("category") || "all";
 
-  // Build where clause - scoped to this shop's tickets only
+
   const where: any = { shopDomain: session.shop };
   if (status !== "all") where.status = status;
   if (category !== "all") where.category = category;
@@ -80,7 +80,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export async function action({ request }: ActionFunctionArgs) {
   const { session } = await authenticate.admin(request);
-  
+
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
   const ticketId = formData.get("ticketId") as string;
@@ -109,7 +109,7 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     });
 
-    // Send status update email
+
     if (newStatus === "in_progress" || newStatus === "resolved" || newStatus === "closed") {
       await sendTicketStatusUpdate(
         ticket.ticketNumber,
@@ -132,7 +132,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ success: false, error: "Reply message required" });
     }
 
-    // Create reply record
+
     const reply = await prisma.supportReply.create({
       data: {
         ticketId: ticket.id,
@@ -143,7 +143,7 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     });
 
-    // Update ticket status if it was open
+
     if (ticket.status === "open") {
       await prisma.supportTicket.updateMany({
         where: { id: ticketId, shopDomain: session.shop },
@@ -154,7 +154,7 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    // Send reply email
+
     const emailResult = await sendTicketReply(
       ticket.ticketNumber,
       ticket.email,
@@ -385,7 +385,7 @@ export default function SupportPage() {
                   setSearchParams(new URLSearchParams());
                 }}
               />
-              
+
               <DataTable
                 columnContentTypes={["text", "text", "text", "text", "text", "text", "text", "text"]}
                 headings={["Ticket", "Customer", "Category", "Subject", "Status", "Priority", "Created", "Actions"]}
@@ -397,7 +397,7 @@ export default function SupportPage() {
         </Layout.Section>
       </Layout>
 
-      {/* Reply Modal */}
+
       <Modal
         open={replyModalOpen}
         onClose={() => setReplyModalOpen(false)}
@@ -436,7 +436,7 @@ export default function SupportPage() {
         </Modal.Section>
       </Modal>
 
-      {/* Status Modal */}
+
       <Modal
         open={statusModalOpen}
         onClose={() => setStatusModalOpen(false)}

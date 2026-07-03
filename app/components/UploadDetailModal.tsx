@@ -18,13 +18,13 @@ import {
 } from '@shopify/polaris';
 import { AlertCircleIcon, AlertTriangleIcon, CheckCircleIcon } from '@shopify/polaris-icons';
 
-// --- Helpers copied from app.uploads.$id.tsx ---
+
 
 function getStorageProviderLabel(storageKey: string): { label: string; tone: 'success' | 'info' | 'warning' } {
   if (storageKey?.startsWith('r2:')) return { label: 'Cloudflare R2', tone: 'info' }
   if (storageKey?.startsWith('local:')) return { label: 'Local Server', tone: 'warning' }
   if (storageKey?.startsWith('bunny:')) return { label: 'Bunny CDN', tone: 'success' }
-  return { label: 'Bunny CDN', tone: 'success' } // Default
+  return { label: 'Bunny CDN', tone: 'success' }
 }
 
 function PreflightBadge({ status }: { status: string }) {
@@ -99,17 +99,17 @@ export function UploadDetailModal({ uploadId, onClose }: { uploadId: string | nu
   const [rejectMode, setRejectMode] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
 
-  // Load data when uploadId changes
+
   useEffect(() => {
     if (uploadId) {
-      // This calls the loader of app.uploads.$id.tsx
+
       fetcher.load(`/app/uploads/${uploadId}`);
       setRejectMode(false);
       setRejectReason('');
     }
   }, [uploadId]);
 
-  // Close when action is successful
+
   useEffect(() => {
     if (actionFetcher.data?.success) {
       onClose();
@@ -118,16 +118,16 @@ export function UploadDetailModal({ uploadId, onClose }: { uploadId: string | nu
 
   const handleAction = (actionName: string) => {
     if (!uploadId) return;
-    
+
     const formData = new FormData();
     formData.append('_action', actionName);
     if (actionName === 'reject') {
         formData.append('reason', rejectReason);
     }
 
-    actionFetcher.submit(formData, { 
-        method: 'post', 
-        action: `/app/uploads/${uploadId}` 
+    actionFetcher.submit(formData, {
+        method: 'post',
+        action: `/app/uploads/${uploadId}`
     });
   };
 
@@ -165,14 +165,14 @@ export function UploadDetailModal({ uploadId, onClose }: { uploadId: string | nu
   const hasWarnings = upload.items.some((i: any) => i.preflightStatus === 'warning');
   const hasErrors = upload.items.some((i: any) => i.preflightStatus === 'error');
 
-  // Modal Actions
+
   const primaryAction = !rejectMode && upload.status === 'needs_review' && !hasErrors
       ? {
           content: hasWarnings ? 'Approve with Warnings' : 'Approve',
           onAction: () => handleAction(hasWarnings ? 'continue_with_warnings' : 'approve'),
           loading: actionFetcher.state === 'submitting'
         }
-      : rejectMode 
+      : rejectMode
         ? {
             content: 'Confirm Reject',
             destructive: true,
@@ -182,7 +182,7 @@ export function UploadDetailModal({ uploadId, onClose }: { uploadId: string | nu
         : undefined;
 
   const secondaryActions = [] as any[];
-  
+
   if (!rejectMode && upload.status === 'needs_review') {
       secondaryActions.push({
           content: 'Reject',
@@ -195,8 +195,8 @@ export function UploadDetailModal({ uploadId, onClose }: { uploadId: string | nu
           onAction: () => setRejectMode(false)
       });
   }
-  
-  // Also add a "Close" button if no other actions
+
+
   if (!primaryAction && secondaryActions.length === 0) {
       secondaryActions.push({ content: 'Close', onAction: onClose });
   }
@@ -227,7 +227,7 @@ export function UploadDetailModal({ uploadId, onClose }: { uploadId: string | nu
         ) : (
             <>
                 <Modal.Section>
-                    {/* Status Banners */}
+
                     <BlockStack gap="400">
                         {hasErrors && (
                             <Banner title="Attention Needed" tone="warning">
@@ -245,7 +245,7 @@ export function UploadDetailModal({ uploadId, onClose }: { uploadId: string | nu
                             </Banner>
                         )}
 
-                        {/* Basic Info */}
+
                         <InlineStack gap="400" wrap={false}>
                              <Card>
                                 <BlockStack gap="200">
@@ -267,14 +267,14 @@ export function UploadDetailModal({ uploadId, onClose }: { uploadId: string | nu
                     </BlockStack>
                 </Modal.Section>
 
-                {/* Items */}
+
                 <Modal.Section>
                      <BlockStack gap="400">
                          <Text as="h3" variant="headingMd">Files ({upload.items.length})</Text>
                          {upload.items.map((item: any) => (
                              <Card key={item.id}>
                                  <InlineStack gap="400" align="start" wrap={false}>
-                                     {/* Image */}
+
                                      {item.thumbnailUrl ? (
                                          <Thumbnail source={item.thumbnailUrl} alt={item.originalName || 'Upload'} size="large" />
                                      ) : (
@@ -283,7 +283,7 @@ export function UploadDetailModal({ uploadId, onClose }: { uploadId: string | nu
                                         </Box>
                                      )}
 
-                                     {/* Details */}
+
                                      <BlockStack gap="200" align="start">
                                          <Text as="h4" variant="headingSm">{item.originalName || 'Unknown File'}</Text>
                                          <InlineStack gap="200">
@@ -293,14 +293,14 @@ export function UploadDetailModal({ uploadId, onClose }: { uploadId: string | nu
                                                 {getStorageProviderLabel(item.storageKey).label}
                                              </Badge>
                                          </InlineStack>
-                                         
+
                                          {item.fileSize && (
                                              <Text as="p" variant="bodySm" tone="subdued">
                                                  {(item.fileSize / 1024 / 1024).toFixed(2)} MB
                                              </Text>
                                          )}
 
-                                         {/* Preflight Details */}
+
                                          {item.preflightResult?.checks && (
                                             <Box padding="200" background="bg-surface-secondary" borderRadius="200" width="100%">
                                                 <BlockStack gap="200">

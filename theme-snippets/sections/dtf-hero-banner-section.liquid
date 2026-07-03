@@ -1,20 +1,4 @@
-{% comment %}
-  DTF Hero Banner Section
-  ------------------------------------------------------------------
-  Manual theme section that combines:
-  - Background image or background video
-  - Heading/subheading content inside the banner area
-  - Up to 4 foreground cards
-  - Each card can represent a product or a collection
-  - Each card can dispatch a different upload mode
 
-  Notes:
-  - Product cards use the selected product directly.
-  - Collection cards display the collection, but upload flows target:
-      1. linked_product, or
-      2. first product in the collection
-  - Assets are loaded from the app proxy, same approach as dtf-upload-section.
-{% endcomment %}
 
 {%- liquid
   assign heading = section.settings.heading
@@ -44,11 +28,74 @@
   endfor
 
   assign overlay_alpha = section.settings.overlay_opacity | times: 0.01
+  assign overlay_alpha_soft = overlay_alpha | times: 0.22
+  assign overlay_alpha_mid = overlay_alpha | times: 0.58
+  assign overlay_alpha_strong = overlay_alpha
   assign auto_rotate = section.settings.auto_rotate
   assign rotate_speed = section.settings.rotate_speed | default: 5
+  assign background_video_url = section.settings.background_video_url | strip
+  assign background_video_id = blank
+  assign background_video_embed_url = blank
+  assign has_background_image = false
+  assign has_background_video = false
+  assign background_render_mode = section.settings.background_mode | default: 'image'
+  assign has_section_background_media = false
+
+  if section.settings.background_image != blank or section.settings.background_mobile_image != blank
+    assign has_background_image = true
+  endif
+
+  if background_video_url != blank
+    assign has_background_video = true
+
+    if background_video_url contains 'youtu.be/'
+      assign background_video_id = background_video_url | split: 'youtu.be/' | last | split: '?' | first | split: '&' | first | split: '#' | first
+    elsif background_video_url contains 'youtube.com/watch'
+      assign background_video_id = background_video_url | split: 'v=' | last | split: '&' | first | split: '#' | first
+    elsif background_video_url contains 'youtube.com/embed/'
+      assign background_video_id = background_video_url | split: 'youtube.com/embed/' | last | split: '?' | first | split: '&' | first | split: '#' | first
+    elsif background_video_url contains 'youtube.com/shorts/'
+      assign background_video_id = background_video_url | split: 'youtube.com/shorts/' | last | split: '?' | first | split: '&' | first | split: '#' | first
+    endif
+
+    if background_video_id != blank
+      capture background_video_embed_url
+        echo 'https://www.youtube.com/embed/' | append: background_video_id | append: '?autoplay=1&mute=1&controls=0&loop=1&playlist=' | append: background_video_id | append: '&playsinline=1&rel=0&modestbranding=1&iv_load_policy=3&enablejsapi=0'
+      endcapture
+    endif
+  endif
+
+  if background_render_mode == 'video'
+    if has_background_video == false
+      if has_background_image
+        assign background_render_mode = 'image'
+      else
+        assign background_render_mode = 'color'
+      endif
+    endif
+  elsif background_render_mode == 'image'
+    if has_background_image == false
+      if has_background_video
+        assign background_render_mode = 'video'
+      else
+        assign background_render_mode = 'color'
+      endif
+    endif
+  elsif background_render_mode != 'color'
+    if has_background_image
+      assign background_render_mode = 'image'
+    elsif has_background_video
+      assign background_render_mode = 'video'
+    else
+      assign background_render_mode = 'color'
+    endif
+  endif
+
+  if background_render_mode == 'image' or background_render_mode == 'video'
+    assign has_section_background_media = true
+  endif
 -%}
 
-{% comment %} Shared assets {% endcomment %}
 <link rel="stylesheet" href="{{ asset_base }}ul-common.css">
 
 {% if has_upload_studio %}
@@ -98,7 +145,7 @@
 
 <style>
   #ul-hero-banner-{{ section.id }} {
-    --ul-hero-radius: 28px;
+    --ul-hero-radius: 3px;
     --ul-hero-shadow: 0 22px 70px rgba(15, 23, 42, 0.18);
     --ul-card-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
     --ul-card-border: rgba(255, 255, 255, 0.28);
@@ -108,6 +155,7 @@
     --ul-button-bg: linear-gradient(135deg, #111827 0%, #1f2937 100%);
     --ul-button-hover: linear-gradient(135deg, #0f172a 0%, #111827 100%);
     --ul-min-height: {{ section.settings.min_height }}px;
+    --ul-hero-base-bg: {{ section.settings.background_color }};
 
     max-width: 1440px;
     margin: 0 auto;
@@ -122,9 +170,7 @@
     overflow: hidden;
     box-shadow: var(--ul-hero-shadow);
     border: 1px solid rgba(255, 255, 255, 0.12);
-    background:
-      radial-gradient(circle at top left, rgba(255, 255, 255, 0.16), transparent 36%),
-      linear-gradient(135deg, #0f172a 0%, #111827 55%, #1f2937 100%);
+    background: var(--ul-hero-base-bg);
   }
 
   #ul-hero-banner-{{ section.id }} .ul-hero-banner__media,
@@ -141,17 +187,23 @@
 
   #ul-hero-banner-{{ section.id }} .ul-hero-banner__media img,
   #ul-hero-banner-{{ section.id }} .ul-hero-banner__media picture img,
-  #ul-hero-banner-{{ section.id }} .ul-hero-banner__media video {
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__media video,
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__media iframe {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
+    border: 0;
+    pointer-events: none;
   }
 
   #ul-hero-banner-{{ section.id }} .ul-hero-banner__overlay {
-    background:
-      linear-gradient(180deg, rgba(15, 23, 42, 0.12) 0%, rgba(15, 23, 42, 0.45) 65%, rgba(15, 23, 42, 0.72) 100%),
-      {{ section.settings.overlay_color | color_modify: 'alpha', overlay_alpha }};
+    background: linear-gradient(
+      180deg,
+      {{ section.settings.overlay_color | color_modify: 'alpha', overlay_alpha_soft }} 0%,
+      {{ section.settings.overlay_color | color_modify: 'alpha', overlay_alpha_mid }} 65%,
+      {{ section.settings.overlay_color | color_modify: 'alpha', overlay_alpha_strong }} 100%
+    );
   }
 
   #ul-hero-banner-{{ section.id }} .ul-hero-banner__inner {
@@ -176,7 +228,7 @@
     gap: 8px;
     padding: 8px 14px;
     margin-bottom: 14px;
-    border-radius: 999px;
+    border-radius: var(--ul-hero-radius);
     background: rgba(255, 255, 255, 0.14);
     border: 1px solid rgba(255, 255, 255, 0.18);
     backdrop-filter: blur(10px);
@@ -203,7 +255,6 @@
     color: rgba(255, 255, 255, 0.84);
   }
 
-  /* ── Banner Slideshow ── */
   #ul-hero-banner-{{ section.id }} .ul-hero-banner__slides {
     position: absolute;
     inset: 0;
@@ -222,6 +273,10 @@
     pointer-events: auto;
   }
 
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide--base {
+    background: var(--ul-hero-base-bg);
+  }
+
   #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide-media {
     position: absolute;
     inset: 0;
@@ -233,19 +288,25 @@
 
   #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide-media img,
   #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide-media picture img,
-  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide-media video {
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide-media video,
+  #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide-media iframe {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
+    border: 0;
+    pointer-events: none;
   }
 
   #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide-overlay {
     position: absolute;
     inset: 0;
-    background:
-      linear-gradient(180deg, rgba(15, 23, 42, 0.12) 0%, rgba(15, 23, 42, 0.45) 65%, rgba(15, 23, 42, 0.72) 100%),
-      {{ section.settings.overlay_color | color_modify: 'alpha', overlay_alpha }};
+    background: linear-gradient(
+      180deg,
+      {{ section.settings.overlay_color | color_modify: 'alpha', overlay_alpha_soft }} 0%,
+      {{ section.settings.overlay_color | color_modify: 'alpha', overlay_alpha_mid }} 65%,
+      {{ section.settings.overlay_color | color_modify: 'alpha', overlay_alpha_strong }} 100%
+    );
   }
 
   #ul-hero-banner-{{ section.id }} .ul-hero-banner__slide-content {
@@ -276,7 +337,7 @@
   #ul-hero-banner-{{ section.id }} .ul-hero-banner__dot {
     width: 10px;
     height: 10px;
-    border-radius: 50%;
+    border-radius: var(--ul-hero-radius);
     border: 2px solid rgba(255, 255, 255, 0.6);
     background: transparent;
     cursor: pointer;
@@ -294,7 +355,6 @@
     border-color: #ffffff;
   }
 
-  /* ── Card Slider ── */
   #ul-hero-banner-{{ section.id }} .ul-hero-banner__slider-wrap {
     position: relative;
     transition: opacity 0.5s ease;
@@ -328,7 +388,7 @@
     width: 40px;
     height: 40px;
     border: none;
-    border-radius: 50%;
+    border-radius: var(--ul-hero-radius);
     background: rgba(255,255,255,0.92);
     color: #111827;
     box-shadow: 0 4px 14px rgba(0,0,0,0.18);
@@ -370,7 +430,7 @@
     flex-direction: column;
     min-height: 308px;
     min-width: 280px;
-    border-radius: 22px;
+    border-radius: var(--ul-hero-radius);
     overflow: hidden;
     background: var(--ul-card-surface);
     border: 1px solid var(--ul-card-border);
@@ -434,7 +494,7 @@
     align-items: center;
     gap: 6px;
     padding: 6px 10px;
-    border-radius: 999px;
+    border-radius: var(--ul-hero-radius);
     background: rgba(15, 23, 42, 0.06);
     color: var(--ul-card-sub);
     font-size: 11px;
@@ -476,7 +536,7 @@
     margin-top: 2px;
     padding: 13px 16px;
     border: none;
-    border-radius: 14px;
+    border-radius: var(--ul-hero-radius);
     background: var(--ul-button-bg);
     color: #ffffff;
     cursor: pointer;
@@ -499,7 +559,7 @@
   #ul-hero-banner-{{ section.id }} .ul-hero-banner__empty {
     flex: 0 0 100%;
     padding: 34px 20px;
-    border-radius: 20px;
+    border-radius: var(--ul-hero-radius);
     text-align: center;
     color: rgba(255, 255, 255, 0.9);
     background: rgba(15, 23, 42, 0.28);
@@ -520,7 +580,7 @@
 
     #ul-hero-banner-{{ section.id }} .ul-hero-banner__frame {
       min-height: 420px;
-      border-radius: 24px;
+      border-radius: var(--ul-hero-radius);
     }
 
     #ul-hero-banner-{{ section.id }} .ul-hero-banner__media-asset--desktop {
@@ -591,7 +651,7 @@
       min-width: 0;
       flex-direction: row;
       align-items: center;
-      border-radius: 18px;
+      border-radius: var(--ul-hero-radius);
       backdrop-filter: blur(12px);
     }
 
@@ -627,7 +687,7 @@
       width: auto;
       margin: 0;
       padding: 10px 12px;
-      border-radius: 12px;
+      border-radius: var(--ul-hero-radius);
       font-size: 12px;
       white-space: nowrap;
     }
@@ -651,19 +711,151 @@
   <div class="ul-hero-banner__frame">
 
     {% if slide_count > 0 %}
-      {%- comment -%} Multi-slide mode {%- endcomment -%}
+
       <div class="ul-hero-banner__slides">
-        {%- assign slide_idx = 0 -%}
+        <div class="ul-hero-banner__slide ul-hero-banner__slide--base ul-hero-banner__slide--active" data-slide-index="0">
+          <div class="ul-hero-banner__slide-media" aria-hidden="true">
+            {% if background_render_mode == 'video' %}
+              {% if background_video_embed_url != blank %}
+                <iframe
+                  {% if section.settings.background_mobile_image != blank %}class="ul-hero-banner__media-asset--desktop"{% endif %}
+                  src="{{ background_video_embed_url }}"
+                  title="{{ heading | escape }}"
+                  loading="eager"
+                  allow="autoplay; encrypted-media; picture-in-picture"
+                  referrerpolicy="strict-origin-when-cross-origin"
+                  tabindex="-1"
+                  aria-hidden="true"
+                ></iframe>
+              {% else %}
+                <video {% if section.settings.background_mobile_image != blank %}class="ul-hero-banner__media-asset--desktop"{% endif %} autoplay muted loop playsinline preload="metadata"
+                  {% if section.settings.background_poster != blank %}poster="{{ section.settings.background_poster | image_url: width: 2000 }}"{% endif %}
+                >
+                  <source src="{{ background_video_url }}">
+                </video>
+              {% endif %}
+              {% if section.settings.background_mobile_image != blank %}
+                <img
+                  class="ul-hero-banner__media-asset--mobile"
+                  src="{{ section.settings.background_mobile_image | image_url: width: 900 }}"
+                  alt="{{ heading | escape }}"
+                  loading="eager"
+                  width="900"
+                  height="1200"
+                >
+              {% endif %}
+            {% elsif background_render_mode == 'image' %}
+              <picture class="ul-hero-banner__picture">
+                {% if section.settings.background_mobile_image != blank %}
+                  <source media="(max-width: 640px)" srcset="{{ section.settings.background_mobile_image | image_url: width: 900 }}">
+                {% endif %}
+                <img
+                  src="{% if section.settings.background_image != blank %}{{ section.settings.background_image | image_url: width: 2000 }}{% else %}{{ section.settings.background_mobile_image | image_url: width: 900 }}{% endif %}"
+                  alt="{{ heading | escape }}"
+                  loading="eager"
+                  width="2000"
+                  height="1200"
+                >
+              </picture>
+            {% endif %}
+          </div>
+          {% if has_section_background_media %}
+            <div class="ul-hero-banner__slide-overlay"></div>
+          {% endif %}
+          {% if eyebrow != blank or heading != blank or subheading != blank %}
+            <div class="ul-hero-banner__slide-content">
+              {% if eyebrow != blank %}
+                <div class="ul-hero-banner__eyebrow">{{ eyebrow }}</div>
+              {% endif %}
+              {% if heading != blank %}
+                <h2 class="ul-hero-banner__title">{{ heading }}</h2>
+              {% endif %}
+              {% if subheading != blank %}
+                <p class="ul-hero-banner__subtitle">{{ subheading }}</p>
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>
+
+        {%- assign slide_idx = 1 -%}
         {% for block in section.blocks %}
           {% if block.type == 'banner_slide' %}
-          <div class="ul-hero-banner__slide{% if slide_idx == 0 %} ul-hero-banner__slide--active{% endif %}" data-slide-index="{{ slide_idx }}" {{ block.shopify_attributes }}>
+          {%- liquid
+            assign slide_video_url = block.settings.slide_video_url | strip
+            assign slide_video_id = blank
+            assign slide_video_embed_url = blank
+            assign has_slide_image = false
+            assign has_slide_video = false
+            assign slide_render_mode = block.settings.slide_mode | default: 'image'
+            assign slide_has_media = false
+
+            if block.settings.slide_image != blank or block.settings.slide_mobile_image != blank
+              assign has_slide_image = true
+            endif
+
+            if slide_video_url != blank
+              assign has_slide_video = true
+
+              if slide_video_url contains 'youtu.be/'
+                assign slide_video_id = slide_video_url | split: 'youtu.be/' | last | split: '?' | first | split: '&' | first | split: '#' | first
+              elsif slide_video_url contains 'youtube.com/watch'
+                assign slide_video_id = slide_video_url | split: 'v=' | last | split: '&' | first | split: '#' | first
+              elsif slide_video_url contains 'youtube.com/embed/'
+                assign slide_video_id = slide_video_url | split: 'youtube.com/embed/' | last | split: '?' | first | split: '&' | first | split: '#' | first
+              elsif slide_video_url contains 'youtube.com/shorts/'
+                assign slide_video_id = slide_video_url | split: 'youtube.com/shorts/' | last | split: '?' | first | split: '&' | first | split: '#' | first
+              endif
+
+              if slide_video_id != blank
+                capture slide_video_embed_url
+                  echo 'https://www.youtube.com/embed/' | append: slide_video_id | append: '?autoplay=1&mute=1&controls=0&loop=1&playlist=' | append: slide_video_id | append: '&playsinline=1&rel=0&modestbranding=1&iv_load_policy=3&enablejsapi=0'
+                endcapture
+              endif
+            endif
+
+            if slide_render_mode == 'video'
+              if has_slide_video == false
+                if has_slide_image
+                  assign slide_render_mode = 'image'
+                else
+                  assign slide_render_mode = blank
+                endif
+              endif
+            elsif slide_render_mode == 'image'
+              if has_slide_image == false
+                if has_slide_video
+                  assign slide_render_mode = 'video'
+                else
+                  assign slide_render_mode = blank
+                endif
+              endif
+            endif
+
+            if slide_render_mode == 'image' or slide_render_mode == 'video'
+              assign slide_has_media = true
+            endif
+          -%}
+          <div class="ul-hero-banner__slide" data-slide-index="{{ slide_idx }}" {{ block.shopify_attributes }}>
             <div class="ul-hero-banner__slide-media" aria-hidden="true">
-              {% if block.settings.slide_mode == 'video' and block.settings.slide_video_url != blank %}
-                <video class="ul-hero-banner__media-asset--desktop" autoplay muted loop playsinline preload="metadata"
-                  {% if block.settings.slide_poster != blank %}poster="{{ block.settings.slide_poster | image_url: width: 2000 }}"{% endif %}
-                >
-                  <source src="{{ block.settings.slide_video_url }}" type="video/mp4">
-                </video>
+              {% if slide_render_mode == 'video' %}
+                {% if slide_video_embed_url != blank %}
+                  <iframe
+                    {% if block.settings.slide_mobile_image != blank %}class="ul-hero-banner__media-asset--desktop"{% endif %}
+                    src="{{ slide_video_embed_url }}"
+                    title="{{ block.settings.slide_heading | escape }}"
+                    loading="lazy"
+                    allow="autoplay; encrypted-media; picture-in-picture"
+                    referrerpolicy="strict-origin-when-cross-origin"
+                    tabindex="-1"
+                    aria-hidden="true"
+                  ></iframe>
+                {% else %}
+                  <video {% if block.settings.slide_mobile_image != blank %}class="ul-hero-banner__media-asset--desktop"{% endif %} autoplay muted loop playsinline preload="metadata"
+                    {% if block.settings.slide_poster != blank %}poster="{{ block.settings.slide_poster | image_url: width: 2000 }}"{% endif %}
+                  >
+                    <source src="{{ slide_video_url }}">
+                  </video>
+                {% endif %}
                 {% if block.settings.slide_mobile_image != blank %}
                   <img
                     class="ul-hero-banner__media-asset--mobile"
@@ -674,7 +866,7 @@
                     height="1200"
                   >
                 {% endif %}
-              {% elsif block.settings.slide_image != blank or block.settings.slide_mobile_image != blank %}
+              {% elsif slide_render_mode == 'image' %}
                 <picture class="ul-hero-banner__picture">
                   {% if block.settings.slide_mobile_image != blank %}
                     <source media="(max-width: 640px)" srcset="{{ block.settings.slide_mobile_image | image_url: width: 900 }}">
@@ -688,7 +880,7 @@
                 </picture>
               {% endif %}
             </div>
-            {% if block.settings.slide_image != blank or block.settings.slide_mobile_image != blank or block.settings.slide_video_url != blank %}
+            {% if slide_has_media %}
               <div class="ul-hero-banner__slide-overlay"></div>
             {% endif %}
             <div class="ul-hero-banner__slide-content">
@@ -709,14 +901,27 @@
       </div>
 
     {% else %}
-      {%- comment -%} Fallback: section-level single background {%- endcomment -%}
+
       <div class="ul-hero-banner__media" aria-hidden="true">
-        {% if section.settings.background_mode == 'video' and section.settings.background_video_url != blank %}
-          <video class="ul-hero-banner__media-asset--desktop" autoplay muted loop playsinline preload="metadata"
-            {% if section.settings.background_poster != blank %}poster="{{ section.settings.background_poster | image_url: width: 2000 }}"{% endif %}
-          >
-            <source src="{{ section.settings.background_video_url }}" type="video/mp4">
-          </video>
+        {% if background_render_mode == 'video' %}
+          {% if background_video_embed_url != blank %}
+            <iframe
+              {% if section.settings.background_mobile_image != blank %}class="ul-hero-banner__media-asset--desktop"{% endif %}
+              src="{{ background_video_embed_url }}"
+              title="{{ heading | escape }}"
+              loading="lazy"
+              allow="autoplay; encrypted-media; picture-in-picture"
+              referrerpolicy="strict-origin-when-cross-origin"
+              tabindex="-1"
+              aria-hidden="true"
+            ></iframe>
+          {% else %}
+            <video {% if section.settings.background_mobile_image != blank %}class="ul-hero-banner__media-asset--desktop"{% endif %} autoplay muted loop playsinline preload="metadata"
+              {% if section.settings.background_poster != blank %}poster="{{ section.settings.background_poster | image_url: width: 2000 }}"{% endif %}
+            >
+              <source src="{{ background_video_url }}">
+            </video>
+          {% endif %}
           {% if section.settings.background_mobile_image != blank %}
             <img
               class="ul-hero-banner__media-asset--mobile"
@@ -727,7 +932,7 @@
               height="1200"
             >
           {% endif %}
-        {% elsif section.settings.background_image != blank or section.settings.background_mobile_image != blank %}
+        {% elsif background_render_mode == 'image' %}
           <picture class="ul-hero-banner__picture">
             {% if section.settings.background_mobile_image != blank %}
               <source media="(max-width: 640px)" srcset="{{ section.settings.background_mobile_image | image_url: width: 900 }}">
@@ -741,7 +946,7 @@
           </picture>
         {% endif %}
       </div>
-      {% if section.settings.background_image != blank or section.settings.background_mobile_image != blank or section.settings.background_video_url != blank %}
+      {% if has_section_background_media %}
         <div class="ul-hero-banner__overlay"></div>
       {% endif %}
     {% endif %}
@@ -762,14 +967,15 @@
           </div>
         {% endif %}
       {% else %}
-        {%- comment -%} Spacer for slide content area + dots {%- endcomment -%}
+
         <div class="ul-hero-banner__spacer"></div>
-        {% if slide_count > 1 %}
+        {% if slide_count > 0 %}
           <div class="ul-hero-banner__dots">
-            {%- assign dot_idx = 0 -%}
+            <button type="button" class="ul-hero-banner__dot ul-hero-banner__dot--active" data-slide-goto="0" aria-label="Slide 1"></button>
+            {%- assign dot_idx = 1 -%}
             {% for block in section.blocks %}
               {% if block.type == 'banner_slide' %}
-                <button type="button" class="ul-hero-banner__dot{% if dot_idx == 0 %} ul-hero-banner__dot--active{% endif %}" data-slide-goto="{{ dot_idx }}" aria-label="Slide {{ dot_idx | plus: 1 }}"></button>
+                <button type="button" class="ul-hero-banner__dot" data-slide-goto="{{ dot_idx }}" aria-label="Slide {{ dot_idx | plus: 1 }}"></button>
                 {%- assign dot_idx = dot_idx | plus: 1 -%}
               {% endif %}
             {% endfor %}
@@ -971,10 +1177,10 @@
     .ul-studio-modal { position:fixed; inset:0; z-index:999999; display:none; align-items:center; justify-content:center; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
     .ul-studio-modal.active { display:flex; }
     .ul-studio-modal__backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(4px); }
-    .ul-studio-modal__container { position:relative; width:95vw; max-width:680px; max-height:90vh; background:#fff; border-radius:12px; box-shadow:0 25px 60px rgba(0,0,0,0.3); display:flex; flex-direction:column; overflow:hidden; }
+    .ul-studio-modal__container { position:relative; width:95vw; max-width:680px; max-height:90vh; background:#fff; border-radius:3px; box-shadow:0 25px 60px rgba(0,0,0,0.3); display:flex; flex-direction:column; overflow:hidden; }
     .ul-studio-modal__header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid #e5e7eb; }
     .ul-studio-modal__title { font-size:16px; font-weight:600; margin:0; }
-    .ul-studio-modal__close { background:none; border:none; font-size:22px; cursor:pointer; padding:4px 8px; color:#6b7280; border-radius:6px; }
+    .ul-studio-modal__close { background:none; border:none; font-size:22px; cursor:pointer; padding:4px 8px; color:#6b7280; border-radius:3px; }
     .ul-studio-modal__close:hover { background:#f3f4f6; color:#111827; }
     .ul-studio-modal__body { flex:1; overflow-y:auto; padding:0; }
     .ul-studio-modal__body .ul-dtf-uploader { padding:20px; }
@@ -1465,6 +1671,7 @@
     var total = slides.length;
     var autoRotate = {{ auto_rotate | json }};
     var rotateMs = {{ rotate_speed }} * 1000;
+    var heroCardsHoldMs = 10000;
     var timer = null;
     var sliderWrap = root.querySelector('.ul-hero-banner__slider-wrap');
 
@@ -1492,9 +1699,12 @@
     }
 
     function resetTimer() {
-      if (timer) clearInterval(timer);
+      if (timer) clearTimeout(timer);
       if (autoRotate) {
-        timer = setInterval(function() { goTo(current + 1); }, rotateMs);
+        timer = setTimeout(function() {
+          goTo(current + 1);
+          resetTimer();
+        }, current === 0 ? heroCardsHoldMs : rotateMs);
       }
     }
 
@@ -1568,9 +1778,16 @@
       "label": "Background Mode",
       "options": [
         { "value": "image", "label": "Image" },
-        { "value": "video", "label": "Video" }
+        { "value": "video", "label": "Video" },
+        { "value": "color", "label": "Solid Color" }
       ],
       "default": "image"
+    },
+    {
+      "type": "color",
+      "id": "background_color",
+      "label": "Background Color",
+      "default": "#0f172a"
     },
     {
       "type": "image_picker",
@@ -1586,7 +1803,7 @@
       "type": "text",
       "id": "background_video_url",
       "label": "Background Video URL",
-      "info": "Direct MP4 or WebM URL."
+      "info": "Direct MP4/WebM or YouTube URL."
     },
     {
       "type": "image_picker",
@@ -1666,7 +1883,7 @@
           "type": "text",
           "id": "slide_video_url",
           "label": "Slide Video URL",
-          "info": "Direct MP4 or WebM URL."
+          "info": "Direct MP4/WebM or YouTube URL."
         },
         {
           "type": "image_picker",

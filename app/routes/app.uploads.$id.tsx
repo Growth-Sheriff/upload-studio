@@ -56,7 +56,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return json({ error: 'Upload not found' }, { status: 404 })
   }
 
-  // Generate signed URLs for thumbnails/previews
+
   const storageConfig = getStorageConfig({
     storageProvider: shop.storageProvider,
     storageConfig: shop.storageConfig as Record<string, string> | null,
@@ -66,7 +66,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       let thumbnailUrl = null
       let previewUrl = null
 
-      // Try thumbnailKey first, fallback to storageKey if no thumbnail
+
       const thumbnailSource = item.thumbnailKey || item.storageKey
       if (thumbnailSource) {
         try {
@@ -74,7 +74,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         } catch {}
       }
 
-      // For preview, use previewKey or storageKey
+
       const previewSource = item.previewKey || item.storageKey
       if (previewSource) {
         try {
@@ -111,7 +111,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const uploadId = params.id
 
-  // WI-002: Verify upload belongs to this shop (tenant isolation)
+
   const upload = await prisma.upload.findFirst({
     where: { id: uploadId, shopId: shop.id },
   })
@@ -124,7 +124,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const action = formData.get('_action')
 
   if (action === 'approve') {
-    // SECURITY: Compound where prevents TOCTOU race condition
+
     await prisma.upload.update({
       where: { id: uploadId, shopId: shop.id },
       data: {
@@ -133,7 +133,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       },
     })
 
-    // Audit log
+
     await prisma.auditLog.create({
       data: {
         shopId: shop.id,
@@ -149,7 +149,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   if (action === 'reject') {
     const reason = formData.get('reason') as string
-    // SECURITY: Compound where prevents TOCTOU race condition
+
     await prisma.upload.update({
       where: { id: uploadId, shopId: shop.id },
       data: {
@@ -162,7 +162,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       },
     })
 
-    // Audit log
+
     await prisma.auditLog.create({
       data: {
         shopId: shop.id,
@@ -177,13 +177,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   if (action === 'continue_with_warnings') {
-    // SECURITY: Compound where prevents TOCTOU race condition
+
     await prisma.upload.update({
       where: { id: uploadId, shopId: shop.id },
       data: { status: 'approved', approvedAt: new Date() },
     })
 
-    // Audit log
+
     await prisma.auditLog.create({
       data: {
         shopId: shop.id,
@@ -204,11 +204,11 @@ function getStorageProviderLabel(storageKey: string): { label: string; tone: 'su
   if (storageKey.startsWith('r2:')) return { label: 'Cloudflare R2', tone: 'info' }
   if (storageKey.startsWith('local:')) return { label: 'Local Server', tone: 'warning' }
   if (storageKey.startsWith('bunny:')) return { label: 'Bunny CDN', tone: 'success' }
-  return { label: 'Bunny CDN', tone: 'success' } // Default
+  return { label: 'Bunny CDN', tone: 'success' }
 }
 
 function PreflightBadge({ status }: { status: string }) {
-  // Merchant-friendly labels with softer tones
+
   const config: Record<
     string,
     { tone: 'success' | 'warning' | 'critical' | 'info'; label: string }
@@ -229,7 +229,7 @@ function StatusIcon({ status }: { status: string }) {
   return null
 }
 
-// Convert technical preflight messages to merchant-friendly language
+
 function getPreflightMessage(check: {
   name: string
   status: string
@@ -240,7 +240,7 @@ function getPreflightMessage(check: {
   const status = check.status
   const value = check.value
 
-  // DPI checks
+
   if (name.includes('dpi') || name.includes('resolution')) {
     if (status === 'ok') {
       return { title: 'Resolution', detail: 'Excellent quality for printing ✓' }
@@ -254,7 +254,7 @@ function getPreflightMessage(check: {
     }
   }
 
-  // File size checks
+
   if (name.includes('size') || name.includes('filesize')) {
     if (status === 'ok') {
       return { title: 'File Size', detail: 'Within optimal range ✓' }
@@ -265,7 +265,7 @@ function getPreflightMessage(check: {
     }
   }
 
-  // Format checks
+
   if (name.includes('format') || name.includes('type')) {
     if (status === 'ok') {
       return { title: 'File Format', detail: 'Compatible format ✓' }
@@ -274,7 +274,7 @@ function getPreflightMessage(check: {
     }
   }
 
-  // Transparency checks
+
   if (name.includes('transparency') || name.includes('alpha')) {
     if (status === 'ok') {
       return { title: 'Transparency', detail: 'Ready for printing ✓' }
@@ -288,7 +288,7 @@ function getPreflightMessage(check: {
     }
   }
 
-  // Color profile checks
+
   if (
     name.includes('color') ||
     name.includes('profile') ||
@@ -304,7 +304,7 @@ function getPreflightMessage(check: {
     }
   }
 
-  // Dimensions
+
   if (name.includes('dimension') || name.includes('width') || name.includes('height')) {
     if (status === 'ok') {
       return { title: 'Dimensions', detail: 'Perfect size for print area ✓' }
@@ -315,7 +315,7 @@ function getPreflightMessage(check: {
     }
   }
 
-  // Default fallback with friendlier tone
+
   const friendlyName =
     check.name?.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()) || 'Check'
   if (status === 'ok') {
@@ -367,7 +367,7 @@ export default function UploadDetail() {
       }
     >
       <Layout>
-        {/* Action result banner */}
+
         {actionData && 'success' in actionData && (
           <Layout.Section>
             <Banner tone="success">
@@ -382,7 +382,7 @@ export default function UploadDetail() {
           </Layout.Section>
         )}
 
-        {/* Overall Status Banner - Merchant Friendly */}
+
         <Layout.Section>
           {hasErrors && (
             <Banner title="Attention Needed" tone="warning">
@@ -407,7 +407,7 @@ export default function UploadDetail() {
           )}
         </Layout.Section>
 
-        {/* Upload Info */}
+
         <Layout.Section variant="oneThird">
           <Card>
             <BlockStack gap="200">
@@ -443,7 +443,7 @@ export default function UploadDetail() {
           </Card>
         </Layout.Section>
 
-        {/* Items */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -454,7 +454,7 @@ export default function UploadDetail() {
               {upload.items.map((item) => (
                 <Card key={item.id}>
                   <InlineStack gap="400" align="start" blockAlign="start">
-                    {/* Thumbnail */}
+
                     <Box>
                       {item.thumbnailUrl ? (
                         <Thumbnail
@@ -471,7 +471,7 @@ export default function UploadDetail() {
                       )}
                     </Box>
 
-                    {/* Item Info */}
+
                     <BlockStack gap="200">
                       <InlineStack gap="200" align="start">
                         <Text as="h3" variant="headingSm">
@@ -494,13 +494,13 @@ export default function UploadDetail() {
                         </Badge>
                       </InlineStack>
 
-                      {/* Preflight Checks - Merchant Friendly */}
+
                       {item.preflightResult?.checks && (
                         <BlockStack gap="200">
                           <Text as="p" variant="bodySm" fontWeight="semibold">
                             Quality Check:
                           </Text>
-                          {/* Show summary first */}
+
                           {item.preflightStatus === 'ok' && (
                             <Box padding="200" background="bg-surface-success" borderRadius="100">
                               <InlineStack gap="100">
@@ -518,7 +518,7 @@ export default function UploadDetail() {
                               </Text>
                             </Box>
                           )}
-                          {/* Individual checks */}
+
                           <BlockStack gap="100">
                             {(item.preflightResult.checks as any[]).map((check, idx) => {
                               const { title, detail } = getPreflightMessage(check)
@@ -538,7 +538,7 @@ export default function UploadDetail() {
                         </BlockStack>
                       )}
 
-                      {/* Preview link */}
+
                       {item.previewUrl && (
                         <Button url={item.previewUrl} external variant="plain">
                           View Full Size
@@ -552,7 +552,7 @@ export default function UploadDetail() {
           </Card>
         </Layout.Section>
 
-        {/* Hidden forms for actions */}
+
         <Form method="post" id="approve-form">
           <input
             type="hidden"
@@ -562,7 +562,7 @@ export default function UploadDetail() {
         </Form>
       </Layout>
 
-      {/* Reject Modal */}
+
       <Modal
         open={rejectModalOpen}
         onClose={() => setRejectModalOpen(false)}

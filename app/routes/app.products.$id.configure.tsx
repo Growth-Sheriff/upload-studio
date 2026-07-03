@@ -1,7 +1,7 @@
-/**
- * Product Configure Page
- * Merchant configures upload widget, extra questions, and T-Shirt options per product
- */
+
+
+
+
 
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
@@ -9,15 +9,21 @@ import { useLoaderData, useActionData, Form, useNavigation, useNavigate } from "
 import {
   Page, Layout, Card, Text, BlockStack, InlineStack,
   TextField, Select, Button, Banner, FormLayout, Divider, Box,
-  Checkbox, Badge, Icon, EmptyState, Modal, ChoiceList, RadioButton, Thumbnail
+  Checkbox, Badge, Icon, EmptyState, Modal, ChoiceList, RadioButton, Thumbnail, InlineGrid
 } from "@shopify/polaris";
 import { DeleteIcon, PlusIcon, AlertCircleIcon, CheckCircleIcon, SearchIcon } from "@shopify/polaris-icons";
 import { useState, useCallback } from "react";
 import { authenticate } from "~/shopify.server";
 import prisma from "~/lib/prisma.server";
 import { z } from "zod";
+import {
+  ALPHA_PRO_DISCOUNT_TIERS,
+  applyAlphaProBuilderDefaults,
+  isAlphaPrintShop,
+  isAlphaProProduct,
+} from "~/lib/alphaProDiscounts";
 
-// FAZ 1 - ADM-003: Zod schema for ExtraQuestion validation
+
 const ExtraQuestionSchema = z.object({
   id: z.string().min(1).max(100),
   type: z.enum(["text", "select", "checkbox", "textarea"]),
@@ -29,7 +35,7 @@ const ExtraQuestionSchema = z.object({
 
 const ExtraQuestionsArraySchema = z.array(ExtraQuestionSchema).max(20);
 
-// FAZ 1 - ADM-003: TshirtConfig validation schema
+
 const TshirtConfigSchema = z.object({
   tshirtProductId: z.string().nullable(),
   tshirtProductHandle: z.string().nullable(),
@@ -42,7 +48,7 @@ const TshirtConfigSchema = z.object({
   positions: z.array(z.string().max(50)),
 }).nullable();
 
-// FAZ 1 - ADM-003: HTML sanitization function (XSS prevention)
+
 function sanitizeHtml(input: string): string {
   return input
     .replace(/&/g, '&amp;')
@@ -55,26 +61,26 @@ function sanitizeHtml(input: string): string {
     .replace(/=/g, '&#x3D;');
 }
 
-// Extra Question Types
+
 type QuestionType = "text" | "select" | "checkbox" | "textarea";
 
 interface ExtraQuestion {
   id: string;
   type: QuestionType;
   label: string;
-  options?: string[]; // For select type
+  options?: string[];
   required?: boolean;
   placeholder?: string;
 }
 
 interface TshirtConfig {
-  tshirtProductId: string | null;      // Selected T-Shirt product GID
-  tshirtProductHandle: string | null;  // Selected T-Shirt product handle
-  tshirtProductTitle: string | null;   // Selected T-Shirt product title
+  tshirtProductId: string | null;
+  tshirtProductHandle: string | null;
+  tshirtProductTitle: string | null;
   colorVariantOption: string;
   sizeVariantOption: string;
-  colorValues: string[];               // Available colors from T-Shirt product
-  sizeValues: string[];                // Available sizes from T-Shirt product
+  colorValues: string[];
+  sizeValues: string[];
   priceAddon: number;
   positions: string[];
 }
@@ -94,11 +100,16 @@ interface BuilderConfig {
   colorProfile: string;
   maxFileSizeMb: number;
   supportedFormats: string[];
+  volumeDiscountTierUnit?: "quantity" | "linear_inches";
   volumeDiscountTiers: Array<{
     min_qty: number;
     max_qty: number | null;
     price_per_sqin: number;
+    price_per_inch?: number;
+    label?: string;
+    popular?: boolean;
   }>;
+  alphaProDiscount?: Record<string, unknown> | null;
 }
 
 const DEFAULT_BUILDER_CONFIG: BuilderConfig = {
@@ -116,6 +127,7 @@ const DEFAULT_BUILDER_CONFIG: BuilderConfig = {
   colorProfile: "CMYK",
   maxFileSizeMb: 500,
   supportedFormats: ["PNG", "JPG", "JPEG", "SVG", "PSD", "AI", "EPS", "PDF"],
+  volumeDiscountTierUnit: "quantity",
   volumeDiscountTiers: [
     { min_qty: 1, max_qty: 9, price_per_sqin: 0.06 },
     { min_qty: 10, max_qty: 49, price_per_sqin: 0.054 },
@@ -128,6 +140,9 @@ const VolumeDiscountTierSchema = z.object({
   min_qty: z.number(),
   max_qty: z.number().nullable(),
   price_per_sqin: z.number(),
+  price_per_inch: z.number().optional(),
+  label: z.string().max(100).optional(),
+  popular: z.boolean().optional(),
 });
 
 const BuilderConfigSchema = z.object({
@@ -145,10 +160,12 @@ const BuilderConfigSchema = z.object({
   colorProfile: z.string().max(50).default(DEFAULT_BUILDER_CONFIG.colorProfile),
   maxFileSizeMb: z.number().min(1).max(10240).default(DEFAULT_BUILDER_CONFIG.maxFileSizeMb),
   supportedFormats: z.array(z.string().max(20)).max(20).default(DEFAULT_BUILDER_CONFIG.supportedFormats),
+  volumeDiscountTierUnit: z.enum(["quantity", "linear_inches"]).optional().default("quantity"),
   volumeDiscountTiers: z.array(VolumeDiscountTierSchema).default(DEFAULT_BUILDER_CONFIG.volumeDiscountTiers),
+  alphaProDiscount: z.record(z.unknown()).nullable().optional(),
 });
 
-// Fetch product details from Shopify
+
 const PRODUCT_QUERY = `
   query getProduct($id: ID!) {
     product(id: $id) {
@@ -182,9 +199,9 @@ const PRODUCT_QUERY = `
   }
 `;
 
-// Fetch all products for T-Shirt dropdown
-// FAZ 1 - ADM-001: Updated to use pagination for 500+ products
-// FAZ 3 - ADM-002: Added variantsCount for variant count display
+
+
+
 const ALL_PRODUCTS_QUERY = `
   query getAllProducts($cursor: String) {
     products(first: 100, after: $cursor, sortKey: TITLE) {
@@ -210,7 +227,7 @@ const ALL_PRODUCTS_QUERY = `
   }
 `;
 
-// FAZ 1 - ADM-001: Helper function to fetch all products with pagination (max 500)
+
 async function fetchAllProductsWithPagination(admin: any): Promise<any[]> {
   const products: any[] = [];
   let hasNextPage = true;
@@ -222,21 +239,21 @@ async function fetchAllProductsWithPagination(admin: any): Promise<any[]> {
       variables: { cursor },
     });
     const data: any = await response.json();
-    
+
     const edges: any[] = data.data?.products?.edges || [];
     const pageInfo: { hasNextPage?: boolean; endCursor?: string } = data.data?.products?.pageInfo || {};
-    
+
     for (const edge of edges) {
       if (products.length >= MAX_PRODUCTS) break;
-      
+
       const p = edge.node;
-      const colorOpt = p.options?.find((o: any) => 
+      const colorOpt = p.options?.find((o: any) =>
         o.name.toLowerCase().includes("color") || o.name.toLowerCase().includes("renk")
       );
-      const sizeOpt = p.options?.find((o: any) => 
+      const sizeOpt = p.options?.find((o: any) =>
         o.name.toLowerCase().includes("size") || o.name.toLowerCase().includes("beden")
       );
-      
+
       products.push({
         id: p.id,
         title: p.title,
@@ -245,15 +262,15 @@ async function fetchAllProductsWithPagination(admin: any): Promise<any[]> {
         hasSizeVariant: !!sizeOpt,
         colorValues: colorOpt?.values || [],
         sizeValues: sizeOpt?.values || [],
-        // FAZ 3 - ADM-002: Add variant count
+
         variantCount: p.variantsCount?.count || 0,
       });
     }
-    
+
     hasNextPage = pageInfo.hasNextPage === true;
     cursor = pageInfo.endCursor || null;
   }
-  
+
   return products;
 }
 
@@ -266,7 +283,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     throw new Response("Product ID required", { status: 400 });
   }
 
-  // Get shop
+
   const shop = await prisma.shop.findUnique({
     where: { shopDomain },
   });
@@ -275,9 +292,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     throw new Response("Shop not found", { status: 404 });
   }
 
-  // Fetch product from Shopify
-  const productGid = productId.startsWith("gid://") 
-    ? productId 
+
+  const productGid = productId.startsWith("gid://")
+    ? productId
     : `gid://shopify/Product/${productId}`;
 
   const response = await admin.graphql(PRODUCT_QUERY, {
@@ -291,10 +308,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     throw new Response("Product not found", { status: 404 });
   }
 
-  // Fetch all products for T-Shirt dropdown using pagination (FAZ 1 - ADM-001)
+
   const allProducts = await fetchAllProductsWithPagination(admin);
 
-  // Get existing config - using raw query to access all fields
+
   const config = await prisma.productConfig.findUnique({
     where: {
       shopId_productId: {
@@ -302,18 +319,40 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         productId: productGid,
       },
     },
-  }) as any; // Type assertion to access new fields
+  }) as any;
 
-  // Check for color/size variants
-  const colorOption = product.options?.find((o: any) => 
+
+  const colorOption = product.options?.find((o: any) =>
     o.name.toLowerCase().includes("color") || o.name.toLowerCase().includes("renk")
   );
-  const sizeOption = product.options?.find((o: any) => 
+  const sizeOption = product.options?.find((o: any) =>
     o.name.toLowerCase().includes("size") || o.name.toLowerCase().includes("beden")
   );
 
+  const alphaProDiscountProduct = isAlphaPrintShop(shopDomain) && isAlphaProProduct(product.id);
+  const existingBuilderConfig = config
+    ? {
+        ...DEFAULT_BUILDER_CONFIG,
+        ...((config.builderConfig as BuilderConfig | null) || {}),
+        artboardMarginIn: Math.max(
+          0.125,
+          Number((config.builderConfig as BuilderConfig | null)?.artboardMarginIn ?? DEFAULT_BUILDER_CONFIG.artboardMarginIn)
+        ),
+        imageMarginIn: Math.max(
+          0.125,
+          Number((config.builderConfig as BuilderConfig | null)?.imageMarginIn ?? DEFAULT_BUILDER_CONFIG.imageMarginIn)
+        ),
+      }
+    : DEFAULT_BUILDER_CONFIG;
+  const builderConfigForResponse = applyAlphaProBuilderDefaults(
+    shopDomain,
+    product.id,
+    existingBuilderConfig as unknown as Record<string, unknown>
+  ) as unknown as BuilderConfig;
+
   return json({
     shop: { domain: shopDomain },
+    alphaProDiscountProduct,
     product: {
       id: product.id,
       title: product.title,
@@ -335,25 +374,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       extraQuestions: (config.extraQuestions as ExtraQuestion[]) || [],
       tshirtEnabled: config.tshirtEnabled ?? false,
       tshirtConfig: (config.tshirtConfig as TshirtConfig) || null,
-      builderConfig: {
-        ...DEFAULT_BUILDER_CONFIG,
-        ...((config.builderConfig as BuilderConfig | null) || {}),
-        artboardMarginIn: Math.max(
-          0.125,
-          Number((config.builderConfig as BuilderConfig | null)?.artboardMarginIn ?? DEFAULT_BUILDER_CONFIG.artboardMarginIn)
-        ),
-        imageMarginIn: Math.max(
-          0.125,
-          Number((config.builderConfig as BuilderConfig | null)?.imageMarginIn ?? DEFAULT_BUILDER_CONFIG.imageMarginIn)
-        ),
-      },
+      builderConfig: builderConfigForResponse,
     } : {
       mode: "dtf",
       uploadEnabled: true,
       extraQuestions: [] as ExtraQuestion[],
       tshirtEnabled: false,
       tshirtConfig: null as TshirtConfig | null,
-      builderConfig: DEFAULT_BUILDER_CONFIG,
+      builderConfig: builderConfigForResponse,
     },
   });
 }
@@ -378,8 +406,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const formData = await request.formData();
   const action = formData.get("_action");
 
-  const productGid = productId.startsWith("gid://") 
-    ? productId 
+  const productGid = productId.startsWith("gid://")
+    ? productId
     : `gid://shopify/Product/${productId}`;
 
   if (action === "save") {
@@ -394,15 +422,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
     let tshirtConfig: TshirtConfig | null = null;
     let builderConfig: BuilderConfig = DEFAULT_BUILDER_CONFIG;
 
-    // FAZ 1 - ADM-003: Validate and sanitize input with Zod
+
     try {
       if (extraQuestionsJson) {
         const parsed = JSON.parse(extraQuestionsJson);
         const validationResult = ExtraQuestionsArraySchema.safeParse(parsed);
         if (!validationResult.success) {
           console.error("[ADM-003] ExtraQuestions validation failed:", validationResult.error.errors);
-          return json({ 
-            error: "Invalid extra questions format: " + validationResult.error.errors[0]?.message 
+          return json({
+            error: "Invalid extra questions format: " + validationResult.error.errors[0]?.message
           }, { status: 400 });
         }
         extraQuestions = validationResult.data;
@@ -412,8 +440,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
         const validationResult = TshirtConfigSchema.safeParse(parsed);
         if (!validationResult.success) {
           console.error("[ADM-003] TshirtConfig validation failed:", validationResult.error.errors);
-          return json({ 
-            error: "Invalid T-Shirt config format: " + validationResult.error.errors[0]?.message 
+          return json({
+            error: "Invalid T-Shirt config format: " + validationResult.error.errors[0]?.message
           }, { status: 400 });
         }
         tshirtConfig = validationResult.data;
@@ -449,7 +477,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return json({ error: "Invalid JSON data" }, { status: 400 });
     }
 
-    // Upsert config - using raw object to bypass type checking for new fields
+    builderConfig = applyAlphaProBuilderDefaults(
+      shopDomain,
+      productGid,
+      builderConfig as unknown as Record<string, unknown>
+    ) as unknown as BuilderConfig;
+
+
     const updateData = {
       mode,
       enabled: uploadEnabled,
@@ -460,7 +494,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       builderConfig: builderConfig as any,
       updatedAt: new Date(),
     };
-    
+
     const createData = {
       shopId: shop.id,
       productId: productGid,
@@ -491,13 +525,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function ProductConfigurePage() {
-  const { shop, product, allProducts, config } = useLoaderData<typeof loader>();
+  const { shop, product, allProducts, config, alphaProDiscountProduct } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>() as { success?: boolean; message?: string; error?: string } | null;
   const navigation = useNavigation();
   const navigate = useNavigate();
   const isLoading = navigation.state === "submitting";
 
-  // Form state
+
   const [mode, setMode] = useState(config.mode);
   const [uploadEnabled, setUploadEnabled] = useState(config.uploadEnabled);
   const [tshirtEnabled, setTshirtEnabled] = useState(config.tshirtEnabled);
@@ -522,7 +556,66 @@ export default function ProductConfigurePage() {
     imageMarginIn: Math.max(0.125, Number(config.builderConfig?.imageMarginIn ?? DEFAULT_BUILDER_CONFIG.imageMarginIn)),
   });
 
-  // Question modal state
+  const setAlphaProTier = useCallback((
+    index: number,
+    field: "min_qty" | "max_qty" | "price_per_sqin" | "label" | "popular",
+    value: string | boolean
+  ) => {
+    setBuilderConfig((prev) => {
+      const tiers = (prev.volumeDiscountTiers?.length ? prev.volumeDiscountTiers : ALPHA_PRO_DISCOUNT_TIERS)
+        .map((tier) => ({ ...tier }));
+      const currentTier = tiers[index];
+      if (!currentTier) return prev;
+
+      if (field === "popular") {
+        currentTier.popular = Boolean(value);
+      } else if (field === "label") {
+        currentTier.label = String(value || "").trim();
+      } else {
+        const numeric = Number(String(value).replace(",", "."));
+        if (field === "max_qty" && String(value).trim() === "") {
+          currentTier.max_qty = null;
+        } else if (Number.isFinite(numeric) && numeric >= 0) {
+          if (field === "price_per_sqin") {
+            currentTier.price_per_sqin = numeric;
+            currentTier.price_per_inch = numeric;
+          } else if (field === "min_qty") {
+            currentTier.min_qty = Math.floor(numeric);
+          } else if (field === "max_qty") {
+            currentTier.max_qty = Math.floor(numeric);
+          }
+        }
+      }
+
+      return {
+        ...prev,
+        volumeDiscountTierUnit: "linear_inches",
+        volumeDiscountTiers: tiers,
+        alphaProDiscount: {
+          ...(prev.alphaProDiscount || {}),
+          enabled: true,
+          unit: "linear_inches",
+          unitLabel: "billable inches",
+        },
+      };
+    });
+  }, []);
+
+  const resetAlphaProTiers = useCallback(() => {
+    setBuilderConfig((prev) => ({
+      ...prev,
+      volumeDiscountTierUnit: "linear_inches",
+      volumeDiscountTiers: ALPHA_PRO_DISCOUNT_TIERS.map((tier) => ({ ...tier })),
+      alphaProDiscount: {
+        ...(prev.alphaProDiscount || {}),
+        enabled: true,
+        unit: "linear_inches",
+        unitLabel: "billable inches",
+      },
+    }));
+  }, []);
+
+
   const [showQuestionModal, setShowQuestionModal] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<ExtraQuestion | null>(null);
   const [newQuestionType, setNewQuestionType] = useState<QuestionType>("text");
@@ -530,7 +623,7 @@ export default function ProductConfigurePage() {
   const [newQuestionOptions, setNewQuestionOptions] = useState("");
   const [newQuestionRequired, setNewQuestionRequired] = useState(false);
 
-  // Add/Edit question
+
   const handleSaveQuestion = useCallback(() => {
     const questionId = editingQuestion?.id || `q_${Date.now()}`;
     const question: ExtraQuestion = {
@@ -590,7 +683,7 @@ export default function ProductConfigurePage() {
       }}
     >
       <Layout>
-        {/* Success/Error Banner */}
+
         {actionData?.success && (
           <Layout.Section>
             <Banner tone="success" title="Configuration saved successfully!" />
@@ -602,14 +695,14 @@ export default function ProductConfigurePage() {
           </Layout.Section>
         )}
 
-        {/* Product Info */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
               <InlineStack gap="400" align="start">
                 {product.image && (
-                  <img 
-                    src={product.image} 
+                  <img
+                    src={product.image}
                     alt={product.title}
                     style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 8 }}
                   />
@@ -635,7 +728,7 @@ export default function ProductConfigurePage() {
           <input type="hidden" name="tshirtConfig" value={JSON.stringify(tshirtConfig)} />
           <input type="hidden" name="builderConfig" value={JSON.stringify(builderConfig)} />
 
-          {/* Mode Selection */}
+
           <Layout.Section>
             <Card>
               <BlockStack gap="400">
@@ -643,7 +736,7 @@ export default function ProductConfigurePage() {
                 <Text as="p" tone="subdued">
                   Select the upload mode for this product. Each mode has different features and customer experience.
                 </Text>
-                
+
                 <BlockStack gap="200">
                   <RadioButton
                     label="DTF Transfer"
@@ -797,14 +890,98 @@ export default function ProductConfigurePage() {
             </Card>
           </Layout.Section>
 
-          {/* Extra Questions */}
+          {alphaProDiscountProduct && (
+            <Layout.Section>
+              <Card>
+                <BlockStack gap="400">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <BlockStack gap="100">
+                      <Text as="h2" variant="headingMd">Alpha Pro Inch Discounts</Text>
+                      <Text as="p" tone="subdued">
+                        These thresholds are billable gang-sheet inches, not cart copies. They are only shown for Alpha Print's DTF/UV Gang Sheet Pro products.
+                      </Text>
+                    </BlockStack>
+                    <Button onClick={resetAlphaProTiers}>Reset Alpha defaults</Button>
+                  </InlineStack>
+
+                  <Banner tone="success">
+                    <p>
+                      Storefront pricing will use the measured sheet length × requested copies to choose the active tier.
+                      Current unit: <strong>billable inches</strong>.
+                    </p>
+                  </Banner>
+
+                  <InlineStack gap="300" blockAlign="center">
+                    <Badge tone="success">Alpha only</Badge>
+                    <Badge tone="info">1 / 250 / 500 inch breaks</Badge>
+                    <Badge tone="attention">Customer offer copy enabled</Badge>
+                  </InlineStack>
+
+                  <BlockStack gap="300">
+                    {(builderConfig.volumeDiscountTiers?.length
+                      ? builderConfig.volumeDiscountTiers
+                      : ALPHA_PRO_DISCOUNT_TIERS
+                    ).map((tier, index) => (
+                      <Box
+                        key={`alpha-tier-${index}`}
+                        padding="300"
+                        borderWidth="025"
+                        borderColor="border"
+                        borderRadius="200"
+                      >
+                        <InlineGrid columns={{ xs: 1, md: "1fr 1fr 1fr 1fr auto" }} gap="300">
+                          <TextField
+                            label="Min inches"
+                            autoComplete="off"
+                            type="number"
+                            value={String(tier.min_qty ?? "")}
+                            onChange={(value) => setAlphaProTier(index, "min_qty", value)}
+                          />
+                          <TextField
+                            label="Max inches"
+                            autoComplete="off"
+                            type="number"
+                            value={tier.max_qty == null ? "" : String(tier.max_qty)}
+                            placeholder="No limit"
+                            onChange={(value) => setAlphaProTier(index, "max_qty", value)}
+                          />
+                          <TextField
+                            label="Price / inch"
+                            autoComplete="off"
+                            type="text"
+                            inputMode="decimal"
+                            prefix="$"
+                            value={String(tier.price_per_inch ?? tier.price_per_sqin ?? "")}
+                            onChange={(value) => setAlphaProTier(index, "price_per_sqin", value)}
+                          />
+                          <TextField
+                            label="Customer label"
+                            autoComplete="off"
+                            value={String(tier.label || "")}
+                            onChange={(value) => setAlphaProTier(index, "label", value)}
+                          />
+                          <Checkbox
+                            label="Popular"
+                            checked={Boolean(tier.popular)}
+                            onChange={(value) => setAlphaProTier(index, "popular", value)}
+                          />
+                        </InlineGrid>
+                      </Box>
+                    ))}
+                  </BlockStack>
+                </BlockStack>
+              </Card>
+            </Layout.Section>
+          )}
+
+
           <Layout.Section>
             <Card>
               <BlockStack gap="400">
                 <InlineStack align="space-between">
                   <Text as="h2" variant="headingMd">❓ Extra Questions</Text>
-                  <Button 
-                    icon={PlusIcon} 
+                  <Button
+                    icon={PlusIcon}
                     onClick={() => {
                       resetQuestionForm();
                       setShowQuestionModal(true);
@@ -813,7 +990,7 @@ export default function ProductConfigurePage() {
                     Add Question
                   </Button>
                 </InlineStack>
-                
+
                 <Text as="p" tone="subdued">
                   Add custom questions for customers to answer when uploading their design
                 </Text>
@@ -856,12 +1033,12 @@ export default function ProductConfigurePage() {
             </Card>
           </Layout.Section>
 
-          {/* T-Shirt Option */}
+
           <Layout.Section>
             <Card>
               <BlockStack gap="400">
                 <Text as="h2" variant="headingMd">👕 T-Shirt Add-on</Text>
-                
+
                 <Checkbox
                   label='Show "I want this on a T-Shirt too!" button'
                   helpText="Allows customers to add their design to a T-Shirt in addition to the DTF transfer"
@@ -872,14 +1049,14 @@ export default function ProductConfigurePage() {
                 {tshirtEnabled && (
                   <>
                     <Divider />
-                    
-                    {/* T-Shirt Product Selection */}
+
+
                     <BlockStack gap="300">
                       <Text as="h3" variant="headingSm">🎯 Select T-Shirt Product</Text>
                       <Text as="p" tone="subdued">
                         Choose the T-Shirt product that will be added to cart when customer clicks "I want this on a T-Shirt too!"
                       </Text>
-                      
+
                       <Select
                         label="T-Shirt Product"
                         options={[
@@ -914,7 +1091,7 @@ export default function ProductConfigurePage() {
                         }}
                         helpText="Products with ✅ have Color and Size variants. Products with ⚠️ are missing variants."
                       />
-                      
+
                       {tshirtConfig.tshirtProductId && (
                         <Banner tone="success">
                           <p>✅ Selected: <strong>{tshirtConfig.tshirtProductTitle}</strong></p>
@@ -922,14 +1099,14 @@ export default function ProductConfigurePage() {
                       )}
                     </BlockStack>
 
-                    {/* Variant Status */}
+
                     {tshirtConfig.tshirtProductId && (
                       <>
                         <Divider />
-                        
+
                         <BlockStack gap="300">
                           <Text as="h3" variant="headingSm">Variant Status</Text>
-                          
+
                           <InlineStack gap="400">
                             <Box>
                               <InlineStack gap="200">
@@ -943,7 +1120,7 @@ export default function ProductConfigurePage() {
                                 </Text>
                               </InlineStack>
                             </Box>
-                            
+
                             <Box>
                               <InlineStack gap="200">
                                 <Icon source={tshirtConfig.sizeValues?.length > 0 ? CheckCircleIcon : AlertCircleIcon} />
@@ -967,23 +1144,23 @@ export default function ProductConfigurePage() {
                               </p>
                             </Banner>
                           )}
-                          
+
                           {tshirtConfig.colorValues?.length > 0 && tshirtConfig.sizeValues?.length > 0 && (
                             <>
-                              {/* FAZ 3 - ADM-002: Show variant count vs option combinations */}
+
                               {(() => {
                                 const selectedProduct = allProducts.find((p: any) => p.id === tshirtConfig.tshirtProductId);
                                 const expectedVariants = (tshirtConfig.colorValues?.length || 0) * (tshirtConfig.sizeValues?.length || 0);
                                 const actualVariants = selectedProduct?.variantCount || 0;
                                 const hasAllVariants = actualVariants >= expectedVariants;
-                                
+
                                 return (
                                   <Banner tone={hasAllVariants ? "success" : "warning"}>
                                     <p>
                                       {hasAllVariants ? '✅' : '⚠️'} Product configured! Colors: {tshirtConfig.colorValues.join(', ')} | Sizes: {tshirtConfig.sizeValues.join(', ')}
                                       <br />
                                       <Text as="span" tone="subdued">
-                                        Actual variants: {actualVariants} / Expected: {expectedVariants} 
+                                        Actual variants: {actualVariants} / Expected: {expectedVariants}
                                         {!hasAllVariants && ' - Not all color/size combinations have variants!'}
                                       </Text>
                                     </p>
@@ -998,7 +1175,7 @@ export default function ProductConfigurePage() {
 
                     <Divider />
 
-                    {/* T-Shirt Config */}
+
                     <FormLayout>
                       <FormLayout.Group>
                         <TextField
@@ -1047,18 +1224,18 @@ export default function ProductConfigurePage() {
           </Layout.Section>
         </Form>
 
-        {/* Snippet Instructions */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
               <Text as="h2" variant="headingMd">🔧 Theme Integration</Text>
-              
+
               <Banner tone="info">
                 <p><strong>Important:</strong> Theme App Extension blocks must be added via Theme Editor, not code.</p>
               </Banner>
-              
+
               <Text as="h3" variant="headingSm">How to Add the Upload Widget:</Text>
-              
+
               <BlockStack gap="200">
                 <Text as="p">
                   <strong>Step 1:</strong> Go to your Shopify Admin → Online Store → Themes → Customize
@@ -1076,12 +1253,12 @@ export default function ProductConfigurePage() {
                   <strong>Step 5:</strong> Position the block where you want it and Save
                 </Text>
               </BlockStack>
-              
+
               <Divider />
-              
+
               <Box padding="200" background="bg-surface-secondary" borderRadius="100">
                 <Text as="p" tone="subdued">
-                  ⚠️ Note: The old method using render tags does NOT work with Theme App Extensions. 
+                  ⚠️ Note: The old method using render tags does NOT work with Theme App Extensions.
                   You must use the Theme Editor to add app blocks.
                 </Text>
               </Box>
@@ -1090,7 +1267,7 @@ export default function ProductConfigurePage() {
         </Layout.Section>
       </Layout>
 
-      {/* Question Modal */}
+
       <Modal
         open={showQuestionModal}
         onClose={() => setShowQuestionModal(false)}

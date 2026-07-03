@@ -1,21 +1,21 @@
-/**
- * T-Shirt Sizes API
- * =================
- * FAZ 5: API Endpoints
- * 
- * GET /api/tshirt/sizes/:productId?shop=xxx.myshopify.com
- * 
- * Returns available sizes for a specific t-shirt product.
- * Fetches from Shopify product variants.
- * 
- * Response: { sizes: [{ id, name, variantId, price, available }] }
- */
+
+
+
+
+
+
+
+
+
+
+
+
 
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, getCorsHeaders } from "~/lib/cors.server";
 import prisma from "~/lib/prisma.server";
 
-// Default sizes when no product specified
+
 const DEFAULT_SIZES = [
   { id: "xs", name: "XS", variantId: null, price: 0, priceModifier: 0, available: true },
   { id: "s", name: "S", variantId: null, price: 0, priceModifier: 0, available: true },
@@ -26,7 +26,7 @@ const DEFAULT_SIZES = [
   { id: "3xl", name: "3XL", variantId: null, price: 5, priceModifier: 5, available: true },
 ];
 
-// Size price modifiers (larger sizes cost more)
+
 const SIZE_PRICE_MODIFIERS: Record<string, number> = {
   'xs': 0, 'XS': 0,
   's': 0, 'S': 0,
@@ -39,20 +39,20 @@ const SIZE_PRICE_MODIFIERS: Record<string, number> = {
   '5xl': 8, '5XL': 8,
 };
 
-// Helper to create cached CORS JSON response
+
 function cachedCorsJson<T>(data: T, request: Request, options: { status?: number; maxAge?: number } = {}) {
   const corsHeaders = getCorsHeaders(request);
   const headers = new Headers();
-  
+
   for (const [key, value] of Object.entries(corsHeaders)) {
     if (value) headers.set(key, value);
   }
-  
-  // Cache for specified time (default 2 minutes for inventory)
+
+
   const maxAge = options.maxAge ?? 120;
   headers.set('Cache-Control', `public, max-age=${maxAge}, s-maxage=${maxAge}`);
   headers.set('Content-Type', 'application/json');
-  
+
   return new Response(JSON.stringify(data), {
     status: options.status || 200,
     headers,
@@ -60,7 +60,7 @@ function cachedCorsJson<T>(data: T, request: Request, options: { status?: number
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  // Handle CORS preflight
+
   if (request.method === "OPTIONS") {
     return handleCorsOptions(request);
   }
@@ -69,7 +69,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const shopDomain = url.searchParams.get("shop");
 
-  // If no product specified, return default sizes
+
   if (!productId) {
     return cachedCorsJson({
       sizes: DEFAULT_SIZES,
@@ -77,7 +77,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     }, request);
   }
 
-  // If no shop specified, return defaults
+
   if (!shopDomain) {
     return cachedCorsJson({
       sizes: DEFAULT_SIZES,
@@ -86,7 +86,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   try {
-    // Find shop with access token
+
     const shop = await prisma.shop.findUnique({
       where: { shopDomain },
       select: {
@@ -103,12 +103,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       }, request);
     }
 
-    // Normalize product ID
+
     const productGid = productId.startsWith("gid://")
       ? productId
       : `gid://shopify/Product/${productId}`;
 
-    // Verify product is configured for customization in this shop
+
     const productConfig = await prisma.productConfig.findFirst({
       where: { shopId: shop.id, productId: productGid },
       select: { id: true },
@@ -121,7 +121,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       }, request);
     }
 
-    // Fetch product variants from Shopify
+
     const response = await fetch(
       `https://${shopDomain}/admin/api/2025-10/graphql.json`,
       {
@@ -183,7 +183,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       }, request);
     }
 
-    // Extract sizes from variants
+
     const sizesMap = new Map<string, {
       id: string;
       name: string;
@@ -195,18 +195,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
     for (const edge of product.variants.edges) {
       const variant = edge.node;
-      
-      // Find size option
+
+
       const sizeOption = variant.selectedOptions.find(
-        (opt: { name: string; value: string }) => 
+        (opt: { name: string; value: string }) =>
           opt.name.toLowerCase() === 'size'
       );
 
       if (sizeOption) {
         const sizeName = sizeOption.value;
         const sizeId = sizeName.toLowerCase().replace(/\s+/g, '');
-        
-        // Only add if not already in map (first variant wins)
+
+
         if (!sizesMap.has(sizeId)) {
           sizesMap.set(sizeId, {
             id: sizeId,
@@ -220,7 +220,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       }
     }
 
-    // Convert to sorted array
+
     const sizeOrder = ['xs', 's', 'm', 'l', 'xl', '2xl', '3xl', '4xl', '5xl'];
     const sizes = Array.from(sizesMap.values()).sort((a, b) => {
       const aIdx = sizeOrder.indexOf(a.id);
@@ -237,7 +237,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   } catch (error) {
     console.error("[T-Shirt Sizes API] Error:", error);
-    
+
     return cachedCorsJson({
       sizes: DEFAULT_SIZES,
       source: "default",

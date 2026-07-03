@@ -1,12 +1,12 @@
-/**
- * Visitor API Endpoint
- * Handles visitor identification and tracking
- *
- * @route POST /api/v1/visitors - Upsert visitor + session
- * @route GET /api/v1/visitors - Get visitor stats (admin)
- *
- * ⚠️ This is a NEW endpoint - does not modify existing flows
- */
+
+
+
+
+
+
+
+
+
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from '@remix-run/node'
 import { json } from '@remix-run/node'
@@ -20,9 +20,9 @@ import {
   type VisitorIdentity,
 } from '~/lib/visitor.server'
 
-// ═══════════════════════════════════════════════════════════════════════════
-// TYPES
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 interface VisitorUpsertRequest {
   shopDomain: string
@@ -31,12 +31,12 @@ interface VisitorUpsertRequest {
   attribution: AttributionData
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// LOADER - GET /api/v1/visitors (Admin stats)
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  // Authenticate via API key (Enterprise plan required)
+
   const authResult = await authenticateApiRequest(request)
   if (authResult instanceof Response) return authResult
 
@@ -44,7 +44,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const url = new URL(request.url)
 
-  // Parse date range if provided
+
   const startDate = url.searchParams.get('start')
   const endDate = url.searchParams.get('end')
 
@@ -64,9 +64,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// ACTION - POST /api/v1/visitors (Upsert visitor)
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
@@ -81,7 +81,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  // Validate required fields
+
   const { shopDomain, identity, device, attribution } = body
 
   if (!shopDomain) {
@@ -95,7 +95,7 @@ export async function action({ request }: ActionFunctionArgs) {
     )
   }
 
-  // Find shop
+
   const shop = await prisma.shop.findUnique({
     where: { shopDomain },
     select: { id: true },

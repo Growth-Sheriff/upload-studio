@@ -1,8 +1,8 @@
--- Migration: Add Commission table for per-order commission tracking
--- Commission rate: 1.5% of order total
--- Payment method: PayPal (manual)
 
--- CreateTable
+
+
+
+
 CREATE TABLE "commissions" (
     "id" TEXT NOT NULL,
     "shop_id" TEXT NOT NULL,
@@ -21,14 +21,14 @@ CREATE TABLE "commissions" (
     CONSTRAINT "commissions_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex (unique: one commission per order per shop)
+
 CREATE UNIQUE INDEX "commission_shop_order" ON "commissions"("shop_id", "order_id");
 
--- CreateIndex (filter by status)
+
 CREATE INDEX "commissions_shop_id_status_idx" ON "commissions"("shop_id", "status");
 
--- CreateIndex (filter by date)
+
 CREATE INDEX "commissions_shop_id_created_at_idx" ON "commissions"("shop_id", "created_at");
 
--- AddForeignKey
+
 ALTER TABLE "commissions" ADD CONSTRAINT "commissions_shop_id_fkey" FOREIGN KEY ("shop_id") REFERENCES "shops"("id") ON DELETE CASCADE ON UPDATE CASCADE;

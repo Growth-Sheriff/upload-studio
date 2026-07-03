@@ -3,6 +3,7 @@ import {
   applyCustomerPricingDefaultsForShop,
   DTF_PRINTHOUSE_SHOP_DOMAIN,
   normalizeCustomerPricingSettings,
+  parseSheetSizeFromTitle,
   resolveCustomerPricingContext,
 } from './customerPricing.server'
 
@@ -106,5 +107,18 @@ describe('customer pricing product rules', () => {
     expect(matchingContext.productRule?.productLabel).toBe('Configured Product')
     expect(nonMatchingContext.hasCustomPricing).toBe(false)
     expect(nonMatchingContext.pricePerInch).toBeNull()
+  })
+})
+
+describe('parseSheetSizeFromTitle', () => {
+  it('parses composite Shopify variant titles', () => {
+    expect(parseSheetSizeFromTitle('22 x 12 / Matte')).toEqual({
+      widthIn: 22,
+      lengthIn: 12,
+    })
+    expect(parseSheetSizeFromTitle('22 by 60 / Gloss')).toEqual({
+      widthIn: 22,
+      lengthIn: 60,
+    })
   })
 })

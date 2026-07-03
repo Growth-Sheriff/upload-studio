@@ -3,29 +3,29 @@ import { json } from "@remix-run/node";
 import fs from "fs/promises";
 import path from "path";
 
-// Rate limiting - max 100 logs per IP per minute
+
 const rateLimits = new Map<string, { count: number; resetTime: number }>();
 
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
   const limit = rateLimits.get(ip);
-  
+
   if (!limit || now > limit.resetTime) {
     rateLimits.set(ip, { count: 1, resetTime: now + 60000 });
     return true;
   }
-  
+
   if (limit.count >= 100) {
     return false;
   }
-  
+
   limit.count++;
   return true;
 }
 
-// POST /api/debug/log
+
 export async function action({ request }: ActionFunctionArgs) {
-  // CORS headers
+
   const headers = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -37,11 +37,11 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   try {
-    // Rate limiting
-    const ip = request.headers.get("x-forwarded-for") || 
-               request.headers.get("x-real-ip") || 
+
+    const ip = request.headers.get("x-forwarded-for") ||
+               request.headers.get("x-real-ip") ||
                "unknown";
-    
+
     if (!checkRateLimit(ip)) {
       return json({ error: "Rate limit exceeded" }, { status: 429, headers });
     }
@@ -53,7 +53,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: "Invalid logs" }, { status: 400, headers });
     }
 
-    // Format log entry
+
     const logEntry = {
       timestamp: timestamp || new Date().toISOString(),
       ip,
@@ -66,18 +66,18 @@ export async function action({ request }: ActionFunctionArgs) {
       }))
     };
 
-    // Write to log file
+
     const logDir = process.env.LOG_DIR || "/var/log/upload-lift";
     const logFile = path.join(logDir, "client.log");
-    
-    // Ensure directory exists
+
+
     await fs.mkdir(logDir, { recursive: true }).catch(() => {});
-    
-    // Append to file
+
+
     const logLine = JSON.stringify(logEntry) + "\n";
     await fs.appendFile(logFile, logLine).catch(console.error);
 
-    // Also output to console for journalctl
+
     console.log(`[ClientLog] ${ip} | ${logs.length} entries | ${url}`);
     logs.forEach((log: any) => {
       console.log(`  [${log.level?.toUpperCase() || 'LOG'}] ${log.message}`);
@@ -90,7 +90,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 }
 
-// Handle OPTIONS for CORS preflight
+
 export async function loader() {
   return new Response(null, {
     status: 204,

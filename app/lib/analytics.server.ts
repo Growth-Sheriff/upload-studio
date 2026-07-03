@@ -1,24 +1,24 @@
-/**
- * Analytics Server Utilities
- * Comprehensive analytics with proper shop ID handling
- *
- * @module analytics.server
- * @version 2.0.0
- */
+
+
+
+
+
+
+
 
 import type { Decimal } from '@prisma/client/runtime/library'
 import prisma from './prisma.server'
 
-// Helper to convert Decimal to number
+
 function toNumber(value: number | Decimal | null | undefined): number {
   if (value === null || value === undefined) return 0
   if (typeof value === 'number') return value
   return Number(value)
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// HELPER: Get Shop ID from domain
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 export async function getShopIdFromDomain(shopDomain: string): Promise<string | null> {
   const shop = await prisma.shop.findUnique({
@@ -28,9 +28,9 @@ export async function getShopIdFromDomain(shopDomain: string): Promise<string | 
   return shop?.id || null
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// VISITOR ANALYTICS
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 export interface VisitorStats {
   totalVisitors: number
@@ -183,7 +183,7 @@ export async function getDailyVisitors(
   startDate: Date,
   endDate: Date
 ): Promise<DailyVisitors[]> {
-  // Get sessions grouped by day
+
   const sessions = await prisma.visitorSession.findMany({
     where: { shopId, startedAt: { gte: startDate, lte: endDate } },
     select: { startedAt: true, visitorId: true },
@@ -194,7 +194,7 @@ export async function getDailyVisitors(
     select: { firstSeenAt: true },
   })
 
-  // Group by day
+
   const dayMap = new Map<string, { visitors: Set<string>; sessions: number; newVisitors: number }>()
 
   sessions.forEach((s) => {
@@ -243,16 +243,16 @@ export async function getTopVisitors(shopId: string, limit = 20): Promise<TopVis
     },
   })
 
-  // Map customerEmail to email for consistent interface
+
   return visitors.map((v) => ({
     ...v,
     email: v.customerEmail,
   }))
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// ATTRIBUTION ANALYTICS
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 export interface AttributionStats {
   totalSessions: number
@@ -317,7 +317,7 @@ export async function getAttributionStats(
     }),
   ])
 
-  // Top source
+
   const topSourceResult = await prisma.visitorSession.groupBy({
     by: ['utmSource'],
     where: { shopId, startedAt: { gte: startDate, lte: endDate }, utmSource: { not: null } },
@@ -326,7 +326,7 @@ export async function getAttributionStats(
     take: 1,
   })
 
-  // Top medium
+
   const topMediumResult = await prisma.visitorSession.groupBy({
     by: ['utmMedium'],
     where: { shopId, startedAt: { gte: startDate, lte: endDate }, utmMedium: { not: null } },
@@ -335,7 +335,7 @@ export async function getAttributionStats(
     take: 1,
   })
 
-  // Paid clicks
+
   const paidClicks = await prisma.visitorSession.count({
     where: {
       shopId,
@@ -377,7 +377,7 @@ export async function getSourceBreakdown(
     source: s.utmSource || 'direct',
     sessions: s._count.id,
     uploads: s._sum.uploadsInSession || 0,
-    orders: 0, // Would need order data
+    orders: 0,
     conversionRate: s._count.id > 0 ? ((s._sum.uploadsInSession || 0) / s._count.id) * 100 : 0,
   }))
 }
@@ -477,9 +477,9 @@ export async function getReferrerBreakdown(
   }))
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// COHORT ANALYTICS
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 export interface WeeklyCohort {
   weekStart: string
@@ -499,12 +499,12 @@ export async function getWeeklyCohorts(shopId: string, weeks = 8): Promise<Weekl
     const weekStart = new Date(now)
     weekStart.setDate(weekStart.getDate() - 7 * (i + 1))
     weekStart.setHours(0, 0, 0, 0)
-    weekStart.setDate(weekStart.getDate() - weekStart.getDay()) // Start of week
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay())
 
     const weekEnd = new Date(weekStart)
     weekEnd.setDate(weekEnd.getDate() + 7)
 
-    // Get visitors who first appeared in this week
+
     const cohortVisitors = await prisma.visitor.findMany({
       where: {
         shopId,
@@ -529,7 +529,7 @@ export async function getWeeklyCohorts(shopId: string, weeks = 8): Promise<Weekl
       continue
     }
 
-    // Calculate retention for each subsequent week
+
     const retentionCounts = [0, 0, 0, 0, 0]
 
     for (let w = 0; w <= 4 && i - w >= 0; w++) {
@@ -548,7 +548,7 @@ export async function getWeeklyCohorts(shopId: string, weeks = 8): Promise<Weekl
           },
         })
 
-        // Count unique visitors who had sessions
+
         const uniqueActive = await prisma.visitorSession.groupBy({
           by: ['visitorId'],
           where: {
@@ -576,9 +576,9 @@ export async function getWeeklyCohorts(shopId: string, weeks = 8): Promise<Weekl
   return cohorts
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// AI INSIGHTS
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 export interface AIInsight {
   id: string
@@ -597,16 +597,16 @@ export async function generateAIInsights(
 ): Promise<AIInsight[]> {
   const insights: AIInsight[] = []
 
-  // Get current period stats
+
   const stats = await getVisitorStats(shopId, startDate, endDate)
 
-  // Compare with previous period
+
   const periodLength = endDate.getTime() - startDate.getTime()
   const prevStart = new Date(startDate.getTime() - periodLength)
   const prevEnd = startDate
   const prevStats = await getVisitorStats(shopId, prevStart, prevEnd)
 
-  // Visitor growth
+
   if (prevStats.totalVisitors > 0) {
     const growth = ((stats.newVisitors - prevStats.newVisitors) / prevStats.newVisitors) * 100
     if (growth > 20) {
@@ -632,7 +632,7 @@ export async function generateAIInsights(
     }
   }
 
-  // Conversion rate insights
+
   if (stats.uploadConversionRate > 15) {
     insights.push({
       id: 'good-upload-rate',
@@ -654,7 +654,7 @@ export async function generateAIInsights(
     })
   }
 
-  // Returning visitors
+
   const returnRate =
     stats.totalVisitors > 0 ? (stats.returningVisitors / stats.totalVisitors) * 100 : 0
   if (returnRate > 30) {
@@ -668,7 +668,7 @@ export async function generateAIInsights(
     })
   }
 
-  // Device insights
+
   const devices = await getVisitorsByDevice(shopId)
   const mobileDevice = devices.find((d) => d.type === 'mobile')
   if (mobileDevice && mobileDevice.percentage > 60) {
@@ -682,7 +682,7 @@ export async function generateAIInsights(
     })
   }
 
-  // Add suggestion if no insights generated
+
   if (insights.length === 0) {
     insights.push({
       id: 'collect-more-data',
@@ -696,9 +696,9 @@ export async function generateAIInsights(
   return insights
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// UPLOAD ANALYTICS
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 export interface UploadStats {
   totalUploads: number
@@ -735,7 +735,7 @@ export async function getUploadStats(
     }),
   ])
 
-  // Get file size stats from UploadItem (where fileSize is stored)
+
   const uploadIds = await prisma.upload.findMany({
     where: { shopId, createdAt: { gte: startDate, lte: endDate } },
     select: { id: true },
@@ -759,9 +759,9 @@ export async function getUploadStats(
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// CUSTOMER SEGMENTATION ANALYTICS
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 export interface CustomerSegmentation {
   loggedInCustomers: number
@@ -802,7 +802,7 @@ export async function getCustomerSegmentation(
   startDate: Date,
   endDate: Date
 ): Promise<CustomerSegmentation> {
-  // Logged-in customers (have customerEmail or customerId)
+
   const [
     loggedInCustomers,
     anonymousVisitors,
@@ -810,7 +810,7 @@ export async function getCustomerSegmentation(
     anonymousUploads,
     uploadsWithOrders,
   ] = await Promise.all([
-    // Unique logged-in customers
+
     prisma.upload
       .groupBy({
         by: ['customerId'],
@@ -822,7 +822,7 @@ export async function getCustomerSegmentation(
       })
       .then((r) => r.length),
 
-    // Anonymous visitors (no customerId)
+
     prisma.upload.count({
       where: {
         shopId,
@@ -831,7 +831,7 @@ export async function getCustomerSegmentation(
       },
     }),
 
-    // Uploads from logged-in customers
+
     prisma.upload.count({
       where: {
         shopId,
@@ -840,7 +840,7 @@ export async function getCustomerSegmentation(
       },
     }),
 
-    // Uploads from anonymous visitors
+
     prisma.upload.count({
       where: {
         shopId,
@@ -849,7 +849,7 @@ export async function getCustomerSegmentation(
       },
     }),
 
-    // Uploads that resulted in orders
+
     prisma.upload.findMany({
       where: {
         shopId,
@@ -863,7 +863,7 @@ export async function getCustomerSegmentation(
     }),
   ])
 
-  // Calculate orders and revenue by segment
+
   let loggedInOrders = 0
   let anonymousOrders = 0
   let loggedInRevenue = 0
@@ -906,7 +906,7 @@ export async function getCustomerMetrics(
   startDate: Date,
   endDate: Date
 ): Promise<CustomerMetrics> {
-  // Get all uploads with customers
+
   const uploads = await prisma.upload.findMany({
     where: {
       shopId,
@@ -921,7 +921,7 @@ export async function getCustomerMetrics(
     },
   })
 
-  // Group by customer
+
   const customerMap = new Map<
     string,
     {
@@ -957,12 +957,12 @@ export async function getCustomerMetrics(
   const uniqueCustomers = customerMap.size
   const repeatCustomers = Array.from(customerMap.values()).filter((c) => c.uploads > 1).length
 
-  // New customers (first seen in this period)
+
   const newCustomers = Array.from(customerMap.values()).filter(
     (c) => c.firstSeen >= startDate
   ).length
 
-  // Averages
+
   let totalUploads = 0
   let totalOrders = 0
   let totalRevenue = 0
@@ -1005,7 +1005,7 @@ export async function getTopCustomersByValue(
     },
   })
 
-  // Group by customer
+
   const customerMap = new Map<string, CustomerByValue>()
 
   uploads.forEach((u) => {
@@ -1030,7 +1030,7 @@ export async function getTopCustomersByValue(
           existing.firstPurchaseDate = u.orderPaidAt
         }
       }
-      // Update email if we have it
+
       if (u.customerEmail && !existing.customerEmail) {
         existing.customerEmail = u.customerEmail
       }
@@ -1047,15 +1047,15 @@ export async function getTopCustomersByValue(
     }
   })
 
-  // Sort by revenue and return top N
+
   return Array.from(customerMap.values())
     .sort((a, b) => b.totalRevenue - a.totalRevenue)
     .slice(0, limit)
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// FILE METRICS ANALYTICS
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 export interface FileMetrics {
   avgFileSize: number
@@ -1068,7 +1068,7 @@ export interface FileMetrics {
     count: number
     percentage: number
   }[]
-  uploadSpeedAvg: number // bytes per second
+  uploadSpeedAvg: number
 }
 
 export interface FileTypeBreakdown {
@@ -1083,7 +1083,7 @@ export async function getFileMetrics(
   startDate: Date,
   endDate: Date
 ): Promise<FileMetrics> {
-  // Get all upload items in period
+
   const items = await prisma.uploadItem.findMany({
     where: {
       upload: {
@@ -1105,7 +1105,7 @@ export async function getFileMetrics(
     }
   }
 
-  // Calculate stats
+
   const fileSizes = items.map((i) => i.fileSize || 0).filter((s) => s > 0)
   const uploadDurations = items
     .map((i) => (i as any).uploadDurationMs || 0)
@@ -1126,19 +1126,19 @@ export async function getFileMetrics(
   const medianUploadDuration =
     uploadDurations.length > 0 ? uploadDurations[Math.floor(uploadDurations.length / 2)] : 0
 
-  // Calculate upload speed (bytes per second)
+
   let totalSpeed = 0
   let speedCount = 0
   items.forEach((i) => {
     const durationMs = (i as any).uploadDurationMs
     if (i.fileSize && durationMs && durationMs > 0) {
-      totalSpeed += (i.fileSize / durationMs) * 1000 // bytes per second
+      totalSpeed += (i.fileSize / durationMs) * 1000
       speedCount++
     }
   })
   const uploadSpeedAvg = speedCount > 0 ? totalSpeed / speedCount : 0
 
-  // File size distribution
+
   const sizeRanges = [
     { range: '< 500 KB', min: 0, max: 500 * 1024 },
     { range: '500 KB - 1 MB', min: 500 * 1024, max: 1024 * 1024 },
@@ -1196,9 +1196,9 @@ export async function getFileTypeBreakdown(
   }))
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// VISITOR DETAIL ANALYTICS (OS, Screen Resolution)
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 export interface VisitorOS {
   os: string
@@ -1296,9 +1296,9 @@ export async function getVisitorsByLanguage(shopId: string): Promise<VisitorLang
   }))
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// REVENUE ANALYTICS
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 export interface RevenueStats {
   totalRevenue: number
@@ -1319,7 +1319,7 @@ export async function getRevenueStats(
   startDate: Date,
   endDate: Date
 ): Promise<RevenueStats> {
-  // Get uploads with orders
+
   const uploads = await prisma.upload.findMany({
     where: {
       shopId,
@@ -1336,7 +1336,7 @@ export async function getRevenueStats(
     },
   })
 
-  // Total revenue and orders
+
   let totalRevenue = 0
   let totalOrders = 0
   const ordersSet = new Set<string>()
@@ -1351,7 +1351,7 @@ export async function getRevenueStats(
 
   const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0
 
-  // Revenue by mode
+
   const modeMap = new Map<string, { revenue: number; orders: Set<string> }>()
   uploads.forEach((u) => {
     if (!u.orderId) return
@@ -1377,7 +1377,7 @@ export async function getRevenueStats(
     orders: data.orders.size,
   }))
 
-  // Revenue by day
+
   const dayMap = new Map<string, { revenue: number; orders: Set<string> }>()
   uploads.forEach((u) => {
     if (!u.orderId || !u.orderPaidAt) return
@@ -1406,7 +1406,7 @@ export async function getRevenueStats(
     }))
     .sort((a, b) => a.date.localeCompare(b.date))
 
-  // Conversion funnel
+
   const [visitors, uploadsCount, cartAdds] = await Promise.all([
     prisma.visitor.count({
       where: { shopId, firstSeenAt: { gte: startDate, lte: endDate } },
@@ -1438,9 +1438,9 @@ export async function getRevenueStats(
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// ENHANCED AI INSIGHTS
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 export async function generateEnhancedAIInsights(
   shopId: string,
@@ -1449,7 +1449,7 @@ export async function generateEnhancedAIInsights(
 ): Promise<AIInsight[]> {
   const insights: AIInsight[] = []
 
-  // Get all data
+
   const [
     visitorStats,
     uploadStats,
@@ -1468,7 +1468,7 @@ export async function generateEnhancedAIInsights(
     getVisitorsByDevice(shopId),
   ])
 
-  // 1. Customer segmentation insight
+
   if (
     customerSegmentation.loggedInConversionRate >
     customerSegmentation.anonymousConversionRate * 1.5
@@ -1483,7 +1483,7 @@ export async function generateEnhancedAIInsights(
     })
   }
 
-  // 2. Anonymous visitors opportunity
+
   if (customerSegmentation.anonymousVisitors > customerSegmentation.loggedInCustomers * 2) {
     insights.push({
       id: 'anonymous-opportunity',
@@ -1495,9 +1495,9 @@ export async function generateEnhancedAIInsights(
     })
   }
 
-  // 3. File size optimization
+
   if (fileMetrics.avgFileSize > 5 * 1024 * 1024) {
-    // > 5MB
+
     insights.push({
       id: 'large-files',
       type: 'suggestion',
@@ -1508,9 +1508,9 @@ export async function generateEnhancedAIInsights(
     })
   }
 
-  // 4. Upload speed insight
+
   if (fileMetrics.uploadSpeedAvg > 0 && fileMetrics.uploadSpeedAvg < 500 * 1024) {
-    // < 500 KB/s
+
     insights.push({
       id: 'slow-uploads',
       type: 'negative',
@@ -1521,7 +1521,7 @@ export async function generateEnhancedAIInsights(
     })
   }
 
-  // 5. Repeat customer value
+
   if (customerMetrics.repeatCustomers > 0 && customerMetrics.avgRevenuePerCustomer > 0) {
     const repeatRate =
       customerMetrics.uniqueCustomers > 0
@@ -1539,7 +1539,7 @@ export async function generateEnhancedAIInsights(
     }
   }
 
-  // 6. Revenue insight
+
   if (revenueStats.totalRevenue > 0) {
     insights.push({
       id: 'revenue-summary',
@@ -1551,7 +1551,7 @@ export async function generateEnhancedAIInsights(
     })
   }
 
-  // 7. Cart abandonment
+
   if (revenueStats.conversionFunnel.cartAdds > 0 && revenueStats.conversionFunnel.orders > 0) {
     const cartToOrderRate =
       (revenueStats.conversionFunnel.orders / revenueStats.conversionFunnel.cartAdds) * 100
@@ -1567,7 +1567,7 @@ export async function generateEnhancedAIInsights(
     }
   }
 
-  // 8. Mobile optimization
+
   const mobileDevice = deviceData.find((d) => d.type === 'mobile')
   if (mobileDevice && mobileDevice.percentage > 50) {
     insights.push({
@@ -1580,7 +1580,7 @@ export async function generateEnhancedAIInsights(
     })
   }
 
-  // 9. Upload success rate
+
   if (uploadStats.successRate < 90 && uploadStats.totalUploads > 10) {
     insights.push({
       id: 'upload-failures',
@@ -1592,9 +1592,9 @@ export async function generateEnhancedAIInsights(
     })
   }
 
-  // 10. Data transfer volume
+
   if (fileMetrics.totalDataTransferred > 1024 * 1024 * 1024) {
-    // > 1GB
+
     insights.push({
       id: 'high-data-transfer',
       type: 'neutral',
@@ -1605,11 +1605,11 @@ export async function generateEnhancedAIInsights(
     })
   }
 
-  // Sort by priority
+
   const priorityOrder = { high: 0, medium: 1, low: 2 }
   insights.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority])
 
-  // Return at least one insight
+
   if (insights.length === 0) {
     insights.push({
       id: 'gathering-data',
@@ -1620,12 +1620,12 @@ export async function generateEnhancedAIInsights(
     })
   }
 
-  return insights.slice(0, 10) // Return top 10 insights
+  return insights.slice(0, 10)
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// ATTRIBUTION MARKETING RECOMMENDATIONS (10 Ultra-Advanced)
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 export interface MarketingRecommendation {
   id: string
@@ -1648,7 +1648,7 @@ export async function generateAttributionRecommendations(
 ): Promise<MarketingRecommendation[]> {
   const recommendations: MarketingRecommendation[] = []
 
-  // ─── 1. AD PLATFORM ALLOCATION ANALYSIS ──────────────────────
+
   const totalAdClicks = clickIds.total
   if (totalAdClicks > 0) {
     const platforms = [
@@ -1703,7 +1703,7 @@ export async function generateAttributionRecommendations(
     })
   }
 
-  // ─── 2. UTM TRACKING COVERAGE ────────────────────────────────
+
   if (stats.totalSessions > 0) {
     const utmRate = stats.utmPercentage
     if (utmRate < 20) {
@@ -1742,7 +1742,7 @@ export async function generateAttributionRecommendations(
     }
   }
 
-  // ─── 3. SOURCE CONVERSION ROI ANALYSIS ────────────────────────
+
   const sourcesWithData = sources.filter((s) => s.sessions >= 3)
   if (sourcesWithData.length >= 2) {
     const bestConverter = sourcesWithData.reduce((a, b) =>
@@ -1777,7 +1777,7 @@ export async function generateAttributionRecommendations(
     })
   }
 
-  // ─── 4. MEDIUM EFFECTIVENESS ANALYSIS ────────────────────────
+
   const paidMediums = mediums.filter(
     (m) => m.medium === 'cpc' || m.medium === 'paid' || m.medium === 'ppc'
   )
@@ -1816,7 +1816,7 @@ export async function generateAttributionRecommendations(
     })
   }
 
-  // ─── 5. EMAIL MARKETING OPPORTUNITY ──────────────────────────
+
   if (emailSessions === 0 && stats.totalSessions > 20) {
     recommendations.push({
       id: 'email-missing',
@@ -1841,7 +1841,7 @@ export async function generateAttributionRecommendations(
     })
   }
 
-  // ─── 6. SOCIAL MEDIA STRATEGY ────────────────────────────────
+
   if (socialSessions === 0 && stats.totalSessions > 20) {
     recommendations.push({
       id: 'social-missing',
@@ -1867,7 +1867,7 @@ export async function generateAttributionRecommendations(
     })
   }
 
-  // ─── 7. REFERRAL TRAFFIC ANALYSIS ────────────────────────────
+
   const referralTraffic = referrers.find((r) => r.type === 'referral')
   const searchTraffic = referrers.find((r) => r.type === 'search')
   const directTraffic = referrers.find((r) => r.type === 'direct')
@@ -1898,7 +1898,7 @@ export async function generateAttributionRecommendations(
     })
   }
 
-  // ─── 8. CAMPAIGN PERFORMANCE INTEL ────────────────────────────
+
   if (campaigns.length > 0) {
     const topCampaign = campaigns[0]
     const lowPerformers = campaigns.filter(
@@ -1953,7 +1953,7 @@ export async function generateAttributionRecommendations(
     })
   }
 
-  // ─── 9. TIKTOK OPPORTUNITY ────────────────────────────────────
+
   if (clickIds.ttclid === 0 && clickIds.total > 0) {
     recommendations.push({
       id: 'tiktok-opportunity',
@@ -1967,7 +1967,7 @@ export async function generateAttributionRecommendations(
     })
   }
 
-  // ─── 10. RETARGETING OPPORTUNITY ──────────────────────────────
+
   if (stats.totalSessions > 50) {
     const uploadConversionRate = sources.length > 0
       ? sources.reduce((sum, s) => sum + s.uploads, 0) / Math.max(stats.totalSessions, 1) * 100
@@ -1987,7 +1987,7 @@ export async function generateAttributionRecommendations(
     }
   }
 
-  // Sort by impact priority
+
   const impactOrder = { high: 0, medium: 1, low: 2 }
   recommendations.sort((a, b) => impactOrder[a.impact] - impactOrder[b.impact])
 

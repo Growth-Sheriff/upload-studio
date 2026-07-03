@@ -1,33 +1,33 @@
-# ============================================
-# Upload Studio - Multi-Tenant Caddyfile
-# ============================================
-# Wildcard routing: *.uploadstudio.app.techifyboost.com
-# Each subdomain maps to a tenant Docker container port.
-#
-# Deploy: cp deploy/Caddyfile.multi-tenant /etc/caddy/Caddyfile
-#         caddy reload --config /etc/caddy/Caddyfile
-# ============================================
 
-# ─────────────────────────────────────────────
-# Global Options
-# ─────────────────────────────────────────────
+
+
+
+
+
+
+
+
+
+
+
+
 {
-	# On-Demand TLS for wildcard subdomains
+
 	on_demand_tls {
 		interval 10s
 		burst 5
 	}
 }
 
-# ─────────────────────────────────────────────
-# Wildcard Tenant Routing
-# ─────────────────────────────────────────────
+
+
+
 *.uploadstudio.app.techifyboost.com {
 	tls {
 		on_demand
 	}
 
-	# ─── Tenant → Port Mapping ───
+
 	@fastdtftransfer host fastdtftransfer.uploadstudio.app.techifyboost.com
 	handle @fastdtftransfer {
 		reverse_proxy localhost:4001
@@ -78,37 +78,37 @@
 		reverse_proxy localhost:4010
 	}
 
-	# @dtfprintarizona - DISABLED (şimdilik kapalı)
-	# @dtfprintarizona host dtfprintarizona.uploadstudio.app.techifyboost.com
-	# handle @dtfprintarizona {
-	# 	reverse_proxy localhost:4011
-	# }
 
-	# ─── Fallback: unknown subdomain ───
+
+
+
+
+
+
 	handle {
 		respond "Unknown tenant" 404
 	}
 
-	# ─── Common Headers ───
+
 	encode gzip
 
-	# Large upload support (1.5GB)
+
 	request_body {
 		max_size 1500MB
 	}
 
-	# Remove X-Frame-Options for Shopify embedded app
+
 	header -X-Frame-Options
 
-	# Content Security Policy for Shopify admin
+
 	header Content-Security-Policy "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;"
 
-	# Security headers
+
 	header X-Content-Type-Options nosniff
 	header X-XSS-Protection "1; mode=block"
 	header Referrer-Policy strict-origin-when-cross-origin
 
-	# Logging
+
 	log {
 		output file /var/log/caddy/upload-studio.log {
 			roll_size 100mb
@@ -118,9 +118,9 @@
 	}
 }
 
-# ─────────────────────────────────────────────
-# Upload Proxy for BunnyCDN (Bypass Firewall Blocks)
-# ─────────────────────────────────────────────
+
+
+
 upload.uploadstudio.app.techifyboost.com {
 	reverse_proxy https://storage.bunnycdn.com {
 		header_up Host {upstream_hostport}

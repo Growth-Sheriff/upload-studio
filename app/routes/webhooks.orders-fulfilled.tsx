@@ -3,14 +3,14 @@ import { json } from "@remix-run/node";
 import prisma from "~/lib/prisma.server";
 import crypto from "crypto";
 
-// POST /webhooks/orders-fulfilled
-// Shopify webhook for order fulfillment
+
+
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
     return json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  // Verify HMAC
+
   const hmacHeader = request.headers.get("x-shopify-hmac-sha256");
   const shopDomain = request.headers.get("x-shopify-shop-domain");
 
@@ -33,7 +33,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     console.log(`[Webhook] Order fulfilled: ${orderId} from ${shopDomain}`);
 
-    // Find shop
+
     const shop = await prisma.shop.findUnique({
       where: { shopDomain },
     });
@@ -43,13 +43,13 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ received: true });
     }
 
-    // Find related uploads via OrderLink
+
     const orderLinks = await prisma.orderLink.findMany({
       where: { shopId: shop.id, orderId },
       include: { upload: true },
     });
 
-    // Update upload statuses to shipped
+
     for (const link of orderLinks) {
       if (link.upload && link.upload.status === "printed") {
         await prisma.upload.updateMany({
@@ -61,7 +61,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    // Audit log
+
     await prisma.auditLog.create({
       data: {
         shopId: shop.id,

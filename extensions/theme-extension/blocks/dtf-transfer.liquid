@@ -1,39 +1,6 @@
-{% comment %}
-  Upload Studio - DTF Transfer Block
-  =====================================
-  Mode: dtf_transfer (Mod-1)
-  Location: Product page
-
-  This block renders the DTF uploader widget with:
-  - File upload (drag & drop)
-  - Extra questions from merchant config
-  - Size & quantity selection
-  - T-Shirt addon modal (if enabled)
-  - Confirmation screen after cart add
-
-  USAGE: Add this block to your product page in Theme Editor
-
-  Version: 4.1.0 (FAZ 6 - Mobile Experience)
-{% endcomment %}
-
-{% comment %}
-  Load Remote Logger (DEBUG)
-  Captures console logs and sends to server
-{% endcomment %}
 <script src="{{ 'ul-remote-logger.js' | asset_url }}"></script>
-
-{% comment %}
-  Mobile-First Ordering: App blocks appear right after product-main on mobile
-  Forces all app blocks to display before other sections
-{% endcomment %}
 <style>
   @media (max-width: 749px) {
-    /*
-      Strategy: Make product page a flex column and reorder sections
-      App blocks should come immediately after main product section
-    */
-
-    /* Target main product page wrapper - common Shopify theme patterns */
     #MainContent,
     main,
     .main-content,
@@ -45,8 +12,6 @@
       display: flex !important;
       flex-direction: column !important;
     }
-
-    /* Main product section stays at top */
     .shopify-section--main-product,
     .shopify-section[id*="product"],
     #shopify-section-product,
@@ -55,8 +20,6 @@
     section.product {
       order: 1 !important;
     }
-
-    /* ALL app blocks come right after main product (order: 2) */
     .shopify-section[id*="apps"],
     [class*="shopify-app-block"],
     [data-shopify-editor-block],
@@ -64,13 +27,9 @@
     div[id^="shopify-block-"] {
       order: 2 !important;
     }
-
-    /* Other sections come after app blocks (order: 10+) */
     .shopify-section:not(.shopify-section--main-product):not([id*="product"]):not([id*="apps"]) {
       order: 10 !important;
     }
-
-    /* Specifically push related products, recommendations, reviews to bottom */
     .shopify-section[id*="related"],
     .shopify-section[id*="recommend"],
     .shopify-section[id*="review"],
@@ -80,8 +39,6 @@
     [class*="product-recommendations"] {
       order: 20 !important;
     }
-
-    /* Within product info area - ensure app blocks inside are also prioritized */
     .product__info-container,
     .product-info,
     .product__column,
@@ -90,61 +47,27 @@
       display: flex !important;
       flex-direction: column !important;
     }
-
-    /* DTF block specifically gets highest priority within app blocks */
     .ul-dtf-main,
     [data-shopify-editor-block]:has(.ul-dtf-main) {
       order: -1 !important;
     }
   }
 </style>
-
-{% comment %}
-  Load Global State Manager (FAZ 4)
-  MUST load before other components
-{% endcomment %}
 <script src="{{ 'ul-state.js' | asset_url }}" defer></script>
-
-{% comment %}
-  Customer Data for Upload Attribution
-  Makes customer info available to upload JS for tracking logged-in users
-{% endcomment %}
 <script>
   window.ULCustomer = {
     id: {{ customer.id | default: 'null' }},
     email: {{ customer.email | json | default: 'null' }}
   };
 </script>
-
-{% comment %}
-  Visitor Tracking Fallback
-  Ensures ULVisitor is available even if visitor-tracking block is not added
-  Script is smart enough to prevent double initialization
-{% endcomment %}
 <script
   src="{{ 'ul-visitor.js' | asset_url }}"
   defer
   data-shop-domain="{{ shop.permanent_domain }}"
 ></script>
-
-{% comment %}
-  Render the DTF Uploader snippet
-  This handles all the upload logic, API calls, and UI
-{% endcomment %}
 {% render 'dtf-uploader', product: product %}
-
-{% comment %}
-  Render the T-Shirt Modal snippet (FAZ 2)
-  This provides the 4-step wizard for T-Shirt customization
-{% endcomment %}
 {% render 'tshirt-modal' %}
-
-{% comment %}
-  Render the Confirmation Screen snippet (FAZ 3)
-  This shows cart summary after successful addition
-{% endcomment %}
 {% render 'confirmation-screen' %}
-
 {% schema %}
 {
   "name": "Upload Studio",

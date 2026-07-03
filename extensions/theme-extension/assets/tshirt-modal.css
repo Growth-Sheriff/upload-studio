@@ -1,16 +1,5 @@
-/**
- * T-Shirt Modal Styles
- * =====================
- * FAZ 2: 4-Step Wizard + 3D Preview Modal
- * FAZ 6: Mobile Experience
- * 
- * Version: 4.1.0
- * Architecture: DTF_TSHIRT_MODAL_ARCHITECTURE.md
- */
 
-/* =============================================================================
-   CSS Variables
-   ============================================================================= */
+
 :root {
   --ul-modal-z: 9999;
   --ul-modal-bg: rgba(0, 0, 0, 0.7);
@@ -28,9 +17,6 @@
   --ul-bg-canvas: linear-gradient(180deg, #f5f5f5 0%, #e0e0e0 100%);
 }
 
-/* =============================================================================
-   Modal Overlay
-   ============================================================================= */
 .ul-tshirt-overlay {
   display: none;
   position: fixed;
@@ -53,9 +39,6 @@
   to { opacity: 1; transform: scale(1); }
 }
 
-/* =============================================================================
-   Modal Container
-   ============================================================================= */
 .ul-tshirt-modal {
   background: #fff;
   border-radius: var(--ul-modal-radius);
@@ -69,9 +52,6 @@
   overflow: hidden;
 }
 
-/* =============================================================================
-   Modal Header
-   ============================================================================= */
 .ul-tshirt-header {
   display: flex;
   align-items: center;
@@ -110,9 +90,6 @@
   color: var(--ul-text);
 }
 
-/* =============================================================================
-   Step Progress Bar
-   ============================================================================= */
 .ul-tshirt-steps {
   display: flex;
   align-items: center;
@@ -181,9 +158,6 @@
   background: var(--ul-success);
 }
 
-/* =============================================================================
-   Modal Body / Content Area
-   ============================================================================= */
 .ul-tshirt-body {
   flex: 1;
   overflow: hidden;
@@ -197,9 +171,6 @@
   padding: 0;
 }
 
-/* =============================================================================
-   Step Panel Base
-   ============================================================================= */
 .ul-step-panel {
   display: none;
   height: 100%;
@@ -216,9 +187,6 @@
   to { opacity: 1; transform: translateX(0); }
 }
 
-/* =============================================================================
-   STEP 1: Upload
-   ============================================================================= */
 .ul-step1-content {
   padding: 32px;
   max-width: 700px;
@@ -238,7 +206,6 @@
   margin-bottom: 16px;
 }
 
-/* Inherited Design Card */
 .ul-inherited-design {
   border: 2px solid var(--ul-border);
   border-radius: 12px;
@@ -318,7 +285,6 @@
   background: var(--ul-success);
 }
 
-/* Divider */
 .ul-divider {
   display: flex;
   align-items: center;
@@ -339,7 +305,6 @@
   padding: 0 16px;
 }
 
-/* Upload Zone */
 .ul-upload-zone {
   border: 2px dashed var(--ul-border);
   border-radius: 12px;
@@ -402,9 +367,6 @@
   color: var(--ul-text-secondary);
 }
 
-/* =============================================================================
-   STEP 2: Design (3D + Options)
-   ============================================================================= */
 .ul-step2-layout {
   display: flex;
   height: 100%;
@@ -425,7 +387,6 @@
   flex-shrink: 0;
 }
 
-/* 3D Canvas */
 .ul-3d-canvas {
   width: 100%;
   height: 100%;
@@ -457,7 +418,6 @@
   to { transform: rotate(360deg); }
 }
 
-/* Quick View Buttons */
 .ul-quick-views {
   position: absolute;
   bottom: 16px;
@@ -493,7 +453,6 @@
   color: #fff;
 }
 
-/* Sidebar Sections */
 .ul-sidebar-section {
   padding: 20px;
   border-bottom: 1px solid var(--ul-border);
@@ -512,7 +471,6 @@
   margin-bottom: 12px;
 }
 
-/* Color Swatches */
 .ul-color-grid {
   display: flex;
   flex-wrap: wrap;
@@ -558,7 +516,6 @@
   text-shadow: none;
 }
 
-/* Size Dropdown */
 .ul-size-select {
   width: 100%;
   padding: 12px 16px;
@@ -580,7 +537,6 @@
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
 
-/* Location Checkboxes */
 .ul-location-list {
   display: flex;
   flex-direction: column;
@@ -637,7 +593,6 @@
   font-weight: 500;
 }
 
-/* Location Settings */
 .ul-location-settings {
   padding: 16px;
   background: var(--ul-bg-light);
@@ -703,7 +658,6 @@
   transform: scale(1.2);
 }
 
-/* Price Display */
 .ul-price-box {
   background: var(--ul-bg-light);
   border-radius: 8px;
@@ -727,9 +681,6 @@
   margin-bottom: 0;
 }
 
-/* =============================================================================
-   STEP 3: Details
-   ============================================================================= */
 .ul-step3-content {
   padding: 32px;
   max-width: 700px;
@@ -777,7 +728,6 @@
   color: var(--ul-text-secondary);
 }
 
-/* Extra Questions */
 .ul-question-group {
   margin-bottom: 20px;
 }
@@ -815,7 +765,6 @@
   min-height: 100px;
 }
 
-/* Quantity Control */
 .ul-quantity-control {
   display: flex;
   align-items: center;
@@ -855,9 +804,6 @@
   text-align: center;
 }
 
-/* =============================================================================
-   STEP 4: Review
-   ============================================================================= */
 .ul-step4-content {
   padding: 32px;
   max-width: 800px;
@@ -883,7 +829,6 @@
   padding: 20px;
 }
 
-/* Review Preview Grid */
 .ul-review-preview-grid {
   display: flex;
   gap: 16px;
@@ -927,7 +872,6 @@
   transform: scale(1.02);
 }
 
-/* Lightbox Overlay */
 .ul-lightbox-overlay {
   position: fixed;
   top: 0;
@@ -1015,7 +959,6 @@
   font-size: 12px;
 }
 
-/* Review Details List */
 .ul-review-list {
   margin: 0;
   padding: 0;
@@ -1043,7 +986,6 @@
   font-weight: 500;
 }
 
-/* Price Breakdown */
 .ul-review-price-breakdown {
   background: var(--ul-bg-light);
   border-radius: 8px;
@@ -1067,7 +1009,6 @@
   border-top: 2px solid var(--ul-border);
 }
 
-/* Confirmation Checkbox */
 .ul-confirmation {
   background: var(--ul-bg-light);
   border: 1px solid var(--ul-border);
@@ -1097,7 +1038,6 @@
   line-height: 1.5;
 }
 
-/* Action Buttons */
 .ul-action-buttons {
   display: flex;
   flex-direction: column;
@@ -1142,9 +1082,6 @@
   background: var(--ul-primary-hover);
 }
 
-/* =============================================================================
-   Modal Footer (Navigation)
-   ============================================================================= */
 .ul-tshirt-footer {
   display: flex;
   justify-content: space-between;
@@ -1197,9 +1134,6 @@
   visibility: hidden;
 }
 
-/* =============================================================================
-   Toast Notification
-   ============================================================================= */
 .ul-toast {
   position: fixed;
   bottom: 24px;
@@ -1233,9 +1167,6 @@
   background: var(--ul-error);
 }
 
-/* =============================================================================
-   Responsive Design
-   ============================================================================= */
 @media (max-width: 900px) {
   .ul-tshirt-modal {
     width: 100%;
@@ -1302,11 +1233,8 @@
   }
 }
 
-/* =============================================================================
-   FAZ 6: Mobile Experience - Full Screen Modal
-   ============================================================================= */
 @media (max-width: 768px) {
-  /* Full screen modal on mobile */
+
   .ul-tshirt-modal {
     width: 100vw;
     max-width: 100vw;
@@ -1315,7 +1243,6 @@
     border-radius: 0;
   }
 
-  /* Compact header */
   .ul-tshirt-header {
     padding: 12px 16px;
   }
@@ -1324,7 +1251,6 @@
     font-size: 16px;
   }
 
-  /* Step 2: Stacked layout (3D top, options bottom) */
   .ul-step2-layout {
     flex-direction: column;
   }
@@ -1345,7 +1271,6 @@
     overflow-y: auto;
   }
 
-  /* Touch-friendly controls */
   .ul-color-swatch {
     width: 44px;
     height: 44px;
@@ -1357,7 +1282,6 @@
     min-height: 52px;
   }
 
-  /* Accordion style options */
   .ul-option-section {
     border-bottom: 1px solid var(--ul-border);
   }
@@ -1387,7 +1311,6 @@
     display: none;
   }
 
-  /* Horizontal scroll for quick views */
   .ul-quick-views {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -1409,7 +1332,6 @@
     border-radius: 20px;
   }
 
-  /* Full-width sliders */
   .ul-location-settings {
     padding: 12px 16px;
   }
@@ -1422,7 +1344,6 @@
     height: 8px;
   }
 
-  /* Navigation buttons - fixed at bottom */
   .ul-tshirt-nav {
     position: sticky;
     bottom: 0;
@@ -1438,9 +1359,6 @@
   }
 }
 
-/* =============================================================================
-   FAZ 6: 3D Fallback Mode
-   ============================================================================= */
 .ul-3d-fallback {
   display: none;
 }
@@ -1498,7 +1416,6 @@
   transition: transform 0.2s;
 }
 
-/* Fallback location indicators */
 .ul-fallback-view-tabs {
   display: flex;
   gap: 8px;
@@ -1522,9 +1439,6 @@
   color: #fff;
 }
 
-/* =============================================================================
-   FAZ 6: Confirmation as Bottom Sheet (Mobile)
-   ============================================================================= */
 @media (max-width: 768px) {
   .ul-confirm-overlay.active .ul-confirm-modal {
     position: fixed;
@@ -1538,11 +1452,11 @@
   }
 
   @keyframes ulSlideUp {
-    from { 
+    from {
       transform: translateY(100%);
       opacity: 0;
     }
-    to { 
+    to {
       transform: translateY(0);
       opacity: 1;
     }
@@ -1552,7 +1466,6 @@
     padding: 20px 20px 16px;
   }
 
-  /* Bottom sheet drag handle */
   .ul-confirm-modal::before {
     content: '';
     position: absolute;
@@ -1582,11 +1495,8 @@
   }
 }
 
-/* =============================================================================
-   FAZ 6: Touch Optimization
-   ============================================================================= */
 @media (pointer: coarse) {
-  /* Larger touch targets */
+
   .ul-tshirt-close,
   .ul-nav-btn,
   .ul-action-btn {
@@ -1594,14 +1504,12 @@
     min-width: 48px;
   }
 
-  /* Disable hover effects on touch */
   .ul-color-swatch:hover,
   .ul-location-item:hover,
   .ul-quick-view-btn:hover {
     transform: none;
   }
 
-  /* Active states instead */
   .ul-color-swatch:active {
     transform: scale(0.95);
   }
@@ -1615,7 +1523,6 @@
     color: #fff;
   }
 
-  /* Slider thumb larger */
   input[type="range"]::-webkit-slider-thumb {
     width: 24px;
     height: 24px;
@@ -1627,9 +1534,6 @@
   }
 }
 
-/* =============================================================================
-   FAZ 6: Safe Area Support (iPhone notch etc.)
-   ============================================================================= */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .ul-tshirt-modal {
     padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -1640,16 +1544,12 @@
   }
 }
 
-/* =============================================================================
-   FAZ 6: Reduced Motion
-   ============================================================================= */
 @media (prefers-reduced-motion: reduce) {
   .ul-tshirt-overlay,
   .ul-color-swatch,
   .ul-location-item,
   .ul-quick-view-btn,
   .ul-confirm-modal,
-  * {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

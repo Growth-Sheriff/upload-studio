@@ -11,15 +11,15 @@ ExecStart=/usr/bin/pnpm run worker:preflight
 Restart=always
 RestartSec=5
 
-# Environment
+
 Environment=NODE_ENV=production
 EnvironmentFile=/var/www/upload-studio/.env
 
-# Logging
+
 StandardOutput=append:/var/log/upload-studio/preflight-worker.log
 StandardError=append:/var/log/upload-studio/preflight-worker-error.log
 
-# Security hardening
+
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes

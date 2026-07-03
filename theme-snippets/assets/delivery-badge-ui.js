@@ -1,32 +1,16 @@
-/**
- * Delivery Badge UI Component
- * Version: 2.0.0 - Fixed GeoIP Fallback & localStorage Safety
- *
- * Bu dosya teslimat tarihini gösteren badge UI'ını yönetir.
- * DÜZELTMELER:
- * - Province fallback düzeltildi (customerLocation null durumu)
- * - GeoIP çağrısı cache'lendi (gereksiz çağrılar engellendi)
- * - localStorage sandbox hatası düzeltildi
- * - Country formatı standardize edildi
- */
+
 
 ;(function () {
   'use strict'
 
-  // ============================================
-  // CONFIGURATION
-  // ============================================
   const CONFIG = {
-    cutoffHour: 14, // 2 PM ET
+    cutoffHour: 14,
     timezone: 'America/New_York',
     warehouseState: 'NJ',
-    geoIPCacheDuration: 30 * 60 * 1000, // 30 dakika
+    geoIPCacheDuration: 30 * 60 * 1000,
     debug: false,
   }
 
-  // ============================================
-  // SAFE LOCALSTORAGE
-  // ============================================
   function safeGetItem(key) {
     try {
       return localStorage.getItem(key)
@@ -39,7 +23,7 @@
     try {
       localStorage.setItem(key, value)
     } catch (e) {
-      // Sandbox/iframe hatası - sessizce geç
+
     }
   }
 
@@ -47,13 +31,10 @@
     try {
       localStorage.removeItem(key)
     } catch (e) {
-      // Sessizce geç
+
     }
   }
 
-  // ============================================
-  // GEOIP CACHE
-  // ============================================
   const GEOIP_CACHE_KEY = 'deliveryGeoIP'
 
   function getCachedGeoIP() {
@@ -66,7 +47,7 @@
         return data.location
       }
     } catch (e) {
-      // Invalid cache
+
     }
     return null
   }
@@ -81,21 +62,16 @@
     )
   }
 
-  // ============================================
-  // ZIP TO STATE MAPPING
-  // ============================================
   function getStateFromZip(zip) {
-    // Use window function if available (from shopify-live-shipping.js)
+
     if (window.getStateFromZip) {
       return window.getStateFromZip(zip)
     }
 
-    // Fallback: Basic ZIP prefix to state
     const prefix = String(zip || '').substring(0, 3)
 
-    // Common prefixes
     const COMMON_PREFIXES = {
-      // New Jersey
+
       '070': 'NJ',
       '071': 'NJ',
       '072': 'NJ',
@@ -117,7 +93,6 @@
       '088': 'NJ',
       '089': 'NJ',
 
-      // New York
       100: 'NY',
       101: 'NY',
       102: 'NY',
@@ -134,7 +109,6 @@
       118: 'NY',
       119: 'NY',
 
-      // Pennsylvania
       150: 'PA',
       151: 'PA',
       152: 'PA',
@@ -146,7 +120,6 @@
       193: 'PA',
       194: 'PA',
 
-      // California
       900: 'CA',
       901: 'CA',
       902: 'CA',
@@ -168,7 +141,6 @@
       953: 'CA',
       954: 'CA',
 
-      // Texas
       750: 'TX',
       751: 'TX',
       752: 'TX',
@@ -190,7 +162,6 @@
       783: 'TX',
       784: 'TX',
 
-      // Florida
       320: 'FL',
       321: 'FL',
       322: 'FL',
@@ -211,12 +182,9 @@
     return COMMON_PREFIXES[prefix] || CONFIG.warehouseState
   }
 
-  // ============================================
-  // DELIVERY ZONE CALCULATION
-  // ============================================
   const ZONE_CONFIG = {
-    // Warehouse: New Jersey
-    zone1: ['NJ', 'NY', 'PA', 'CT', 'MA', 'RI', 'NH', 'VT', 'ME', 'DE', 'MD', 'DC'], // 2-3 days
+
+    zone1: ['NJ', 'NY', 'PA', 'CT', 'MA', 'RI', 'NH', 'VT', 'ME', 'DE', 'MD', 'DC'],
     zone2: [
       'VA',
       'WV',
@@ -233,9 +201,9 @@
       'TN',
       'AL',
       'MS',
-    ], // 3-4 days
-    zone3: ['MN', 'IA', 'MO', 'AR', 'LA', 'ND', 'SD', 'NE', 'KS', 'OK', 'TX'], // 4-5 days
-    zone4: ['MT', 'WY', 'CO', 'NM', 'ID', 'UT', 'AZ', 'NV', 'WA', 'OR', 'CA', 'AK', 'HI'], // 5-7 days
+    ],
+    zone3: ['MN', 'IA', 'MO', 'AR', 'LA', 'ND', 'SD', 'NE', 'KS', 'OK', 'TX'],
+    zone4: ['MT', 'WY', 'CO', 'NM', 'ID', 'UT', 'AZ', 'NV', 'WA', 'OR', 'CA', 'AK', 'HI'],
   }
 
   function getZone(state) {
@@ -243,7 +211,7 @@
     if (ZONE_CONFIG.zone2.includes(state)) return 2
     if (ZONE_CONFIG.zone3.includes(state)) return 3
     if (ZONE_CONFIG.zone4.includes(state)) return 4
-    return 3 // Default to middle zone
+    return 3
   }
 
   function getBaseDaysForZone(zone) {
@@ -261,9 +229,6 @@
     }
   }
 
-  // ============================================
-  // DATE CALCULATIONS
-  // ============================================
   function getETHour() {
     try {
       const options = { timeZone: CONFIG.timezone, hour: 'numeric', hour12: false }
@@ -286,7 +251,6 @@
     const result = new Date(startDate)
     let added = 0
 
-    // If past cutoff, start from tomorrow
     if (isPastCutoff()) {
       result.setDate(result.getDate() + 1)
     }
@@ -311,20 +275,16 @@
     return date.toLocaleDateString('en-US', options)
   }
 
-  // ============================================
-  // CUSTOMER LOCATION
-  // ============================================
   let customerLocation = null
 
   async function detectLocation() {
-    // 1. Check cache first
+
     const cached = getCachedGeoIP()
     if (cached) {
       customerLocation = cached
       return cached
     }
 
-    // 2. Try Shopify customer data
     if (window.Shopify && window.Shopify.customer) {
       const customer = window.Shopify.customer
       if (customer.default_address) {
@@ -343,7 +303,6 @@
       }
     }
 
-    // 3. Check stored ZIP
     const storedZip = safeGetItem('customerZip')
     if (storedZip) {
       const location = {
@@ -357,7 +316,6 @@
       return location
     }
 
-    // 4. GeoIP fallback (with caching to prevent multiple calls)
     try {
       const response = await fetch('https://ipapi.co/json/', { timeout: 3000 })
       if (response.ok) {
@@ -376,10 +334,9 @@
         }
       }
     } catch (e) {
-      // GeoIP failed
+
     }
 
-    // 5. Default to warehouse state
     const defaultLocation = {
       zip: null,
       state: CONFIG.warehouseState,
@@ -404,21 +361,16 @@
     safeSetItem('customerZip', zip)
     setCachedGeoIP(location)
 
-    // Trigger re-render
     document.dispatchEvent(new CustomEvent('deliveryLocationChanged', { detail: location }))
   }
 
-  // ============================================
-  // DELIVERY ESTIMATE
-  // ============================================
   function calculateDeliveryEstimate(options = {}) {
-    // KRITIK FIX: customerLocation null ise default state kullan
+
     const state =
       options.state || (customerLocation ? customerLocation.state : null) || CONFIG.warehouseState
     const zone = getZone(state)
     const baseDays = getBaseDaysForZone(zone)
 
-    // Add processing time (1 day)
     const totalDays = baseDays + 1
 
     const minDate = addBusinessDays(new Date(), totalDays)
@@ -437,14 +389,11 @@
       isPastCutoff: isPastCutoff(),
       cutoffHour: CONFIG.cutoffHour,
       state,
-      // KRITIK FIX: customerLocation null kontrolü
+
       source: customerLocation ? customerLocation.source : 'default',
     }
   }
 
-  // ============================================
-  // BADGE RENDERING
-  // ============================================
   function renderDeliveryBadge(container, options = {}) {
     if (!container) return
 
@@ -506,13 +455,9 @@
     return estimate
   }
 
-  // ============================================
-  // ZIP INPUT COMPONENT
-  // ============================================
   function renderZipInput(container, options = {}) {
     if (!container) return
 
-    // KRITIK FIX: customerLocation null kontrolü
     const currentZip = (customerLocation ? customerLocation.zip : null) || ''
 
     const html = `
@@ -536,7 +481,6 @@
 
     container.innerHTML = html
 
-    // Event handlers
     const input = container.querySelector('#delivery-zip')
     const btn = container.querySelector('.delivery-zip-input__btn')
     const result = container.querySelector('.delivery-zip-input__result')
@@ -564,21 +508,17 @@
       if (e.key === 'Enter') updateResult()
     })
     input.addEventListener('input', () => {
-      // Auto-check when 5 digits entered
+
       if (input.value.length === 5) {
         updateResult()
       }
     })
   }
 
-  // ============================================
-  // AUTO-INITIALIZATION
-  // ============================================
   async function initDeliveryBadges() {
-    // Detect location
+
     await detectLocation()
 
-    // Find and render badges
     document.querySelectorAll('[data-delivery-badge]').forEach((el) => {
       const type = el.dataset.deliveryBadge || 'full'
       switch (type) {
@@ -596,7 +536,6 @@
       }
     })
 
-    // Listen for location changes
     document.addEventListener('deliveryLocationChanged', () => {
       document.querySelectorAll('[data-delivery-badge]').forEach((el) => {
         const type = el.dataset.deliveryBadge || 'full'
@@ -616,9 +555,6 @@
     })
   }
 
-  // ============================================
-  // EXPOSE TO WINDOW
-  // ============================================
   window.DeliveryBadge = {
     init: initDeliveryBadges,
     detectLocation,
@@ -634,11 +570,10 @@
     config: CONFIG,
   }
 
-  // Auto-init on DOMContentLoaded
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initDeliveryBadges)
   } else {
-    // DOM already loaded
+
     setTimeout(initDeliveryBadges, 0)
   }
 

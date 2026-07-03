@@ -1,4 +1,4 @@
-/* ul-hide-defaults.js - Dynamic Shopify default element hiding */
+
 (function() {
   'use strict';
   var S = [

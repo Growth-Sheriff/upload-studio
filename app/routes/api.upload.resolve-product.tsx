@@ -25,6 +25,10 @@ import {
   MAIN_PRODUCT_MEASUREMENT_POLICY,
   shouldUseMainProductMeasurementPolicy,
 } from '~/lib/mainProductMeasurement.server'
+import {
+  applyAlphaProBuilderDefaults,
+  buildAlphaProCustomerOffer,
+} from '~/lib/alphaProDiscounts'
 
 const PRODUCT_VARIANTS_QUERY = `
   query ResolveProductVariants($id: ID!) {
@@ -69,6 +73,9 @@ interface ResolveRequestBody {
   maxUploadWidth?: number | string | null
   measurementPolicy?: string | null
   rollWidthIn?: number | string | null
+  customerId?: string | number | null
+  customerEmail?: string | null
+  customerName?: string | null
 }
 
 interface ProductQueryResponse {
@@ -354,6 +361,7 @@ export async function action({ request }: ActionFunctionArgs) {
       select: {
         id: true,
         accessToken: true,
+        settings: true,
       },
     })
 
@@ -415,7 +423,19 @@ export async function action({ request }: ActionFunctionArgs) {
       : null
     const rawMetadata = lifecycle?.metadata || null
 
-    const rawBuilderConfig = (productConfig?.builderConfig || {}) as Record<string, unknown>
+    const baseBuilderConfig = (productConfig?.builderConfig || {}) as Record<string, unknown>
+    const appliedBuilderConfig = applyAlphaProBuilderDefaults(shopDomain, productId, baseBuilderConfig)
+    const customerOffer = buildAlphaProCustomerOffer({
+      shopDomain,
+      productId,
+      settings: shop.settings,
+      customerId: body.customerId,
+      customerEmail: body.customerEmail,
+      customerName: body.customerName,
+    })
+    const rawBuilderConfig = (customerOffer
+      ? { ...appliedBuilderConfig, customerOffer }
+      : appliedBuilderConfig) as Record<string, unknown>
     const shopMaxWidthLimit = getMaxWidthLimitForShop(shopDomain)
     const effectiveConfig: BuilderResolveConfig & { maxWidthIn: number; fitToleranceIn: number } = {
       sheetOptionName:

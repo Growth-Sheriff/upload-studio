@@ -1,11 +1,5 @@
-/**
- * Upload Lift - Product Bar Styles
- * Version: 1.0.0
- */
 
-/* ========================================
-   CSS Variables
-   ======================================== */
+
 :root {
   --ul-primary: #7367f0;
   --ul-primary-dark: #5e50ee;
@@ -23,9 +17,6 @@
   --ul-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* ========================================
-   Section Container
-   ======================================== */
 .ul-product-bar {
   position: relative;
 }
@@ -36,9 +27,6 @@
   padding: 0 15px;
 }
 
-/* ========================================
-   Section Header
-   ======================================== */
 .ul-product-bar-header {
   text-align: center;
   margin-bottom: 2rem;
@@ -70,18 +58,12 @@
   margin: 0;
 }
 
-/* ========================================
-   Product Grid
-   ======================================== */
 .ul-product-bar-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 1.25rem;
 }
 
-/* ========================================
-   Product Card
-   ======================================== */
 .ul-product-bar-item {
   background: var(--ul-card-bg);
   border-radius: var(--ul-radius);
@@ -104,7 +86,6 @@
   flex-direction: column;
 }
 
-/* Product Image */
 .ul-product-bar-img {
   position: relative;
   width: 100%;
@@ -135,7 +116,6 @@
   color: #bbb;
 }
 
-/* View Product Button */
 .ul-product-bar-btn {
   position: absolute;
   bottom: 10px;
@@ -157,9 +137,6 @@
   transform: translateX(-50%) translateY(0);
 }
 
-/* ========================================
-   Product Badges
-   ======================================== */
 .ul-product-badges {
   position: absolute;
   top: 10px;
@@ -214,9 +191,6 @@
   color: white;
 }
 
-/* ========================================
-   3D T-Shirt Preview
-   ======================================== */
 .ul-3d-tshirt-preview {
   width: 100%;
   height: 100%;
@@ -246,9 +220,6 @@
   z-index: 5;
 }
 
-/* ========================================
-   Product Content
-   ======================================== */
 .ul-product-bar-content {
   padding: 1rem;
   text-align: center;
@@ -276,7 +247,6 @@
   overflow: hidden;
 }
 
-/* Rating */
 .ul-product-bar-rating {
   display: flex;
   align-items: center;
@@ -299,7 +269,6 @@
   margin-left: 4px;
 }
 
-/* Prices */
 .ul-product-bar-prices {
   display: flex;
   align-items: center;
@@ -319,9 +288,6 @@
   font-size: 1.125rem;
 }
 
-/* ========================================
-   Upload Area
-   ======================================== */
 .ul-product-upload-area {
   padding: 0 1rem;
   margin-bottom: 0.5rem;
@@ -353,9 +319,6 @@
   box-shadow: 0 4px 15px rgba(115, 103, 240, 0.35);
 }
 
-/* ========================================
-   Product Actions
-   ======================================== */
 .ul-product-bar-actions {
   padding: 0 1rem 1rem;
 }
@@ -393,9 +356,6 @@
   background: var(--ul-success);
 }
 
-/* ========================================
-   Local Pickup Alert
-   ======================================== */
 .ul-pickup-alert {
   margin-top: 1.5rem;
   padding: 0.875rem 1.25rem;
@@ -490,9 +450,6 @@
   transition: transform 0.2s ease;
 }
 
-/* ========================================
-   Floating Cart Button
-   ======================================== */
 .ul-floating-cart {
   position: fixed;
   bottom: 30px;
@@ -537,7 +494,6 @@
   font-weight: 700;
 }
 
-/* Shake Animation */
 @keyframes ul-shake {
   0%, 100% { transform: translateX(0); }
   10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
@@ -548,9 +504,6 @@
   animation: ul-shake 0.6s ease-in-out;
 }
 
-/* ========================================
-   Upload Modal
-   ======================================== */
 .ul-upload-modal-overlay {
   position: fixed;
   inset: 0;
@@ -633,7 +586,6 @@
   flex: 1;
 }
 
-/* Modal Product Info */
 .ul-modal-product-info {
   display: flex;
   align-items: center;
@@ -669,7 +621,6 @@
   color: var(--ul-primary);
 }
 
-/* Upload Zone */
 .ul-modal-upload-zone {
   border: 2px dashed var(--ul-border);
   border-radius: 16px;
@@ -713,7 +664,6 @@
   border-radius: 20px;
 }
 
-/* Upload Preview */
 .ul-modal-upload-preview {
   position: relative;
   border-radius: 16px;
@@ -762,7 +712,6 @@
   color: var(--ul-text-muted);
 }
 
-/* Modal Options */
 .ul-modal-options {
   display: flex;
   flex-direction: column;
@@ -817,7 +766,6 @@
   color: var(--ul-primary);
 }
 
-/* Quantity */
 .ul-modal-quantity {
   display: flex;
   align-items: center;
@@ -858,7 +806,6 @@
   outline: none;
 }
 
-/* Total */
 .ul-modal-total {
   display: flex;
   justify-content: space-between;
@@ -880,7 +827,6 @@
   color: var(--ul-primary);
 }
 
-/* Modal Footer */
 .ul-upload-modal-footer {
   display: flex;
   gap: 12px;
@@ -929,9 +875,6 @@
   box-shadow: 0 4px 15px rgba(115, 103, 240, 0.4);
 }
 
-/* ========================================
-   Responsive
-   ======================================== */
 @media (max-width: 1200px) {
   .ul-product-bar-grid {
     grid-template-columns: repeat(4, 1fr);
@@ -942,12 +885,12 @@
   .ul-product-bar-grid {
     grid-template-columns: repeat(3, 1fr);
   }
-  
+
   .ul-pickup-inner {
     flex-direction: column;
     text-align: center;
   }
-  
+
   .ul-pickup-center {
     justify-content: center;
   }
@@ -957,161 +900,161 @@
   .ul-product-bar {
     padding: 1rem 0 !important;
   }
-  
+
   .ul-product-bar-container {
     padding: 0 8px !important;
   }
-  
+
   .ul-product-bar-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: 8px;
   }
-  
+
   .ul-product-bar-grid.cols-1 {
     grid-template-columns: 1fr;
     max-width: 320px;
     margin: 0 auto;
   }
-  
+
   .ul-product-bar-item {
     border-radius: 10px;
   }
-  
+
   .ul-product-bar-img {
     height: 110px;
     aspect-ratio: auto;
   }
-  
+
   .ul-product-bar-placeholder {
     height: 110px;
     min-height: 110px;
   }
-  
+
   .ul-product-bar-placeholder svg {
     width: 32px;
     height: 32px;
   }
-  
+
   .ul-product-bar-content {
     padding: 8px;
   }
-  
+
   .ul-product-bar-title {
     font-size: 0.75rem;
     margin-bottom: 4px;
   }
-  
+
   .ul-product-bar-rating {
     margin-bottom: 4px;
   }
-  
+
   .ul-star {
     width: 10px;
     height: 10px;
   }
-  
+
   .ul-rating-count {
     font-size: 10px;
   }
-  
+
   .ul-current-price {
     font-size: 0.9rem;
   }
-  
+
   .ul-compare-price {
     font-size: 0.65rem;
   }
-  
+
   .ul-product-bar-prices {
     gap: 4px;
   }
-  
+
   .ul-product-upload-area {
     padding: 0 8px;
     margin-bottom: 6px;
   }
-  
+
   .ul-upload-trigger-btn {
     padding: 6px 10px;
     font-size: 11px;
     border-radius: 6px;
   }
-  
+
   .ul-upload-trigger-btn svg {
     width: 14px;
     height: 14px;
   }
-  
+
   .ul-product-bar-actions {
     padding: 0 8px 8px;
   }
-  
+
   .ul-add-to-cart-btn {
     padding: 8px 10px;
     font-size: 11px;
     border-radius: 6px;
   }
-  
+
   .ul-add-to-cart-btn svg {
     width: 14px;
     height: 14px;
   }
-  
+
   .ul-badge {
     padding: 3px 6px;
     font-size: 9px;
   }
-  
+
   .ul-badge-4d {
     padding: 3px 8px;
   }
-  
+
   .ul-4d-discount {
     font-size: 8px;
     padding: 1px 5px;
   }
-  
+
   .ul-product-bar-btn {
     display: none;
   }
-  
+
   .ul-pickup-alert {
     margin-top: 1rem;
     padding: 0.75rem 1rem;
   }
-  
+
   .ul-pickup-inner {
     gap: 0.75rem;
   }
-  
+
   .ul-pickup-center {
     flex-wrap: wrap;
   }
-  
+
   .ul-floating-cart {
     bottom: 20px;
     right: 20px;
   }
-  
+
   .ul-floating-cart-text {
     display: none;
   }
-  
+
   .ul-floating-cart-btn {
     padding: 12px;
     border-radius: 50%;
   }
-  
+
   .ul-upload-modal {
     max-width: 100%;
     max-height: 100%;
     border-radius: 20px 20px 0 0;
   }
-  
+
   .ul-modal-size-grid {
     grid-template-columns: 1fr 1fr;
   }
-  
+
   .ul-section-title {
     font-size: 24px;
   }

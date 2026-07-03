@@ -16,14 +16,14 @@ export default function PrivacyPolicy() {
       <p style={styles.subtitle}>
         Last updated: {new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
       </p>
-      
+
       <div style={styles.divider} />
 
       <section style={styles.section}>
         <h2 style={styles.heading}>1. Introduction</h2>
         <p style={styles.text}>
-          Upload Studio ("we," "our," or "us") is committed to protecting your privacy. 
-          This Privacy Policy explains how we collect, use, disclose, and safeguard your information when 
+          Upload Studio ("we," "our," or "us") is committed to protecting your privacy.
+          This Privacy Policy explains how we collect, use, disclose, and safeguard your information when
           you use our Shopify application.
         </p>
       </section>

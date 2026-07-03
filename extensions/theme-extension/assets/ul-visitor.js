@@ -1,22 +1,9 @@
-/**
- * Upload Studio - Visitor Tracking Module
- * Cross-session visitor identification and attribution tracking
- *
- * @version 1.0.0
- * @module ul-visitor
- *
- * ⚠️ ADDITIVE ONLY - Does NOT modify existing upload/cart flows
- */
+
 
 ;(function () {
   'use strict'
 
-  // Prevent multiple initializations
   if (window.ULVisitor) return
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // CONFIGURATION
-  // ═══════════════════════════════════════════════════════════════════════════
 
   const CONFIG = {
     API_BASE: '/apps/customizer/api/v1',
@@ -29,13 +16,9 @@
       CONSENT: 'ul_consent',
       FIRST_TOUCH: 'ul_first_touch',
     },
-    SESSION_TIMEOUT: 30 * 60 * 1000, // 30 minutes
+    SESSION_TIMEOUT: 30 * 60 * 1000,
     DEBUG: false,
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // UTILITY FUNCTIONS
-  // ═══════════════════════════════════════════════════════════════════════════
 
   function log(...args) {
     if (CONFIG.DEBUG) {
@@ -47,7 +30,7 @@
     if (crypto.randomUUID) {
       return crypto.randomUUID()
     }
-    // Fallback for older browsers
+
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
       const r = (Math.random() * 16) | 0
       const v = c === 'x' ? r : (r & 0x3) | 0x8
@@ -63,10 +46,6 @@
       null
     )
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // STORAGE HELPERS
-  // ═══════════════════════════════════════════════════════════════════════════
 
   const Storage = {
     get(key) {
@@ -124,14 +103,8 @@
     },
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ATTRIBUTION TRACKING
-  // ═══════════════════════════════════════════════════════════════════════════
-
   const Attribution = {
-    /**
-     * Extract UTM parameters from current URL
-     */
+
     getUtmParams() {
       const params = new URLSearchParams(window.location.search)
       return {
@@ -147,9 +120,6 @@
       }
     },
 
-    /**
-     * Get referrer information
-     */
     getReferrer() {
       const referrer = document.referrer || null
       let referrerDomain = null
@@ -158,16 +128,13 @@
         try {
           referrerDomain = new URL(referrer).hostname.replace(/^www\./, '')
         } catch (e) {
-          // Invalid URL
+
         }
       }
 
       return { referrer, referrerDomain }
     },
 
-    /**
-     * Get full attribution data
-     */
     getData() {
       const utm = this.getUtmParams()
       const ref = this.getReferrer()
@@ -179,9 +146,6 @@
       }
     },
 
-    /**
-     * Save first-touch attribution (only on first visit)
-     */
     saveFirstTouch() {
       const existing = Storage.getJSON(CONFIG.STORAGE_KEYS.FIRST_TOUCH)
       if (existing) return existing
@@ -195,10 +159,6 @@
       return data
     },
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // DEVICE INFO
-  // ═══════════════════════════════════════════════════════════════════════════
 
   const Device = {
     getInfo() {
@@ -258,17 +218,10 @@
     },
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // SIMPLE FINGERPRINT (No external library)
-  // ═══════════════════════════════════════════════════════════════════════════
-
   const Fingerprint = {
-    /**
-     * Generate a simple fingerprint hash
-     * Not as accurate as FingerprintJS Pro, but privacy-friendly
-     */
+
     async generate() {
-      // Check stored fingerprint first
+
       const stored = Storage.get(CONFIG.STORAGE_KEYS.FINGERPRINT)
       if (stored) return stored
 
@@ -318,7 +271,7 @@
           .join('')
           .slice(0, 32)
       }
-      // Fallback: simple hash
+
       let hash = 0
       for (let i = 0; i < str.length; i++) {
         const char = str.charCodeAt(i)
@@ -329,14 +282,8 @@
     },
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // SESSION MANAGEMENT
-  // ═══════════════════════════════════════════════════════════════════════════
-
   const Session = {
-    /**
-     * Get or create session token
-     */
+
     getToken() {
       let token = Storage.getSession(CONFIG.STORAGE_KEYS.SESSION_TOKEN)
 
@@ -348,9 +295,6 @@
       return token
     },
 
-    /**
-     * Get localStorage ID (persistent across sessions)
-     */
     getLocalId() {
       let localId = Storage.get(CONFIG.STORAGE_KEYS.LOCAL_ID)
 
@@ -363,19 +307,12 @@
     },
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // MAIN VISITOR MODULE
-  // ═══════════════════════════════════════════════════════════════════════════
-
   const ULVisitor = {
-    // State
+
     visitorId: null,
     sessionId: null,
     initialized: false,
 
-    /**
-     * Initialize visitor tracking
-     */
     async init() {
       if (this.initialized) return
 
@@ -388,17 +325,15 @@
       log('Initializing visitor tracking for:', shopDomain)
 
       try {
-        // Get identity components
+
         const localStorageId = Session.getLocalId()
         const sessionToken = Session.getToken()
         const fingerprint = await Fingerprint.generate()
         const device = Device.getInfo()
         const attribution = Attribution.getData()
 
-        // Save first-touch attribution
         Attribution.saveFirstTouch()
 
-        // Send to API
         const response = await fetch(`${CONFIG.API_BASE}/visitors`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -424,7 +359,6 @@
           this.visitorId = data.visitorId
           this.sessionId = data.sessionId
 
-          // Store IDs locally
           Storage.set(CONFIG.STORAGE_KEYS.VISITOR_ID, data.visitorId)
           Storage.setSession(CONFIG.STORAGE_KEYS.SESSION_ID, data.sessionId)
 
@@ -435,7 +369,6 @@
             isNewSession: data.isNewSession,
           })
 
-          // Dispatch event for other modules
           window.dispatchEvent(
             new CustomEvent('ul:visitor:identified', {
               detail: {
@@ -451,27 +384,18 @@
         this.initialized = true
       } catch (error) {
         log('Init error:', error)
-        // Don't break the page on error - visitor tracking is non-critical
+
       }
     },
 
-    /**
-     * Get current visitor ID
-     */
     getVisitorId() {
       return this.visitorId || Storage.get(CONFIG.STORAGE_KEYS.VISITOR_ID)
     },
 
-    /**
-     * Get current session ID
-     */
     getSessionId() {
       return this.sessionId || Storage.getSession(CONFIG.STORAGE_KEYS.SESSION_ID)
     },
 
-    /**
-     * Track page view
-     */
     async trackPageView() {
       const sessionId = this.getSessionId()
       const shopDomain = getShopDomain()
@@ -493,9 +417,6 @@
       }
     },
 
-    /**
-     * Track add to cart event
-     */
     async trackAddToCart() {
       const sessionId = this.getSessionId()
       const shopDomain = getShopDomain()
@@ -518,9 +439,6 @@
       }
     },
 
-    /**
-     * Link upload to visitor
-     */
     async linkUpload(uploadId) {
       const sessionId = this.getSessionId()
       const visitorId = this.getVisitorId()
@@ -546,68 +464,45 @@
       }
     },
 
-    /**
-     * Get first-touch attribution data
-     */
     getFirstTouchAttribution() {
       return Storage.getJSON(CONFIG.STORAGE_KEYS.FIRST_TOUCH)
     },
 
-    /**
-     * Get current session attribution
-     */
     getCurrentAttribution() {
       return Attribution.getData()
     },
 
-    /**
-     * Check if visitor gave consent
-     */
     hasConsent() {
       return Storage.get(CONFIG.STORAGE_KEYS.CONSENT) === 'true'
     },
 
-    /**
-     * Set consent status
-     */
     setConsent(given) {
       Storage.set(CONFIG.STORAGE_KEYS.CONSENT, given ? 'true' : 'false')
       log('Consent set:', given)
     },
 
-    /**
-     * Enable debug mode
-     */
     debug(enabled = true) {
       CONFIG.DEBUG = enabled
       log('Debug mode:', enabled ? 'ON' : 'OFF')
     },
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // AUTO-INITIALIZATION
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  // Initialize when DOM is ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => ULVisitor.init())
   } else {
     ULVisitor.init()
   }
 
-  // Listen for upload complete events (from dtf-uploader.js)
   window.addEventListener('ul:upload:complete', (e) => {
     if (e.detail?.uploadId) {
       ULVisitor.linkUpload(e.detail.uploadId)
     }
   })
 
-  // Listen for add to cart events
   window.addEventListener('ul:cart:add', () => {
     ULVisitor.trackAddToCart()
   })
 
-  // Expose globally
   window.ULVisitor = ULVisitor
 
   log('ULVisitor module loaded')

@@ -1,26 +1,26 @@
-/**
- * Pricing Calculation API
- * =======================
- * FAZ 5: API Endpoints
- * 
- * Calculates dynamic pricing based on:
- * - DTF sheet base price
- * - T-shirt inclusion (if enabled)
- * - Print locations (per-location fees)
- * - Size modifiers
- * - Quantity discounts
- * 
- * GET  /api/pricing/calculate - Returns pricing config
- * POST /api/pricing/calculate - Calculates pricing
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, getCorsHeaders } from "~/lib/cors.server";
 
-// Default pricing configuration
+
 const DEFAULT_PRICING = {
-  dtfSheetBase: 12.00, // Base price for DTF sheet
-  tshirtPrice: 15.00,  // T-shirt add-on price
+  dtfSheetBase: 12.00,
+  tshirtPrice: 15.00,
   locationPrices: {
     front: 5.00,
     back: 5.00,
@@ -29,10 +29,10 @@ const DEFAULT_PRICING = {
   },
   quantityDiscounts: [
     { min: 1, max: 5, discount: 0 },
-    { min: 6, max: 10, discount: 0.05 }, // 5% off
-    { min: 11, max: 25, discount: 0.10 }, // 10% off
-    { min: 26, max: 50, discount: 0.15 }, // 15% off
-    { min: 51, max: Infinity, discount: 0.20 }, // 20% off
+    { min: 6, max: 10, discount: 0.05 },
+    { min: 11, max: 25, discount: 0.10 },
+    { min: 26, max: 50, discount: 0.15 },
+    { min: 51, max: Infinity, discount: 0.20 },
   ],
 };
 
@@ -42,7 +42,7 @@ interface PricingRequest {
   quantity: number;
   size?: string;
   shopDomain?: string;
-  // DTF By Size fields
+
   widthIn?: number;
   heightIn?: number;
   tiers?: Array<{ min_qty: number; max_qty: number | null; price_per_sqin: number }>;
@@ -64,7 +64,7 @@ interface PricingResponse {
   formattedTotal: string;
 }
 
-// Size price modifiers
+
 const SIZE_MODIFIERS: Record<string, number> = {
   'xs': 0, 's': 0, 'm': 0,
   'l': 2, 'xl': 2,
@@ -72,26 +72,26 @@ const SIZE_MODIFIERS: Record<string, number> = {
   '4xl': 8, '5xl': 8,
 };
 
-// Helper for CORS response
+
 function corsJson<T>(data: T, request: Request, status = 200) {
   const corsHeaders = getCorsHeaders(request);
   const headers = new Headers();
-  
+
   for (const [key, value] of Object.entries(corsHeaders)) {
     if (value) headers.set(key, value);
   }
   headers.set('Content-Type', 'application/json');
-  
+
   return new Response(JSON.stringify(data), { status, headers });
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  // Handle CORS preflight
+
   if (request.method === "OPTIONS") {
     return handleCorsOptions(request);
   }
-  
-  // Return default pricing config for GET requests
+
+
   return corsJson({
     config: DEFAULT_PRICING,
     sizeModifiers: SIZE_MODIFIERS,
@@ -100,11 +100,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  // Handle CORS preflight
+
   if (request.method === "OPTIONS") {
     return handleCorsOptions(request);
   }
-  
+
   if (request.method !== "POST") {
     return corsJson({ error: "Method not allowed" }, request, 405);
   }
@@ -113,14 +113,14 @@ export async function action({ request }: ActionFunctionArgs) {
     const body: PricingRequest = await request.json();
     const { mode, locations = [], quantity = 1, size, shopDomain } = body;
 
-    // ═══════════════════════════════════════════════════════
-    // DTF BY SIZE MODE — Width × Height × Qty × $/in²
-    // ═══════════════════════════════════════════════════════
+
+
+
     if (mode === 'dtf_by_size') {
       const { widthIn = 0, heightIn = 0, tiers = [] } = body;
       const area = widthIn * heightIn;
 
-      // Find active tier based on quantity
+
       const defaultTiers = [
         { min_qty: 1, max_qty: 9, price_per_sqin: 0.06 },
         { min_qty: 10, max_qty: 49, price_per_sqin: 0.054 },
@@ -154,45 +154,45 @@ export async function action({ request }: ActionFunctionArgs) {
       }, request);
     }
 
-    // ═══════════════════════════════════════════════════════
-    // EXISTING MODES — dtf_only / tshirt_included
-    // ═══════════════════════════════════════════════════════
-    // TODO: Load shop-specific pricing from metafields if shopDomain provided
+
+
+
+
     const pricing = DEFAULT_PRICING;
 
-    // Calculate base prices
+
     let dtfBase = pricing.dtfSheetBase;
     let tshirt = 0;
     let locationsTotal = 0;
     let sizeModifier = 0;
     const locationBreakdown: { [key: string]: number } = {};
 
-    // Add t-shirt price if mode is tshirt_included
+
     if (mode === 'tshirt_included') {
       tshirt = pricing.tshirtPrice;
-      
-      // Add location prices (first location is free, rest are charged)
+
+
       locations.forEach((location, index) => {
         if (index === 0) {
-          locationBreakdown[location] = 0; // First location free
+          locationBreakdown[location] = 0;
         } else {
           const locationPrice = pricing.locationPrices[location as keyof typeof pricing.locationPrices] || 5.00;
           locationBreakdown[location] = locationPrice;
           locationsTotal += locationPrice;
         }
       });
-      
-      // Add size modifier
+
+
       if (size) {
         sizeModifier = SIZE_MODIFIERS[size.toLowerCase()] || 0;
       }
     }
 
-    // Calculate subtotal per unit
+
     const subtotalPerUnit = dtfBase + tshirt + locationsTotal + sizeModifier;
     const subtotal = subtotalPerUnit * quantity;
 
-    // Apply quantity discount
+
     let discountPercent = 0;
     for (const tier of pricing.quantityDiscounts) {
       if (quantity >= tier.min && quantity <= tier.max) {

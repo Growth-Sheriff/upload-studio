@@ -1,7 +1,7 @@
-/**
- * Order Analytics Page
- * Real order data from uploads processed through the customizer system
- */
+
+
+
+
 
 import type { LoaderFunctionArgs } from '@remix-run/node'
 import { json } from '@remix-run/node'
@@ -30,7 +30,7 @@ import { useCallback, useState } from 'react'
 import prisma from '~/lib/prisma.server'
 import { authenticate } from '~/shopify.server'
 
-// GraphQL query to get order details
+
 const ORDERS_QUERY = `
   query getOrders($first: Int!, $query: String) {
     orders(first: $first, query: $query, sortKey: CREATED_AT, reverse: true) {
@@ -97,7 +97,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const customStart = url.searchParams.get('startDate')
   const customEnd = url.searchParams.get('endDate')
 
-  // Calculate date range
+
   const now = new Date()
   let startDate: Date
   let endDate = now
@@ -125,13 +125,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   }
 
-  // Format dates for display
+
   const dateRangeText =
     period === 'all'
       ? 'All time'
       : `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
 
-  // Get order links from our database (these are orders with custom uploads)
+
   const orderLinks = await prisma.orderLink.findMany({
     where: {
       shopId: shop.id,
@@ -162,10 +162,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     orderBy: { createdAt: 'desc' },
   })
 
-  // Get unique order IDs
+
   const uniqueOrderIds = [...new Set(orderLinks.map((ol) => ol.orderId))]
 
-  // Aggregate order data from our database
+
   const ordersFromDB = uniqueOrderIds.map((orderId) => {
     const relatedLinks = orderLinks.filter((ol) => ol.orderId === orderId)
     const uploads = relatedLinks.map((ol) => ol.upload)
@@ -194,14 +194,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   })
 
-  // Fetch real order details from Shopify
+
   let shopifyOrders: any[] = []
   try {
-    const orderIdsForQuery = uniqueOrderIds.slice(0, 50) // Limit to 50 for performance
+    const orderIdsForQuery = uniqueOrderIds.slice(0, 50)
 
     if (orderIdsForQuery.length > 0) {
-      // Build proper query: numeric IDs need to be searched individually
-      // Format: "id:123 OR id:456 OR id:789"
+
+
       const queryStr = orderIdsForQuery.map((id) => `id:${id}`).join(' OR ')
       console.log('[Analytics] Shopify orders query:', queryStr)
 
@@ -219,9 +219,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
     console.error('[Analytics] Failed to fetch Shopify orders:', error)
   }
 
-  // Merge Shopify data with our data
+
   const enrichedOrders = ordersFromDB.map((dbOrder) => {
-    // Extract numeric ID from orderId
+
     const numericId = dbOrder.orderId
     const shopifyOrder = shopifyOrders.find((so) => {
       const soId = so.id.replace('gid://shopify/Order/', '')
@@ -271,7 +271,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   })
 
-  // Calculate summary statistics
+
   const totalOrders = enrichedOrders.length
   const totalRevenue = enrichedOrders.reduce((sum, o) => {
     const price = o.shopifyData?.totalPrice || o.orderTotal || 0
@@ -279,11 +279,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }, 0)
   const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0
 
-  // Upload count per order
+
   const totalUploadsInOrders = enrichedOrders.reduce((sum, o) => sum + o.uploadCount, 0)
   const avgUploadsPerOrder = totalOrders > 0 ? totalUploadsInOrders / totalOrders : 0
 
-  // Status breakdown
+
   const paidOrders = enrichedOrders.filter(
     (o) => o.shopifyData?.financialStatus === 'PAID' || o.orderPaidAt
   ).length
@@ -291,7 +291,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     (o) => o.shopifyData?.fulfillmentStatus === 'FULFILLED'
   ).length
 
-  // Location usage in orders
+
   const locationCounts: Record<string, number> = {}
   enrichedOrders.forEach((order) => {
     order.uploads.forEach((upload) => {
@@ -301,7 +301,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     })
   })
 
-  // Mode breakdown in orders
+
   const modeCounts: Record<string, number> = {}
   enrichedOrders.forEach((order) => {
     order.uploads.forEach((upload) => {
@@ -311,7 +311,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     })
   })
 
-  // Daily order trend
+
   const dailyCounts: Record<string, { orders: number; revenue: number }> = {}
   enrichedOrders.forEach((order) => {
     const date = (order.shopifyData?.createdAt || order.createdAt || '').split('T')[0]
@@ -418,11 +418,11 @@ export default function OrderAnalyticsPage() {
   const [customStartDate, setCustomStartDate] = useState('')
   const [customEndDate, setCustomEndDate] = useState('')
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(data.period === 'custom')
-  
-  // Modal State
+
+
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
-  
+
   const navigate = useNavigate()
 
   const handlePeriodChange = useCallback(
@@ -509,7 +509,7 @@ export default function OrderAnalyticsPage() {
       backAction={{ content: 'Analytics', url: '/app/analytics' }}
     >
       <Layout>
-        {/* Period Selector */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -567,7 +567,7 @@ export default function OrderAnalyticsPage() {
           </Card>
         </Layout.Section>
 
-        {/* Summary Cards Row 1 */}
+
         <Layout.Section variant="oneThird">
           <MetricCard
             title="Total Orders"
@@ -594,7 +594,7 @@ export default function OrderAnalyticsPage() {
           />
         </Layout.Section>
 
-        {/* Summary Cards Row 2 */}
+
         <Layout.Section variant="oneThird">
           <MetricCard
             title="Uploads in Orders"
@@ -621,7 +621,7 @@ export default function OrderAnalyticsPage() {
           />
         </Layout.Section>
 
-        {/* Location & Mode Breakdown */}
+
         <Layout.Section variant="oneHalf">
           <Card>
             <BlockStack gap="400">
@@ -690,7 +690,7 @@ export default function OrderAnalyticsPage() {
           </Card>
         </Layout.Section>
 
-        {/* Daily Trend */}
+
         {dailyTrend.length > 0 && (
           <Layout.Section>
             <Card>
@@ -731,7 +731,7 @@ export default function OrderAnalyticsPage() {
           </Layout.Section>
         )}
 
-        {/* Orders Table */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -786,7 +786,7 @@ export default function OrderAnalyticsPage() {
         </Layout.Section>
       </Layout>
 
-      {/* Upload Details Modal */}
+
       <Modal
         open={isModalOpen}
         onClose={() => setIsModalOpen(false)}

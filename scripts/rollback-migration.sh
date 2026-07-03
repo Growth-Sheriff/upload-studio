@@ -1,17 +1,17 @@
 #!/bin/bash
-# ============================================
-# Upload Studio - Rollback Tenant Migration
-# ============================================
-# If something goes wrong, this script will:
-#   1. Drop the fastdtftransfer schema (removes all tenant data)
-#   2. Keep the public schema intact (original data safe)
-#
-# The public schema is NEVER touched by any migration script.
-# You can always fall back to public schema by setting
-# DATABASE_URL without ?schema= parameter.
-#
-# Usage: bash scripts/rollback-migration.sh
-# ============================================
+
+
+
+
+
+
+
+
+
+
+
+
+
 set -e
 
 RED='\033[0;31m'

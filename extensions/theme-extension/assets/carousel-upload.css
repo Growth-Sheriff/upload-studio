@@ -1,11 +1,5 @@
-/**
- * Upload Lift - Carousel Upload Styles
- * Version: 1.0.0
- */
 
-/* ========================================
-   CSS Variables
-   ======================================== */
+
 :root {
   --ul-primary: #7367f0;
   --ul-primary-dark: #5e50ee;
@@ -23,9 +17,6 @@
   --ul-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* ========================================
-   Section Container
-   ======================================== */
 .ul-carousel-section {
   position: relative;
   padding: 60px 0;
@@ -39,9 +30,6 @@
   padding: 0 20px;
 }
 
-/* ========================================
-   Banner Slider
-   ======================================== */
 .ul-banner-slider-wrapper {
   position: relative;
   max-width: 1400px;
@@ -188,9 +176,6 @@
   transform: scale(1.2);
 }
 
-/* ========================================
-   4D Header
-   ======================================== */
 .ul-section-header-4d {
   text-align: center;
   margin-bottom: 50px;
@@ -297,9 +282,6 @@
   margin: 0;
 }
 
-/* ========================================
-   3D Carousel
-   ======================================== */
 .ul-carousel-3d-wrapper {
   position: relative;
   perspective: 1000px;
@@ -321,9 +303,6 @@
   cursor: pointer;
 }
 
-/* ========================================
-   Product Card 4D
-   ======================================== */
 .ul-product-card-4d {
   position: relative;
   background: var(--ul-card-bg);
@@ -363,7 +342,6 @@
   z-index: 1;
 }
 
-/* Badges */
 .ul-card-badges {
   position: absolute;
   top: 12px;
@@ -410,7 +388,6 @@
   color: white;
 }
 
-/* Wishlist */
 .ul-wishlist-btn {
   position: absolute;
   top: 12px;
@@ -443,7 +420,6 @@
   fill: currentColor;
 }
 
-/* Product Image */
 .ul-product-image-4d {
   position: relative;
   padding: 20px;
@@ -528,7 +504,6 @@
   opacity: 0.7;
 }
 
-/* Product Info */
 .ul-product-info {
   padding: 20px;
 }
@@ -587,7 +562,6 @@
   color: var(--ul-primary);
 }
 
-/* Upload Area */
 .ul-upload-area {
   margin-bottom: 12px;
 }
@@ -614,7 +588,6 @@
   border-style: solid;
 }
 
-/* Product Actions */
 .ul-product-actions {
   display: flex;
   gap: 10px;
@@ -655,7 +628,6 @@
   cursor: not-allowed;
 }
 
-/* Carousel Navigation */
 .ul-carousel-nav {
   position: absolute;
   top: 50%;
@@ -706,7 +678,6 @@
   transform: scale(1.2);
 }
 
-/* Ambient Particles */
 .ul-ambient-particles {
   position: absolute;
   inset: 0;
@@ -727,9 +698,6 @@
   to { transform: translateY(-100vh) rotate(360deg); opacity: 0; }
 }
 
-/* ========================================
-   Upload Modal
-   ======================================== */
 .ul-upload-modal-overlay {
   position: fixed;
   inset: 0;
@@ -812,7 +780,6 @@
   flex: 1;
 }
 
-/* Modal Product Info */
 .ul-modal-product-info {
   display: flex;
   align-items: center;
@@ -843,7 +810,6 @@
   color: var(--ul-primary);
 }
 
-/* Upload Zone */
 .ul-modal-upload-zone {
   border: 2px dashed var(--ul-border);
   border-radius: 16px;
@@ -886,7 +852,6 @@
   border-radius: 20px;
 }
 
-/* Upload Preview */
 .ul-modal-upload-preview {
   position: relative;
   border-radius: 16px;
@@ -935,7 +900,6 @@
   color: var(--ul-text-muted);
 }
 
-/* Modal Options */
 .ul-modal-options {
   display: flex;
   flex-direction: column;
@@ -944,7 +908,7 @@
 }
 
 .ul-modal-option-group {
-  
+
 }
 
 .ul-modal-option-label {
@@ -994,7 +958,6 @@
   color: var(--ul-primary);
 }
 
-/* Quantity */
 .ul-modal-quantity {
   display: flex;
   align-items: center;
@@ -1036,7 +999,6 @@
   outline: none;
 }
 
-/* Total */
 .ul-modal-total {
   display: flex;
   justify-content: space-between;
@@ -1058,7 +1020,6 @@
   color: var(--ul-primary);
 }
 
-/* Modal Footer */
 .ul-upload-modal-footer {
   display: flex;
   gap: 12px;
@@ -1107,34 +1068,31 @@
   box-shadow: 0 4px 15px rgba(115, 103, 240, 0.4);
 }
 
-/* ========================================
-   Mobile Responsive
-   ======================================== */
 @media (max-width: 768px) {
   .ul-carousel-section {
     padding: 40px 0;
   }
-  
+
   .ul-banner-heading {
     font-size: 28px;
   }
-  
+
   .ul-banner-subheading {
     font-size: 14px;
   }
-  
+
   .ul-header-side-deco {
     display: none;
   }
-  
+
   .ul-header-title-4d {
     font-size: 28px;
   }
-  
+
   .ul-carousel-3d-wrapper {
     padding: 20px;
   }
-  
+
   .ul-carousel-3d {
     display: flex;
     overflow-x: auto;
@@ -1143,7 +1101,7 @@
     padding: 10px;
     min-height: auto;
   }
-  
+
   .ul-carousel-3d-item {
     position: relative;
     flex: 0 0 280px;
@@ -1152,18 +1110,18 @@
     opacity: 1 !important;
     filter: none !important;
   }
-  
+
   .ul-carousel-nav,
   .ul-carousel-dots {
     display: none;
   }
-  
+
   .ul-upload-modal {
     max-width: 100%;
     max-height: 100%;
     border-radius: 20px 20px 0 0;
   }
-  
+
   .ul-modal-size-grid {
     grid-template-columns: 1fr 1fr;
   }

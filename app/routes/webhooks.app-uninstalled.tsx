@@ -3,20 +3,20 @@ import { json } from "@remix-run/node";
 import { authenticate } from "~/shopify.server";
 import prisma from "~/lib/prisma.server";
 
-// POST /webhooks/app-uninstalled
+
 export async function action({ request }: ActionFunctionArgs) {
   const { shop, topic } = await authenticate.webhook(request);
 
   console.log(`[Webhook] ${topic} for shop: ${shop}`);
 
   try {
-    // Check if shop exists before deleting
+
     const existingShop = await prisma.shop.findUnique({
       where: { shopDomain: shop },
     });
 
     if (existingShop) {
-      // Delete shop and all related data (cascade)
+
       await prisma.shop.delete({
         where: { shopDomain: shop },
       });

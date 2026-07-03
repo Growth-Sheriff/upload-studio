@@ -1,7 +1,7 @@
-/**
- * Public API v1 - Single Export Endpoint
- * GET /api/v1/exports/:id - Get export details
- */
+
+
+
+
 
 import type { LoaderFunctionArgs } from '@remix-run/node'
 import { json } from '@remix-run/node'
@@ -10,12 +10,12 @@ import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
 import { getDownloadSignedUrl, getStorageConfig } from '~/lib/storage.server'
 
-// Hash API key for lookup
+
 function hashApiKey(key: string): string {
   return createHash('sha256').update(key).digest('hex')
 }
 
-// Helper to authenticate API request via API key
+
 async function authenticateRequest(request: Request) {
   const authHeader = request.headers.get('Authorization')
   if (!authHeader?.startsWith('Bearer ')) {
@@ -35,13 +35,13 @@ async function authenticateRequest(request: Request) {
 
   if (!keyRecord) return null
 
-  // Update last used
+
   await prisma.apiKey.update({
     where: { id: keyRecord.id },
     data: { lastUsedAt: new Date(), usageCount: { increment: 1 } },
   })
 
-  // Get shop
+
   const shop = await prisma.shop.findUnique({
     where: { id: keyRecord.shopId },
   })
@@ -49,9 +49,9 @@ async function authenticateRequest(request: Request) {
   return shop
 }
 
-// GET /api/v1/exports/:id
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  // Rate limiting
+
   const identifier = getIdentifier(request, 'shop')
   const rateLimitResponse = await rateLimitGuard(identifier, 'adminApi')
   if (rateLimitResponse) return rateLimitResponse
@@ -74,10 +74,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return json({ error: 'Export not found' }, { status: 404 })
   }
 
-  // Generate signed URL for download if completed
+
   let downloadUrl = exportRecord.downloadUrl
   if (exportRecord.status === 'completed' && exportRecord.downloadUrl) {
-    // Check if it's a storage key (not a full URL)
+
     if (!exportRecord.downloadUrl.startsWith('http')) {
       try {
         const storageConfig = getStorageConfig({
@@ -87,7 +87,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         downloadUrl = await getDownloadSignedUrl(
           storageConfig,
           exportRecord.downloadUrl,
-          15 * 60 // 15 minutes
+          15 * 60
         )
       } catch (error) {
         console.error('[Export API] Failed to generate signed URL:', error)

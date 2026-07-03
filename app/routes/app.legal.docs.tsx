@@ -54,8 +54,8 @@ const sections = [
 
 export default function DocumentationPage() {
   return (
-    <Page 
-      title="Documentation" 
+    <Page
+      title="Documentation"
       subtitle="Complete guide to using Upload Studio"
       backAction={{ content: "Dashboard", url: "/app" }}
     >

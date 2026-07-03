@@ -1,16 +1,16 @@
-/**
- * Public API v1 - Pricing Endpoint
- * GET /api/v1/pricing/:productId?shop=domain
- *
- * Returns area-based pricing tiers and volume discounts
- * for the builder modal. Storefront-facing (CORS enabled).
- */
+
+
+
+
+
+
+
 
 import type { LoaderFunctionArgs } from '@remix-run/node'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import prisma from '~/lib/prisma.server'
 
-// Default pricing tiers (used when shop has no custom config)
+
 const DEFAULT_TIERS = [
   { minSqIn: 0, maxSqIn: 25, ratePerSqIn: 15 },
   { minSqIn: 25, maxSqIn: 100, ratePerSqIn: 12 },
@@ -43,7 +43,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return corsJson({ error: 'Missing shop parameter' }, request, { status: 400 })
   }
 
-  // Get shop
+
   const shop = await prisma.shop.findUnique({
     where: { shopDomain },
     select: {
@@ -57,7 +57,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return corsJson({ error: 'Shop not found' }, request, { status: 404 })
   }
 
-  // Check for product-specific pricing config
+
   const productConfig = await prisma.productConfig.findUnique({
     where: {
       shopId_productId: {
@@ -70,7 +70,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     },
   })
 
-  // Extract pricing from product config or shop settings
+
   const shopSettings = (shop.settings as Record<string, unknown>) || {}
   const productBuilderConfig = (productConfig?.builderConfig as Record<string, unknown>) || {}
   const shopBuilderPricing = (shopSettings.builderPricing as Record<string, unknown>) || {}

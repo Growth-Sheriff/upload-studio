@@ -1,24 +1,24 @@
-/**
- * UPLOAD LOGGER - Comprehensive Error Tracking System
- * ====================================================
- * Version: 1.0.0
- *
- * Tracks all upload events with detailed context:
- * - Intent creation
- * - Storage provider selection
- * - Retry attempts
- * - Fallback transitions
- * - Success/failure with timing
- *
- * Log Format: JSON structured for easy parsing
- * Storage: Database + Console (dual logging)
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import prisma from './prisma.server'
 
-// ============================================================
-// TYPES
-// ============================================================
+
+
+
 
 export type UploadEventType =
   | 'INTENT_CREATED'
@@ -70,9 +70,9 @@ export interface UploadLogEntry {
   traceId?: string
 }
 
-// ============================================================
-// LOGGER CLASS
-// ============================================================
+
+
+
 
 class UploadLogger {
   private static instance: UploadLogger
@@ -88,16 +88,16 @@ class UploadLogger {
     return UploadLogger.instance
   }
 
-  /**
-   * Generate a unique trace ID for tracking request flow
-   */
+
+
+
   generateTraceId(): string {
     return `trace_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   }
 
-  /**
-   * Log an upload event
-   */
+
+
+
   async log(
     event: UploadEventType,
     context: UploadLogContext,
@@ -112,24 +112,24 @@ class UploadLogger {
       traceId: options.traceId,
     }
 
-    // Console log with color coding
+
     this.consoleLog(entry)
 
-    // Add to memory buffer
+
     this.logs.push(entry)
     if (this.logs.length > this.maxLogsInMemory) {
       this.logs.shift()
     }
 
-    // Persist to database if requested or if it's an error
+
     if (options.persist || level === 'error') {
       await this.persistToDatabase(entry)
     }
   }
 
-  /**
-   * Quick log methods
-   */
+
+
+
   async intentCreated(uploadId: string, context: Partial<UploadLogContext>): Promise<string> {
     const traceId = this.generateTraceId()
     await this.log('INTENT_CREATED', { uploadId, ...context }, { traceId })
@@ -269,30 +269,30 @@ class UploadLogger {
     )
   }
 
-  /**
-   * Get recent logs for debugging
-   */
+
+
+
   getRecentLogs(count = 100): UploadLogEntry[] {
     return this.logs.slice(-count)
   }
 
-  /**
-   * Get logs by trace ID
-   */
+
+
+
   getLogsByTraceId(traceId: string): UploadLogEntry[] {
     return this.logs.filter((log) => log.traceId === traceId)
   }
 
-  /**
-   * Get logs by upload ID
-   */
+
+
+
   getLogsByUploadId(uploadId: string): UploadLogEntry[] {
     return this.logs.filter((log) => log.context.uploadId === uploadId)
   }
 
-  /**
-   * Get error summary for dashboard
-   */
+
+
+
   async getErrorSummary(hours = 24): Promise<{
     total: number
     byProvider: Record<string, number>
@@ -321,9 +321,9 @@ class UploadLogger {
     }
   }
 
-  // ============================================================
-  // PRIVATE METHODS
-  // ============================================================
+
+
+
 
   private getLogLevel(event: UploadEventType): 'info' | 'warn' | 'error' {
     switch (event) {
@@ -345,7 +345,7 @@ class UploadLogger {
     const traceInfo = entry.traceId ? `[${entry.traceId.slice(-8)}]` : ''
     const providerInfo = entry.context.provider ? `[${entry.context.provider}]` : ''
 
-    // Build context string
+
     const contextParts: string[] = []
     if (entry.context.uploadId) contextParts.push(`upload=${entry.context.uploadId}`)
     if (entry.context.itemId) contextParts.push(`item=${entry.context.itemId}`)
@@ -376,8 +376,8 @@ class UploadLogger {
 
   private async persistToDatabase(entry: UploadLogEntry): Promise<void> {
     try {
-      // Store in UploadLog table if it exists, otherwise just console log
-      // This is a non-blocking operation
+
+
       await prisma.uploadLog.create({
         data: {
           event: entry.event,
@@ -398,16 +398,16 @@ class UploadLogger {
   }
 }
 
-// Export singleton instance
+
 export const uploadLogger = UploadLogger.getInstance()
 
-// ============================================================
-// HELPER FUNCTIONS
-// ============================================================
 
-/**
- * Create a detailed error object from various error types
- */
+
+
+
+
+
+
 export function createErrorContext(
   error: unknown,
   additionalContext?: Record<string, unknown>
@@ -440,9 +440,9 @@ export function createErrorContext(
   }
 }
 
-/**
- * Format bytes to human-readable string
- */
+
+
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -450,9 +450,9 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
-/**
- * Format duration to human-readable string
- */
+
+
+
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`

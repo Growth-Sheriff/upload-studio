@@ -3,7 +3,7 @@ import { json } from "@remix-run/node";
 import crypto from "crypto";
 import prisma from "~/lib/prisma.server";
 
-// Verify Shopify webhook signature
+
 function verifyWebhookSignature(body: string, hmac: string, secret: string): boolean {
   const hash = crypto
     .createHmac("sha256", secret)
@@ -13,7 +13,7 @@ function verifyWebhookSignature(body: string, hmac: string, secret: string): boo
   return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(hmac));
 }
 
-// POST /webhooks/products-update
+
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
     return json({ error: "Method not allowed" }, { status: 405 });
@@ -37,7 +37,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const product = JSON.parse(body);
     console.log(`[Webhook] Product updated: ${product.id} for shop: ${shopDomain}`);
 
-    // Get shop from database
+
     const shop = await prisma.shop.findUnique({
       where: { shopDomain },
     });
@@ -47,7 +47,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ success: true });
     }
 
-    // Check if we have config for this product
+
     const productConfig = await prisma.productConfig.findFirst({
       where: {
         shopId: shop.id,
@@ -56,7 +56,7 @@ export async function action({ request }: ActionFunctionArgs) {
     });
 
     if (productConfig) {
-      // Log the update for audit
+
       await prisma.auditLog.create({
         data: {
           shopId: shop.id,

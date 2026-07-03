@@ -4,8 +4,8 @@ import { useLoaderData } from "@remix-run/react";
 import * as Sentry from "@sentry/remix";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  // Test Sentry in Loader
-  // Sentry.captureMessage("Sentry Loader Test Message");
+
+
   return json({ message: "Sentry Test Route" });
 };
 
@@ -14,11 +14,11 @@ export default function SentryTest() {
 
   const triggerError = () => {
     try {
-      // @ts-ignore
+
       myUndefinedFunction();
     } catch (e) {
       Sentry.captureException(e);
-      throw e; // Re-throw to trigger ErrorBoundary visually
+      throw e;
     }
   };
 
@@ -30,9 +30,9 @@ export default function SentryTest() {
     <div style={{ padding: 20, fontFamily: "system-ui, sans-serif" }}>
       <h1>Sentry Integration Test</h1>
       <p>Click these buttons to test Sentry capturing.</p>
-      
+
       <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
-        <button 
+        <button
             onClick={() => {
                 console.log("Console Log Test from Client");
                 console.warn("Console Warn Test from Client");
@@ -44,14 +44,14 @@ export default function SentryTest() {
             Trigger Console Logs
         </button>
 
-        <button 
+        <button
           onClick={() => Sentry.captureMessage("Manual Sentry Test Message")}
           style={{ padding: "10px 20px", background: "#f1c40f", color: "black", border: "none", borderRadius: "5px", cursor: "pointer" }}
         >
           Send Test Message (Safe)
         </button>
 
-        <button 
+        <button
           onClick={triggerError}
           style={{ padding: "10px 20px", background: "#d82c2c", color: "white", border: "none", borderRadius: "5px", cursor: "pointer" }}
         >
@@ -59,9 +59,9 @@ export default function SentryTest() {
         </button>
 
         <form method="post">
-            <button 
+            <button
               type="submit"
-              name="intent" 
+              name="intent"
               value="error"
               style={{ padding: "10px 20px", background: "#333", color: "white", border: "none", borderRadius: "5px", cursor: "pointer" }}
             >

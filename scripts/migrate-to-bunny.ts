@@ -1,24 +1,24 @@
-/**
- * Migration Script: Local Storage → Bunny.net
- *
- * Migrates existing local storage files to Bunny.net CDN
- *
- * Usage:
- *   npx ts-node scripts/migrate-to-bunny.ts
- *
- * Options:
- *   --dry-run    : Only log what would be migrated (no actual changes)
- *   --limit=100  : Migrate only first N files
- *   --shop=xxx   : Migrate only files for specific shop domain
- *   --verbose    : Show detailed progress
- *
- * Environment Variables Required:
- *   BUNNY_STORAGE_ZONE  : Bunny storage zone name
- *   BUNNY_API_KEY       : Bunny storage API key
- *   BUNNY_CDN_URL       : Bunny CDN pull zone URL
- *   LOCAL_STORAGE_PATH  : Path to local uploads folder
- *   DATABASE_URL        : PostgreSQL connection string
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { PrismaClient } from '@prisma/client'
 import { existsSync } from 'fs'
@@ -27,14 +27,14 @@ import { join } from 'path'
 
 const prisma = new PrismaClient()
 
-// Configuration from environment
+
 const BUNNY_STORAGE_ZONE = process.env.BUNNY_STORAGE_ZONE || 'customizerappdev'
 const BUNNY_API_KEY = process.env.BUNNY_API_KEY || ''
 const BUNNY_CDN_URL = process.env.BUNNY_CDN_URL || 'https://customizerappdev.b-cdn.net'
 const BUNNY_STORAGE_HOST = 'storage.bunnycdn.com'
 const LOCAL_STORAGE_PATH = process.env.LOCAL_STORAGE_PATH || './uploads'
 
-// CLI Arguments
+
 const isDryRun = process.argv.includes('--dry-run')
 const isVerbose = process.argv.includes('--verbose')
 const limitArg = process.argv.find((a) => a.startsWith('--limit='))
@@ -42,7 +42,7 @@ const limit = limitArg ? parseInt(limitArg.split('=')[1]) : undefined
 const shopArg = process.argv.find((a) => a.startsWith('--shop='))
 const shopFilter = shopArg ? shopArg.split('=')[1] : undefined
 
-// Statistics
+
 const stats = {
   total: 0,
   migrated: 0,
@@ -51,9 +51,9 @@ const stats = {
   totalBytes: 0,
 }
 
-/**
- * Upload a file buffer to Bunny.net storage
- */
+
+
+
 async function uploadToBunny(key: string, data: Buffer, contentType: string): Promise<string> {
   const url = `https://${BUNNY_STORAGE_HOST}/${BUNNY_STORAGE_ZONE}/${key}`
 
@@ -74,9 +74,9 @@ async function uploadToBunny(key: string, data: Buffer, contentType: string): Pr
   return `${BUNNY_CDN_URL}/${key}`
 }
 
-/**
- * Check if a file exists on Bunny storage
- */
+
+
+
 async function checkBunnyExists(key: string): Promise<boolean> {
   const url = `https://${BUNNY_STORAGE_HOST}/${BUNNY_STORAGE_ZONE}/${key}`
 
@@ -93,9 +93,9 @@ async function checkBunnyExists(key: string): Promise<boolean> {
   }
 }
 
-/**
- * Migrate a single upload item from local to Bunny
- */
+
+
+
 async function migrateItem(item: {
   id: string
   storageKey: string
@@ -104,26 +104,26 @@ async function migrateItem(item: {
   previewKey: string | null
 }): Promise<'migrated' | 'skipped' | 'failed'> {
   try {
-    // Skip if already an external URL
+
     if (item.storageKey.startsWith('http://') || item.storageKey.startsWith('https://')) {
       if (isVerbose) console.log(`  [SKIP] ${item.id} - Already external URL`)
       return 'skipped'
     }
 
-    // Skip if starts with bunny: prefix
+
     if (item.storageKey.startsWith('bunny:')) {
       if (isVerbose) console.log(`  [SKIP] ${item.id} - Already Bunny storage`)
       return 'skipped'
     }
 
-    // Check if local file exists
+
     const localPath = join(LOCAL_STORAGE_PATH, item.storageKey)
     if (!existsSync(localPath)) {
       console.log(`  [SKIP] ${item.id} - Local file not found: ${localPath}`)
       return 'skipped'
     }
 
-    // Get file size
+
     const fileStat = await stat(localPath)
     stats.totalBytes += fileStat.size
 
@@ -132,26 +132,26 @@ async function migrateItem(item: {
       return 'migrated'
     }
 
-    // Read local file
+
     const fileData = await readFile(localPath)
 
-    // Check if already exists on Bunny
+
     const exists = await checkBunnyExists(item.storageKey)
     if (exists) {
       if (isVerbose)
         console.log(`  [EXISTS] ${item.storageKey} - Already on Bunny, updating DB only`)
     } else {
-      // Upload to Bunny
+
       await uploadToBunny(item.storageKey, fileData, item.mimeType || 'application/octet-stream')
     }
 
-    // Update database with bunny: prefix
+
     await prisma.uploadItem.update({
       where: { id: item.id },
       data: { storageKey: `bunny:${item.storageKey}` },
     })
 
-    // Also migrate thumbnail if exists
+
     if (
       item.thumbnailKey &&
       !item.thumbnailKey.startsWith('http') &&
@@ -171,7 +171,7 @@ async function migrateItem(item: {
       }
     }
 
-    // Also migrate preview if exists
+
     if (
       item.previewKey &&
       !item.previewKey.startsWith('http') &&
@@ -199,9 +199,9 @@ async function migrateItem(item: {
   }
 }
 
-/**
- * Format bytes to human readable string
- */
+
+
+
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B'
   const k = 1024
@@ -210,9 +210,9 @@ function formatBytes(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
 }
 
-/**
- * Main migration function
- */
+
+
+
 async function main() {
   console.log('')
   console.log('═'.repeat(60))
@@ -227,20 +227,20 @@ async function main() {
   console.log(`  Local Path:    ${LOCAL_STORAGE_PATH}`)
   console.log('')
 
-  // Validate Bunny credentials
+
   if (!BUNNY_API_KEY && !isDryRun) {
     console.error('❌ ERROR: BUNNY_API_KEY is required for live migration')
     process.exit(1)
   }
 
-  // Build query filter
+
   const whereClause: any = {
     storageKey: {
       not: { startsWith: 'http' },
     },
   }
 
-  // Add shop filter if specified
+
   if (shopFilter) {
     const shop = await prisma.shop.findUnique({
       where: { shopDomain: shopFilter },
@@ -255,7 +255,7 @@ async function main() {
     whereClause.upload = { shopId: shop.id }
   }
 
-  // Get all local storage items
+
   const items = await prisma.uploadItem.findMany({
     where: whereClause,
     select: {
@@ -275,7 +275,7 @@ async function main() {
   console.log('─'.repeat(60))
   console.log('')
 
-  // Process each item
+
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
     console.log(`[${i + 1}/${items.length}] Processing ${item.id}...`)
@@ -294,13 +294,13 @@ async function main() {
         break
     }
 
-    // Rate limit: small delay between uploads
+
     if (!isDryRun && result === 'migrated') {
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
   }
 
-  // Print summary
+
   console.log('')
   console.log('═'.repeat(60))
   console.log('  MIGRATION COMPLETE')
@@ -323,7 +323,7 @@ async function main() {
   }
 }
 
-// Run migration
+
 main()
   .catch((error) => {
     console.error('❌ Migration failed:', error)

@@ -1,27 +1,27 @@
-/**
- * Public API v1 - Uploads Endpoints
- * GET /api/v1/uploads - List uploads
- */
+
+
+
+
 
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { authenticateApiRequest, requireApiPermission } from "~/lib/api.server";
 import prisma from "~/lib/prisma.server";
 
-// GET /api/v1/uploads
+
 export async function loader({ request }: LoaderFunctionArgs) {
-  // Authenticate
+
   const authResult = await authenticateApiRequest(request);
   if (authResult instanceof Response) {
     return authResult;
   }
   const ctx = authResult;
 
-  // Check permission
+
   const permError = requireApiPermission(ctx, "uploads:read");
   if (permError) return permError;
 
-  // Parse query params
+
   const url = new URL(request.url);
   const status = url.searchParams.get("status");
   const mode = url.searchParams.get("mode");
@@ -30,12 +30,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const sortBy = url.searchParams.get("sortBy") || "createdAt";
   const sortOrder = url.searchParams.get("sortOrder") === "asc" ? "asc" : "desc";
 
-  // Build query
+
   const where: any = { shopId: ctx.shopId };
   if (status) where.status = status;
   if (mode) where.mode = mode;
 
-  // Get uploads
+
   const [uploads, total] = await Promise.all([
     prisma.upload.findMany({
       where,

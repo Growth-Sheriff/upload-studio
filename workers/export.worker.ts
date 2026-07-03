@@ -1,13 +1,13 @@
-/**
- * Export Worker
- * Creates ZIP archives of approved uploads with manifest
- *
- * Job Payload:
- * {
- *   jobId: string,
- *   shopId: string
- * }
- */
+
+
+
+
+
+
+
+
+
+
 
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
@@ -22,12 +22,12 @@ import { join } from 'path'
 
 const prisma = new PrismaClient()
 
-// Redis connection
+
 const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
 })
 
-// Get S3/R2 client from env
+
 function getStorageClient(): S3Client {
   const provider = process.env.STORAGE_PROVIDER || 'r2'
 
@@ -55,7 +55,7 @@ function getBucketName(): string {
   return process.env.R2_BUCKET_NAME || process.env.S3_BUCKET_NAME || 'product-3d-customizer'
 }
 
-// Check if storage key is a Bunny URL or key
+
 function isBunnyStorage(storageKey: string): boolean {
   return (
     storageKey.startsWith('bunny:') ||
@@ -64,11 +64,11 @@ function isBunnyStorage(storageKey: string): boolean {
   )
 }
 
-// Download file from Bunny.net CDN
+
 async function downloadFromBunny(storageKey: string, localPath: string): Promise<void> {
   const cdnUrl = process.env.BUNNY_CDN_URL || 'https://customizerappdev.b-cdn.net'
 
-  // Build URL - handle bunny: prefix and http URLs
+
   let url: string
   if (storageKey.startsWith('http://') || storageKey.startsWith('https://')) {
     url = storageKey
@@ -89,35 +89,35 @@ async function downloadFromBunny(storageKey: string, localPath: string): Promise
   await fs.writeFile(localPath, buffer)
 }
 
-// Download file from local storage
+
 async function downloadFromLocal(storageKey: string, localPath: string): Promise<void> {
   const uploadsDir = process.env.LOCAL_UPLOAD_DIR || join(process.cwd(), 'uploads')
-  // Strip local: prefix if present
+
   const cleanKey = storageKey.startsWith('local:') ? storageKey.replace('local:', '') : storageKey
   const sourcePath = join(uploadsDir, cleanKey)
   const content = await fs.readFile(sourcePath)
   await fs.writeFile(localPath, content)
 }
 
-// Download file from storage (supports Bunny, Local, S3/R2)
+
 async function downloadFileFromStorage(
   key: string,
   localPath: string,
   storageProvider?: string
 ): Promise<void> {
-  // Check if it's a Bunny URL/key
+
   if (isBunnyStorage(key)) {
     await downloadFromBunny(key, localPath)
     return
   }
 
-  // Check if local storage (explicit provider, local: prefix, or no R2 config)
+
   if (storageProvider === 'local' || key.startsWith('local:') || (!key.startsWith('http') && !key.startsWith('r2:') && !process.env.R2_BUCKET_NAME)) {
     await downloadFromLocal(key, localPath)
     return
   }
 
-  // S3/R2 storage
+
   const client = getStorageClient()
   const bucket = getBucketName()
 
@@ -140,7 +140,7 @@ async function downloadFileFromStorage(
   await fs.writeFile(localPath, Buffer.concat(chunks))
 }
 
-// Upload file to storage
+
 async function uploadFileToStorage(
   key: string,
   localPath: string,
@@ -160,7 +160,7 @@ async function uploadFileToStorage(
   )
 }
 
-// Get signed download URL
+
 async function getSignedDownloadUrl(key: string, expiresIn: number = 86400): Promise<string> {
   const client = getStorageClient()
   const bucket = getBucketName()
@@ -175,7 +175,7 @@ async function getSignedDownloadUrl(key: string, expiresIn: number = 86400): Pro
   )
 }
 
-// Helper function to get storage config from shop
+
 function getStorageConfig(shopConfig: any): any {
   return shopConfig || {}
 }
@@ -202,7 +202,7 @@ async function processExportJob(job: Job<ExportJobData>) {
   console.log(`[Export Worker] Starting job ${jobId}`)
 
   try {
-    // Get export job
+
     const exportJob = await prisma.exportJob.findFirst({
       where: { id: jobId, shopId },
     })
@@ -211,13 +211,13 @@ async function processExportJob(job: Job<ExportJobData>) {
       throw new Error('Export job not found')
     }
 
-    // Update status to processing
+
     await prisma.exportJob.updateMany({
       where: { id: jobId, shopId },
       data: { status: 'processing' },
     })
 
-    // Get shop for storage config
+
     const shop = await prisma.shop.findUnique({
       where: { id: shopId },
     })
@@ -232,7 +232,7 @@ async function processExportJob(job: Job<ExportJobData>) {
     })
     const storageProvider = shop.storageProvider || 'local'
 
-    // Get uploads with items
+
     const uploads = await prisma.upload.findMany({
       where: {
         id: { in: exportJob.uploadIds },
@@ -250,7 +250,7 @@ async function processExportJob(job: Job<ExportJobData>) {
       throw new Error('No uploads found')
     }
 
-    // Create temp directory
+
     const tempDir = join(process.cwd(), 'temp', `export_${jobId}`)
     mkdirSync(tempDir, { recursive: true })
 
@@ -259,7 +259,7 @@ async function processExportJob(job: Job<ExportJobData>) {
     const zipFileName = `export_${dateStr}_${jobId.slice(0, 8)}.zip`
     const zipPath = join(tempDir, zipFileName)
 
-    // Create ZIP archive
+
     const archive = archiver('zip', { zlib: { level: 5 } })
     const output = createWriteStream(zipPath)
 
@@ -275,7 +275,7 @@ async function processExportJob(job: Job<ExportJobData>) {
           const orderId = upload.ordersLink[0]?.orderId || upload.orderId || 'no_order'
           const orderFolder = `order_${orderId.slice(-8)}`
 
-          // Create metadata for this upload
+
           const metadata = {
             uploadId: upload.id,
             orderId,
@@ -290,19 +290,19 @@ async function processExportJob(job: Job<ExportJobData>) {
 
           for (const item of upload.items) {
             try {
-              // Download original file from storage to temp
+
               const localFilePath = join(tempDir, `temp_${item.id}`)
               await downloadFileFromStorage(item.storageKey, localFilePath, storageProvider)
               const fileBuffer = await fs.readFile(localFilePath)
 
-              // Determine file extension
+
               const ext = item.originalName?.split('.').pop() || 'png'
               const fileName = `${item.location}_design.${ext}`
 
-              // Add to archive
+
               archive.append(fileBuffer, { name: `${orderFolder}/${fileName}` })
 
-              // Add to metadata
+
               const preflightResult = (item.preflightResult as any) || {}
               metadata.items.push({
                 location: item.location,
@@ -312,7 +312,7 @@ async function processExportJob(job: Job<ExportJobData>) {
                 preflight: preflightResult,
               })
 
-              // Add to manifest
+
               manifestRows.push({
                 orderId,
                 uploadId: upload.id,
@@ -332,17 +332,17 @@ async function processExportJob(job: Job<ExportJobData>) {
             }
           }
 
-          // Add metadata.json for this order
+
           archive.append(JSON.stringify(metadata, null, 2), {
             name: `${orderFolder}/metadata.json`,
           })
 
-          // Report progress
+
           const progress = Math.round(((uploads.indexOf(upload) + 1) / uploads.length) * 100)
           await job.updateProgress(progress)
         }
 
-        // Generate manifest CSV
+
         const csvStringifier = createObjectCsvStringifier({
           header: [
             { id: 'orderId', title: 'Order ID' },
@@ -360,20 +360,20 @@ async function processExportJob(job: Job<ExportJobData>) {
           csvStringifier.getHeaderString() + csvStringifier.stringifyRecords(manifestRows)
         archive.append(csvContent, { name: 'manifest.csv' })
 
-        // Finalize archive
+
         await archive.finalize()
       })()
     })
 
-    // Upload ZIP to storage
+
     const zipStorageKey = `${shop.shopDomain}/exports/${zipFileName}`
 
     await uploadFileToStorage(zipStorageKey, zipPath, 'application/zip')
 
-    // Get download URL (24 hour expiry)
+
     const downloadUrl = await getSignedDownloadUrl(zipStorageKey, 24 * 60 * 60)
 
-    // Update export job
+
     await prisma.exportJob.updateMany({
       where: { id: jobId, shopId },
       data: {
@@ -383,7 +383,7 @@ async function processExportJob(job: Job<ExportJobData>) {
       },
     })
 
-    // Cleanup temp files
+
     rmSync(tempDir, { recursive: true, force: true })
 
     console.log(`[Export Worker] Job ${jobId} completed. Files: ${uploads.length}`)
@@ -396,7 +396,7 @@ async function processExportJob(job: Job<ExportJobData>) {
   } catch (error) {
     console.error(`[Export Worker] Job ${jobId} failed:`, error)
 
-    // Update job status to failed
+
     await prisma.exportJob.updateMany({
       where: { id: jobId, shopId },
       data: { status: 'failed' },
@@ -406,7 +406,7 @@ async function processExportJob(job: Job<ExportJobData>) {
   }
 }
 
-// Create worker
+
 export function createExportWorker(redisConnection: { host: string; port: number }) {
   const worker = new Worker<ExportJobData>('export', processExportJob, {
     connection: redisConnection,
@@ -432,7 +432,7 @@ export function createExportWorker(redisConnection: { host: string; port: number
   return worker
 }
 
-// Standalone execution
+
 if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('export.worker.ts')) {
   const redisUrl = new URL(process.env.REDIS_URL || 'redis://localhost:6379')
   const redisConnection = {

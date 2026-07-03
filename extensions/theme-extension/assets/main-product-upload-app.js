@@ -42,6 +42,120 @@
     }
   }
 
+  function getTierUnitPrice(tier) {
+    if (!tier) return 0;
+    var value = tier.price_per_inch != null ? tier.price_per_inch : tier.price_per_sqin;
+    var parsed = Number(value);
+    return isFinite(parsed) && parsed > 0 ? parsed : 0;
+  }
+
+  function getTierLabel(tier) {
+    if (!tier) return '';
+    if (tier.label) return String(tier.label);
+    var min = Math.max(1, Math.floor(Number(tier.min_qty) || 1));
+    var max = tier.max_qty == null || tier.max_qty === '' ? null : Math.floor(Number(tier.max_qty) || 0);
+    return max && max >= min ? min + '-' + max + ' in' : min + '+ in';
+  }
+
+  function getText(value, fallback) {
+    var out = String(value == null ? '' : value).trim();
+    return out || fallback || '';
+  }
+
+  function normalizeCustomerId(value) {
+    var raw = String(value == null ? '' : value).trim();
+    if (!raw) return '';
+    var match = raw.match(/(\d{6,})$/);
+    return match ? match[1] : raw.replace(/[^\d]/g, '');
+  }
+
+  function getCustomerIdFromGlobals() {
+    try {
+      var stId = window.__st && (window.__st.cid || window.__st.customerId || window.__st.customer_id);
+      var analyticsPage = window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.page;
+      var analyticsId = analyticsPage && (analyticsPage.customerId || analyticsPage.customer_id);
+      return normalizeCustomerId(stId || analyticsId);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function buildQuery(params) {
+    var parts = [];
+    Object.keys(params).forEach(function(key) {
+      if (params[key] == null || params[key] === '') return;
+      parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(String(params[key])));
+    });
+    return parts.length ? '?' + parts.join('&') : '';
+  }
+
+  function readyKey(items) {
+    return items.map(function(item) {
+      return [
+        item.uploadId || '',
+        item.selectedVariantId || '',
+        item.widthIn || '',
+        item.heightIn || ''
+      ].join(':');
+    }).join('|');
+  }
+
+  function exactCartStorageAvailable() {
+    try {
+      var key = '__ump_exact_cart_test__';
+      window.localStorage.setItem(key, '1');
+      window.localStorage.removeItem(key);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function exactCartTotal(entries) {
+    return entries.reduce(function(sum, entry) {
+      return sum + normalizeVariantPrice(entry.totalPrice || entry.exactTotal || 0);
+    }, 0);
+  }
+
+  function normalizeDiscountCode(value) {
+    return String(value == null ? '' : value).trim().replace(/\s+/g, '').slice(0, 64);
+  }
+
+  function getDiscountCodeFromUrl() {
+    try {
+      var params = new URLSearchParams(window.location.search || '');
+      return normalizeDiscountCode(params.get('discount') || params.get('discount_code') || params.get('coupon'));
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function getDiscountStorageKey(shopDomain) {
+    return 'ump_discount_code:' + String(shopDomain || 'shop').toLowerCase();
+  }
+
+  function readStoredDiscountCode(shopDomain) {
+    try {
+      return normalizeDiscountCode(window.localStorage.getItem(getDiscountStorageKey(shopDomain)));
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function writeStoredDiscountCode(shopDomain, code) {
+    try {
+      var key = getDiscountStorageKey(shopDomain);
+      if (code) window.localStorage.setItem(key, code);
+      else window.localStorage.removeItem(key);
+    } catch (_) {}
+  }
+
+  function discountRedirect(path, code) {
+    var normalized = normalizeDiscountCode(code);
+    if (!normalized) return path || '/cart';
+    return '/discount/' + encodeURIComponent(normalized) + '?redirect=' + encodeURIComponent(path || '/cart');
+  }
+
   function getVariantLabel(variant) {
     var label = '';
     if (variant) {
@@ -137,14 +251,53 @@
     this.shopDomain = root.getAttribute('data-shop-domain') || '';
     this.productId = root.getAttribute('data-product-id') || '';
     this.productTitle = root.getAttribute('data-product-title') || '';
-    this.customerId = root.getAttribute('data-customer-id') || '';
+    this.currentVariantId = root.getAttribute('data-current-variant-id') || '';
+    this.customerId = normalizeCustomerId(root.getAttribute('data-customer-id') || getCustomerIdFromGlobals());
     this.customerEmail = root.getAttribute('data-customer-email') || '';
+    this.customerName = root.getAttribute('data-customer-name') || '';
+    if (this.customerId && !root.getAttribute('data-customer-id')) {
+      root.setAttribute('data-customer-id', this.customerId);
+    }
     this.rollWidthIn = toNumber(root.getAttribute('data-roll-width-in')) || 22;
     this.enableCheckout = root.getAttribute('data-enable-checkout') === 'true';
     this.currency = root.getAttribute('data-currency') || 'USD';
     this.variants = parseJson(root.getAttribute('data-product-variants'), []);
     this.productOptions = parseJson(root.getAttribute('data-product-options'), []);
+    this.discountCode = normalizeDiscountCode(
+      getDiscountCodeFromUrl() ||
+      root.getAttribute('data-discount-code') ||
+      readStoredDiscountCode(this.shopDomain)
+    );
+    if (this.discountCode) writeStoredDiscountCode(this.shopDomain, this.discountCode);
     this.token = 0;
+    if (!root.hasAttribute('data-ump-exact-measured')) {
+      root.setAttribute('data-ump-exact-measured', 'false');
+    }
+    this.customerPricing = {
+      status: 'loading',
+      customerType: 'standard',
+      statusLabel: '',
+      pricingMode: 'standard_variant',
+      hasCustomPricing: false,
+      pricePerInch: 0,
+      customerName: this.customerName,
+      currency: this.currency
+    };
+    this.productConfig = {
+      status: 'loading',
+      builderConfig: null,
+      customerOffer: null,
+      error: ''
+    };
+    this.quote = {
+      status: 'idle',
+      key: '',
+      token: 0,
+      data: null,
+      error: ''
+    };
+    this.exactCartNotice = '';
+    this.exactCartStorageEnabled = exactCartStorageAvailable();
     this.state = {
       uploadId: '',
       itemId: '',
@@ -170,10 +323,13 @@
     this.bindDom();
     this.bindEvents();
     this.renderPriceStrip();
+    this.customerPricingPromise = this.loadCustomerPricingContext();
+    this.productConfigPromise = this.loadProductConfig();
     this.render();
   }
 
   MainProductUpload.prototype.bindDom = function() {
+    this.workspace = this.root.querySelector('.ump__workspace');
     this.dropzone = this.root.querySelector('[data-ump-dropzone]');
     this.input = this.root.querySelector('[data-ump-input]');
     this.trigger = this.root.querySelector('[data-ump-upload-trigger]');
@@ -217,6 +373,170 @@
     this.checkoutButton = this.root.querySelector('[data-ump-checkout]');
     this.priceStrip = this.root.querySelector('[data-ump-price-strip]');
     this.error = this.root.querySelector('[data-ump-error]');
+    this.ensureCustomerPricingCard();
+    this.ensureDiscountPanel();
+    this.ensureExactCartPanel();
+  };
+
+  MainProductUpload.prototype.ensureCustomerPricingCard = function() {
+    if (!this.workspace) return;
+    this.customerCard = this.root.querySelector('[data-ump-customer-card]');
+    if (!this.customerCard) {
+      this.customerCard = document.createElement('div');
+      this.customerCard.className = 'ump__customer-card';
+      this.customerCard.setAttribute('data-ump-customer-card', '');
+      this.customerCard.hidden = true;
+      this.customerCard.innerHTML = [
+        '<div class="ump__customer-card-copy">',
+          '<span data-ump-customer-kicker>Account pricing</span>',
+          '<strong data-ump-customer-title>Checking account pricing</strong>',
+          '<small data-ump-customer-copy>Upload to unlock checkout.</small>',
+        '</div>',
+        '<div class="ump__customer-card-rate">',
+          '<span>Rate</span>',
+          '<strong data-ump-customer-rate>--</strong>',
+        '</div>'
+      ].join('');
+      this.workspace.insertBefore(this.customerCard, this.workspace.firstChild);
+    }
+    this.customerKicker = this.root.querySelector('[data-ump-customer-kicker]');
+    this.customerTitle = this.root.querySelector('[data-ump-customer-title]');
+    this.customerCopy = this.root.querySelector('[data-ump-customer-copy]');
+    this.customerRate = this.root.querySelector('[data-ump-customer-rate]');
+    this.ensureExactNoteField();
+  };
+
+  MainProductUpload.prototype.ensureExactNoteField = function() {
+    this.actions = this.root.querySelector('.ump__actions');
+    if (!this.actions) return;
+    this.noteWrap = this.root.querySelector('[data-ump-exact-note-wrap]');
+    if (!this.noteWrap) {
+      this.noteWrap = document.createElement('div');
+      this.noteWrap.className = 'ump__exact-note';
+      this.noteWrap.setAttribute('data-ump-exact-note-wrap', '');
+      this.noteWrap.hidden = true;
+      this.noteWrap.innerHTML = [
+        '<label for="ump-exact-note-' + escapeHtml(this.root.getAttribute('data-section-id') || 'main') + '">Order note</label>',
+        '<textarea id="ump-exact-note-' + escapeHtml(this.root.getAttribute('data-section-id') || 'main') + '" data-ump-exact-note rows="3" maxlength="500" placeholder="Add production notes for this exact measured order."></textarea>',
+        '<small>Optional. This note is attached to the measured checkout for production.</small>'
+      ].join('');
+      this.actions.parentNode.insertBefore(this.noteWrap, this.actions);
+    }
+    this.noteInput = this.root.querySelector('[data-ump-exact-note]');
+  };
+
+  MainProductUpload.prototype.ensureDiscountPanel = function() {
+    if (!this.priceStrip || !this.priceStrip.parentNode) return;
+    this.discountPanel = this.root.querySelector('[data-ump-discount-panel]');
+    if (!this.discountPanel) {
+      this.discountPanel = document.createElement('div');
+      this.discountPanel.className = 'ump__discount-panel';
+      this.discountPanel.setAttribute('data-ump-discount-panel', '');
+      this.discountPanel.innerHTML = [
+        '<div class="ump__discount-copy">',
+          '<span>Shopify discounts</span>',
+          '<small data-ump-discount-message>Eligible automatic discounts are applied at checkout.</small>',
+        '</div>',
+        '<div class="ump__discount-code">',
+          '<input data-ump-discount-input type="text" inputmode="text" autocomplete="off" placeholder="Discount code" maxlength="64">',
+          '<button data-ump-discount-apply type="button">Apply</button>',
+        '</div>'
+      ].join('');
+      this.priceStrip.parentNode.insertBefore(this.discountPanel, this.priceStrip.nextSibling);
+    }
+    this.discountInput = this.root.querySelector('[data-ump-discount-input]');
+    this.discountApply = this.root.querySelector('[data-ump-discount-apply]');
+    this.discountMessage = this.root.querySelector('[data-ump-discount-message]');
+    if (this.discountInput) this.discountInput.value = this.discountCode || '';
+  };
+
+  MainProductUpload.prototype.getDiscountCode = function() {
+    var inputValue = this.discountInput ? this.discountInput.value : this.discountCode;
+    return normalizeDiscountCode(inputValue);
+  };
+
+  MainProductUpload.prototype.setDiscountCode = function(code) {
+    this.discountCode = normalizeDiscountCode(code);
+    if (this.discountInput && this.discountInput.value !== this.discountCode) {
+      this.discountInput.value = this.discountCode;
+    }
+    writeStoredDiscountCode(this.shopDomain, this.discountCode);
+    this.renderDiscountPanel();
+  };
+
+  MainProductUpload.prototype.renderDiscountPanel = function() {
+    if (!this.discountPanel) return;
+    var exact = this.isExactMeasuredMode();
+    var offer = this.getLinearCustomerOffer();
+    var shouldShow = exact || offer || Boolean(this.getDiscountCode());
+    this.discountPanel.hidden = !shouldShow;
+    if (!shouldShow) return;
+
+    var code = this.getDiscountCode();
+    if (this.discountMessage) {
+      if (code) {
+        this.discountMessage.textContent = 'Code ' + code + ' will be sent to checkout. Eligible automatic discounts stay enabled.';
+      } else if (exact) {
+        this.discountMessage.textContent = 'Eligible automatic Shopify discounts are enabled for this measured checkout. Enter a code if you have one.';
+      } else {
+        this.discountMessage.textContent = 'Eligible automatic Shopify discounts are applied at checkout. Enter a code if needed.';
+      }
+    }
+    if (this.discountApply) {
+      this.discountApply.textContent = code ? 'Applied' : 'Apply';
+    }
+  };
+
+  MainProductUpload.prototype.ensureExactCartPanel = function() {
+    if (!this.priceStrip || !this.priceStrip.parentNode) return;
+    this.exactCartPanel = this.root.querySelector('[data-ump-exact-cart-panel]');
+    if (!this.exactCartPanel) {
+      this.exactCartPanel = document.createElement('div');
+      this.exactCartPanel.className = 'ump__exact-cart';
+      this.exactCartPanel.setAttribute('data-ump-exact-cart-panel', '');
+      this.exactCartPanel.hidden = true;
+      this.exactCartPanel.innerHTML = [
+        '<div class="ump__exact-cart-head">',
+          '<div>',
+            '<span>Saved exact cart</span>',
+            '<strong data-ump-exact-cart-title>No saved uploads</strong>',
+          '</div>',
+          '<button data-ump-exact-cart-clear type="button">Clear</button>',
+        '</div>',
+        '<div class="ump__exact-cart-list" data-ump-exact-cart-list></div>',
+        '<button class="ump__exact-cart-checkout" data-ump-exact-cart-checkout type="button">Checkout saved uploads</button>'
+      ].join('');
+      var anchor = this.discountPanel || this.priceStrip;
+      anchor.parentNode.insertBefore(this.exactCartPanel, anchor.nextSibling);
+    }
+    this.exactCartTitle = this.root.querySelector('[data-ump-exact-cart-title]');
+    this.exactCartList = this.root.querySelector('[data-ump-exact-cart-list]');
+    this.exactCartClear = this.root.querySelector('[data-ump-exact-cart-clear]');
+    this.exactCartCheckout = this.root.querySelector('[data-ump-exact-cart-checkout]');
+  };
+
+  MainProductUpload.prototype.renderExactCartPanel = function() {
+    if (!this.exactCartPanel) return;
+    var entries = this.isExactMeasuredMode() ? this.readExactCart() : [];
+    this.exactCartPanel.hidden = !entries.length;
+    if (!entries.length) return;
+
+    var total = exactCartTotal(entries);
+    var currency = (entries[0] && entries[0].currency) || this.customerPricing.currency || this.currency;
+    if (this.exactCartTitle) {
+      this.exactCartTitle.textContent = entries.length + ' upload' + (entries.length === 1 ? '' : 's') + ' saved / ' + formatMoney(total, currency);
+    }
+    if (this.exactCartList) {
+      this.exactCartList.innerHTML = entries.slice(0, 4).map(function(entry) {
+        var size = entry.widthIn && entry.heightIn ? formatInches(entry.widthIn) + ' x ' + formatInches(entry.heightIn) : 'Measured upload';
+        return [
+          '<div class="ump__exact-cart-item">',
+            '<span>', escapeHtml(entry.fileName || entry.productTitle || 'Gang sheet'), '</span>',
+            '<strong>', escapeHtml(size), '</strong>',
+          '</div>'
+        ].join('');
+      }).join('') + (entries.length > 4 ? '<small>+' + (entries.length - 4) + ' more saved upload' + (entries.length - 4 === 1 ? '' : 's') + '</small>' : '');
+    }
   };
 
   MainProductUpload.prototype.getPriceVariants = function() {
@@ -225,8 +545,277 @@
     });
   };
 
+  MainProductUpload.prototype.getExactCartKey = function() {
+    var identity = this.customerId || this.customerEmail || 'guest';
+    return [
+      'umpExactMeasuredCart',
+      this.shopDomain || 'shop',
+      identity
+    ].join(':');
+  };
+
+  MainProductUpload.prototype.readExactCart = function() {
+    if (!this.exactCartStorageEnabled) return [];
+    try {
+      var raw = window.localStorage.getItem(this.getExactCartKey());
+      var parsed = parseJson(raw, []);
+      if (!Array.isArray(parsed)) return [];
+      var now = Date.now();
+      return parsed.filter(function(entry) {
+        if (!entry || !entry.uploadId) return false;
+        var addedAt = Number(entry.addedAt || 0);
+        return !addedAt || now - addedAt < 14 * 24 * 60 * 60 * 1000;
+      });
+    } catch (_) {
+      return [];
+    }
+  };
+
+  MainProductUpload.prototype.writeExactCart = function(entries) {
+    if (!this.exactCartStorageEnabled) return;
+    try {
+      if (!entries.length) {
+        window.localStorage.removeItem(this.getExactCartKey());
+        return;
+      }
+      window.localStorage.setItem(this.getExactCartKey(), JSON.stringify(entries));
+    } catch (_) {}
+  };
+
+  MainProductUpload.prototype.mergeExactCartEntries = function(existing, additions) {
+    var byUpload = {};
+    existing.concat(additions).forEach(function(entry) {
+      if (!entry || !entry.uploadId) return;
+      byUpload[String(entry.uploadId)] = entry;
+    });
+    return Object.keys(byUpload).map(function(uploadId) { return byUpload[uploadId]; });
+  };
+
+  MainProductUpload.prototype.clearExactCart = function() {
+    this.writeExactCart([]);
+    this.exactCartNotice = '';
+    this.render();
+  };
+
+  MainProductUpload.prototype.currentExactEntries = function() {
+    var readyItems = this.getReadyItems();
+    if (!readyItems.length) return [];
+    var quote = this.quote.data || {};
+    var quoteItems = Array.isArray(quote.items) ? quote.items : [];
+    var quoteByUpload = {};
+    quoteItems.forEach(function(item) {
+      if (item && item.uploadId) quoteByUpload[String(item.uploadId)] = item;
+    });
+    var fallbackQuote = quote.quote || {};
+    var note = this.getCustomerNote();
+
+    return readyItems.map(function(item) {
+      var quoteItem = quoteByUpload[String(item.uploadId)] || fallbackQuote || {};
+      return {
+        uploadId: item.uploadId,
+        productId: this.productId,
+        productTitle: this.productTitle,
+        fileName: item.fileName || quoteItem.fileName || '',
+        quantity: 1,
+        selectedVariantId: item.selectedVariantId || this.getFallbackVariantId() || null,
+        measurementPolicy: POLICY,
+        rollWidthIn: this.rollWidthIn,
+        widthIn: item.widthIn || quoteItem.pageWidthIn || 0,
+        heightIn: item.heightIn || quoteItem.pageLengthIn || 0,
+        billableLengthIn: quoteItem.billableLengthIn || fallbackQuote.billableLengthIn || 0,
+        totalPrice: quoteItem.totalPrice || fallbackQuote.totalPrice || 0,
+        pricePerInch: quoteItem.pricePerInch || fallbackQuote.pricePerInch || this.customerPricing.pricePerInch || 0,
+        currency: quote.currency || fallbackQuote.currencyCode || this.customerPricing.currency || this.currency,
+        customerNote: note,
+        addedAt: Date.now()
+      };
+    }, this);
+  };
+
+  MainProductUpload.prototype.isCurrentExactUploadSaved = function() {
+    if (!this.state.uploadId) return false;
+    return this.readExactCart().some(function(entry) {
+      return String(entry.uploadId) === String(this.state.uploadId);
+    }, this);
+  };
+
+  MainProductUpload.prototype.getExactCheckoutEntries = function() {
+    var saved = this.readExactCart();
+    var current = this.quote.status === 'ready' && this.quote.data ? this.currentExactEntries() : [];
+    return this.mergeExactCartEntries(saved, current);
+  };
+
+  MainProductUpload.prototype.buildExactCheckoutNote = function(entries) {
+    var notes = entries
+      .map(function(entry) {
+        var note = getText(entry.customerNote, '');
+        if (!note) return '';
+        return (entry.fileName || entry.uploadId || 'Upload') + ': ' + note;
+      })
+      .filter(Boolean);
+    var currentNote = this.getCustomerNote();
+    if (currentNote && !notes.some(function(note) { return note.indexOf(currentNote) >= 0; })) {
+      notes.push('Current upload: ' + currentNote);
+    }
+    return notes.join('\n').slice(0, 500);
+  };
+
+  MainProductUpload.prototype.isLinearInchPricing = function() {
+    var config = this.productConfig.builderConfig || {};
+    if (config.volumeDiscountTierUnit === 'linear_inches') return true;
+    if (config.alphaProDiscount && config.alphaProDiscount.unit === 'linear_inches') return true;
+    var items = this.getReadyItems ? this.getReadyItems() : [];
+    return items.some(function(item) {
+      return item && item.selectedResult && item.selectedResult.pricingMode === 'linear_inches';
+    });
+  };
+
+  MainProductUpload.prototype.getLinearCustomerOffer = function() {
+    var config = this.productConfig.builderConfig || {};
+    var offer = this.productConfig.customerOffer || config.customerOffer || null;
+    return offer && offer.enabled === true ? offer : null;
+  };
+
+  MainProductUpload.prototype.getLinearTiers = function() {
+    var offer = this.getLinearCustomerOffer();
+    if (offer && Array.isArray(offer.tiers) && offer.tiers.length) return offer.tiers;
+    var config = this.productConfig.builderConfig || {};
+    return Array.isArray(config.volumeDiscountTiers) ? config.volumeDiscountTiers : [];
+  };
+
+  MainProductUpload.prototype.getActiveLinearTier = function(billable) {
+    var tiers = this.getLinearTiers();
+    var basis = Number(billable) || 0;
+    for (var i = 0; i < tiers.length; i += 1) {
+      var tier = tiers[i] || {};
+      var min = Number(tier.min_qty) || 0;
+      var max = tier.max_qty == null || tier.max_qty === '' ? Infinity : Number(tier.max_qty);
+      if (basis >= min && basis <= max) return tier;
+    }
+    return tiers[0] || null;
+  };
+
+  MainProductUpload.prototype.getLinearSummary = function(items) {
+    var billable = 0;
+    var cartQuantity = 0;
+    var sampleResult = null;
+    items.forEach(function(item) {
+      var result = item && item.selectedResult ? item.selectedResult : {};
+      sampleResult = sampleResult || result;
+      var length = toNumber(result.billableLengthIn) || Math.max(toNumber(item && item.widthIn), toNumber(item && item.heightIn));
+      billable += length;
+      cartQuantity += Math.max(1, Number(result.cartQuantity || result.sheetsNeeded) || Math.ceil(length || 1));
+    });
+    billable = Number(billable.toFixed(2));
+
+    var tierPrice = this.getLinearCustomerOffer() ? getTierUnitPrice(this.getActiveLinearTier(billable || 1)) : 0;
+    var unitPrice = tierPrice || toNumber(sampleResult && (sampleResult.pricePerInch || sampleResult.unitPrice));
+    return {
+      billable: billable,
+      cartQuantity: cartQuantity,
+      unitPrice: unitPrice,
+      total: unitPrice ? Number((cartQuantity * unitPrice).toFixed(2)) : 0
+    };
+  };
+
   MainProductUpload.prototype.renderPriceStrip = function() {
     if (!this.priceStrip) return;
+    if (this.isExactMeasuredMode()) {
+      var readyItems = this.getReadyItems();
+      var data = this.quote && this.quote.data ? this.quote.data : {};
+      var billable = toNumber(data.billableLengthIn || (data.quote && data.quote.billableLengthIn));
+      var total = data.quoteTotal != null ? data.quoteTotal : data.totalPrice;
+      var rate = toNumber(data.pricePerInch || (data.quote && data.quote.pricePerInch)) || toNumber(this.customerPricing.pricePerInch);
+      var quoteReady = Boolean(this.quote.status === 'ready' && this.quote.data);
+      var quoteTitle = !readyItems.length
+        ? 'Upload required'
+        : this.quote.status === 'loading'
+          ? 'Calculating exact quote'
+          : this.quote.status === 'error'
+            ? 'Quote unavailable'
+            : quoteReady
+              ? formatMoney(total, data.currency || this.customerPricing.currency || this.currency)
+              : 'Preparing quote';
+      var quoteMeta = !readyItems.length
+        ? 'No sheet-size rounding. You pay from the measured uploaded length.'
+        : this.quote.status === 'error'
+          ? (this.quote.error || 'Exact quote failed.')
+          : quoteReady
+            ? (billable ? formatInches(billable) + ' billable length' : 'Measured billable length') + ' / ' + readyItems.length + ' file' + (readyItems.length === 1 ? '' : 's')
+            : 'The server is applying your per-inch rate to the measured upload.';
+      var exactCart = this.readExactCart();
+      if (exactCart.length) {
+        quoteMeta += ' Exact cart: ' + exactCart.length + ' saved upload' + (exactCart.length === 1 ? '' : 's') +
+          ' / ' + formatMoney(exactCartTotal(exactCart), data.currency || this.customerPricing.currency || this.currency) +
+          '. Checkout includes saved exact uploads.';
+      }
+      if (this.exactCartNotice) {
+        quoteMeta = this.exactCartNotice + ' ' + quoteMeta;
+      }
+
+      this.priceStrip.innerHTML = [
+        '<div class="ump__price-head ump__price-head--exact">',
+          '<span>Exact measured pricing</span>',
+          '<strong>No variant rounding</strong>',
+        '</div>',
+        '<div class="ump__exact-price">',
+          '<div>',
+            '<small>Rate</small>',
+            '<strong>', escapeHtml(rate ? formatMoney(rate, this.customerPricing.currency || this.currency) + ' / in' : '--'), '</strong>',
+          '</div>',
+          '<div>',
+            '<small>Billable</small>',
+            '<strong>', escapeHtml(billable ? formatInches(billable) : '--'), '</strong>',
+          '</div>',
+          '<div>',
+            '<small>Total</small>',
+            '<strong>', escapeHtml(quoteTitle), '</strong>',
+          '</div>',
+        '</div>',
+        '<p class="ump__exact-meta">', escapeHtml(quoteMeta), '</p>'
+      ].join('');
+      this.priceStrip.hidden = false;
+      return;
+    }
+
+    var linear = this.isLinearInchPricing();
+    var offer = this.getLinearCustomerOffer();
+    var tiers = this.getLinearTiers();
+    if (linear && tiers.length) {
+      var lineItems = this.getReadyItems();
+      var summary = this.getLinearSummary(lineItems);
+      var activeTier = this.getActiveLinearTier(summary.billable || 1);
+      var tierHtml = tiers.map(function(tier) {
+        var price = getTierUnitPrice(tier);
+        var active = activeTier && String(activeTier.min_qty) === String(tier.min_qty) && String(activeTier.max_qty) === String(tier.max_qty);
+        return [
+          '<span class="ump__price-chip ump__price-chip--tier', active ? ' is-active' : '', '" role="listitem">',
+            '<small>', escapeHtml(getTierLabel(tier)), tier.popular ? ' / Popular' : '', '</small>',
+            '<strong>', escapeHtml(price ? formatMoney(price, this.currency) + ' / in' : '--'), '</strong>',
+          '</span>'
+        ].join('');
+      }, this).join('');
+      var title = offer ? 'Your discounted inch pricing' : 'Measured inch pricing';
+      var meta = !lineItems.length
+        ? 'Discount tiers apply automatically after upload when your account is eligible.'
+        : summary.unitPrice
+          ? formatInches(summary.billable) + ' measured billable inches / ' + summary.cartQuantity + ' cart inch unit' + (summary.cartQuantity === 1 ? '' : 's') + ' / estimated ' + formatMoney(summary.total, this.currency)
+          : 'Measured inch pricing is ready.';
+
+      this.priceStrip.innerHTML = [
+        '<div class="ump__price-head ump__price-head--linear">',
+          '<span>', escapeHtml(title), '</span>',
+          '<strong>', escapeHtml(offer ? 'Auto-applied for your account' : 'Auto-selected after upload'), '</strong>',
+        '</div>',
+        '<div class="ump__price-row" role="list">',
+          tierHtml,
+        '</div>',
+        '<p class="ump__exact-meta">', escapeHtml(meta), '</p>'
+      ].join('');
+      this.priceStrip.hidden = false;
+      return;
+    }
+
     var variants = this.getPriceVariants();
     if (!variants.length) {
       this.priceStrip.hidden = true;
@@ -254,6 +843,154 @@
     html.push('</div>');
     this.priceStrip.innerHTML = html.join('');
     this.priceStrip.hidden = false;
+  };
+
+  MainProductUpload.prototype.loadCustomerPricingContext = async function() {
+    if (!this.shopDomain || !this.productId) {
+      this.customerPricing.status = 'ready';
+      this.renderCustomerPricingCard();
+      return;
+    }
+
+    if (!this.customerId) {
+      this.customerId = getCustomerIdFromGlobals();
+      if (this.customerId) this.root.setAttribute('data-customer-id', this.customerId);
+    }
+
+    try {
+      var response = await fetch(this.apiBase + '/api/vip/context' + buildQuery({
+        shop: this.shopDomain,
+        shopDomain: this.shopDomain,
+        productId: this.productId,
+        customerId: this.customerId,
+        customerEmail: this.customerEmail
+      }), { credentials: 'same-origin' });
+      var data = await response.json().catch(function() { return {}; });
+      if (!response.ok) throw new Error(data.error || 'Failed to load customer pricing.');
+
+      var pricingMode = getText(data.pricingMode, 'standard_variant').toLowerCase();
+      var customerType = getText(data.customerType, 'standard').toLowerCase();
+      this.customerPricing.status = 'ready';
+      this.customerPricing.customerType = customerType;
+      this.customerPricing.statusLabel = getText(data.statusLabel, '');
+      this.customerPricing.pricingMode = pricingMode;
+      this.customerPricing.hasCustomPricing = Boolean(
+        data.hasCustomPricing === true ||
+        (pricingMode !== 'standard_variant' && ['business', 'vip'].indexOf(customerType) >= 0)
+      );
+      this.customerPricing.pricePerInch = toNumber(data.pricePerInch);
+      this.customerPricing.customerName = getText(data.customerName || (data.assignment && data.assignment.customerName), this.customerName);
+      this.customerPricing.currency = getText(data.currency, this.currency);
+      this.root.setAttribute(
+        'data-ump-exact-measured',
+        this.customerPricing.hasCustomPricing && pricingMode === 'measured_length' ? 'true' : 'false'
+      );
+    } catch (error) {
+      this.customerPricing.status = 'ready';
+      this.customerPricing.customerType = 'standard';
+      this.customerPricing.statusLabel = '';
+      this.customerPricing.pricingMode = 'standard_variant';
+      this.customerPricing.hasCustomPricing = false;
+      this.customerPricing.pricePerInch = 0;
+      this.customerPricing.customerName = this.customerName;
+      this.root.setAttribute('data-ump-exact-measured', 'false');
+    }
+
+    this.renderCustomerPricingCard();
+    this.renderPriceStrip();
+    this.render();
+  };
+
+  MainProductUpload.prototype.loadProductConfig = async function() {
+    if (!this.shopDomain || !this.productId) {
+      this.productConfig.status = 'ready';
+      this.renderCustomerPricingCard();
+      this.renderPriceStrip();
+      return;
+    }
+
+    try {
+      var response = await fetch(this.apiBase + '/api/product-config/' + encodeURIComponent(this.productId) + buildQuery({
+        shop: this.shopDomain,
+        customerId: this.customerId,
+        customerEmail: this.customerEmail,
+        customerName: this.customerName
+      }), { credentials: 'same-origin' });
+      var data = await response.json().catch(function() { return {}; });
+      if (!response.ok) throw new Error(data.error || 'Failed to load product configuration.');
+      var builderConfig = data.builderConfig || {};
+      this.productConfig.status = 'ready';
+      this.productConfig.builderConfig = builderConfig;
+      this.productConfig.customerOffer = builderConfig.customerOffer || null;
+      this.productConfig.error = '';
+    } catch (error) {
+      this.productConfig.status = 'ready';
+      this.productConfig.builderConfig = null;
+      this.productConfig.customerOffer = null;
+      this.productConfig.error = error && error.message ? error.message : 'Failed to load product configuration.';
+    }
+
+    this.renderCustomerPricingCard();
+    this.renderPriceStrip();
+    this.render();
+  };
+
+  MainProductUpload.prototype.renderCustomerPricingCard = function() {
+    if (!this.customerCard) return;
+    var exact = this.isExactMeasuredMode();
+    var offer = this.getLinearCustomerOffer();
+    var linear = this.isLinearInchPricing();
+    this.root.classList.toggle('is-exact-measured', exact);
+    this.root.classList.toggle('is-linear-inch-pricing', linear);
+    this.root.classList.toggle('is-customer-offer', Boolean(offer));
+    this.customerCard.hidden = !(exact || offer);
+    if (!exact && !offer) return;
+
+    if (offer) {
+      var offerName = getText(offer.customerName || this.customerPricing.customerName, this.customerName || 'valued customer');
+      var sampleTier = this.getActiveLinearTier(1);
+      var sampleRate = getTierUnitPrice(sampleTier);
+      if (this.customerKicker) this.customerKicker.textContent = 'Returning customer pricing';
+      if (this.customerTitle) {
+        this.customerTitle.textContent = getText(
+          offer.headline,
+          'Dear valued customer ' + offerName + ', your discounted inch pricing is active.'
+        );
+      }
+      if (this.customerCopy) {
+        this.customerCopy.textContent = getText(
+          offer.body,
+          'Your discounted prices update automatically from the measured billable inches.'
+        );
+      }
+      if (this.customerRate) {
+        this.customerRate.textContent = sampleRate ? 'From ' + formatMoney(sampleRate, this.currency) + ' / in' : 'Tier pricing';
+      }
+      return;
+    }
+
+    var name = getText(this.customerPricing.customerName, 'valued customer');
+    var rate = toNumber(this.customerPricing.pricePerInch);
+    if (this.customerKicker) this.customerKicker.textContent = getText(this.customerPricing.statusLabel, 'Exact measured pricing');
+    if (this.customerTitle) {
+      this.customerTitle.textContent = 'Dear valued customer ' + name + ', your exact measured pricing is active.';
+    }
+    if (this.customerCopy) {
+      this.customerCopy.textContent = 'We charge the measured upload length at your assigned rate. No sheet-size variant rounding will be used.';
+    }
+    if (this.customerRate) {
+      this.customerRate.textContent = rate ? formatMoney(rate, this.customerPricing.currency || this.currency) + ' / in' : '--';
+    }
+  };
+
+  MainProductUpload.prototype.renderExactNoteField = function() {
+    if (!this.noteWrap) return;
+    this.noteWrap.hidden = !this.isExactMeasuredMode() || !(this.getReadyItems().length || this.readExactCart().length);
+  };
+
+  MainProductUpload.prototype.getCustomerNote = function() {
+    if (!this.noteInput) return '';
+    return String(this.noteInput.value || '').trim().slice(0, 500);
   };
 
   MainProductUpload.prototype.bindEvents = function() {
@@ -316,11 +1053,46 @@
       if (files.length) self.startUploads(files);
     });
     this.addButton.addEventListener('click', function() {
+      if (self.isExactMeasuredMode()) {
+        self.addExactMeasuredToCart();
+        return;
+      }
       self.addToCart('/cart');
     });
     if (this.checkoutButton) {
       this.checkoutButton.addEventListener('click', function() {
+        if (self.isExactMeasuredMode()) {
+          self.handleExactMeasuredCheckout('/checkout');
+          return;
+        }
         self.addToCart('/checkout');
+      });
+    }
+    if (this.discountInput) {
+      this.discountInput.addEventListener('input', function() {
+        self.discountCode = normalizeDiscountCode(self.discountInput.value);
+        self.renderDiscountPanel();
+      });
+      this.discountInput.addEventListener('change', function() {
+        self.setDiscountCode(self.discountInput.value);
+      });
+    }
+    if (this.discountApply) {
+      this.discountApply.addEventListener('click', function(event) {
+        event.preventDefault();
+        self.setDiscountCode(self.discountInput ? self.discountInput.value : self.discountCode);
+      });
+    }
+    if (this.exactCartClear) {
+      this.exactCartClear.addEventListener('click', function(event) {
+        event.preventDefault();
+        self.clearExactCart();
+      });
+    }
+    if (this.exactCartCheckout) {
+      this.exactCartCheckout.addEventListener('click', function(event) {
+        event.preventDefault();
+        self.handleExactMeasuredCheckout('/checkout');
       });
     }
   };
@@ -388,7 +1160,7 @@
       this.progressText.hidden = false;
       this.progressText.innerHTML =
         '<span><strong>' + snapshot.loadedText + '</strong> / ' + snapshot.totalText + '</span>' +
-        '<span>Your internet speed: ' + snapshot.speedText + (snapshot.etaText ? ' â€¢ ' + snapshot.etaText : '') + '</span>' +
+        '<span>Your internet speed: ' + snapshot.speedText + (snapshot.etaText ? ' • ' + snapshot.etaText : '') + '</span>' +
         (snapshot.advisory ? '<span>' + snapshot.advisory + '</span>' : '');
       return;
     }
@@ -548,7 +1320,31 @@
     };
   };
 
+  MainProductUpload.prototype.isExactMeasuredMode = function() {
+    return this.root && this.root.getAttribute('data-ump-exact-measured') === 'true';
+  };
+
+  MainProductUpload.prototype.hasMeasuredUpload = function(item) {
+    return Boolean(item && item.uploadId && toNumber(item.widthIn) > 0 && toNumber(item.heightIn) > 0);
+  };
+
+  MainProductUpload.prototype.setExactMeasuredResult = function() {
+    this.state.selectedResult = {
+      pricingMode: 'measured_length',
+      selectedSheetLabel: 'Exact measured',
+      selectedVariantTitle: '',
+      selectedVariantId: this.getFallbackVariantId(),
+      billableLengthIn: Math.max(toNumber(this.state.widthIn), toNumber(this.state.heightIn)),
+      cartQuantity: 1,
+      sheetsNeeded: 1
+    };
+    this.state.selectedVariantId = this.getFallbackVariantId();
+  };
+
   MainProductUpload.prototype.isCartReadyItem = function(item) {
+    if (this.isExactMeasuredMode()) {
+      return this.hasMeasuredUpload(item);
+    }
     return Boolean(item && item.uploadId && item.selectedResult && item.selectedVariantId);
   };
 
@@ -670,7 +1466,9 @@
           var isActive = sameUploadId(item.uploadId, this.state.activeItemId || this.state.uploadId);
           var isReady = this.isCartReadyItem(item);
           var statusLabel = isReady ? 'Ready' : (item.status === 'error' ? 'Error' : (item.status === 'uploading' ? 'Uploading' : 'Measuring'));
-          var sheetLabel = item.selectedResult
+          var sheetLabel = this.isExactMeasuredMode() && isReady
+            ? 'Exact measured'
+            : item.selectedResult
             ? (item.selectedResult.selectedSheetLabel || item.selectedResult.selectedVariantTitle || '')
             : '';
           var sizeText = item.widthIn && item.heightIn
@@ -697,6 +1495,11 @@
   };
 
   MainProductUpload.prototype.getMethodText = function() {
+    if (this.isExactMeasuredMode()) {
+      return this.state.uploadId
+        ? 'Exact measured pricing is active. Checkout uses the measured upload length, not rounded sheet variants.'
+        : 'Exact measured pricing is active. Upload required before checkout.';
+    }
     var source = this.state.sizingSource;
     if (source === 'document_dpi') return 'Measured from embedded document resolution.';
     if (source === 'adobe_default_dpi') return 'Measured with Adobe-compatible no-DPI handling.';
@@ -705,6 +1508,7 @@
   };
 
   MainProductUpload.prototype.getFallbackVariantId = function() {
+    if (this.currentVariantId) return String(this.currentVariantId);
     for (var i = 0; i < this.variants.length; i += 1) {
       if (this.variants[i] && this.variants[i].available !== false) {
         return String(this.variants[i].id || '');
@@ -714,6 +1518,9 @@
   };
 
   MainProductUpload.prototype.parseSelectedSheet = function() {
+    if (this.isExactMeasuredMode() && this.state.widthIn > 0 && this.state.heightIn > 0) {
+      return { width: this.state.widthIn, height: this.state.heightIn, label: 'Exact measured' };
+    }
     var label = this.state.selectedResult
       ? (this.state.selectedResult.selectedSheetLabel || this.state.selectedResult.selectedVariantTitle || '')
       : '';
@@ -743,11 +1550,163 @@
     this.rulerSide.setAttribute('data-label', formatInches(sheet.height));
   };
 
+  MainProductUpload.prototype.buildCustomItems = function(items) {
+    return items.map(function(item) {
+      return {
+        uploadId: item.uploadId,
+        quantity: Math.max(1, Number(item.quantity || 1) || 1),
+        selectedVariantId: item.selectedVariantId || null,
+        measurementPolicy: item.measurementPolicy || POLICY,
+        rollWidthIn: toNumber(item.rollWidthIn) || this.rollWidthIn
+      };
+    }.bind(this));
+  };
+
+  MainProductUpload.prototype.addExactMeasuredToCart = function() {
+    var readyItems = this.getReadyItems();
+    if (!readyItems.length) {
+      this.setError('Please upload your gang sheet first.');
+      return;
+    }
+    if (this.quote.status !== 'ready' || !this.quote.data) {
+      this.setError('Please wait until the exact measured quote is ready.');
+      this.requestExactQuoteIfNeeded(readyItems);
+      this.render();
+      return;
+    }
+    if (!this.exactCartStorageEnabled) {
+      this.setError('Your browser is blocking saved cart storage. Please use Checkout for exact measured pricing.');
+      return;
+    }
+
+    var additions = this.currentExactEntries();
+    var merged = this.mergeExactCartEntries(this.readExactCart(), additions);
+    this.writeExactCart(merged);
+    this.exactCartNotice = additions.length + ' upload' + (additions.length === 1 ? '' : 's') + ' saved to cart. Add UV/DTF on another product page or checkout together.';
+    this.setError('');
+    this.render();
+  };
+
+  MainProductUpload.prototype.requestExactQuoteIfNeeded = function(items) {
+    if (!this.isExactMeasuredMode()) return;
+    if (!items.length) {
+      this.quote.key = '';
+      this.quote.status = 'idle';
+      this.quote.data = null;
+      this.quote.error = '';
+      return;
+    }
+    var key = readyKey(items);
+    if (key === this.quote.key && (this.quote.status === 'ready' || this.quote.status === 'loading')) return;
+    this.requestExactQuote(items, key);
+  };
+
+  MainProductUpload.prototype.requestExactQuote = async function(items, key) {
+    var token = ++this.quote.token;
+    this.quote.key = key;
+    this.quote.status = 'loading';
+    this.quote.data = null;
+    this.quote.error = '';
+    this.renderPriceStrip();
+
+    try {
+      var response = await fetch(this.apiBase + '/api/vip/quote' + buildQuery({ shop: this.shopDomain }), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId: this.customerId || null,
+          customerEmail: this.customerEmail || null,
+          measurementPolicy: POLICY,
+          rollWidthIn: this.rollWidthIn,
+          items: this.buildCustomItems(items)
+        })
+      });
+      var data = await response.json().catch(function() { return {}; });
+      if (token !== this.quote.token) return;
+      if (!response.ok) throw new Error(data.error || 'Failed to calculate exact quote.');
+      this.quote.status = 'ready';
+      this.quote.data = data;
+      this.quote.error = '';
+    } catch (error) {
+      if (token !== this.quote.token) return;
+      this.quote.status = 'error';
+      this.quote.data = null;
+      this.quote.error = error && error.message ? error.message : 'Failed to calculate exact quote.';
+    }
+
+    this.render();
+  };
+
+  MainProductUpload.prototype.handleExactMeasuredCheckout = async function(redirectTo) {
+    var readyItems = this.getReadyItems();
+    var checkoutEntries = this.getExactCheckoutEntries();
+    if (!readyItems.length && !checkoutEntries.length) {
+      this.setError('Please upload your gang sheet first.');
+      return;
+    }
+    if (readyItems.length && (this.quote.status !== 'ready' || !this.quote.data)) {
+      this.setError('Please wait until the exact measured quote is ready.');
+      this.requestExactQuoteIfNeeded(readyItems);
+      this.render();
+      return;
+    }
+    checkoutEntries = this.getExactCheckoutEntries();
+    if (!checkoutEntries.length) {
+      this.setError('Please add at least one exact measured upload before checkout.');
+      return;
+    }
+
+    this.setError('');
+    if (this.addButton) this.addButton.disabled = true;
+    if (this.checkoutButton) this.checkoutButton.disabled = true;
+
+    try {
+      var response = await fetch(this.apiBase + '/api/vip/checkout' + buildQuery({ shop: this.shopDomain }), {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId: this.customerId || null,
+          customerEmail: this.customerEmail || null,
+          customerNote: this.buildExactCheckoutNote(checkoutEntries),
+          discountCode: this.getDiscountCode() || null,
+          acceptAutomaticDiscounts: true,
+          checkoutIntent: redirectTo === '/cart' ? 'add_to_cart' : 'checkout',
+          measurementPolicy: POLICY,
+          rollWidthIn: this.rollWidthIn,
+          items: this.buildCustomItems(checkoutEntries)
+        })
+      });
+      var data = await response.json().catch(function() { return {}; });
+      if (!response.ok) throw new Error(data.error || 'Failed to create exact checkout.');
+      var redirect = data.checkoutUrl || data.redirectUrl || data.url || data.invoiceUrl;
+      if (!redirect) throw new Error('Exact checkout URL was not returned.');
+      this.writeExactCart([]);
+      window.location.href = redirect;
+    } catch (error) {
+      this.setError(error && error.message ? error.message : 'Failed to create exact checkout.');
+      this.render();
+    }
+  };
+
   MainProductUpload.prototype.render = function() {
     var readyItems = this.getReadyItems();
     var queueItems = this.getQueueItems();
+    var exactMode = this.isExactMeasuredMode();
+    var exactCartItems = exactMode ? this.readExactCart() : [];
+    this.requestExactQuoteIfNeeded(readyItems);
+    this.renderCustomerPricingCard();
+    this.renderExactNoteField();
+    this.renderPriceStrip();
+    this.renderDiscountPanel();
+    this.renderExactCartPanel();
     var hasBlockingWork = this.state.status === 'uploading' || this.state.status === 'error';
-    var ready = readyItems.length > 0 && !hasBlockingWork;
+    var quoteReady = !exactMode || !readyItems.length || Boolean(this.quote.status === 'ready' && this.quote.data);
+    var addReady = readyItems.length > 0 && !hasBlockingWork && quoteReady;
+    var ready = exactMode
+      ? (readyItems.length > 0 || exactCartItems.length > 0) && !hasBlockingWork && quoteReady
+      : readyItems.length > 0 && !hasBlockingWork && quoteReady;
     var hasUpload = Boolean(this.state.uploadId || this.state.fileName);
     this.statusPanel.hidden = !hasUpload;
     this.fileName.textContent = this.state.fileName || 'Waiting for file';
@@ -792,7 +1751,9 @@
       : '-- x --';
     this.width.textContent = formatInches(this.state.widthIn);
     this.height.textContent = formatInches(this.state.heightIn);
-    this.sheetLabel.textContent = this.state.selectedResult
+    this.sheetLabel.textContent = exactMode && this.state.widthIn && this.state.heightIn
+      ? 'Exact measured'
+      : this.state.selectedResult
       ? (this.state.selectedResult.selectedSheetLabel || this.state.selectedResult.selectedVariantTitle || '--')
       : '--';
     this.renderQuality();
@@ -800,6 +1761,14 @@
 
     var badgeLabel, badgeClass;
     if (ready) { badgeLabel = 'Ready'; badgeClass = 'is-ready'; }
+    else if (exactMode && readyItems.length && this.quote.status === 'loading') {
+      badgeLabel = 'Quoting';
+      badgeClass = 'is-measuring';
+    }
+    else if (exactMode && readyItems.length && this.quote.status === 'error') {
+      badgeLabel = 'Quote error';
+      badgeClass = '';
+    }
     else if (this.state.status === 'uploading') {
       badgeLabel = this.state.uploadId ? 'Measuring' : 'Uploading';
       badgeClass = this.state.uploadId ? 'is-measuring' : 'is-uploading';
@@ -812,15 +1781,28 @@
     this.badge.classList.remove('is-ready', 'is-uploading', 'is-measuring');
     if (badgeClass) this.badge.classList.add(badgeClass);
 
-    this.addButton.disabled = !ready;
+    this.addButton.disabled = exactMode ? !addReady : !ready;
     if (this.addButton) {
       var addLabel = this.addButton.getAttribute('data-default-label') || 'Add to cart';
-      this.addButton.textContent = readyItems.length > 1 ? 'Add ' + readyItems.length + ' gang sheets to cart' : addLabel;
+      if (exactMode) {
+        this.addButton.textContent = addReady
+          ? (this.isCurrentExactUploadSaved() ? 'Saved to cart' : 'Add to cart')
+          : (readyItems.length ? 'Preparing exact quote' : 'Upload required');
+      } else {
+        this.addButton.textContent = readyItems.length > 1 ? 'Add ' + readyItems.length + ' gang sheets to cart' : addLabel;
+      }
     }
     if (this.checkoutButton) this.checkoutButton.disabled = !ready;
     if (this.checkoutButton) {
       var checkoutLabel = this.checkoutButton.getAttribute('data-default-label') || 'Checkout';
-      this.checkoutButton.textContent = readyItems.length > 1 ? 'Checkout with ' + readyItems.length + ' gang sheets' : checkoutLabel;
+      if (exactMode) {
+        var exactCheckoutCount = this.getExactCheckoutEntries().length;
+        this.checkoutButton.textContent = ready
+          ? (exactCheckoutCount > 1 ? 'Checkout ' + exactCheckoutCount + ' exact uploads' : 'Checkout exact upload')
+          : (readyItems.length ? 'Preparing exact quote' : 'Upload required');
+      } else {
+        this.checkoutButton.textContent = readyItems.length > 1 ? 'Checkout with ' + readyItems.length + ' gang sheets' : checkoutLabel;
+      }
     }
     if (this.artLabel) this.artLabel.textContent = this.state.fileName || 'Upload preview';
     this.updatePreviewGeometry();
@@ -1030,6 +2012,17 @@
   };
 
   MainProductUpload.prototype.resolveProduct = async function() {
+    if (this.customerPricing.status === 'loading' && this.customerPricingPromise) {
+      try { await this.customerPricingPromise; } catch (_) {}
+    }
+    if (this.productConfig.status === 'loading' && this.productConfigPromise) {
+      try { await this.productConfigPromise; } catch (_) {}
+    }
+    if (this.isExactMeasuredMode() && this.hasMeasuredUpload(this.state)) {
+      this.setExactMeasuredResult();
+      return;
+    }
+    var linear = this.isLinearInchPricing();
     var response = await fetch(this.apiBase + '/api/upload/resolve-product', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1038,7 +2031,10 @@
         productId: String(this.productId),
         uploadId: this.state.uploadId,
         quantity: 1,
-        selectedVariantId: this.getFallbackVariantId() || null,
+        selectedVariantId: linear ? null : (this.getFallbackVariantId() || null),
+        customerId: this.customerId || null,
+        customerEmail: this.customerEmail || null,
+        customerName: this.customerName || null,
         measurementPolicy: POLICY,
         rollWidthIn: this.rollWidthIn,
         maxUploadWidth: this.rollWidthIn
@@ -1046,10 +2042,20 @@
     });
     var data = await response.json().catch(function() { return {}; });
     if (data && data.upload) this.applyMeasurement(data.upload);
-    if (!response.ok) throw new Error(data.error || 'No product variant can fit this upload.');
+    if (!response.ok) {
+      if (this.isExactMeasuredMode() && data && data.upload && this.hasMeasuredUpload(this.state)) {
+        this.setExactMeasuredResult();
+        return;
+      }
+      throw new Error(data.error || 'No product variant can fit this upload.');
+    }
+    if (this.isExactMeasuredMode() && this.hasMeasuredUpload(this.state)) {
+      this.setExactMeasuredResult();
+      return;
+    }
     this.state.selectedResult = data.resolution || null;
     this.state.selectedVariantId = this.state.selectedResult ? String(this.state.selectedResult.selectedVariantId || '') : '';
-    if (!this.state.selectedVariantId) throw new Error('No product variant can fit this upload.');
+    if (!this.state.selectedVariantId && !this.isExactMeasuredMode()) throw new Error('No product variant can fit this upload.');
   };
 
   MainProductUpload.prototype.addToCart = async function(redirectTo) {
@@ -1067,12 +2073,17 @@
     if (this.checkoutButton) this.checkoutButton.disabled = true;
 
     try {
+      var linearOffer = this.getLinearCustomerOffer();
+      var linearSummary = this.isLinearInchPricing() ? this.getLinearSummary(readyItems) : null;
+      var linearTier = linearSummary ? this.getActiveLinearTier(linearSummary.billable || 1) : null;
+      var linearOfferRate = linearOffer ? getTierUnitPrice(linearTier) : 0;
       var cartItems = readyItems.map(function(item, index) {
         var result = item.selectedResult || {};
         var variantId = parseInt(item.selectedVariantId, 10);
         if (!(variantId > 0)) throw new Error('A measured gang sheet has no matching variant.');
         var quantity = Math.max(1, Number(result.cartQuantity || result.sheetsNeeded) || 1);
         var sheetLabel = result.selectedSheetLabel || result.selectedVariantTitle || '';
+        var lineRate = linearOfferRate || toNumber(result.pricePerInch || result.unitPrice);
         return {
           id: variantId,
           quantity: quantity,
@@ -1095,7 +2106,11 @@
             _ul_pricing_mode: String(result.pricingMode || ''),
             _ul_billable_length_in: result.billableLengthIn != null ? String(result.billableLengthIn) : '',
             _ul_cart_quantity: String(quantity),
-            _ul_price_per_inch: result.pricePerInch != null ? String(result.pricePerInch) : '',
+            _ul_price_per_inch: lineRate ? String(lineRate) : '',
+            _ul_discounted_price_per_inch: linearOfferRate ? String(linearOfferRate) : '',
+            _ul_customer_offer: linearOffer ? 'returning_customer_inch_pricing' : '',
+            _ul_customer_offer_name: linearOffer ? String(linearOffer.customerName || '') : '',
+            _ul_customer_offer_tier: linearTier ? getTierLabel(linearTier) : '',
             _ul_selected_variant_id: String(item.selectedVariantId || ''),
             _ul_selected_variant_title: result.selectedVariantTitle || '',
             _ul_selected_sheet_label: sheetLabel,
@@ -1114,7 +2129,7 @@
       });
       var data = await response.json().catch(function() { return {}; });
       if (!response.ok) throw new Error(data.description || 'Failed to add to cart.');
-      window.location.href = redirectTo || '/cart';
+      window.location.href = discountRedirect(redirectTo || '/cart', this.getDiscountCode());
     } catch (error) {
       this.setError(error && error.message ? error.message : 'Failed to add to cart.');
       this.render();

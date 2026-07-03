@@ -12,7 +12,7 @@ import prisma from "~/lib/prisma.server";
 import { getAutoSheetConfig, saveAutoSheetConfig, DEFAULT_AUTO_SHEET_CONFIG } from "~/lib/autoSheet.server";
 import type { AutoSheetConfig } from "~/lib/autoSheet.server";
 
-// GraphQL query to get shop info
+
 const SHOP_INFO_QUERY = `
   query {
     shop {
@@ -26,7 +26,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const { session, admin } = await authenticate.admin(request);
   const shopDomain = session.shop;
 
-  // Get shop info from Shopify for defaults
+
   let shopifyShopName = "";
   let shopifyEmail = "";
   try {
@@ -49,7 +49,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         accessToken: session.accessToken || "",
         plan: "starter",
         billingStatus: "active",
-        storageProvider: "local", // Always local storage
+        storageProvider: "local",
         settings: {},
       },
     });
@@ -57,7 +57,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const settings = (shop.settings as Record<string, unknown>) || {};
 
-  // Get auto sheet config
+
   const autoSheetConfig = await getAutoSheetConfig(shopDomain);
 
   return json({
@@ -66,15 +66,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
       plan: shop.plan,
     },
     storageConfig: {
-      provider: "local", // Always local - no other options
+      provider: "local",
       isConfigured: true,
     },
     settings: {
-      // Use saved value, or fallback to Shopify data
+
       shopName: (settings.shopName as string) || shopifyShopName,
       notificationEmail: (settings.notificationEmail as string) || shopifyEmail,
       autoApprove: settings.autoApprove || false,
-      watermarkEnabled: false, // No watermark for any plan
+      watermarkEnabled: false,
       redisEnabled: settings.redisEnabled || false,
     },
     autoSheet: autoSheetConfig,
@@ -96,8 +96,8 @@ export async function action({ request }: ActionFunctionArgs) {
   const formData = await request.formData();
   const action = formData.get("_action");
 
-  // Storage is always local - no configuration needed
-  // Only general settings can be saved
+
+
 
   if (action === "save_general") {
     const shopName = formData.get("shopName") as string;
@@ -124,9 +124,9 @@ export async function action({ request }: ActionFunctionArgs) {
   if (action === "save_auto_sheet") {
     const enabled = formData.get("enabled") === "true";
 
-    // When calculator is disabled, sub-setting hidden inputs are not in the DOM.
-    // Only include fields that actually exist in the form data so we don't
-    // silently reset saved preferences to false.
+
+
+
     const config: Partial<AutoSheetConfig> = { enabled };
 
     if (formData.has("gapMm")) {
@@ -170,11 +170,11 @@ export default function SettingsPage() {
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
 
-  // Form state for general settings
+
   const [shopName, setShopName] = useState(settings.shopName as string);
   const [notificationEmail, setNotificationEmail] = useState(settings.notificationEmail as string);
 
-  // Form state for auto sheet settings
+
   const [sheetEnabled, setSheetEnabled] = useState(autoSheet.enabled);
   const [sheetGap, setSheetGap] = useState(autoSheet.gapMm);
   const [sheetMargin, setSheetMargin] = useState(autoSheet.marginMm);
@@ -191,7 +191,7 @@ export default function SettingsPage() {
   return (
     <Page title="Settings" backAction={{ content: "Dashboard", url: "/app" }}>
         <Layout>
-          {/* Success/Error Banner */}
+
           {actionData && "success" in actionData && (
             <Layout.Section>
               <Banner tone="success" onDismiss={() => {}}>
@@ -207,7 +207,7 @@ export default function SettingsPage() {
             </Layout.Section>
           )}
 
-          {/* General Settings */}
+
           <Layout.Section>
             <Card>
               <Form method="post">
@@ -245,7 +245,7 @@ export default function SettingsPage() {
             </Card>
           </Layout.Section>
 
-          {/* Storage Info - Local Only */}
+
           <Layout.Section>
             <Card>
               <BlockStack gap="400">
@@ -256,7 +256,7 @@ export default function SettingsPage() {
 
                 <Banner tone="info">
                   <p>
-                    <strong>Secure Local Storage:</strong> All customer uploads are stored securely on the server. 
+                    <strong>Secure Local Storage:</strong> All customer uploads are stored securely on the server.
                     Files are accessed via time-limited signed URLs for maximum security.
                   </p>
                 </Banner>
@@ -264,7 +264,7 @@ export default function SettingsPage() {
             </Card>
           </Layout.Section>
 
-          {/* Plan Info */}
+
           <Layout.Section>
             <Card>
               <BlockStack gap="300">
@@ -291,7 +291,7 @@ export default function SettingsPage() {
             </Card>
           </Layout.Section>
 
-          {/* Auto Sheet Size Calculator Settings */}
+
           <Layout.Section>
             <Card>
               <Form method="post">
@@ -305,7 +305,7 @@ export default function SettingsPage() {
                   </InlineStack>
 
                   <Text as="p" variant="bodySm" tone="subdued">
-                    Automatically calculates the optimal sheet size for customers based on their design dimensions and quantity. 
+                    Automatically calculates the optimal sheet size for customers based on their design dimensions and quantity.
                     Reduces waste and helps customers choose the most cost-effective variant.
                   </Text>
 
@@ -423,7 +423,7 @@ export default function SettingsPage() {
             </Card>
           </Layout.Section>
 
-          {/* Collection Button Integration Guide */}
+
           <Layout.Section>
             <Card>
               <BlockStack gap="400">
@@ -431,7 +431,7 @@ export default function SettingsPage() {
                   <Text as="h2" variant="headingMd">📦 Collection Quick Upload Button</Text>
                   <Badge tone="success">Full API Integration</Badge>
                 </InlineStack>
-                
+
                 <Text as="p" variant="bodyMd" tone="subdued">
                   Add a powerful "Upload Design" button to your collection pages. Customers can upload, select variants, and add to cart without leaving the collection page.
                 </Text>
@@ -461,14 +461,14 @@ export default function SettingsPage() {
                   </Text>
                 </Box>
 
-                <Box 
-                  background="bg-surface-secondary" 
-                  padding="400" 
+                <Box
+                  background="bg-surface-secondary"
+                  padding="400"
                   borderRadius="200"
                 >
                   <BlockStack gap="200">
                     <InlineStack align="end">
-                      <Button 
+                      <Button
                         size="slim"
                         onClick={() => {
                           const code = document.getElementById('snippet-code-full')?.textContent || '';
@@ -540,9 +540,9 @@ export default function SettingsPage() {
                   </Text>
                 </Box>
 
-                <Box 
-                  background="bg-surface-secondary" 
-                  padding="400" 
+                <Box
+                  background="bg-surface-secondary"
+                  padding="400"
                   borderRadius="200"
                 >
                   <pre style={{ fontSize: '12px', lineHeight: '1.5', margin: 0 }}>
@@ -554,15 +554,15 @@ export default function SettingsPage() {
                   <Text as="h3" variant="headingSm">Customization</Text>
                 </Box>
 
-                <Box 
-                  background="bg-surface-secondary" 
-                  padding="400" 
+                <Box
+                  background="bg-surface-secondary"
+                  padding="400"
                   borderRadius="200"
                 >
                   <pre style={{ fontSize: '12px', lineHeight: '1.5', margin: 0 }}>
-{`{% render 'dtf-quick-upload-btn', 
-  product: product, 
-  button_text: 'Customize Now' 
+{`{% render 'dtf-quick-upload-btn',
+  product: product,
+  button_text: 'Customize Now'
 %}`}
                   </pre>
                 </Box>

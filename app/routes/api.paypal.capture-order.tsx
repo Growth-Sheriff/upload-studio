@@ -1,9 +1,9 @@
-/**
- * PayPal Capture Order API
- *
- * Called after merchant approves payment on PayPal
- * Captures the payment and marks commissions as paid
- */
+
+
+
+
+
+
 import type { ActionFunctionArgs } from '@remix-run/node';
 import { json } from '@remix-run/node';
 import { capturePayPalOrder, isPayPalConfigured } from '~/lib/paypal.server';
@@ -39,7 +39,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   try {
-    // Capture the payment
+
     const capture = await capturePayPalOrder(paypalOrderId);
 
     if (capture.status !== 'COMPLETED') {
@@ -50,7 +50,7 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    // Get the capture transaction ID (this is the real payment reference)
+
     const captureId =
       capture.purchase_units?.[0]?.payments?.captures?.[0]?.id || paypalOrderId;
     const captureAmount =
@@ -58,8 +58,8 @@ export async function action({ request }: ActionFunctionArgs) {
     const payerEmail = capture.payer?.email_address || 'unknown';
     const payerId = capture.payer?.payer_id || '';
 
-    // ── Save PayPal vault token if present (for future auto-charges) ──
-    // The vault token is returned in the capture response when vault was requested
+
+
     const captureRaw = capture as unknown as Record<string, unknown>;
     const paymentSource = captureRaw.payment_source as Record<string, unknown> | undefined;
     const paypalSource = paymentSource?.paypal as Record<string, unknown> | undefined;
@@ -67,7 +67,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const vaultData = vaultAttributes?.vault as { id?: string; status?: string } | undefined;
 
     if (vaultData?.id && vaultData?.status === 'VAULTED') {
-      // Save vault token to shop for future auto-charges
+
       await prisma.shop.update({
         where: { id: shop.id },
         data: {
@@ -81,7 +81,7 @@ export async function action({ request }: ActionFunctionArgs) {
       console.log(`[PayPal] Vault saved for ${shopDomain}: vault=${vaultData.id}, payer=${payerId}`);
     }
 
-    // Find the audit log with pending order IDs for this PayPal order
+
     const auditLog = await prisma.auditLog.findFirst({
       where: {
         shopId: shop.id,
@@ -146,7 +146,7 @@ export async function action({ request }: ActionFunctionArgs) {
       markedCount++;
     }
 
-    // Audit log for successful payment
+
     await prisma.auditLog.create({
       data: {
         shopId: shop.id,
@@ -178,7 +178,7 @@ export async function action({ request }: ActionFunctionArgs) {
   } catch (error) {
     console.error('[PayPal] Capture error:', error);
 
-    // Audit log for failed capture
+
     await prisma.auditLog.create({
       data: {
         shopId: shop.id,

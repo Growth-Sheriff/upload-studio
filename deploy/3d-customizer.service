@@ -12,12 +12,12 @@ Restart=always
 RestartSec=10
 Environment=NODE_ENV=production
 
-# Logging
+
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=upload-studio
 
-# Security
+
 NoNewPrivileges=true
 PrivateTmp=true
 

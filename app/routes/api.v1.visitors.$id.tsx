@@ -1,11 +1,11 @@
-/**
- * Visitor Detail API Endpoint
- * Get single visitor with sessions and uploads
- *
- * @route GET /api/v1/visitors/:id
- *
- * ⚠️ This is a NEW endpoint - does not modify existing flows
- */
+
+
+
+
+
+
+
+
 
 import type { LoaderFunctionArgs } from '@remix-run/node'
 import { json } from '@remix-run/node'
@@ -13,7 +13,7 @@ import { authenticateApiRequest } from '~/lib/api.server'
 import { getVisitorWithSessions } from '~/lib/visitor.server'
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  // Authenticate via API key (Enterprise plan required)
+
   const authResult = await authenticateApiRequest(request)
   if (authResult instanceof Response) return authResult
 

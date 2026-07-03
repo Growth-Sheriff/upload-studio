@@ -1,19 +1,19 @@
-/**
- * Telemetry Data Collector
- *
- * Gathers shop info, usage metrics, commissions, config, and health
- * from the local database for the central billing panel.
- *
- * Used by:
- *   - workers/telemetry.worker.ts (push every 60s)
- *   - app/routes/api.internal.telemetry.tsx (on-demand GET)
- */
+
+
+
+
+
+
+
+
+
+
 
 import { PrismaClient, Prisma } from '@prisma/client'
 
-// ─────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────
+
+
+
 
 export interface TelemetryPayload {
   tenant: TenantInfo
@@ -115,9 +115,9 @@ export interface HealthInfo {
   lastExportAt: string | null
 }
 
-// ─────────────────────────────────────────────────────────────
-// Collector
-// ─────────────────────────────────────────────────────────────
+
+
+
 
 const processStartTime = Date.now()
 
@@ -143,9 +143,9 @@ export async function collectTelemetry(prisma: PrismaClient): Promise<TelemetryP
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Tenant Info
-// ─────────────────────────────────────────────────────────────
+
+
+
 
 async function collectTenantInfo(prisma: PrismaClient): Promise<TenantInfo> {
   const shop = await prisma.shop.findFirst({
@@ -210,9 +210,9 @@ async function collectTenantInfo(prisma: PrismaClient): Promise<TenantInfo> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Usage Metrics
-// ─────────────────────────────────────────────────────────────
+
+
+
 
 async function collectUsageMetrics(
   prisma: PrismaClient,
@@ -242,15 +242,15 @@ async function collectUsageMetrics(
     ticketsTotal,
     ticketsOpen,
   ] = await Promise.all([
-    // Uploads
+
     prisma.upload.count(),
     prisma.upload.count({ where: { createdAt: { gte: monthStart } } }),
     prisma.upload.groupBy({ by: ['status'], _count: true }),
     prisma.upload.groupBy({ by: ['mode'], _count: true }),
-    // Storage
+
     prisma.uploadItem.aggregate({ _sum: { fileSize: true }, _avg: { fileSize: true } }),
     prisma.uploadItem.count(),
-    // Orders
+
     prisma.orderLink.count(),
     prisma.orderLink.count({ where: { createdAt: { gte: monthStart } } }),
     prisma.upload.aggregate({
@@ -261,24 +261,24 @@ async function collectUsageMetrics(
       _sum: { orderTotal: true },
       where: { orderPaidAt: { gte: monthStart } },
     }),
-    // Exports
+
     prisma.exportJob.groupBy({ by: ['status'], _count: true }),
-    // Visitors
+
     prisma.visitor.count(),
     prisma.visitor.count({ where: { firstSeenAt: { gte: monthStart } } }),
     prisma.visitorSession.count(),
     prisma.visitorSession.count({ where: { startedAt: { gte: monthStart } } }),
-    // API Keys
+
     prisma.apiKey.aggregate({
       _count: true,
       _sum: { usageCount: true },
       where: { status: 'active' },
     }),
-    // Flow Triggers
+
     prisma.flowTrigger.count(),
     prisma.flowTrigger.count({ where: { createdAt: { gte: monthStart } } }),
     prisma.flowTrigger.groupBy({ by: ['status'], _count: true }),
-    // Support
+
     prisma.supportTicket.count(),
     prisma.supportTicket.count({ where: { status: { in: ['open', 'in_progress'] } } }),
   ])
@@ -342,9 +342,9 @@ async function collectUsageMetrics(
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Commission Metrics
-// ─────────────────────────────────────────────────────────────
+
+
+
 
 async function collectCommissionMetrics(
   prisma: PrismaClient,
@@ -386,9 +386,9 @@ async function collectCommissionMetrics(
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Config Summary
-// ─────────────────────────────────────────────────────────────
+
+
+
 
 async function collectConfigSummary(prisma: PrismaClient): Promise<ConfigSummary> {
   const [
@@ -430,9 +430,9 @@ async function collectConfigSummary(prisma: PrismaClient): Promise<ConfigSummary
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Health Info
-// ─────────────────────────────────────────────────────────────
+
+
+
 
 async function collectHealthInfo(prisma: PrismaClient): Promise<HealthInfo> {
   const [lastUpload, lastOrder, lastExport] = await Promise.all([

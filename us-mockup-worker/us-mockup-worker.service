@@ -15,7 +15,7 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=us-mockup-worker
 
-# Resource limits (isolated from GSB)
+
 LimitNOFILE=65536
 MemoryMax=4G
 CPUQuota=200%

@@ -9,10 +9,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export default function GDPRCompliancePage() {
-  const lastUpdated = new Date().toLocaleDateString("en-US", { 
-    year: "numeric", 
-    month: "long", 
-    day: "numeric" 
+  const lastUpdated = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric"
   });
 
   const webhooks = [
@@ -31,8 +31,8 @@ export default function GDPRCompliancePage() {
   ];
 
   return (
-    <Page 
-      title="GDPR Compliance" 
+    <Page
+      title="GDPR Compliance"
       titleMetadata={<Badge tone="success">Compliant</Badge>}
       backAction={{ content: "Dashboard", url: "/app" }}
     >
@@ -45,8 +45,8 @@ export default function GDPRCompliancePage() {
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">Overview</Text>
                 <Text as="p">
-                  Upload Studio is fully compliant with the General Data Protection Regulation (GDPR) 
-                  and other applicable data protection laws. We are committed to protecting the privacy and rights 
+                  Upload Studio is fully compliant with the General Data Protection Regulation (GDPR)
+                  and other applicable data protection laws. We are committed to protecting the privacy and rights
                   of our users and their customers.
                 </Text>
               </BlockStack>
@@ -69,7 +69,7 @@ export default function GDPRCompliancePage() {
             <BlockStack gap="400">
               <Text as="h2" variant="headingMd">Shopify GDPR Webhooks</Text>
               <Text as="p">We implement all required Shopify GDPR webhooks:</Text>
-              
+
               {webhooks.map((wh, idx) => (
                 <Box key={idx} padding="300" background="bg-surface-secondary" borderRadius="200">
                   <InlineStack gap="200" align="start">

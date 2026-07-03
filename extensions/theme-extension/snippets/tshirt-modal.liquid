@@ -1,38 +1,6 @@
-{% comment %}
-  T-Shirt Modal Snippet
-  =====================
-  FAZ 2: 4-Step Wizard + 3D Preview Modal
-  FAZ 6: Mobile Experience + 3D Fallback
-
-  Usage: {% render 'tshirt-modal' %}
-
-  Features:
-  - Step 1: Upload (inherited or new design)
-  - Step 2: 3D Preview + Options (color, size, locations)
-  - Step 3: Extra Questions
-  - Step 4: Review & Actions
-  - 3D Fallback for low-end devices (FAZ 6)
-
-  Integration:
-  - Listens for 'ul:openTShirtModal' event from DTF uploader
-  - Uses Three.js for 3D rendering
-  - Supports multi-location printing
-
-  Version: 4.1.0
-  Architecture: DTF_TSHIRT_MODAL_ARCHITECTURE.md
-{% endcomment %}
-
-<!-- DEBUG: tshirt-modal.liquid RENDERED -->
-<script>console.log('[DEBUG] tshirt-modal.liquid snippet RENDERED on page');</script>
-
-<!-- Load Separate CSS -->
 {{ 'tshirt-modal.css' | asset_url | stylesheet_tag }}
-
-<!-- Modal HTML -->
 <div class="ul-tshirt-overlay" id="ul-tshirt-overlay">
   <div class="ul-tshirt-modal">
-
-    <!-- Header -->
     <div class="ul-tshirt-header">
       <span class="ul-tshirt-title">👕 T-Shirt Designer</span>
       <button type="button" class="ul-tshirt-close" id="ul-tshirt-close" aria-label="Close">
@@ -41,8 +9,6 @@
         </svg>
       </button>
     </div>
-
-    <!-- Step Progress -->
     <div class="ul-tshirt-steps">
       <div class="ul-step-item active" data-step="1">
         <div class="ul-step-number">1</div>
@@ -64,20 +30,13 @@
         <span class="ul-step-label">Review</span>
       </div>
     </div>
-
-    <!-- Body -->
     <div class="ul-tshirt-body">
       <div class="ul-tshirt-content">
-
-        <!-- STEP 1: Upload -->
         <div class="ul-step-panel active" id="ul-step-1">
           <div class="ul-step1-content">
-
-            <!-- Inherited Design (shown if coming from DTF) -->
             <div id="ul-inherited-section" style="display: none;">
               <div class="ul-step1-section-title">Use Your Existing Design</div>
               <div class="ul-step1-section-desc">Your uploaded design is ready to use on a t-shirt.</div>
-
               <div class="ul-inherited-design" id="ul-inherited-design">
                 <div class="ul-inherited-preview">
                   <img src="" alt="Design preview" class="ul-inherited-thumb" id="ul-inherited-thumb" width="80" height="80">
@@ -96,21 +55,16 @@
                   ✓ Use This Design
                 </button>
               </div>
-
               <div class="ul-divider"><span>OR</span></div>
             </div>
-
-            <!-- Upload New Design -->
             <div id="ul-upload-section">
               <div class="ul-step1-section-title">Upload New Design</div>
               <div class="ul-step1-section-desc">Drag and drop or click to browse your files.</div>
-
               <div class="ul-upload-zone" id="ul-tshirt-upload-zone">
                 <input type="file" id="ul-tshirt-file-input" accept=".png,.jpg,.jpeg,.webp,.tiff,.tif,.psd,.svg,.pdf,.ai,.eps" hidden>
                 <div class="ul-upload-zone-icon">☁️</div>
                 <div class="ul-upload-zone-text">Drag & Drop your design here</div>
                 <div class="ul-upload-zone-hint">PNG, JPG, WEBP, TIFF, PSD, PDF, AI, EPS • Max 1GB</div>
-
                 <div class="ul-upload-progress" id="ul-tshirt-upload-progress" style="display: none;">
                   <div class="ul-upload-progress-bar">
                     <div class="ul-upload-progress-fill" id="ul-tshirt-progress-fill"></div>
@@ -118,8 +72,6 @@
                   <div class="ul-upload-progress-text" id="ul-tshirt-progress-text">Uploading...</div>
                 </div>
               </div>
-
-              <!-- New upload preview (shown after upload) -->
               <div id="ul-new-upload-preview" style="display: none; margin-top: 16px;">
                 <div class="ul-inherited-design selected">
                   <div class="ul-inherited-preview">
@@ -138,23 +90,16 @@
                 </div>
               </div>
             </div>
-
           </div>
         </div>
-
-        <!-- STEP 2: Design (3D + Options) -->
         <div class="ul-step-panel" id="ul-step-2">
           <div class="ul-step2-layout">
-
-            <!-- 3D Preview -->
             <div class="ul-step2-3d">
               <div class="ul-3d-loading" id="ul-3d-loading">
                 <div class="ul-3d-spinner"></div>
                 <div>Loading 3D Preview...</div>
               </div>
               <canvas class="ul-3d-canvas" id="ul-3d-canvas"></canvas>
-
-              <!-- Quick View Buttons -->
               <div class="ul-quick-views">
                 <button type="button" class="ul-quick-view-btn active" data-view="front">Front</button>
                 <button type="button" class="ul-quick-view-btn" data-view="back">Back</button>
@@ -162,27 +107,17 @@
                 <button type="button" class="ul-quick-view-btn" data-view="right">Right</button>
               </div>
             </div>
-
-            <!-- Options Sidebar -->
             <div class="ul-step2-sidebar">
-
-              <!-- Color Selection -->
               <div class="ul-sidebar-section">
                 <div class="ul-sidebar-title">T-Shirt Color</div>
                 <div class="ul-color-grid" id="ul-color-grid">
-                  <!-- Populated by JavaScript -->
                 </div>
               </div>
-
-              <!-- Size Selection -->
               <div class="ul-sidebar-section">
                 <div class="ul-sidebar-title">Size</div>
                 <select class="ul-size-select" id="ul-size-select">
-                  <!-- Populated by JavaScript -->
                 </select>
               </div>
-
-              <!-- Print Locations -->
               <div class="ul-sidebar-section">
                 <div class="ul-sidebar-title">Print Locations</div>
                 <div class="ul-location-list" id="ul-location-list">
@@ -215,11 +150,8 @@
                     <span class="ul-location-price">+$3.00</span>
                   </label>
                 </div>
-
-                <!-- Location Settings -->
                 <div class="ul-location-settings visible" id="ul-location-settings">
                   <div class="ul-location-settings-title">Settings for: <span id="ul-settings-location-name">Front</span></div>
-
                   <div class="ul-slider-group">
                     <div class="ul-slider-label">
                       <span>Scale</span>
@@ -227,7 +159,6 @@
                     </div>
                     <input type="range" class="ul-slider" id="ul-scale-slider" min="10" max="200" value="100" step="5">
                   </div>
-
                   <div class="ul-slider-group">
                     <div class="ul-slider-label">
                       <span>Position X</span>
@@ -235,7 +166,6 @@
                     </div>
                     <input type="range" class="ul-slider" id="ul-pos-x-slider" min="-100" max="100" value="0" step="1">
                   </div>
-
                   <div class="ul-slider-group">
                     <div class="ul-slider-label">
                       <span>Position Y</span>
@@ -245,8 +175,6 @@
                   </div>
                 </div>
               </div>
-
-              <!-- Price Display -->
               <div class="ul-sidebar-section">
                 <div class="ul-price-box">
                   <div class="ul-price-row">
@@ -267,16 +195,11 @@
                   </div>
                 </div>
               </div>
-
             </div>
           </div>
         </div>
-
-        <!-- STEP 3: Details -->
         <div class="ul-step-panel" id="ul-step-3">
           <div class="ul-step3-content">
-
-            <!-- Preview Summary -->
             <div class="ul-details-preview">
               <div class="ul-details-preview-thumbs" id="ul-details-thumbs">
                 <div class="ul-details-preview-thumb">🖼️</div>
@@ -286,8 +209,6 @@
                 <div class="ul-details-preview-meta" id="ul-details-meta">Locations: Front • Subtotal: $19.99</div>
               </div>
             </div>
-
-            <!-- Quantity -->
             <div class="ul-question-group">
               <label class="ul-question-label">Quantity <span class="required">*</span></label>
               <div class="ul-quantity-control">
@@ -296,39 +217,25 @@
                 <button type="button" class="ul-quantity-btn" id="ul-qty-plus">+</button>
               </div>
             </div>
-
-            <!-- Extra Questions Container -->
             <div id="ul-tshirt-extra-questions">
-              <!-- Dynamically populated if merchant has extra questions -->
             </div>
-
-            <!-- Special Instructions -->
             <div class="ul-question-group">
               <label class="ul-question-label" for="ul-special-instructions">Special Instructions (Optional)</label>
               <textarea class="ul-question-input ul-question-textarea" id="ul-special-instructions" placeholder="Any special requests for your order..."></textarea>
             </div>
-
           </div>
         </div>
-
-        <!-- STEP 4: Review -->
         <div class="ul-step-panel" id="ul-step-4">
           <div class="ul-step4-content">
-
-            <!-- Order Preview Card -->
             <div class="ul-review-card">
               <div class="ul-review-header">Order Preview</div>
               <div class="ul-review-body">
-
-                <!-- Location Previews -->
                 <div class="ul-review-preview-grid" id="ul-review-preview-grid">
                   <div class="ul-review-preview-item">
                     <div class="ul-review-preview-label">Front</div>
                     <div class="ul-review-preview-box">👕</div>
                   </div>
                 </div>
-
-                <!-- Details List -->
                 <ul class="ul-review-list" id="ul-review-list">
                   <li>
                     <span class="ul-review-list-label">Color</span>
@@ -347,8 +254,6 @@
                     <span class="ul-review-list-value" id="ul-review-locations">Front</span>
                   </li>
                 </ul>
-
-                <!-- Price Breakdown -->
                 <div class="ul-review-price-breakdown" id="ul-review-price-breakdown">
                   <div class="ul-review-price-row">
                     <span>Base T-Shirt</span>
@@ -363,11 +268,8 @@
                     <span id="ul-review-total">$19.99</span>
                   </div>
                 </div>
-
               </div>
             </div>
-
-            <!-- Confirmation Checkbox -->
             <div class="ul-confirmation">
               <label class="ul-confirmation-label">
                 <input type="checkbox" class="ul-confirmation-checkbox" id="ul-confirm-checkbox">
@@ -376,8 +278,6 @@
                 </span>
               </label>
             </div>
-
-            <!-- Action Buttons -->
             <div class="ul-action-buttons">
               <button type="button" class="ul-action-btn secondary" id="ul-design-another-btn" disabled>
                 🎨 Add to Cart & Design Another
@@ -386,14 +286,10 @@
                 🛒 Add to Cart & Checkout
               </button>
             </div>
-
           </div>
         </div>
-
       </div>
     </div>
-
-    <!-- Footer (Navigation) -->
     <div class="ul-tshirt-footer">
       <button type="button" class="ul-nav-btn back hidden" id="ul-nav-back">
         ← Back
@@ -402,14 +298,9 @@
         Next: Design →
       </button>
     </div>
-
   </div>
 </div>
-
-<!-- Toast Notification -->
 <div class="ul-toast" id="ul-toast"></div>
-
-<!-- Three.js Import Map for ES Modules -->
 <script type="importmap">
 {
   "imports": {
@@ -418,53 +309,32 @@
   }
 }
 </script>
-
-<!-- Three.js CDN (for backwards compat) -->
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-
-<!-- DecalGeometry Module Loader -->
 <script type="module">
   import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
   import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-
-  // Expose to global scope for non-module scripts
   window.THREE.DecalGeometry = DecalGeometry;
   window.THREE.GLTFLoader = GLTFLoader;
-
-  console.log('[UL] DecalGeometry and GLTFLoader loaded via ES Module');
 </script>
-
-<!-- GLTFLoader CDN for 3D model loading -->
 <script>
-  // Wait for THREE.js to be available before defining GLTFLoader
   (function initGLTFLoader() {
     function defineGLTFLoader() {
       if (typeof THREE === 'undefined' || typeof THREE.Loader === 'undefined') {
-        // THREE.js not ready yet, wait and retry
         setTimeout(defineGLTFLoader, 50);
         return;
       }
-
-      // GLTFLoader already defined, skip
       if (THREE.GLTFLoader) return;
-
-      console.log('[UL] Defining GLTFLoader - THREE.js is ready');
-
-    // GLTFLoader implementation for loading GLB models
     THREE.GLTFLoader = function(manager) {
       THREE.Loader.call(this, manager);
     };
-
     THREE.GLTFLoader.prototype = Object.assign(Object.create(THREE.Loader.prototype), {
       constructor: THREE.GLTFLoader,
-
       load: function(url, onLoad, onProgress, onError) {
         const loader = new THREE.FileLoader(this.manager);
         loader.setResponseType('arraybuffer');
         loader.setRequestHeader(this.requestHeader);
         loader.setPath(this.path);
         loader.setWithCredentials(this.withCredentials);
-
         loader.load(url, (data) => {
           try {
             this.parse(data, this.resourcePath || url.substring(0, url.lastIndexOf('/') + 1), onLoad, onError);
@@ -474,76 +344,54 @@
           }
         }, onProgress, onError);
       },
-
       parse: function(data, path, onLoad, onError) {
-        // Simplified GLB parser
         const magic = new Uint32Array(data.slice(0, 4))[0];
         if (magic !== 0x46546C67) { // 'glTF' in ASCII
           if (onError) onError(new Error('Not a valid GLB file'));
           return;
         }
-
         const dataView = new DataView(data);
         const version = dataView.getUint32(4, true);
         const length = dataView.getUint32(8, true);
-
         let chunkOffset = 12;
         let jsonContent = null;
         let binBuffer = null;
-
         while (chunkOffset < length) {
           const chunkLength = dataView.getUint32(chunkOffset, true);
           const chunkType = dataView.getUint32(chunkOffset + 4, true);
-
           if (chunkType === 0x4E4F534A) { // JSON
             const jsonSlice = new Uint8Array(data, chunkOffset + 8, chunkLength);
             jsonContent = JSON.parse(new TextDecoder().decode(jsonSlice));
           } else if (chunkType === 0x004E4942) { // BIN
             binBuffer = data.slice(chunkOffset + 8, chunkOffset + 8 + chunkLength);
           }
-
           chunkOffset += chunkLength + 8;
         }
-
         if (!jsonContent) {
           if (onError) onError(new Error('Invalid GLB: no JSON chunk'));
           return;
         }
-
-        // Parse geometry from glTF
         const scene = new THREE.Scene();
-
-        // Simplified mesh extraction
         if (jsonContent.meshes && jsonContent.meshes.length > 0) {
           jsonContent.meshes.forEach((meshData) => {
             meshData.primitives.forEach((primitive) => {
               const geometry = new THREE.BufferGeometry();
-
-              // Get accessors and buffer views
               const posAccessor = jsonContent.accessors[primitive.attributes.POSITION];
               const posBufferView = jsonContent.bufferViews[posAccessor.bufferView];
-
-              // Extract position data
               const posData = new Float32Array(binBuffer, posBufferView.byteOffset || 0, posAccessor.count * 3);
               geometry.setAttribute('position', new THREE.BufferAttribute(posData.slice(), 3));
-
-              // Normals if available
               if (primitive.attributes.NORMAL !== undefined) {
                 const normAccessor = jsonContent.accessors[primitive.attributes.NORMAL];
                 const normBufferView = jsonContent.bufferViews[normAccessor.bufferView];
                 const normData = new Float32Array(binBuffer, normBufferView.byteOffset || 0, normAccessor.count * 3);
                 geometry.setAttribute('normal', new THREE.BufferAttribute(normData.slice(), 3));
               }
-
-              // UVs if available
               if (primitive.attributes.TEXCOORD_0 !== undefined) {
                 const uvAccessor = jsonContent.accessors[primitive.attributes.TEXCOORD_0];
                 const uvBufferView = jsonContent.bufferViews[uvAccessor.bufferView];
                 const uvData = new Float32Array(binBuffer, uvBufferView.byteOffset || 0, uvAccessor.count * 2);
                 geometry.setAttribute('uv', new THREE.BufferAttribute(uvData.slice(), 2));
               }
-
-              // Indices if available
               if (primitive.indices !== undefined) {
                 const indAccessor = jsonContent.accessors[primitive.indices];
                 const indBufferView = jsonContent.bufferViews[indAccessor.bufferView];
@@ -551,29 +399,22 @@
                 const indData = new IndArrayType(binBuffer, indBufferView.byteOffset || 0, indAccessor.count);
                 geometry.setIndex(new THREE.BufferAttribute(indData.slice(), 1));
               }
-
               geometry.computeBoundingSphere();
-
-              // Create material
               const material = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 roughness: 0.7,
                 metalness: 0.0,
                 side: THREE.DoubleSide
               });
-
               const mesh = new THREE.Mesh(geometry, material);
               scene.add(mesh);
             });
           });
         }
-
         if (onLoad) onLoad({ scene: scene, scenes: [scene] });
       }
     });
     }
-
-    // Start checking for THREE.js
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', defineGLTFLoader);
     } else {
@@ -581,21 +422,14 @@
     }
   })();
 </script>
-
-<!-- OrbitControls CDN (ES5 version for compatibility) -->
 <script>
-  // OrbitControls inline for compatibility (Three.js r160)
-  // Wait for THREE.js to be available
   (function initOrbitControls() {
     function defineOrbitControls() {
       if (typeof THREE === 'undefined') {
         setTimeout(defineOrbitControls, 50);
         return;
       }
-
       if (THREE.OrbitControls) return;
-
-    // Simple OrbitControls implementation for T-Shirt preview
     THREE.OrbitControls = function(camera, domElement) {
       this.camera = camera;
       this.domElement = domElement;
@@ -607,19 +441,16 @@
       this.maxDistance = 10;
       this.autoRotate = false;
       this.autoRotateSpeed = 2.0;
-
       var scope = this;
       var spherical = { theta: 0, phi: Math.PI / 2, radius: camera.position.length() };
       var target = new THREE.Vector3(0, 0, 0);
       var isMouseDown = false;
       var previousMouse = { x: 0, y: 0 };
-
       function onMouseDown(e) {
         isMouseDown = true;
         previousMouse.x = e.clientX;
         previousMouse.y = e.clientY;
       }
-
       function onMouseMove(e) {
         if (!isMouseDown) return;
         var deltaX = e.clientX - previousMouse.x;
@@ -629,14 +460,10 @@
         previousMouse.x = e.clientX;
         previousMouse.y = e.clientY;
       }
-
       function onMouseUp() { isMouseDown = false; }
-
       function onWheel(e) {
         spherical.radius = Math.max(scope.minDistance, Math.min(scope.maxDistance, spherical.radius + e.deltaY * 0.01));
       }
-
-      // Touch support
       function onTouchStart(e) {
         if (e.touches.length === 1) {
           isMouseDown = true;
@@ -644,7 +471,6 @@
           previousMouse.y = e.touches[0].clientY;
         }
       }
-
       function onTouchMove(e) {
         if (!isMouseDown || e.touches.length !== 1) return;
         var deltaX = e.touches[0].clientX - previousMouse.x;
@@ -654,9 +480,7 @@
         previousMouse.x = e.touches[0].clientX;
         previousMouse.y = e.touches[0].clientY;
       }
-
       function onTouchEnd() { isMouseDown = false; }
-
       domElement.addEventListener('mousedown', onMouseDown);
       domElement.addEventListener('mousemove', onMouseMove);
       domElement.addEventListener('mouseup', onMouseUp);
@@ -665,14 +489,12 @@
       domElement.addEventListener('touchstart', onTouchStart, { passive: true });
       domElement.addEventListener('touchmove', onTouchMove, { passive: true });
       domElement.addEventListener('touchend', onTouchEnd);
-
       this.update = function() {
         camera.position.x = target.x + spherical.radius * Math.sin(spherical.phi) * Math.sin(spherical.theta);
         camera.position.y = target.y + spherical.radius * Math.cos(spherical.phi);
         camera.position.z = target.z + spherical.radius * Math.sin(spherical.phi) * Math.cos(spherical.theta);
         camera.lookAt(target);
       };
-
       this.dispose = function() {
         domElement.removeEventListener('mousedown', onMouseDown);
         domElement.removeEventListener('mousemove', onMouseMove);
@@ -685,8 +507,6 @@
       };
     };
     }
-
-    // Start checking for THREE.js
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', defineOrbitControls);
     } else {
@@ -694,8 +514,6 @@
     }
   })();
 </script>
-
-<!-- FAZ 8: Analytics (conditional - may already be loaded by dtf-uploader) -->
 <script>
   if (typeof ULAnalytics === 'undefined') {
     const script = document.createElement('script');
@@ -704,6 +522,4 @@
     document.head.appendChild(script);
   }
 </script>
-
-<!-- T-Shirt Modal Script -->
 <script src="{{ 'tshirt-modal.js' | asset_url }}" defer></script>

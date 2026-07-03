@@ -3,8 +3,8 @@ import { readFile, access } from "fs/promises";
 import { constants } from "fs";
 import { join } from "path";
 
-// GET /shirt_baked.glb
-// Serves the default T-shirt 3D model
+
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const filePath = join(process.cwd(), "public", "shirt_baked.glb");
 

@@ -1,17 +1,5 @@
-{% comment %}
-  Delivery Badge System v2.0.0
 
-  Bu snippet tüm delivery hesaplama JS dosyalarını yükler.
-  Kullanım: {% render 'delivery-scripts' %}
 
-  İçerik:
-  1. shopify-live-shipping.js - Shopify API'den gerçek oranları çeker
-  2. live-shipping-rates.js - Rate fetcher wrapper
-  3. delivery-badge-ui.js - Badge UI komponenti
-  4. delivery-calculator.js - Zone bazlı statik hesaplama
-{% endcomment %}
-
-{% comment %} Delivery Badge Styles {% endcomment %}
 <style>
   .delivery-badge {
     display: flex;
@@ -146,7 +134,6 @@
     color: #b91c1c;
   }
 
-  /* Zone-specific colors */
   .delivery-badge[data-zone="1"] {
     background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
     border-color: #86efac;
@@ -183,7 +170,6 @@
   }
 </style>
 
-{% comment %} Delivery Scripts - Load in order {% endcomment %}
 {{ 'shopify-live-shipping.js' | asset_url | script_tag }}
 {{ 'live-shipping-rates.js' | asset_url | script_tag }}
 {{ 'delivery-badge-ui.js' | asset_url | script_tag }}

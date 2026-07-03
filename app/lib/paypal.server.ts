@@ -1,17 +1,17 @@
-/**
- * PayPal REST API v2 Integration
- *
- * Handles:
- * - OAuth token generation
- * - Order creation (for merchant commission payments)
- * - Order capture (after merchant approves)
- * - Webhook signature verification
- *
- * Mode: LIVE (production)
- * Docs: https://developer.paypal.com/docs/api/orders/v2/
- */
 
-// ===== CONFIG =====
+
+
+
+
+
+
+
+
+
+
+
+
+
 const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || '';
 const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || '';
 const PAYPAL_MODE = (process.env.PAYPAL_MODE || 'live') as 'sandbox' | 'live';
@@ -21,7 +21,7 @@ const PAYPAL_BASE_URL =
     ? 'https://api-m.paypal.com'
     : 'https://api-m.sandbox.paypal.com';
 
-// ===== TYPES =====
+
 export interface PayPalAccessToken {
   access_token: string;
   token_type: string;
@@ -98,17 +98,17 @@ export interface PayPalWebhookEvent {
   event_version: string;
 }
 
-// ===== TOKEN CACHE =====
+
 let cachedToken: string | null = null;
 let tokenExpiresAt = 0;
 
-/**
- * Get PayPal OAuth2 access token (cached)
- */
+
+
+
 export async function getAccessToken(): Promise<string> {
   const now = Date.now();
 
-  // Return cached token if still valid (with 60s buffer)
+
   if (cachedToken && tokenExpiresAt > now + 60_000) {
     return cachedToken;
   }
@@ -142,15 +142,15 @@ export async function getAccessToken(): Promise<string> {
   return cachedToken;
 }
 
-/**
- * Create a PayPal order for commission payment
- *
- * @param amount - USD amount (e.g. "5.00")
- * @param shopDomain - Merchant shop domain (reference)
- * @param description - Payment description
- * @param orderIds - Comma-separated order IDs being paid
- * @returns PayPal order with approval URL
- */
+
+
+
+
+
+
+
+
+
 export async function createPayPalOrder(
   amount: string,
   shopDomain: string,
@@ -202,12 +202,12 @@ export async function createPayPalOrder(
   return order;
 }
 
-/**
- * Capture a PayPal order after merchant approval
- *
- * @param paypalOrderId - PayPal order ID from createPayPalOrder
- * @returns Capture response with transaction details
- */
+
+
+
+
+
+
 export async function capturePayPalOrder(
   paypalOrderId: string
 ): Promise<PayPalCaptureResponse> {
@@ -236,12 +236,12 @@ export async function capturePayPalOrder(
   return capture;
 }
 
-/**
- * Verify PayPal webhook signature
- *
- * Uses PayPal's webhook signature verification API
- * Docs: https://developer.paypal.com/docs/api/webhooks/v1/#verify-webhook-signature
- */
+
+
+
+
+
+
 export async function verifyWebhookSignature(
   webhookId: string,
   headers: Record<string, string>,
@@ -286,9 +286,9 @@ export async function verifyWebhookSignature(
   return verified;
 }
 
-/**
- * Get PayPal order details
- */
+
+
+
 export async function getPayPalOrder(
   paypalOrderId: string
 ): Promise<PayPalCaptureResponse> {
@@ -313,12 +313,12 @@ export async function getPayPalOrder(
   return response.json();
 }
 
-/**
- * Create a PayPal order WITH vault (save payment method for future auto-charges)
- *
- * On first payment, we include vault instructions so PayPal saves the payment method.
- * Future payments can then be charged automatically without merchant interaction.
- */
+
+
+
+
+
+
 export async function createPayPalOrderWithVault(
   amount: string,
   shopDomain: string,
@@ -383,12 +383,12 @@ export async function createPayPalOrderWithVault(
   return order;
 }
 
-/**
- * Charge a vaulted (saved) payment method without buyer interaction
- *
- * This is used for automatic charges when commission threshold ($49.99) is reached.
- * The payment token was saved during the first manual payment.
- */
+
+
+
+
+
+
 export async function chargeWithVault(
   vaultId: string,
   payerId: string,
@@ -399,7 +399,7 @@ export async function chargeWithVault(
 ): Promise<PayPalCaptureResponse> {
   const accessToken = await getAccessToken();
 
-  // Step 1: Create order with saved payment source
+
   const createPayload = {
     intent: 'CAPTURE',
     purchase_units: [
@@ -445,14 +445,14 @@ export async function chargeWithVault(
   const order: PayPalOrderResponse = await createResponse.json();
   console.log('[PayPal] Vault order created for auto-charge:', order.id, 'status:', order.status);
 
-  // Step 2: If order is COMPLETED (auto-captured with vault), we're done
-  // With vault + IMMEDIATE_PAYMENT_REQUIRED, PayPal may auto-capture
+
+
   if (order.status === 'COMPLETED') {
-    // Fetch full capture details
+
     return getPayPalOrder(order.id);
   }
 
-  // Step 3: If not auto-captured, capture manually
+
   const captureResponse = await fetch(
     `${PAYPAL_BASE_URL}/v2/checkout/orders/${order.id}/capture`,
     {
@@ -476,16 +476,16 @@ export async function chargeWithVault(
   return capture;
 }
 
-/**
- * Check if PayPal is configured
- */
+
+
+
 export function isPayPalConfigured(): boolean {
   return Boolean(PAYPAL_CLIENT_ID && PAYPAL_CLIENT_SECRET);
 }
 
-/**
- * Get PayPal mode (sandbox/live)
- */
+
+
+
 export function getPayPalMode(): 'sandbox' | 'live' {
   return PAYPAL_MODE;
 }

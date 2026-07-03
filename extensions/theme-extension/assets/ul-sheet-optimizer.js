@@ -1,34 +1,10 @@
-/* ============================================================
-   UL Sheet Optimizer - Cost/Waste/Sheet Optimization
-   Version: 1.0.0
-   Ranks alternatives, selects optimal variant
-   Namespace: window.ULSheetOptimizer
-   ============================================================ */
+
 
 (function () {
   'use strict';
 
   if (window.ULSheetOptimizer) return;
 
-  /**
-   * @typedef {Object} OptimizationResult
-   * @property {Object} recommended - The best NestingResult
-   * @property {Object[]} alternatives - Other viable options, sorted by score
-   * @property {Object} comparison - Side-by-side comparison data
-   * @property {Object} savings - How much the recommended option saves
-   */
-
-  /**
-   * @typedef {Object} SavingsInfo
-   * @property {number} sheetsReduced - Sheets saved vs worst option
-   * @property {number} wasteSaved - Waste percentage improvement
-   * @property {number} costSaved - Money saved vs worst option
-   * @property {string} reason - Human-readable reason for recommendation
-   */
-
-  /**
-   * Optimization weights for ranking
-   */
   var WEIGHTS = {
     waste: {
       sheets: 0.2,
@@ -52,18 +28,9 @@
     },
   };
 
-  /**
-   * Calculate optimization score for a nesting result
-   * Lower score = better option
-   * @param {Object} result - NestingResult from ULNestingEngine
-   * @param {string} strategy - 'waste' | 'sheets' | 'balanced' | 'cost'
-   * @param {Object} normalization - Min/max values for normalization
-   * @returns {number}
-   */
   function calculateScore(result, strategy, normalization) {
     var w = WEIGHTS[strategy] || WEIGHTS.balanced;
 
-    // Normalize values to 0-1 range
     var sheetScore = normalizeValue(
       result.sheetsNeeded,
       normalization.minSheets,
@@ -83,24 +50,11 @@
     return sheetScore * w.sheets + wasteScore * w.waste + costScore * w.cost;
   }
 
-  /**
-   * Normalize a value to 0-1 range
-   * @param {number} value
-   * @param {number} min
-   * @param {number} max
-   * @returns {number}
-   */
   function normalizeValue(value, min, max) {
     if (max === min) return 0;
     return (value - min) / (max - min);
   }
 
-  /**
-   * Run full optimization on all nesting results
-   * @param {Object[]} nestingResults - Array of NestingResult from ULNestingEngine.nestAllVariants
-   * @param {string} strategy - Optimization strategy
-   * @returns {OptimizationResult}
-   */
   function optimize(nestingResults, strategy) {
     strategy = strategy || 'balanced';
 
@@ -113,7 +67,6 @@
       };
     }
 
-    // Filter out results with errors
     var viable = nestingResults.filter(function (r) {
       return r.designsPerSheet > 0 && !r.error;
     });
@@ -128,7 +81,6 @@
       };
     }
 
-    // Calculate normalization bounds
     var normalization = {
       minSheets: Infinity,
       maxSheets: 0,
@@ -148,7 +100,6 @@
       normalization.maxCost = Math.max(normalization.maxCost, r.totalCost);
     }
 
-    // Score and sort
     var scored = viable.map(function (r) {
       return {
         result: r,
@@ -170,7 +121,6 @@
       return s.result;
     });
 
-    // Calculate savings vs worst option
     var worst = scored[scored.length - 1].result;
     var savings = {
       sheetsReduced: worst.sheetsNeeded - recommended.sheetsNeeded,
@@ -179,7 +129,6 @@
       reason: generateRecommendationReason(recommended, worst, strategy),
     };
 
-    // Build comparison table data
     var comparison = buildComparison(scored);
 
     return {
@@ -190,13 +139,6 @@
     };
   }
 
-  /**
-   * Generate a human-readable recommendation reason
-   * @param {Object} best
-   * @param {Object} worst
-   * @param {string} strategy
-   * @returns {string}
-   */
   function generateRecommendationReason(best, worst, strategy) {
     var parts = [];
 
@@ -226,11 +168,6 @@
     return parts.join(' · ');
   }
 
-  /**
-   * Build comparison table data
-   * @param {Array} scored - Scored results
-   * @returns {{headers: string[], rows: Object[]}}
-   */
   function buildComparison(scored) {
     var headers = ['Sheet Size', 'Designs/Sheet', 'Sheets Needed', 'Efficiency', 'Waste', 'Cost'];
     var rows = [];
@@ -253,57 +190,34 @@
     return { headers: headers, rows: rows };
   }
 
-  /**
-   * Quick check: does this design need optimization?
-   * Returns true if the currently selected variant is suboptimal
-   * @param {Object} currentResult - NestingResult for current variant
-   * @param {Object} bestResult - NestingResult for best variant
-   * @returns {boolean}
-   */
   function isSuboptimal(currentResult, bestResult) {
     if (!currentResult || !bestResult) return false;
     if (currentResult.sheet.id === bestResult.sheet.id) return false;
 
-    // Suboptimal if using more sheets or significantly more waste
     return (
       currentResult.sheetsNeeded > bestResult.sheetsNeeded ||
       currentResult.wastePercent > bestResult.wastePercent + 15
     );
   }
 
-  /**
-   * Format cost for display using Shopify currency when available
-   * @param {number} amount - Amount in the shop's currency
-   * @returns {string}
-   */
   function formatCost(amount) {
     if (!amount || amount <= 0) return '-';
-    // Shopify.formatMoney expects cents
+
     if (window.Shopify && typeof window.Shopify.formatMoney === 'function') {
       try {
         return window.Shopify.formatMoney(
           amount * 100,
           window.Shopify.money_format || '${{amount}}'
         );
-      } catch (e) { /* fallback below */ }
+      } catch (e) {  }
     }
     return '$' + amount.toFixed(2);
   }
 
-  /**
-   * Format percentage for display
-   * @param {number} pct
-   * @returns {string}
-   */
   function formatPercent(pct) {
     return pct.toFixed(1) + '%';
   }
 
-  /**
-   * Get a summary text for a nesting result
-   * @param {Object} result - NestingResult
-   * @returns {string}
-   */
   function getSummaryText(result) {
     if (!result || result.error) {
       return 'Design too large for this sheet';
@@ -321,20 +235,12 @@
     );
   }
 
-  /**
-   * Suggest quantity adjustment for better efficiency
-   * (e.g., if 20 designs need 5 sheets but 24 would also need 5 sheets)
-   * @param {Object} result - NestingResult
-   * @param {number} currentQuantity
-   * @returns {{suggestedQuantity: number, reason: string} | null}
-   */
   function suggestQuantityAdjust(result, currentQuantity) {
     if (!result || result.designsPerSheet <= 0) return null;
 
     var fullCapacity = result.sheetsNeeded * result.designsPerSheet;
     var unused = fullCapacity - currentQuantity;
 
-    // Only suggest if there are significant unused slots (at least 2)
     if (unused >= 2 && unused <= result.designsPerSheet) {
       var pctFree = ((unused / fullCapacity) * 100).toFixed(0);
       return {
@@ -351,7 +257,6 @@
     return null;
   }
 
-  // ── Public API ──
   window.ULSheetOptimizer = {
     optimize: optimize,
     isSuboptimal: isSuboptimal,

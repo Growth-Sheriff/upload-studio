@@ -1,37 +1,37 @@
-/**
- * Mockup Generation API
- * ======================
- * POST /api/mockup/generate
- * 
- * Enqueues a mockup generation job to the us-mockup-queue.
- * The worker (running on gsb-render-worker-1 as a separate service)
- * picks this up and processes it.
- * 
- * Request body:
- * {
- *   uploadId: string,
- *   artworkUrl: string,      // CDN URL
- *   artworkKey: string,      // R2 storage key
- *   garmentTypes?: string[], // defaults to all 6
- *   garmentColor?: string,   // hex color
- * }
- * 
- * Response:
- * { jobId: string, status: "queued" }
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, corsJson } from "~/lib/cors.server";
 import Redis from "ioredis";
 import { Queue } from "bullmq";
 
-// Lazy-init Redis connection for mockup queue (DB index 5)
+
 let mockupRedis: Redis | null = null;
 let mockupQueue: Queue | null = null;
 
 function getMockupQueue(): Queue {
   if (!mockupQueue) {
     const redisUrl = process.env.MOCKUP_REDIS_URL || process.env.REDIS_URL || "redis://localhost:6379/5";
-    
+
     mockupRedis = new Redis(redisUrl, {
       maxRetriesPerRequest: null,
       lazyConnect: false,
@@ -73,11 +73,11 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    // Extract shop domain from request
+
     const url = new URL(request.url);
     const shopDomain = url.searchParams.get("shop") || body.shopDomain || "unknown";
 
-    // Build callback URL — worker will POST results back here
+
     const apiBase = `${url.protocol}//${url.host}`;
     const callbackUrl = `${apiBase}/api/mockup/callback`;
 

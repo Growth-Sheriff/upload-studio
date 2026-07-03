@@ -1,37 +1,37 @@
-/**
- * ═══════════════════════════════════════════════════════════
- * Mockup Worker — BullMQ Job Processor
- * ═══════════════════════════════════════════════════════════
- * 
- * Listens on `us-mockup-queue` and processes mockup generation jobs.
- * 
- * Job Data Schema:
- * {
- *   uploadId: string,       — Upload Studio upload ID
- *   shopDomain: string,     — Tenant identifier
- *   artworkUrl: string,     — CDN URL of customer artwork
- *   artworkKey: string,     — R2 key of customer artwork
- *   garmentTypes: string[], — ["tshirt","hoodie","hat","polo","totebag","apron"]
- *   garmentColor?: string,  — Hex color for garment tinting
- *   templates?: Array<{     — Custom templates (if seller uploaded PSD)
- *     garmentType: string,
- *     templateKey: string,
- *     printArea: { topPct, leftPct, widthPct, maxHeightPct }
- *   }>,
- *   callbackUrl?: string,   — Webhook URL to notify Upload Studio API
- * }
- * 
- * Result:
- * {
- *   mockups: Array<{
- *     garmentType: string,
- *     url: string,
- *     width: number,
- *     height: number,
- *     sizeBytes: number,
- *   }>
- * }
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { Worker, type Job } from "bullmq";
 import { getRedisConnection } from "./redis.js";
@@ -43,7 +43,7 @@ import {
 } from "./compositor.js";
 import { getDefaultTemplateBuffer } from "./default-templates.js";
 
-// ─── Types ──────────────────────────────────────────────
+
 
 interface MockupJobData {
   uploadId: string;
@@ -69,7 +69,7 @@ interface MockupResult {
   sizeBytes: number;
 }
 
-// ─── Worker Class ───────────────────────────────────────
+
 
 export class MockupWorker {
   private worker: Worker | null = null;
@@ -90,7 +90,7 @@ export class MockupWorker {
         concurrency: this.concurrency,
         limiter: {
           max: 10,
-          duration: 60_000, // Max 10 jobs per minute
+          duration: 60_000,
         },
       }
     );
@@ -121,7 +121,7 @@ export class MockupWorker {
     }
   }
 
-  // ─── Job Processor ──────────────────────────────────
+
 
   private async processJob(job: Job<MockupJobData>): Promise<{ mockups: MockupResult[] }> {
     const { uploadId, shopDomain, artworkKey, garmentTypes, garmentColor, templates, callbackUrl } =
@@ -133,14 +133,14 @@ export class MockupWorker {
 
     await job.updateProgress(5);
 
-    // 1. Download customer artwork
-    // Primary: HTTP from CDN (Bunny/R2 public URL)
-    // Fallback: R2 direct download via artworkKey
+
+
+
     const artworkUrl = job.data.artworkUrl;
     let artworkBuffer: Buffer;
     try {
       if (artworkUrl && artworkUrl.startsWith('http')) {
-        // Download via HTTP (works with Bunny CDN, R2 public, any CDN)
+
         console.log(`[us-mockup] Downloading artwork via HTTP: ${artworkUrl.substring(0, 100)}`);
         const resp = await fetch(artworkUrl);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
@@ -150,7 +150,7 @@ export class MockupWorker {
           `[us-mockup] Downloaded artwork via HTTP (${(artworkBuffer.length / 1024).toFixed(1)}KB)`
         );
       } else if (artworkKey) {
-        // Fallback: R2 direct download
+
         artworkBuffer = await downloadFromR2(artworkKey);
         console.log(
           `[us-mockup] Downloaded artwork from R2: ${artworkKey} (${(artworkBuffer.length / 1024).toFixed(1)}KB)`
@@ -164,7 +164,7 @@ export class MockupWorker {
 
     await job.updateProgress(20);
 
-    // 2. Generate mockups for each garment type
+
     const mockups: MockupResult[] = [];
     const totalGarments = garmentTypes.length;
 
@@ -173,7 +173,7 @@ export class MockupWorker {
       const progressPct = 20 + Math.round(((i + 1) / totalGarments) * 60);
 
       try {
-        // Get template (custom or default)
+
         let templateBuffer: Buffer;
         let printArea: PrintArea;
 
@@ -182,18 +182,18 @@ export class MockupWorker {
         );
 
         if (customTemplate) {
-          // Seller uploaded custom template
+
           templateBuffer = await downloadFromR2(customTemplate.templateKey);
           printArea = customTemplate.printArea;
           console.log(`[us-mockup] Using custom template for ${garmentType}`);
         } else {
-          // Use default built-in template
+
           templateBuffer = await getDefaultTemplateBuffer(garmentType);
           printArea = DEFAULT_PRINT_AREAS[garmentType] || DEFAULT_PRINT_AREAS.tshirt;
           console.log(`[us-mockup] Using default template for ${garmentType}`);
         }
 
-        // 3. Composite
+
         const result = await compositeOnTemplate({
           templateBuffer,
           artworkBuffer,
@@ -203,7 +203,7 @@ export class MockupWorker {
           quality: 85,
         });
 
-        // 4. Upload to R2
+
         const outputKey = `mockups/${shopDomain}/${uploadId}/${garmentType}.png`;
         const url = await uploadToR2(outputKey, result.buffer);
 
@@ -232,7 +232,7 @@ export class MockupWorker {
 
     await job.updateProgress(85);
 
-    // 5. Notify Upload Studio API via callback
+
     if (callbackUrl && mockups.length > 0) {
       try {
         await fetch(callbackUrl, {

@@ -9,15 +9,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export default function TermsOfServicePage() {
-  const lastUpdated = new Date().toLocaleDateString("en-US", { 
-    year: "numeric", 
-    month: "long", 
-    day: "numeric" 
+  const lastUpdated = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric"
   });
 
   return (
-    <Page 
-      title="Terms of Service" 
+    <Page
+      title="Terms of Service"
       backAction={{ content: "Dashboard", url: "/app" }}
     >
       <Layout>
@@ -29,7 +29,7 @@ export default function TermsOfServicePage() {
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">1. Acceptance of Terms</Text>
                 <Text as="p">
-                  By installing and using Upload Studio ("the App"), you agree to be bound by these 
+                  By installing and using Upload Studio ("the App"), you agree to be bound by these
                   Terms of Service. If you do not agree to these terms, please do not use the App.
                 </Text>
               </BlockStack>
@@ -49,7 +49,7 @@ export default function TermsOfServicePage() {
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">3. Account Registration</Text>
                 <Text as="p">
-                  To use the App, you must have an active Shopify store. By installing the App, you authorize 
+                  To use the App, you must have an active Shopify store. By installing the App, you authorize
                   us to access your Shopify store data as required to provide our services.
                 </Text>
               </BlockStack>
@@ -64,7 +64,7 @@ export default function TermsOfServicePage() {
                   <List.Item><Text as="span" fontWeight="bold">Enterprise:</Text> Custom pricing - White-label, dedicated support</List.Item>
                 </List>
                 <Text as="p">
-                  Billing is processed through Shopify's billing system. You may cancel at any time through 
+                  Billing is processed through Shopify's billing system. You may cancel at any time through
                   your Shopify admin panel.
                 </Text>
               </BlockStack>
@@ -83,8 +83,8 @@ export default function TermsOfServicePage() {
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">6. Intellectual Property</Text>
                 <Text as="p">
-                  The App, including its code, design, and documentation, is owned by us and protected by 
-                  intellectual property laws. You may not copy, modify, or distribute any part of the App 
+                  The App, including its code, design, and documentation, is owned by us and protected by
+                  intellectual property laws. You may not copy, modify, or distribute any part of the App
                   without our written permission.
                 </Text>
               </BlockStack>
@@ -103,7 +103,7 @@ export default function TermsOfServicePage() {
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">8. Termination</Text>
                 <Text as="p">
-                  We may suspend or terminate your access to the App if you violate these terms. Upon 
+                  We may suspend or terminate your access to the App if you violate these terms. Upon
                   termination, your data will be handled according to our Privacy Policy and GDPR requirements.
                 </Text>
               </BlockStack>
@@ -111,7 +111,7 @@ export default function TermsOfServicePage() {
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">9. Changes to Terms</Text>
                 <Text as="p">
-                  We may update these terms from time to time. Continued use of the App after changes 
+                  We may update these terms from time to time. Continued use of the App after changes
                   constitutes acceptance of the updated terms.
                 </Text>
               </BlockStack>

@@ -1,26 +1,26 @@
-/**
- * Mockup Callback API
- * ====================
- * POST /api/mockup/callback
- * 
- * Called by the mockup worker after generating mockups.
- * Updates the upload record with mockup URLs.
- * 
- * Request body (from worker):
- * {
- *   uploadId: string,
- *   shopDomain: string,
- *   status: "completed" | "failed",
- *   mockups: Array<{
- *     garmentType: string,
- *     url: string,
- *     key: string,
- *     width: number,
- *     height: number,
- *     sizeBytes: number,
- *   }>
- * }
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { corsJson } from "~/lib/cors.server";
 import { prisma } from "~/lib/prisma.server";
@@ -43,13 +43,13 @@ export async function action({ request }: ActionFunctionArgs) {
     );
 
     if (status === "completed" && mockups && mockups.length > 0) {
-      // Find the upload and update with mockup data
+
       const upload = await prisma.upload.findFirst({
         where: { id: uploadId },
       });
 
       if (upload) {
-        // Store mockup URLs in preflightSummary JSON
+
         const existingSummary = (upload.preflightSummary as Record<string, any>) || {};
 
         await prisma.upload.update({

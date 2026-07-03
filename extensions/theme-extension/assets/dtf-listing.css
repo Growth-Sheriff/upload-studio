@@ -1,6 +1,4 @@
-/* ═══════════════════════════════════════════
-   DTF Product Listing — 2026 Premium Design
-   ═══════════════════════════════════════════ */
+
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
@@ -28,7 +26,6 @@
   padding: 40px 20px;
 }
 
-/* ── Header ── */
 .dtf-listing__header {
   text-align: center;
   margin-bottom: 32px;
@@ -50,7 +47,6 @@
   font-weight: 400;
 }
 
-/* ── Grid — compact 4-col desktop ── */
 .dtf-listing__grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -67,7 +63,6 @@
   .dtf-listing { padding: 24px 12px; }
 }
 
-/* ── Card ── */
 .dtf-listing__card {
   background: var(--dtf-surface);
   border-radius: var(--dtf-radius-lg);
@@ -88,7 +83,6 @@
   box-shadow: 0 0 0 2px var(--dtf-accent), var(--dtf-shadow-lg);
 }
 
-/* ── Card Media ── */
 .dtf-listing__card-media {
   position: relative;
   aspect-ratio: 4/5;
@@ -113,7 +107,6 @@
   color: #cbd5e1;
 }
 
-/* ── Card Body ── */
 .dtf-listing__card-body {
   padding: 14px 16px 16px;
   display: flex;
@@ -142,7 +135,7 @@
   margin: 0;
   letter-spacing: -0.02em;
 }
-/* "From" prefix for price */
+
 .dtf-listing__card-price::before {
   content: 'From ';
   font-size: 11px;
@@ -151,7 +144,6 @@
   letter-spacing: 0;
 }
 
-/* ── Upload Button — gradient + glass ── */
 .dtf-listing__upload-btn {
   display: inline-flex;
   align-items: center;
@@ -195,7 +187,6 @@
   opacity: 0.9;
 }
 
-/* ── Empty state ── */
 .dtf-listing__empty {
   grid-column: 1 / -1;
   text-align: center;
@@ -208,7 +199,6 @@
   border: 2px dashed rgba(0,0,0,0.08);
 }
 
-/* ── Subtle entry animation ── */
 @keyframes dtf-card-in {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
@@ -225,7 +215,6 @@
 .dtf-listing__card:nth-child(7) { animation-delay: 0.35s; }
 .dtf-listing__card:nth-child(8) { animation-delay: 0.4s; }
 
-/* ── Desktop max sizes — keep cards tight ── */
 @media (min-width: 1025px) {
   .dtf-listing__card-media { aspect-ratio: 1; }
   .dtf-listing__card-body { padding: 12px 14px 14px; }

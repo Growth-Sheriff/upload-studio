@@ -96,6 +96,20 @@
     return num / 100;
   }
 
+  function normalizeCustomerName(config) {
+    var direct = config && config.customerName ? String(config.customerName).trim() : '';
+    if (direct) return direct;
+    var customer = window.ULCustomer || {};
+    return String(customer.firstName || customer.name || customer.email || '').trim();
+  }
+
+  function getTierUnitPrice(tier) {
+    if (!tier) return 0;
+    var value = tier.price_per_inch != null ? tier.price_per_inch : tier.price_per_sqin;
+    var parsed = Number(value);
+    return isFinite(parsed) && parsed > 0 ? parsed : 0;
+  }
+
   function DtfUploadBlock(config) {
     this.config = config || {};
     this.config.pricingMode = this.config.pricingMode === 'sheet' ? 'sheet' : 'area';
@@ -105,6 +119,11 @@
     this.config.modalOptionNames = Array.isArray(this.config.modalOptionNames) ? this.config.modalOptionNames : [];
     this.config.artboardMarginIn = normalizeMarginIn(this.config.artboardMarginIn);
     this.config.imageMarginIn = normalizeMarginIn(this.config.imageMarginIn);
+    this.config.volumeDiscountTierUnit = this.config.volumeDiscountTierUnit === 'linear_inches' ? 'linear_inches' : 'quantity';
+    this.config.customerOffer = this.config.customerOffer || null;
+    this.config.customerId = this.config.customerId || '';
+    this.config.customerEmail = this.config.customerEmail || '';
+    this.config.customerName = normalizeCustomerName(this.config);
     this.config.productVariants = Array.isArray(this.config.productVariants) ? this.config.productVariants : [];
     this.config.productOptions = Array.isArray(this.config.productOptions) ? this.config.productOptions : [];
     this.state = 'IDLE';
@@ -646,6 +665,8 @@
     this.config.widthOptionName = builderConfig.widthOptionName || null;
     this.config.heightOptionName = builderConfig.heightOptionName || null;
     this.config.modalOptionNames = Array.isArray(builderConfig.modalOptionNames) ? builderConfig.modalOptionNames : [];
+    this.config.volumeDiscountTierUnit = builderConfig.volumeDiscountTierUnit === 'linear_inches' ? 'linear_inches' : 'quantity';
+    this.config.customerOffer = builderConfig.customerOffer || null;
     this.config.artboardMarginIn = normalizeMarginIn(builderConfig.artboardMarginIn);
     this.config.imageMarginIn = normalizeMarginIn(builderConfig.imageMarginIn);
     if (builderConfig.maxWidthIn) this.config.maxWidth = builderConfig.maxWidthIn;
@@ -1409,6 +1430,9 @@
   };
 
   DtfUploadBlock.prototype.getFileDisplayPrice = function(file) {
+    if (this.isLinearInchPricing()) {
+      return this.calculatePrice(file.widthIn, file.heightIn, file.quantity);
+    }
     if (this.isSheetPricingEnabled()) {
       var pricing = this.calculateSheetPricing(file);
       if (pricing && pricing.selected) {
@@ -1551,6 +1575,20 @@
   };
 
   DtfUploadBlock.prototype.renderAreaPricingSummary = function(file, priceData, areaVariantPricing) {
+    if (priceData && priceData.pricingMode === 'linear_inches') {
+      var matchedVariant = areaVariantPricing && areaVariantPricing.variant
+        ? escapeHtml(areaVariantPricing.variant.title || areaVariantPricing.family.displayName)
+        : 'Pro inch unit';
+      return '<div class="dtf-price-calc">' +
+        '<div class="dtf-price-row"><span>Billable Inches:</span><span>' + priceData.billableInches + ' in</span></div>' +
+        '<div class="dtf-price-row"><span>Matched Product:</span><span>' + matchedVariant + '</span></div>' +
+        '<div class="dtf-price-row"><span>Price / Inch:</span><span>$' + priceData.unitPrice + '</span></div>' +
+        '<div class="dtf-price-row"><span>Copies:</span><span>' + file.quantity + '</span></div>' +
+        '<div class="dtf-price-divider"></div>' +
+        '<div class="dtf-price-row dtf-price-total"><span>Total Price:</span><span>$' + priceData.total + '</span></div>' +
+      '</div>';
+    }
+
     if (!areaVariantPricing || !areaVariantPricing.variant) {
       return '<div class="dtf-price-calc">' +
         '<div class="dtf-price-row"><span>Price / in\u00B2:</span> <span>$' + priceData.unitPrice + '</span></div>' +
@@ -1578,9 +1616,10 @@
     } catch(e) {}
     if (!tiers.length) return { price_per_sqin: 0.06 };
     var found = null;
+    var basis = Number(qty) || 0;
     for (var i = 0; i < tiers.length; i++) {
       var t = tiers[i];
-      if (qty >= t.min_qty && (t.max_qty === null || qty <= t.max_qty)) {
+      if (basis >= t.min_qty && (t.max_qty === null || basis <= t.max_qty)) {
         found = t;
         break;
       }
@@ -1588,7 +1627,52 @@
     return found || tiers[0];
   };
 
+  DtfUploadBlock.prototype.isLinearInchPricing = function() {
+    return this.config.volumeDiscountTierUnit === 'linear_inches';
+  };
+
+  DtfUploadBlock.prototype.getBillableInches = function(widthIn, heightIn, qty) {
+    var length = Math.max(Number(widthIn) || 0, Number(heightIn) || 0);
+    var copies = Math.max(1, parseInt(qty, 10) || 1);
+    return length * copies;
+  };
+
+  DtfUploadBlock.prototype.getTierBasisForFile = function(file) {
+    if (!file) return 1;
+    if (this.isLinearInchPricing()) {
+      return this.getBillableInches(file.widthIn, file.heightIn, file.quantity);
+    }
+    return Math.max(1, parseInt(file.quantity, 10) || 1);
+  };
+
+  DtfUploadBlock.prototype.getCartQuantityForFile = function(file) {
+    if (!file) return 1;
+    if (this.isLinearInchPricing()) {
+      return Math.max(1, Math.ceil(this.getBillableInches(file.widthIn, file.heightIn, file.quantity)));
+    }
+    return Math.max(1, parseInt(file.quantity, 10) || 1);
+  };
+
   DtfUploadBlock.prototype.calculatePrice = function(widthIn, heightIn, qty) {
+    if (this.isLinearInchPricing()) {
+      var billableInches = this.getBillableInches(widthIn, heightIn, qty);
+      var linearTier = this.getActiveTier(billableInches);
+      var pricePerInch = getTierUnitPrice(linearTier) || 0.28;
+      var linearTotal = billableInches * pricePerInch;
+
+      return {
+        pricingMode: 'linear_inches',
+        billableInches: billableInches.toFixed(2),
+        basis: billableInches.toFixed(2),
+        basisLabel: 'Billable Inches',
+        unitPrice: pricePerInch.toFixed(2),
+        subtotal: linearTotal.toFixed(2),
+        total: linearTotal.toFixed(2),
+        formula: billableInches.toFixed(2) + ' in × $' + pricePerInch.toFixed(2) + ' /in = $' + linearTotal.toFixed(2),
+        tier: linearTier
+      };
+    }
+
     var area = widthIn * heightIn;
     var tier = this.getActiveTier(qty);
     var unitPrice = tier.price_per_sqin;
@@ -1601,6 +1685,42 @@
       total: total.toFixed(2),
       formula: area.toFixed(2) + ' in\u00B2 \u00D7 ' + qty + ' \u00D7 $' + unitPrice.toFixed(4) + ' /in\u00B2 = $' + total.toFixed(2)
     };
+  };
+
+  DtfUploadBlock.prototype.renderCustomerOffer = function(file, priceData) {
+    var offer = this.config.customerOffer;
+    if (!offer || offer.enabled !== true || !this.isLinearInchPricing()) return '';
+
+    var tiers = Array.isArray(offer.tiers) ? offer.tiers : [];
+    var billable = Number(priceData && priceData.billableInches) || this.getTierBasisForFile(file);
+    var activeTier = priceData && priceData.tier ? priceData.tier : this.getActiveTier(billable);
+    var activeRate = getTierUnitPrice(activeTier);
+    var nextTier = null;
+    for (var i = 0; i < tiers.length; i++) {
+      var tier = tiers[i];
+      if (Number(tier.min_qty) > billable) {
+        nextTier = tier;
+        break;
+      }
+    }
+
+    var headline = offer.headline || ('Dear valued customer ' + (this.config.customerName || 'valued customer') + ', your Alpha Pro inch pricing is active.');
+    var body = offer.body || 'Your returning-customer rate updates automatically from the measured gang-sheet inches.';
+    var nextCopy = nextTier
+      ? (Math.max(0, Number(nextTier.min_qty) - billable).toFixed(0) + ' more inches unlocks $' + getTierUnitPrice(nextTier).toFixed(2) + '/in.')
+      : 'You are already on the best available Alpha Pro rate.';
+
+    return '<div class="dtf-customer-offer">' +
+      '<div class="dtf-customer-offer__copy">' +
+        '<strong>' + escapeHtml(headline) + '</strong>' +
+        '<span>' + escapeHtml(body) + '</span>' +
+      '</div>' +
+      '<div class="dtf-customer-offer__stats">' +
+        '<span><small>Active rate</small><b>$' + activeRate.toFixed(2) + '/in</b></span>' +
+        '<span><small>Billable</small><b>' + billable.toFixed(2) + ' in</b></span>' +
+      '</div>' +
+      '<p>' + escapeHtml(nextCopy) + '</p>' +
+    '</div>';
   };
 
   DtfUploadBlock.prototype.renderEditor = function() {
@@ -1760,6 +1880,7 @@
             this.renderToggle('Halftone', 'halftone', file.halftone) +
             this.renderToggle('Keep Aspect Ratio (' + file.ratio.toFixed(2) + ') \u267B', 'keepRatio', file.keepRatio) +
           '</div>' +
+          this.renderCustomerOffer(file, priceData) +
           '<div class="dtf-inputs">' +
             '<div class="dtf-input-group">' +
               '<label>WIDTH (IN)</label>' +
@@ -2012,23 +2133,30 @@
 
     var items = readyFiles.map(function(item) {
       var itemVariantId = self.findVariantId(item.widthIn, item.heightIn) || variantId;
+      var priceData = self.calculatePrice(item.widthIn, item.heightIn, item.quantity);
+      var tierBasis = self.getTierBasisForFile(item);
+      var activeTier = self.getActiveTier(tierBasis);
+      var lineQuantity = self.getCartQuantityForFile(item);
       var lineItem = {
         id: itemVariantId,
-        quantity: item.quantity,
+        quantity: lineQuantity,
         properties: {
           '_file_url': item.cdnUrl || '',
           '_file_name': item.fileName,
           '_width_in': String(item.widthIn),
           '_height_in': String(item.heightIn),
           '_total_area_sqin': String((item.widthIn * item.heightIn).toFixed(2)),
-          '_price_per_sqin': String(self.getActiveTier(item.quantity).price_per_sqin),
+          '_price_per_sqin': String(activeTier.price_per_sqin),
+          '_price_per_inch': String(getTierUnitPrice(activeTier) || ''),
+          '_billable_length_in': priceData && priceData.billableInches ? String(priceData.billableInches) : '',
+          '_requested_copies': String(item.quantity),
           '_remove_background': String(item.removeBg),
           '_upscale_quality': String(item.upscale),
           '_halftone': String(item.halftone),
           '_color_profile': self.getEffectiveColorProfile(),
           '_resolution_dpi': String(item.dpi || 300),
           '_upload_id': item.uploadId || '',
-          '_mode': 'dtf_by_size'
+          '_mode': self.isLinearInchPricing() ? 'dtf_by_size_linear_inches' : 'dtf_by_size'
         }
       };
       for (var optionName in self.selectedServiceOptions) {
@@ -2263,13 +2391,30 @@
       return Promise.resolve(this.config);
     }
 
-    this._configFetchPromise = fetch(apiBase + '/api/storefront/config?shopDomain=' + encodeURIComponent(shopDomain) + '&productId=' + encodeURIComponent(productId))
+    var customer = window.ULCustomer || {};
+    var customerId = this.config.customerId || customer.id || '';
+    var customerEmail = this.config.customerEmail || customer.email || '';
+    var customerName = this.config.customerName || customer.firstName || customer.name || '';
+    var configQuery =
+      '?shopDomain=' + encodeURIComponent(shopDomain) +
+      '&productId=' + encodeURIComponent(productId) +
+      '&customerId=' + encodeURIComponent(customerId || '') +
+      '&customerEmail=' + encodeURIComponent(customerEmail || '') +
+      '&customerName=' + encodeURIComponent(customerName || '');
+
+    this._configFetchPromise = fetch(apiBase + '/api/storefront/config' + configQuery)
       .then(function(res) { return res.json(); })
       .then(function(data) {
         if (data && data.product && data.product.builderConfig) {
           return { builderConfig: data.product.builderConfig };
         }
-        return fetch(apiBase + '/api/product-config/' + encodeURIComponent(productId) + '?shop=' + encodeURIComponent(shopDomain));
+        return fetch(
+          apiBase + '/api/product-config/' + encodeURIComponent(productId) +
+          '?shop=' + encodeURIComponent(shopDomain) +
+          '&customerId=' + encodeURIComponent(customerId || '') +
+          '&customerEmail=' + encodeURIComponent(customerEmail || '') +
+          '&customerName=' + encodeURIComponent(customerName || '')
+        );
       })
       .then(function(res) {
         if (res && typeof res.json === 'function') {
@@ -2307,6 +2452,9 @@
         productId: root.dataset.productId,
         productTitle: root.dataset.productTitle || '',
         shopDomain: root.dataset.shopDomain,
+        customerId: root.dataset.customerId || (window.ULCustomer && window.ULCustomer.id) || '',
+        customerEmail: root.dataset.customerEmail || (window.ULCustomer && window.ULCustomer.email) || '',
+        customerName: root.dataset.customerName || (window.ULCustomer && (window.ULCustomer.firstName || window.ULCustomer.name)) || '',
         apiBase: root.dataset.apiBase || '/apps/customizer',
         maxWidth: parseFloat(root.dataset.maxWidth) || 21.75,
         maxHeight: parseFloat(root.dataset.maxHeight) || 35.75,
@@ -2315,6 +2463,7 @@
         maxFileMb: parseInt(root.dataset.maxFileMb, 10) || 500,
         formats: root.dataset.formats,
         tiers: root.dataset.tiers,
+        volumeDiscountTierUnit: root.dataset.volumeDiscountTierUnit || 'quantity',
         productVariants: safeJsonParse(root.dataset.productVariants || '[]', []),
         productOptions: safeJsonParse(root.dataset.productOptions || '[]', []),
         pricingMode: root.dataset.pricingMode || 'area',

@@ -1,13 +1,4 @@
-/**
- * DTF Product Listing — Controller
- * ==================================
- * Handles "Upload Design" button clicks on the product listing grid.
- * Supports two upload modes per product:
- *   - dtf_by_size: Opens the DTF By Size modal (DtfUploadBlock)
- *   - dtf: Redirects to the product page (inline uploader)
- *
- * Version: 1.1.0
- */
+
 ;(function() {
   'use strict';
 
@@ -31,14 +22,11 @@
     var productHandle = btn.getAttribute('data-product-handle');
     var uploadMode = btn.getAttribute('data-upload-mode') || 'dtf_by_size';
 
-    // Mode: dtf → redirect to product page
     if (uploadMode === 'dtf') {
       window.location.href = '/products/' + productHandle;
       return;
     }
 
-    // Mode: dtf_by_size → open modal
-    // Highlight active card
     var allCards = document.querySelectorAll('.dtf-listing__card');
     for (var c = 0; c < allCards.length; c++) {
       allCards[c].classList.remove('dtf-listing__card--active');
@@ -46,7 +34,6 @@
     var card = btn.closest('.dtf-listing__card');
     if (card) card.classList.add('dtf-listing__card--active');
 
-    // Update dtf-upload-root with selected product's data
     var root = document.getElementById('dtf-upload-root');
     if (!root) return;
 
@@ -54,7 +41,6 @@
     root.setAttribute('data-product-title', productTitle || '');
     root.removeAttribute('data-initialized');
 
-    // Destroy existing instance if any
     if (window.dtfBlock) {
       window.dtfBlock.files = [];
       window.dtfBlock.activeFileIndex = -1;
@@ -62,11 +48,13 @@
       window.dtfBlock = null;
     }
 
-    // Re-init DtfUploadBlock with new product config
     var config = {
       productId: productId,
       productTitle: productTitle || '',
       shopDomain: root.getAttribute('data-shop-domain'),
+      customerId: root.getAttribute('data-customer-id') || (window.ULCustomer && window.ULCustomer.id) || '',
+      customerEmail: root.getAttribute('data-customer-email') || (window.ULCustomer && window.ULCustomer.email) || '',
+      customerName: root.getAttribute('data-customer-name') || (window.ULCustomer && (window.ULCustomer.firstName || window.ULCustomer.name)) || '',
       apiBase: root.getAttribute('data-api-base') || '/apps/customizer',
       maxWidth: parseFloat(root.getAttribute('data-max-width')) || 21.75,
       maxHeight: parseFloat(root.getAttribute('data-max-height')) || 35.75,
@@ -83,7 +71,7 @@
     if (typeof window.DtfUploadBlock !== 'undefined') {
       window.dtfBlock = new window.DtfUploadBlock(config);
       window.dtfBlock.fetchConfigFallback();
-      // Open file picker immediately
+
       if (window.dtfBlock.fileInput) {
         window.dtfBlock.fileInput.click();
       }

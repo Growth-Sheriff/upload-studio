@@ -1,17 +1,17 @@
-/**
- * Flow Trigger Worker
- * 
- * Processes pending Shopify Flow triggers from the database.
- * Runs as a cron job every 30 seconds to pick up and send pending triggers.
- * 
- * Flow triggers are used to notify Shopify Flow about events:
- * - upload_received: New upload submitted
- * - upload_approved: Upload approved
- * - upload_rejected: Upload rejected
- * - preflight_warning: Preflight check has warnings
- * - preflight_error: Preflight check failed
- * - export_completed: Export job finished
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { PrismaClient } from "@prisma/client";
 
@@ -19,6 +19,45 @@ const prisma = new PrismaClient();
 
 const MAX_RETRIES = 3;
 const BATCH_SIZE = 10;
+const FLOW_DISABLED_REASON = "Shopify Flow trigger dispatch disabled for this deployment";
+const FLOW_TRIGGER_HANDLES: Record<string, string> = {
+  upload_received: "upload-received",
+  upload_approved: "upload-approved",
+  upload_rejected: "upload-rejected",
+  preflight_warning: "preflight-warning",
+  preflight_error: "preflight-error",
+  export_completed: "export-completed",
+};
+
+function isShopifyFlowTriggersEnabled(): boolean {
+  const value = process.env.SHOPIFY_FLOW_TRIGGERS_ENABLED?.trim().toLowerCase();
+  return value === "1" || value === "true" || value === "yes" || value === "on";
+}
+
+function isInvalidHandleError(errorMessage: string): boolean {
+  return /invalid handle/i.test(errorMessage);
+}
+
+function getFlowTriggerHandle(eventType: string): string {
+  const mappedHandle = FLOW_TRIGGER_HANDLES[eventType];
+  if (mappedHandle) {
+    return mappedHandle;
+  }
+
+  const normalizedHandle = eventType
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, "-")
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  if (!normalizedHandle) {
+    throw new Error(`Invalid Flow event type: ${eventType}`);
+  }
+
+  return normalizedHandle;
+}
 
 interface FlowTriggerRecord {
   id: string;
@@ -37,12 +76,13 @@ interface FlowTriggerRecord {
   };
 }
 
-/**
- * Send a single flow trigger to Shopify
- */
+
+
+
 async function sendFlowTrigger(trigger: FlowTriggerRecord): Promise<boolean> {
   try {
-    console.log(`[Flow] Sending ${trigger.eventType} for ${trigger.resourceId}`);
+    const handle = getFlowTriggerHandle(trigger.eventType);
+    console.log(`[Flow] Sending ${trigger.eventType} (${handle}) for ${trigger.resourceId}`);
 
     const response = await fetch(
       `https://${trigger.shop.shopDomain}/admin/api/2025-10/graphql.json`,
@@ -64,7 +104,7 @@ async function sendFlowTrigger(trigger: FlowTriggerRecord): Promise<boolean> {
             }
           `,
           variables: {
-            handle: `${process.env.FLOW_HANDLE_PREFIX || 'upload-studio'}/${trigger.eventType}`,
+            handle,
             payload: trigger.payload,
           },
         }),
@@ -81,7 +121,7 @@ async function sendFlowTrigger(trigger: FlowTriggerRecord): Promise<boolean> {
       throw new Error(errorMsg);
     }
 
-    // Mark as sent
+
     await prisma.flowTrigger.updateMany({
       where: { id: trigger.id, shopId: trigger.shopId },
       data: {
@@ -97,28 +137,67 @@ async function sendFlowTrigger(trigger: FlowTriggerRecord): Promise<boolean> {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     const attempts = trigger.attempts + 1;
+    const invalidHandle = isInvalidHandleError(errorMessage);
 
     await prisma.flowTrigger.updateMany({
       where: { id: trigger.id, shopId: trigger.shopId },
       data: {
-        status: attempts >= MAX_RETRIES ? "failed" : "pending",
+        status: invalidHandle ? "skipped" : attempts >= MAX_RETRIES ? "failed" : "pending",
         attempts,
         error: errorMessage,
       },
     });
+
+    if (invalidHandle) {
+      const skipped = await prisma.flowTrigger.updateMany({
+        where: {
+          shopId: trigger.shopId,
+          eventType: trigger.eventType,
+          status: "pending",
+        },
+        data: {
+          status: "skipped",
+          error: `${errorMessage}\n${FLOW_DISABLED_REASON}`,
+        },
+      });
+
+      if (skipped.count > 0) {
+        console.error(`[Flow] Skipped ${skipped.count} queued ${trigger.eventType} triggers after invalid handle response`);
+      }
+    }
 
     console.error(`[Flow] ✗ Failed ${trigger.eventType}: ${errorMessage} (attempt ${attempts}/${MAX_RETRIES})`);
     return false;
   }
 }
 
-/**
- * Process all pending flow triggers
- */
+async function skipPendingTriggers(reason: string): Promise<number> {
+  const result = await prisma.flowTrigger.updateMany({
+    where: { status: "pending" },
+    data: {
+      status: "skipped",
+      error: reason,
+    },
+  });
+
+  return result.count;
+}
+
+
+
+
 async function processPendingTriggers(): Promise<{ sent: number; failed: number }> {
   const results = { sent: 0, failed: 0 };
 
-  // Get pending triggers (oldest first, limited batch)
+  if (!isShopifyFlowTriggersEnabled()) {
+    const skipped = await skipPendingTriggers(FLOW_DISABLED_REASON);
+    if (skipped > 0) {
+      console.log(`[Flow] Skipped ${skipped} pending triggers: ${FLOW_DISABLED_REASON}`);
+    }
+    return results;
+  }
+
+
   const pendingTriggers = await prisma.flowTrigger.findMany({
     where: {
       status: "pending",
@@ -150,22 +229,22 @@ async function processPendingTriggers(): Promise<{ sent: number; failed: number 
       results.failed++;
     }
 
-    // Small delay between requests to avoid rate limiting
+
     await new Promise(resolve => setTimeout(resolve, 100));
   }
 
   return results;
 }
 
-/**
- * Cleanup old sent/failed triggers (older than 7 days)
- */
+
+
+
 async function cleanupOldTriggers(): Promise<number> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   const result = await prisma.flowTrigger.deleteMany({
     where: {
-      status: { in: ["sent", "failed"] },
+      status: { in: ["sent", "failed", "skipped"] },
       createdAt: { lt: sevenDaysAgo },
     },
   });
@@ -177,40 +256,41 @@ async function cleanupOldTriggers(): Promise<number> {
   return result.count;
 }
 
-/**
- * Get trigger statistics
- */
-async function getStats(): Promise<{ pending: number; sent: number; failed: number }> {
+
+
+
+async function getStats(): Promise<{ pending: number; sent: number; failed: number; skipped: number }> {
   const stats = await prisma.flowTrigger.groupBy({
     by: ["status"],
     _count: true,
   });
 
-  const result = { pending: 0, sent: 0, failed: 0 };
+  const result = { pending: 0, sent: 0, failed: 0, skipped: 0 };
   for (const stat of stats) {
     if (stat.status === "pending") result.pending = stat._count;
     else if (stat.status === "sent") result.sent = stat._count;
     else if (stat.status === "failed") result.failed = stat._count;
+    else if (stat.status === "skipped") result.skipped = stat._count;
   }
 
   return result;
 }
 
-/**
- * Main worker loop
- */
+
+
+
 async function main() {
   console.log("[Flow Worker] Starting...");
 
-  // Initial stats
-  const initialStats = await getStats();
-  console.log(`[Flow Worker] Initial stats: ${initialStats.pending} pending, ${initialStats.sent} sent, ${initialStats.failed} failed`);
 
-  // Cleanup old triggers on startup
+  const initialStats = await getStats();
+  console.log(`[Flow Worker] Initial stats: ${initialStats.pending} pending, ${initialStats.sent} sent, ${initialStats.failed} failed, ${initialStats.skipped} skipped`);
+
+
   await cleanupOldTriggers();
 
-  // Run loop
-  const INTERVAL_MS = 30000; // 30 seconds
+
+  const INTERVAL_MS = 30000;
 
   const runCycle = async () => {
     try {
@@ -223,19 +303,19 @@ async function main() {
     }
   };
 
-  // Run immediately
+
   await runCycle();
 
-  // Then run on interval
+
   setInterval(runCycle, INTERVAL_MS);
 
-  // Cleanup every hour
+
   setInterval(cleanupOldTriggers, 60 * 60 * 1000);
 
   console.log(`[Flow Worker] Running, processing every ${INTERVAL_MS / 1000}s`);
 }
 
-// Handle graceful shutdown
+
 process.on("SIGTERM", async () => {
   console.log("[Flow Worker] Shutting down...");
   await prisma.$disconnect();
@@ -248,7 +328,7 @@ process.on("SIGINT", async () => {
   process.exit(0);
 });
 
-// Start
+
 main().catch((error) => {
   console.error("[Flow Worker] Fatal error:", error);
   process.exit(1);

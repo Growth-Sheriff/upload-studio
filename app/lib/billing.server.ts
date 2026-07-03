@@ -1,27 +1,27 @@
-/**
- * Billing & Commission Configuration
- *
- * Simple commission-based model (no plan tiers):
- * - Default: $0.10 per order (dtf, classic, quick, 3d_designer)
- * - Builder mode: $0.50 per order
- *
- * All features unlocked for all shops.
- */
+
+
+
+
+
+
+
+
+
 
 import prisma from "~/lib/prisma.server";
 
-// ===== COMMISSION CONFIGURATION =====
+
 export const COMMISSION_RATES = {
   default: 0.10,
   builder: 0.50,
 } as const;
 
-// Universal file size limit (10GB)
+
 export const MAX_FILE_SIZE_MB = 10240;
 
-/**
- * Get commission rate for a given upload mode
- */
+
+
+
 export function getCommissionRate(mode: string): number {
   if (mode === "builder") return COMMISSION_RATES.builder;
   return COMMISSION_RATES.default;
@@ -99,10 +99,10 @@ export async function getOutstandingFeeSelection(
   };
 }
 
-/**
- * Calculate pending commissions for a set of order IDs.
- * Returns total amount and per-order rates based on upload mode.
- */
+
+
+
+
 export async function calculatePendingCommissions(
   shopId: string,
   pendingOrderIds: string[],
@@ -116,7 +116,7 @@ export async function calculatePendingCommissions(
     return { totalAmount: 0, orderRates: new Map(), description: "" };
   }
 
-  // Get modes for all pending orders via their uploads
+
   const orderLinks = await prisma.orderLink.findMany({
     where: { orderId: { in: pendingOrderIds }, shopId },
     select: { orderId: true, upload: { select: { mode: true } } },
@@ -135,7 +135,7 @@ export async function calculatePendingCommissions(
 
   const totalAmount = Array.from(orderRates.values()).reduce((sum, r) => sum + r, 0);
 
-  // Build description
+
   const builderCount = Array.from(orderRates.values()).filter(
     (r) => r === COMMISSION_RATES.builder
   ).length;
@@ -151,9 +151,9 @@ export async function calculatePendingCommissions(
   return { totalAmount, orderRates, description };
 }
 
-/**
- * Check if upload is allowed (simplified — no plan restrictions)
- */
+
+
+
 export async function checkUploadAllowed(
   shopId: string,
   _mode: string,
@@ -168,7 +168,7 @@ export async function checkUploadAllowed(
     return { allowed: false, error: "Shop not found" };
   }
 
-  // Check billing active
+
   if (shop.billingStatus !== "active") {
     return {
       allowed: false,
@@ -176,7 +176,7 @@ export async function checkUploadAllowed(
     };
   }
 
-  // Check file size (universal limit)
+
   if (fileSizeMB > MAX_FILE_SIZE_MB) {
     return {
       allowed: false,

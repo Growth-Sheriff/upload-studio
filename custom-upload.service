@@ -16,7 +16,7 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=custom-upload
 
-# Security
+
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

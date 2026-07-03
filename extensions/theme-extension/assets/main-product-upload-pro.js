@@ -233,6 +233,10 @@
     return Boolean(this.context.hasCustomPricing && this.context.pricingMode !== 'standard_variant');
   };
 
+  ProUpload.prototype.isMeasuredLengthPricing = function() {
+    return Boolean(this.isCustomPricing() && this.context.pricingMode === 'measured_length');
+  };
+
   ProUpload.prototype.isLinearInchPricing = function() {
     var config = this.productConfig.builderConfig || {};
     if (config.volumeDiscountTierUnit === 'linear_inches') return true;
@@ -355,6 +359,7 @@
       this.context.pricePerInch = toNumber(data.pricePerInch);
       this.context.customerName = getText(data.customerName || (data.assignment && data.assignment.customerName), this.customerName);
       this.context.currency = getText(data.currency, 'USD');
+      this.root.setAttribute('data-ump-exact-measured', this.context.pricingMode === 'measured_length' ? 'true' : 'false');
     } catch (error) {
       this.context.status = 'ready';
       this.context.customerType = 'standard';
@@ -363,6 +368,7 @@
       this.context.hasCustomPricing = false;
       this.context.pricePerInch = 0;
       this.context.customerName = this.customerName;
+      this.root.setAttribute('data-ump-exact-measured', 'false');
     }
 
     this.render();
@@ -508,6 +514,7 @@
 
   ProUpload.prototype.renderAccount = function() {
     var custom = this.isCustomPricing();
+    var measuredCustom = this.isMeasuredLengthPricing();
     var linear = this.isLinearInchPricing();
     var offer = this.getLinearCustomerOffer();
     var anonymous = !this.customerId && !this.customerEmail;
@@ -524,6 +531,9 @@
         this.accountStatus.textContent = 'Sign in to unlock returning-customer inch pricing';
       } else if (linear) {
         this.accountStatus.textContent = 'Measured inch checkout';
+      } else if (measuredCustom) {
+        var measuredName = getText(this.context.customerName, 'valued customer');
+        this.accountStatus.textContent = 'Dear valued customer ' + measuredName + ', exact measured pricing is active';
       } else if (custom) {
         var name = getText(this.context.customerName, 'valued customer');
         this.accountStatus.textContent =
@@ -544,6 +554,9 @@
         this.accountRate.textContent = 'You can still upload and checkout at the standard inch rate';
       } else if (linear) {
         this.accountRate.textContent = 'Pay by measured billable inches';
+      } else if (measuredCustom) {
+        var measuredLabel = this.context.statusLabel ? this.context.statusLabel + ' / ' : '';
+        this.accountRate.textContent = measuredLabel + formatMoney(this.context.pricePerInch, this.context.currency) + ' per measured inch';
       } else if (custom) {
         var label = this.context.statusLabel ? this.context.statusLabel + ' / ' : '';
         this.accountRate.textContent = label + formatMoney(this.context.pricePerInch, this.context.currency) + ' per inch';
@@ -563,6 +576,7 @@
       ? getText(state.selectedResult.selectedSheetLabel || state.selectedResult.selectedVariantTitle, 'Pending')
       : 'Pending';
     var custom = this.isCustomPricing();
+    var measuredCustom = this.isMeasuredLengthPricing();
     var linear = this.isLinearInchPricing();
     var quoteReady = !custom || (this.quote.status === 'ready' && this.quote.data);
     var uploading = state.status === 'uploading';
@@ -572,11 +586,16 @@
     if (this.pricingMode) {
       this.pricingMode.textContent = linear
         ? 'By inch'
+        : measuredCustom
+        ? 'Exact measured'
         : custom
         ? (this.context.customerType === 'business' ? 'Business' : 'VIP')
         : 'Standard';
     }
+    if (measuredCustom) activeSheet = measured ? 'Exact measured length' : 'Pending';
     if (this.activeSheet) this.activeSheet.textContent = activeSheet;
+    var sheetLabel = this.root.querySelector('[data-ump-sheet-label]');
+    if (measuredCustom && sheetLabel) sheetLabel.textContent = measured ? 'Exact measured' : '--';
     if (this.queueState) {
       this.queueState.textContent = queueCount
         ? readyCount + '/' + queueCount + ' ready'
@@ -595,6 +614,7 @@
     }
     if (this.stepCheckoutCopy) {
       if (!measured) this.stepCheckoutCopy.textContent = 'Locked until ready';
+      else if (measuredCustom && this.quote.status !== 'ready') this.stepCheckoutCopy.textContent = 'Exact quote pending';
       else if (custom && this.quote.status !== 'ready') this.stepCheckoutCopy.textContent = 'Custom quote pending';
       else this.stepCheckoutCopy.textContent = 'Ready for payment';
     }
@@ -608,6 +628,7 @@
 
   ProUpload.prototype.renderQuote = function(items) {
     var custom = this.isCustomPricing();
+    var measuredCustom = this.isMeasuredLengthPricing();
     var linear = this.isLinearInchPricing();
     var readyCount = items.length;
     if (this.files) this.files.textContent = String(readyCount);
@@ -660,16 +681,24 @@
     }
 
     if (!readyCount) {
-      if (this.quoteKicker) this.quoteKicker.textContent = this.context.customerType === 'business' ? 'Business quote' : 'VIP quote';
+      if (this.quoteKicker) this.quoteKicker.textContent = measuredCustom ? 'Exact measured checkout' : (this.context.customerType === 'business' ? 'Business quote' : 'VIP quote');
       if (this.quoteTotal) this.quoteTotal.textContent = 'Upload required';
-      if (this.quoteMeta) this.quoteMeta.textContent = 'Your custom rate will be applied after measurement.';
+      if (this.quoteMeta) {
+        this.quoteMeta.textContent = measuredCustom
+          ? 'You pay only for the uploaded gang-sheet length at ' + formatMoney(this.context.pricePerInch, this.context.currency) + ' per inch.'
+          : 'Your custom rate will be applied after measurement.';
+      }
       if (this.billable) this.billable.textContent = '--';
       return;
     }
 
     if (this.quote.status === 'loading') {
-      if (this.quoteTotal) this.quoteTotal.textContent = 'Calculating';
-      if (this.quoteMeta) this.quoteMeta.textContent = 'The server is building a measured quote for ' + readyCount + ' ready file' + (readyCount === 1 ? '' : 's') + '.';
+      if (this.quoteTotal) this.quoteTotal.textContent = measuredCustom ? 'Calculating exact quote' : 'Calculating';
+      if (this.quoteMeta) {
+        this.quoteMeta.textContent = measuredCustom
+          ? 'Measuring ' + readyCount + ' ready file' + (readyCount === 1 ? '' : 's') + ' and applying your exact per-inch rate.'
+          : 'The server is building a measured quote for ' + readyCount + ' ready file' + (readyCount === 1 ? '' : 's') + '.';
+      }
       if (this.billable) this.billable.textContent = '--';
       return;
     }
@@ -684,28 +713,38 @@
     var data = this.quote.data || {};
     var billable = toNumber(data.billableLengthIn || (data.quote && data.quote.billableLengthIn));
     var total = data.quoteTotal != null ? data.quoteTotal : data.totalPrice;
-    if (this.quoteKicker) this.quoteKicker.textContent = this.context.customerType === 'business' ? 'Business quote ready' : 'VIP quote ready';
+    if (this.quoteKicker) this.quoteKicker.textContent = measuredCustom ? 'Exact quote ready' : (this.context.customerType === 'business' ? 'Business quote ready' : 'VIP quote ready');
     if (this.quoteTotal) this.quoteTotal.textContent = formatMoney(total, data.currency || this.context.currency);
     if (this.quoteMeta) {
-      var sheet = getText(data.selectedSheetLabel || data.selectedVariantTitle, 'Measured custom checkout');
-      this.quoteMeta.textContent = sheet + ' / ' + readyCount + ' ready file' + (readyCount === 1 ? '' : 's');
+      if (measuredCustom) {
+        this.quoteMeta.textContent =
+          (billable ? formatInches(billable) + ' billable length' : 'Measured billable length') +
+          ' / ' + readyCount + ' ready file' + (readyCount === 1 ? '' : 's') +
+          ' / no variant rounding';
+      } else {
+        var sheet = getText(data.selectedSheetLabel || data.selectedVariantTitle, 'Measured custom checkout');
+        this.quoteMeta.textContent = sheet + ' / ' + readyCount + ' ready file' + (readyCount === 1 ? '' : 's');
+      }
     }
     if (this.billable) this.billable.textContent = billable ? formatInches(billable) : '--';
   };
 
   ProUpload.prototype.renderButtons = function(items) {
     if (!this.isCustomPricing()) return;
+    var measuredCustom = this.isMeasuredLengthPricing();
     var ready = items.length > 0 && this.quote.status === 'ready' && this.quote.data;
     var label = ready
-      ? 'Create custom checkout'
-      : (items.length ? 'Preparing custom quote' : 'Upload required');
+      ? (measuredCustom ? 'Create exact checkout' : 'Create custom checkout')
+      : (items.length ? (measuredCustom ? 'Preparing exact quote' : 'Preparing custom quote') : 'Upload required');
     if (this.addButton) {
       this.addButton.disabled = !ready;
       this.addButton.textContent = label;
     }
     if (this.checkoutButton) {
       this.checkoutButton.disabled = !ready;
-      this.checkoutButton.textContent = ready ? 'Checkout with custom pricing' : label;
+      this.checkoutButton.textContent = ready
+        ? (measuredCustom ? 'Checkout exact quote' : 'Checkout with custom pricing')
+        : label;
     }
   };
 

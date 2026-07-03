@@ -57,33 +57,33 @@ const styles = {
   divider: { height: "1px", background: "#e5e7eb", margin: "1.5rem 0" },
   section: { marginBottom: "2rem" },
   heading: { fontSize: "1.125rem", fontWeight: 600, color: "#1f2937", marginBottom: "0.75rem" },
-  card: { 
-    background: "#f9fafb", 
-    borderRadius: "8px", 
+  card: {
+    background: "#f9fafb",
+    borderRadius: "8px",
     padding: "1.25rem",
     border: "1px solid #e5e7eb",
     marginBottom: "1rem"
   },
   cardHeader: { display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem", flexWrap: "wrap" as const },
-  badge: { 
-    background: "#667eea", 
-    color: "white", 
-    padding: "4px 12px", 
-    borderRadius: "4px", 
-    fontSize: "0.75rem", 
-    fontWeight: 500 
+  badge: {
+    background: "#667eea",
+    color: "white",
+    padding: "4px 12px",
+    borderRadius: "4px",
+    fontSize: "0.75rem",
+    fontWeight: 500
   },
-  durationBadge: { 
-    background: "#e5e7eb", 
-    color: "#374151", 
-    padding: "4px 10px", 
-    borderRadius: "4px", 
-    fontSize: "0.7rem", 
-    fontWeight: 600 
+  durationBadge: {
+    background: "#e5e7eb",
+    color: "#374151",
+    padding: "4px 10px",
+    borderRadius: "4px",
+    fontSize: "0.7rem",
+    fontWeight: 600
   },
-  videoPlaceholder: { 
-    backgroundColor: "#1f2937", 
-    borderRadius: "8px", 
+  videoPlaceholder: {
+    backgroundColor: "#1f2937",
+    borderRadius: "8px",
     aspectRatio: "16/9",
     display: "flex",
     alignItems: "center",
@@ -93,10 +93,10 @@ const styles = {
     minHeight: "300px",
     marginBottom: "1rem"
   },
-  playBtn: { 
-    width: "60px", 
-    height: "60px", 
-    borderRadius: "50%", 
+  playBtn: {
+    width: "60px",
+    height: "60px",
+    borderRadius: "50%",
     background: "rgba(255,255,255,0.2)",
     display: "flex",
     alignItems: "center",
@@ -107,10 +107,10 @@ const styles = {
   text: { color: "#4b5563", lineHeight: 1.7 },
   subdued: { color: "#9ca3af" },
   stepCard: { display: "flex", gap: "1rem", alignItems: "flex-start" },
-  stepNumber: { 
-    width: "36px", 
-    height: "36px", 
-    borderRadius: "50%", 
+  stepNumber: {
+    width: "36px",
+    height: "36px",
+    borderRadius: "50%",
     background: "#667eea",
     color: "white",
     display: "flex",
@@ -124,25 +124,25 @@ const styles = {
   stepTitle: { fontSize: "1rem", fontWeight: 600, color: "#1f2937", marginBottom: "0.25rem" },
   stepDesc: { color: "#6b7280", fontSize: "0.875rem", marginBottom: "0.5rem" },
   topicList: { display: "flex", flexWrap: "wrap" as const, gap: "0.5rem" },
-  topicBadge: { 
-    background: "#e5e7eb", 
-    color: "#374151", 
-    padding: "4px 10px", 
-    borderRadius: "4px", 
-    fontSize: "0.75rem" 
+  topicBadge: {
+    background: "#e5e7eb",
+    color: "#374151",
+    padding: "4px 10px",
+    borderRadius: "4px",
+    fontSize: "0.75rem"
   },
   tipList: { paddingLeft: "1.5rem", color: "#4b5563", lineHeight: 1.8, margin: 0 },
   ctaCard: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" as const, gap: "1rem" },
   ctaText: { flex: 1 },
   ctaTitle: { fontWeight: 600, color: "#1f2937", marginBottom: "0.25rem" },
   ctaDesc: { color: "#6b7280", fontSize: "0.875rem" },
-  btn: { 
-    background: "#667eea", 
-    color: "white", 
-    padding: "10px 20px", 
-    border: "none", 
-    borderRadius: "6px", 
-    fontWeight: 600, 
+  btn: {
+    background: "#667eea",
+    color: "white",
+    padding: "10px 20px",
+    border: "none",
+    borderRadius: "6px",
+    fontWeight: 600,
     textDecoration: "none",
     display: "inline-block",
     fontSize: "0.875rem"
@@ -157,7 +157,7 @@ export default function Tutorial() {
 
       <div style={styles.divider} />
 
-      {/* Main Video */}
+
       <div style={styles.card}>
         <div style={styles.cardHeader}>
           <span style={styles.badge}>Full Course</span>
@@ -171,12 +171,12 @@ export default function Tutorial() {
         </div>
 
         <p style={styles.text}>
-          This comprehensive tutorial walks you through the entire setup process, 
+          This comprehensive tutorial walks you through the entire setup process,
           from installation to processing your first customized order.
         </p>
       </div>
 
-      {/* Chapter List */}
+
       <section style={styles.section}>
         <h2 style={styles.heading}>Chapters</h2>
 
@@ -201,7 +201,7 @@ export default function Tutorial() {
         ))}
       </section>
 
-      {/* Quick Tips */}
+
       <div style={styles.card}>
         <h2 style={styles.heading}>Quick Tips</h2>
         <ul style={styles.tipList}>
@@ -213,7 +213,7 @@ export default function Tutorial() {
         </ul>
       </div>
 
-      {/* Support CTA */}
+
       <div style={styles.card}>
         <div style={styles.ctaCard}>
           <div style={styles.ctaText}>

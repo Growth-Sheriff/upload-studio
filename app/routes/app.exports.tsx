@@ -29,7 +29,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
   }
 
-  // Get export jobs
+
   const exportJobs = await prisma.exportJob.findMany({
     where: { shopId: shop.id },
     orderBy: { createdAt: "desc" },
@@ -84,7 +84,7 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     });
 
-    // Re-enqueue export worker job
+
     try {
       const { Queue } = await import("bullmq");
       const Redis = (await import("ioredis")).default;
@@ -109,7 +109,7 @@ export async function action({ request }: ActionFunctionArgs) {
   if (action === "delete") {
     const jobId = formData.get("jobId") as string;
 
-    // Verify job belongs to this shop before deleting
+
     const jobToDelete = await prisma.exportJob.findFirst({
       where: { id: jobId, shopId: shop.id },
     });
@@ -193,7 +193,7 @@ export default function ExportsPage() {
       ]}
     >
         <Layout>
-          {/* Action result banner */}
+
           {actionData && "success" in actionData && (
             <Layout.Section>
               <Banner tone="success" onDismiss={() => {}}>
@@ -209,7 +209,7 @@ export default function ExportsPage() {
             </Layout.Section>
           )}
 
-          {/* Info */}
+
           <Layout.Section>
             <Banner tone="info">
               Export jobs package selected uploads into a ZIP file with a manifest.
@@ -217,7 +217,7 @@ export default function ExportsPage() {
             </Banner>
           </Layout.Section>
 
-          {/* Exports Table */}
+
           <Layout.Section>
             <Card>
               {exports.length > 0 ? (
@@ -238,7 +238,7 @@ export default function ExportsPage() {
             </Card>
           </Layout.Section>
 
-          {/* Export Format Info */}
+
           <Layout.Section>
             <Card>
               <BlockStack gap="300">

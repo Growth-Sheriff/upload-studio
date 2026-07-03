@@ -176,4 +176,29 @@ describe('resolveSheetVariant', () => {
     expect(result?.designsPerSheet).toBeGreaterThan(2)
     expect(result?.sheetsNeeded).toBeLessThanOrEqual(2)
   })
+
+  it('can prefer the smallest fitting sheet for main-product uploads', () => {
+    const optionDefs: ProductOptionDef[] = [{ name: 'Size', values: ['22 x 12', '22 x 60'] }]
+    const variants: ProductVariantDef[] = [
+      buildVariant('501', '22 x 12', '12.00', [{ name: 'Size', value: '22 x 12' }]),
+      buildVariant('502', '22 x 60', '27.00', [{ name: 'Size', value: '22 x 60' }]),
+    ]
+
+    const result = resolveSheetVariant({
+      widthIn: 20.75,
+      heightIn: 9.28,
+      quantity: 10,
+      variants,
+      optionDefs,
+      selectedVariantId: '501',
+      config: {
+        sheetOptionName: 'Size',
+        selectionStrategy: 'smallest_fitting_sheet',
+      },
+    })
+
+    expect(result).not.toBeNull()
+    expect(result?.selectedVariantId).toBe('501')
+    expect(result?.selectedSheetLabel).toContain('22 x 12')
+  })
 })

@@ -8,7 +8,6 @@
   assign shop_domain = shop.permanent_domain
 %}
 
-<!-- Upload Button -->
 <button type="button" class="ul-quick-btn-trigger" data-modal="{{ modal_id }}" style="
   display: inline-flex;
   align-items: center;
@@ -36,14 +35,12 @@
   <span>{{ btn_text }}</span>
 </button>
 
-<!-- Modal Template (will be moved to body) -->
 <template id="{{ modal_id }}-tpl">
 <div id="{{ modal_id }}" class="ul-quick-modal" data-api-base="{{ api_base }}" data-shop="{{ shop_domain }}" data-product-id="{{ product.id }}" data-unique-id="{{ unique_id }}" data-customer-id="{{ customer.id | default: '' }}" data-customer-email="{{ customer.email | default: '' }}">
   <div class="ul-quick-modal-overlay" data-close="{{ modal_id }}"></div>
   <div class="ul-quick-modal-content">
     <button class="ul-quick-modal-close" data-close="{{ modal_id }}">&times;</button>
 
-    <!-- Step 1: Upload & Options -->
     <div id="{{ modal_id }}-step1" class="ul-modal-step">
       <div class="ul-quick-modal-header">
         <img src="{{ product.featured_image | image_url: width: 80 }}" alt="{{ product.title }}" class="ul-quick-modal-thumb">
@@ -58,7 +55,7 @@
       </div>
 
       <div class="ul-quick-modal-body">
-        <!-- Upload Area -->
+
         <div class="ul-quick-dropzone" id="ul-dropzone-{{ unique_id }}">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -70,7 +67,6 @@
           <input type="file" id="ul-file-{{ unique_id }}" accept=".png,.jpg,.jpeg,.webp,.tiff,.tif,.psd,.svg,.pdf,.ai,.eps" style="display:none">
         </div>
 
-        <!-- Upload Progress -->
         <div id="ul-progress-{{ unique_id }}" class="ul-upload-progress" style="display:none;">
           <div class="ul-progress-bar">
             <div class="ul-progress-fill" id="ul-progress-fill-{{ unique_id }}"></div>
@@ -86,7 +82,6 @@
           </div>
         </div>
 
-        <!-- Preview (after upload) -->
         <div id="ul-preview-{{ unique_id }}" class="ul-quick-preview" style="display:none;">
           <img id="ul-preview-img-{{ unique_id }}" src="" alt="Preview">
           <div class="ul-preview-info">
@@ -97,13 +92,11 @@
           <button type="button" data-clear="{{ unique_id }}" data-modal="{{ modal_id }}">&times;</button>
         </div>
 
-        <!-- DPI Warning -->
         <div id="ul-dpi-warning-{{ unique_id }}" class="ul-dpi-warning" style="display:none;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
           <span id="ul-dpi-text-{{ unique_id }}"></span>
         </div>
 
-        <!-- Variants -->
         {% if product.has_only_default_variant == false %}
           <div class="ul-variants-section">
             {% for option in product.options_with_values %}
@@ -119,7 +112,6 @@
           </div>
         {% endif %}
 
-        <!-- Quantity -->
         <div class="ul-quantity-section">
           <label>Quantity</label>
           <div class="ul-quantity-wrapper">
@@ -129,12 +121,10 @@
           </div>
         </div>
 
-        <!-- Hidden fields -->
         <input type="hidden" id="ul-variant-{{ unique_id }}" value="{{ first_variant.id }}" data-price="{{ first_variant.price }}">
         <input type="hidden" id="ul-upload-id-{{ unique_id }}" value="">
         <input type="hidden" id="ul-upload-url-{{ unique_id }}" value="">
 
-        <!-- Variant data for JS - MUST be inside template to move with modal -->
         <script type="application/json" id="ul-variants-{{ unique_id }}">
           {{ product.variants | json }}
         </script>
@@ -149,7 +139,6 @@
       </div>
     </div>
 
-    <!-- Step 2: Success -->
     <div id="{{ modal_id }}-step2" class="ul-modal-step" style="display:none;">
       <div class="ul-success-content">
         <div class="ul-success-icon">✓</div>
@@ -170,7 +159,6 @@
 </div>
 </template>
 
-<!-- Styles -->
 <style>
 .ul-quick-modal {
   position: fixed;
@@ -591,12 +579,10 @@
 .ul-success-buttons .ul-btn-secondary { margin: 0; }
 </style>
 
-<!-- JavaScript - Full API Integration with Event Delegation -->
 <script>
 (function() {
   console.log('[UL Quick Upload] Script starting...');
 
-  // Prevent multiple initializations
   if (window.ULQuickUploadInit) {
     console.log('[UL Quick Upload] Already initialized, skipping');
     return;
@@ -604,10 +590,8 @@
   window.ULQuickUploadInit = true;
   console.log('[UL Quick Upload] Initializing...');
 
-  // Track active XHR requests for cancel support
   const activeUploads = {};
 
-  // Hide all modals function (for theme editor events)
   function hideAllModals() {
     document.querySelectorAll('.ul-quick-modal').forEach(function(modal) {
       modal.style.display = 'none';
@@ -615,7 +599,6 @@
     document.body.style.overflow = '';
   }
 
-  // Theme editor events - hide modals when sections/blocks are selected/deselected
   document.addEventListener('shopify:section:select', hideAllModals);
   document.addEventListener('shopify:section:deselect', hideAllModals);
   document.addEventListener('shopify:section:load', hideAllModals);
@@ -625,7 +608,6 @@
   document.addEventListener('shopify:inspector:activate', hideAllModals);
   document.addEventListener('shopify:inspector:deactivate', hideAllModals);
 
-  // Modal container in body
   let modalContainer = document.getElementById('ul-modal-container');
   if (!modalContainer) {
     modalContainer = document.createElement('div');
@@ -633,20 +615,17 @@
     document.body.appendChild(modalContainer);
   }
 
-  // Move modals from templates to body
   let isInitializing = false;
 
   function initModals() {
     console.log('[UL Quick Upload] initModals called');
 
-    // Prevent re-entry during initialization
     if (isInitializing) {
       console.log('[UL Quick Upload] Already initializing, skipping');
       return;
     }
     isInitializing = true;
 
-    // Collect templates first, then process (to avoid mutation during iteration)
     const templates = Array.from(document.querySelectorAll('template[id$="-tpl"]:not([data-moved])'));
     console.log('[UL Quick Upload] Found templates:', templates.length, templates.map(t => t.id));
 
@@ -656,24 +635,19 @@
       return;
     }
 
-    // Disconnect observer before DOM mutations
     if (observer) observer.disconnect();
 
     templates.forEach(tpl => {
       console.log('[UL Quick Upload] Moving template:', tpl.id);
-      // Mark as moved immediately
       tpl.dataset.moved = 'true';
 
-      // Clone content and append to body container
       const content = tpl.content.cloneNode(true);
       modalContainer.appendChild(content);
       console.log('[UL Quick Upload] Template moved to body');
 
-      // CRITICAL: Remove original template from section to prevent duplicate modals
       tpl.remove();
     });
 
-    // Re-connect observer after all DOM updates complete
     if (observer) {
       setTimeout(() => {
         observer.observe(document.body, { childList: true, subtree: true });
@@ -683,17 +657,14 @@
     isInitializing = false;
   }
 
-  // Initialize on DOM ready and after dynamic content
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initModals);
   } else {
     initModals();
   }
 
-  // Re-init for dynamically loaded content - watch entire subtree for dynamic sections
   let observer = null;
 
-  // Debounced init to prevent rapid re-calls
   let initTimeout = null;
   function debouncedInit() {
     if (initTimeout) clearTimeout(initTimeout);
@@ -701,13 +672,10 @@
   }
 
   observer = new MutationObserver((mutations) => {
-    // Check if any new templates were added anywhere in the DOM
     const hasNewTemplates = mutations.some(m => {
-      // Direct template addition
       if (Array.from(m.addedNodes).some(n => n.nodeName === 'TEMPLATE' && n.id?.endsWith('-tpl'))) {
         return true;
       }
-      // Template inside added container (sections, etc)
       return Array.from(m.addedNodes).some(n => n.querySelector && n.querySelector('template[id$="-tpl"]'));
     }
     );
@@ -717,12 +685,10 @@
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
-  // Event delegation for all clicks
   document.addEventListener('click', function(e) {
     const target = e.target;
     console.log('[UL Quick Upload] Click detected on:', target.tagName, target.className);
 
-    // Open modal button - highest priority
     const openBtn = target.closest('.ul-quick-btn-trigger');
     if (openBtn) {
       console.log('[UL Quick Upload] Open button clicked, modal:', openBtn.dataset.modal);
@@ -734,7 +700,6 @@
       return;
     }
 
-    // Close button (X) - second priority
     const closeX = target.closest('.ul-quick-modal-close');
     if (closeX) {
       e.preventDefault();
@@ -744,7 +709,6 @@
       return;
     }
 
-    // Overlay click - only if clicking directly on overlay (not bubbled from content)
     const overlay = target.closest('.ul-quick-modal-overlay');
     if (overlay && target === overlay) {
       e.preventDefault();
@@ -754,7 +718,6 @@
       return;
     }
 
-    // Continue Shopping / other close buttons
     const closeBtn = target.closest('[data-close]');
     if (closeBtn && !closeBtn.classList.contains('ul-quick-modal-overlay')) {
       e.preventDefault();
@@ -764,7 +727,6 @@
       return;
     }
 
-    // Add to cart
     const addCartBtn = target.closest('[data-add-cart]');
     if (addCartBtn && !addCartBtn.disabled) {
       e.preventDefault();
@@ -775,7 +737,6 @@
       return;
     }
 
-    // Dropzone click
     const dropzone = target.closest('.ul-quick-dropzone');
     if (dropzone) {
       const fileInput = dropzone.querySelector('input[type="file"]');
@@ -783,7 +744,6 @@
       return;
     }
 
-    // Clear upload
     const clearBtn = target.closest('[data-clear]');
     if (clearBtn) {
       const uniqueId = clearBtn.dataset.clear;
@@ -792,7 +752,6 @@
       return;
     }
 
-    // Quantity buttons
     const qtyBtn = target.closest('[data-qty]');
     if (qtyBtn) {
       const uniqueId = qtyBtn.dataset.qty;
@@ -801,7 +760,6 @@
       return;
     }
 
-    // Cancel upload button
     const cancelBtn = target.closest('[data-cancel]');
     if (cancelBtn) {
       const uniqueId = cancelBtn.dataset.cancel;
@@ -810,7 +768,6 @@
     }
   });
 
-  // File input change
   document.addEventListener('change', function(e) {
     if (e.target.matches('.ul-quick-dropzone input[type="file"]')) {
       const input = e.target;
@@ -821,7 +778,6 @@
       return;
     }
 
-    // Variant select change - check by class or by ID pattern
     const isVariantSelect = e.target.matches('.ul-variant-select') ||
                             (e.target.tagName === 'SELECT' && e.target.id && e.target.id.startsWith('ul-option-'));
 
@@ -830,8 +786,6 @@
       const id = select.id;
       console.log('[Upload Studio] Variant select changed:', id);
 
-      // Extract uniqueId: ul-option-{uniqueId}-{optionIndex}
-      // uniqueId can contain dashes, so we need to find the last dash followed by a number
       const lastDashIndex = id.lastIndexOf('-');
       if (lastDashIndex > 10) { // 'ul-option-' is 10 chars
         const uniqueId = id.substring(10, lastDashIndex); // Skip 'ul-option-' prefix
@@ -841,7 +795,6 @@
     }
   });
 
-  // Also listen for 'input' event as fallback for some browsers/themes
   document.addEventListener('input', function(e) {
     if (e.target.tagName === 'SELECT' && e.target.id && e.target.id.startsWith('ul-option-')) {
       const id = e.target.id;
@@ -853,14 +806,12 @@
     }
   });
 
-  // Track recently opened modals to prevent immediate close from bubbling
   let recentlyOpenedModal = null;
   let openTimestamp = 0;
 
   function openModal(id) {
     console.log('[UL Quick Upload] openModal called with id:', id);
 
-    // Don't open modal in Shopify theme editor/preview mode
     if (window.Shopify && window.Shopify.designMode) {
       console.log('[UL Quick Upload] Design mode detected, modal disabled');
       return;
@@ -871,20 +822,16 @@
 
     if (!modal) {
       console.error('[UL Quick Upload] Modal not found:', id);
-      // Debug: List all modals in the page
       const allModals = document.querySelectorAll('.ul-quick-modal');
       console.log('[UL Quick Upload] All modals in page:', allModals.length, Array.from(allModals).map(m => m.id));
       return;
     }
 
-    // Prevent re-opening if already open
     if (modal.style.display === 'flex') return;
 
-    // Mark as recently opened to prevent event bubbling close
     recentlyOpenedModal = id;
     openTimestamp = Date.now();
 
-    // Use requestAnimationFrame to ensure click event has finished bubbling
     requestAnimationFrame(() => {
       modal.style.display = 'flex';
       document.body.style.overflow = 'hidden';
@@ -893,14 +840,12 @@
       if (step1) step1.style.display = 'block';
       if (step2) step2.style.display = 'none';
 
-      // Sync variant selection on modal open
       const uniqueId = modal.dataset.uniqueId;
       if (uniqueId) {
         console.log('[Upload Studio] Modal opened, syncing variant for:', uniqueId);
         updateVariant(uniqueId);
       }
 
-      // Clear the recently opened flag after a short delay
       setTimeout(() => {
         if (recentlyOpenedModal === id) {
           recentlyOpenedModal = null;
@@ -910,7 +855,6 @@
   }
 
   function closeModal(id) {
-    // Prevent closing if modal was just opened (event bubbling protection)
     if (recentlyOpenedModal === id && (Date.now() - openTimestamp) < 200) {
       console.log('[Upload Studio] Ignoring close - modal just opened');
       return;
@@ -950,21 +894,17 @@
 
     if (!dropzone || !progress) return;
 
-    // Show progress
     dropzone.style.display = 'none';
     progress.style.display = 'block';
     progressFill.style.width = '10%';
     progressText.textContent = 'Getting upload URL...';
 
-    // Get MIME type with fallback for unsupported types (PSD, AI, EPS etc.)
     const mimeType = file.type || 'application/octet-stream';
 
-    // Get visitor tracking info (from ul-visitor.js)
     const visitorId = window.ULVisitor?.getVisitorId?.() || null;
     const sessionId = window.ULVisitor?.getSessionId?.() || null;
 
     try {
-      // Step 1: Get upload intent
       const intentResponse = await fetch(`${apiBase}/api/upload/intent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -989,21 +929,17 @@
       const intentData = await intentResponse.json();
       const { uploadId, itemId, uploadUrl, storageProvider, uploadHeaders, publicUrl, key } = intentData;
 
-      // Progress tracking variables
       const startTime = Date.now();
       const totalBytes = file.size;
 
       progressFill.style.width = '30%';
       progressText.textContent = 'Uploading... 0%';
 
-      // Step 2: Upload file with progress tracking (XHR for progress events)
       let uploadResponse;
       if (storageProvider === 'bunny' || storageProvider === 'r2') {
-        // Direct PUT to CDN storage with progress
         uploadResponse = await new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest();
 
-          // Store XHR for cancel support
           activeUploads[uniqueId] = xhr;
 
           xhr.upload.onprogress = (e) => {
@@ -1013,7 +949,6 @@
               const speed = elapsed > 0 ? e.loaded / elapsed : 0;
               const remaining = speed > 0 ? (e.total - e.loaded) / speed : 0;
 
-              // Update progress bar (30% to 80% range for upload phase)
               progressFill.style.width = `${Math.min(30 + (percent * 0.5), 80)}%`;
 
               const speedMB = (speed / (1024 * 1024)).toFixed(1);
@@ -1031,8 +966,6 @@
 
           xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status });
           xhr.onerror = () => reject(new Error('Network error during upload'));
-          // v4.5.0: No timeout for large file uploads
-          // xhr.ontimeout = () => reject(new Error('Upload timeout'));
 
           xhr.open('PUT', uploadUrl);
           xhr.setRequestHeader('Content-Type', mimeType);
@@ -1042,7 +975,6 @@
           xhr.send(file);
         });
       } else {
-        // Local storage with progress - POST with FormData
         uploadResponse = await new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           const formData = new FormData();
@@ -1051,7 +983,6 @@
           formData.append('uploadId', uploadId);
           formData.append('itemId', itemId);
 
-          // Store XHR for cancel support
           activeUploads[uniqueId] = xhr;
 
           xhr.upload.onprogress = (e) => {
@@ -1061,7 +992,6 @@
               const speed = elapsed > 0 ? e.loaded / elapsed : 0;
               const remaining = speed > 0 ? (e.total - e.loaded) / speed : 0;
 
-              // Update progress bar (30% to 80% range for upload phase)
               progressFill.style.width = `${Math.min(30 + (percent * 0.5), 80)}%`;
 
               const speedMB = (speed / (1024 * 1024)).toFixed(1);
@@ -1079,8 +1009,6 @@
 
           xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status });
           xhr.onerror = () => reject(new Error('Network error during upload'));
-          // v4.5.0: No timeout for large file uploads
-          // xhr.ontimeout = () => reject(new Error('Upload timeout'));
 
           xhr.open('POST', uploadUrl);
           xhr.send(formData);
@@ -1089,13 +1017,11 @@
 
       if (!uploadResponse.ok) throw new Error('Upload failed');
 
-      // Clear active upload reference
       delete activeUploads[uniqueId];
 
       progressFill.style.width = '60%';
       progressText.textContent = 'Processing...';
 
-      // Step 3: Complete upload (provider-aware)
       const uploadDurationMs = Date.now() - startTime;
       const completeResponse = await fetch(`${apiBase}/api/upload/complete`, {
         method: 'POST',
@@ -1118,10 +1044,8 @@
       progressFill.style.width = '80%';
       progressText.textContent = 'Analyzing...';
 
-      // Store upload ID
       if (uploadIdInput) uploadIdInput.value = uploadId;
 
-      // Poll for status and get the signed download URL from API
       let status = 'processing';
       let attempts = 0;
       let finalDownloadUrl = null;
@@ -1133,7 +1057,6 @@
           if (statusResponse.ok) {
             const statusData = await statusResponse.json();
             status = statusData.status;
-            // Get the signed URL from API response (this is the correct format)
             if (statusData.downloadUrl) {
               finalDownloadUrl = statusData.downloadUrl;
             }
@@ -1142,30 +1065,25 @@
               dpiText.textContent = `Low resolution: ${statusData.preflight.dpi} DPI`;
             }
           }
-        } catch (e) { /* ignore */ }
+        } catch (e) {  }
         attempts++;
       }
 
-      // Use the signed URL from API, fallback to constructed URL if not available
       const finalUrl = finalDownloadUrl || publicUrl || `${apiBase}/api/upload/file/${uploadId}`;
       if (uploadUrlInput) uploadUrlInput.value = finalUrl;
 
-      // Calculate upload duration
       const uploadDuration = ((Date.now() - startTime) / 1000).toFixed(1);
 
-      // Show preview
       progress.style.display = 'none';
       preview.style.display = 'flex';
       if (previewName) previewName.textContent = file.name;
 
-      // v4.3.0: Check if non-browser format (needs server-side thumbnail)
       const NON_BROWSER_EXTENSIONS = ['psd', 'pdf', 'ai', 'eps', 'tiff', 'tif'];
       const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
       const isNonBrowserFormat = NON_BROWSER_EXTENSIONS.includes(fileExt);
 
       if (previewImg) {
         if (isNonBrowserFormat) {
-          // Non-browser format: Show spinner and poll for thumbnail
           console.log('[UL Quick Upload] Non-browser format detected, showing spinner:', fileExt);
           previewImg.src = 'data:image/svg+xml,' + encodeURIComponent(`
             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 50 50">
@@ -1178,15 +1096,12 @@
           `);
           previewImg.classList.add('loading-spinner');
 
-          // Start background polling for thumbnail
           pollForThumbnail(uploadId, uniqueId, apiBase, shopDomain, previewImg);
         } else if (file.type.startsWith('image/')) {
-          // Browser-supported image: Use FileReader for instant preview
           const reader = new FileReader();
           reader.onload = (e) => { previewImg.src = e.target.result; };
           reader.readAsDataURL(file);
         } else {
-          // Generic file icon
           previewImg.src = 'data:image/svg+xml,' + encodeURIComponent(`
             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="#6b7280">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -1195,13 +1110,11 @@
         }
       }
 
-      // Update status badge - always show positive message to customer
       if (previewStatus) {
         previewStatus.textContent = 'Ready for print';
         previewStatus.className = 'ul-status-badge ready';
       }
 
-      // Show upload duration
       const previewDuration = document.getElementById('ul-preview-duration-' + uniqueId);
       if (previewDuration) {
         previewDuration.textContent = `Uploaded in ${uploadDuration}s`;
@@ -1211,7 +1124,6 @@
       if (addBtn) addBtn.disabled = false;
       if (hint) hint.style.display = 'none';
 
-      // Visitor tracking: dispatch upload complete event
       try {
         window.dispatchEvent(new CustomEvent('ul:upload:complete', {
           detail: {
@@ -1222,7 +1134,7 @@
             source: 'quick-upload-btn'
           }
         }));
-      } catch (e) { /* Visitor tracking optional */ }
+      } catch (e) {  }
 
     } catch (error) {
       console.error('Upload error:', error);
@@ -1232,7 +1144,6 @@
     }
   }
 
-  // v4.3.0: Poll for server-generated thumbnail (for PSD/PDF/AI/EPS/TIFF)
   async function pollForThumbnail(uploadId, uniqueId, apiBase, shopDomain, imgElement) {
     const MAX_POLLS = 60; // 60 seconds max
     let pollCount = 0;
@@ -1244,7 +1155,6 @@
 
       if (pollCount > MAX_POLLS) {
         console.log('[UL Quick Upload] Thumbnail polling timeout');
-        // Show file icon as fallback
         imgElement.src = 'data:image/svg+xml,' + encodeURIComponent(`
           <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="#6b7280">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
@@ -1263,7 +1173,6 @@
           if (data.thumbnailUrl) {
             console.log('[UL Quick Upload] Thumbnail received:', data.thumbnailUrl);
 
-            // Preload image to avoid flickering
             const img = new Image();
             img.onload = () => {
               imgElement.src = data.thumbnailUrl;
@@ -1278,7 +1187,6 @@
           }
         }
 
-        // Continue polling
         setTimeout(doPoll, 1500);
 
       } catch (error) {
@@ -1287,20 +1195,17 @@
       }
     };
 
-    // Start polling after short delay
     setTimeout(doPoll, 1000);
   }
 
   function cancelUpload(uniqueId) {
     console.log('[UL Quick Upload] Cancelling upload for:', uniqueId);
 
-    // Abort active XHR if exists
     if (activeUploads[uniqueId]) {
       activeUploads[uniqueId].abort();
       delete activeUploads[uniqueId];
     }
 
-    // Reset UI
     const dropzone = document.getElementById('ul-dropzone-' + uniqueId);
     const progress = document.getElementById('ul-progress-' + uniqueId);
     const progressFill = document.getElementById('ul-progress-fill-' + uniqueId);
@@ -1340,11 +1245,9 @@
     let val = parseInt(input.value) || 1;
     val = Math.max(1, Math.min(99, val + delta));
     input.value = val;
-    // Update total price when quantity changes
     updateTotalPrice(uniqueId);
   }
 
-  // Listen for manual quantity input changes
   document.addEventListener('input', function(e) {
     if (e.target.matches('[id^="ul-qty-"]')) {
       const uniqueId = e.target.id.replace('ul-qty-', '');
@@ -1365,8 +1268,6 @@
       let i = 0;
       while (document.getElementById('ul-option-' + uniqueId + '-' + i)) {
         const selectEl = document.getElementById('ul-option-' + uniqueId + '-' + i);
-        // CRITICAL FIX: Use selectedOptions[0].textContent instead of .value
-        // This avoids HTML entity encoding issues with special chars like "
         const selectedOption = selectEl.selectedOptions[0];
         const optionText = selectedOption ? selectedOption.textContent.trim() : selectEl.value;
         options.push(optionText);
@@ -1378,11 +1279,9 @@
 
       let variant = null;
 
-      // If no options (default variant), use first variant
       if (options.length === 0) {
         variant = variantsData[0];
       } else {
-        // Find matching variant - compare option text with variant options
         variant = variantsData.find(v => {
           return options.every((opt, idx) => {
             const variantOpt = v['option' + (idx + 1)];
@@ -1397,15 +1296,12 @@
         console.log('[Upload Studio] Matched variant:', variant.id, variant.title, 'Price:', variant.price);
         if (variantInput) {
           variantInput.value = variant.id;
-          // Store price in data attribute for calculations
           variantInput.dataset.price = variant.price;
         }
-        // Update prices
         updateTotalPrice(uniqueId);
         return true;
       } else {
         console.warn('[Upload Studio] No variant match found for options:', options);
-        // Fallback: use first available variant
         if (variantsData.length > 0 && variantInput) {
           const fallback = variantsData.find(v => v.available) || variantsData[0];
           console.log('[Upload Studio] Using fallback variant:', fallback.id);
@@ -1422,7 +1318,6 @@
     }
   }
 
-  // Update total price display
   function updateTotalPrice(uniqueId) {
     console.log('[Upload Studio] updateTotalPrice called for:', uniqueId);
 
@@ -1437,11 +1332,9 @@
       return;
     }
 
-    // Get price from data attribute or fetch from variants
     let unitPrice = parseInt(variantInput.dataset.price, 10);
     console.log('[Upload Studio] Price from data attr:', unitPrice);
 
-    // If no price in data attribute, get from variants JSON
     if (!unitPrice || isNaN(unitPrice)) {
       const variantsEl = document.getElementById('ul-variants-' + uniqueId);
       if (variantsEl) {
@@ -1467,12 +1360,10 @@
     const quantity = parseInt(qtyInput.value, 10) || 1;
     const totalPrice = unitPrice * quantity;
 
-    // Update unit price display
     if (unitPriceEl) {
       unitPriceEl.textContent = formatMoney(unitPrice);
     }
 
-    // Update multiplier (only show if qty > 1)
     if (multiplyEl) {
       if (quantity > 1) {
         multiplyEl.textContent = '× ' + quantity;
@@ -1483,7 +1374,6 @@
       }
     }
 
-    // Animate total price update
     if (totalPriceEl) {
       totalPriceEl.classList.add('updating');
       totalPriceEl.textContent = formatMoney(totalPrice);
@@ -1495,17 +1385,14 @@
     console.log('[Upload Studio] Price updated - Unit:', formatMoney(unitPrice), 'Qty:', quantity, 'Total:', formatMoney(totalPrice));
   }
 
-  // Format money helper - uses Shopify's money format
   function formatMoney(cents) {
     if (typeof cents === 'string') {
       cents = cents.replace('.', '');
     }
     const value = parseInt(cents, 10) / 100;
-    // Try to use Shopify's format, fallback to basic format
     if (window.Shopify && window.Shopify.formatMoney) {
       return window.Shopify.formatMoney(cents);
     }
-    // Fallback: detect currency from existing price or use default
     const currencySymbol = window.Shopify?.currency?.symbol || '$';
     return currencySymbol + value.toFixed(2);
   }
@@ -1522,7 +1409,6 @@
     const uploadUrlInput = document.getElementById('ul-upload-url-' + uniqueId);
     const previewNameEl = document.getElementById('ul-preview-name-' + uniqueId);
 
-    // Validate variant ID - ensure it's synced before cart add
     updateVariant(uniqueId);
 
     const variantId = variantInput?.value;
@@ -1533,7 +1419,6 @@
 
     console.log('[Upload Studio] Add to cart - variantId:', variantId, 'quantity:', quantity, 'uploadId:', uploadId);
 
-    // Validation checks
     if (!uploadId) {
       alert('Please upload a design first');
       return;
@@ -1559,9 +1444,7 @@
         id: parseInt(variantId, 10),
         quantity: quantity,
         properties: {
-          // Hidden keys (for internal use)
           '_ul_upload_id': uploadId,
-          // Visible keys (shown in checkout)
           'Uploaded File': uploadUrl,
           'File Name': previewName,
           'Design Type': 'DTF Transfer'
@@ -1579,7 +1462,6 @@
       const responseData = await response.json();
 
       if (!response.ok) {
-        // Parse Shopify error response
         const errorMsg = responseData.description || responseData.message || 'Failed to add to cart';
         console.error('[Upload Studio] Shopify cart error:', responseData);
         throw new Error(errorMsg);
@@ -1587,7 +1469,6 @@
 
       console.log('[Upload Studio] Added to cart successfully:', responseData);
 
-      // Visitor tracking: dispatch cart add event
       try {
         window.dispatchEvent(new CustomEvent('ul:cart:add', {
           detail: {
@@ -1598,15 +1479,13 @@
             source: 'quick-upload-btn'
           }
         }));
-      } catch (e) { /* Visitor tracking optional */ }
+      } catch (e) {  }
 
-      // Show success
       const step1 = document.getElementById(modalId + '-step1');
       const step2 = document.getElementById(modalId + '-step2');
       if (step1) step1.style.display = 'none';
       if (step2) step2.style.display = 'block';
 
-      // Update cart count
       fetch('/cart.js').then(r => r.json()).then(cart => {
         document.querySelectorAll('.cart-count, .cart-count-bubble span, [data-cart-count]').forEach(el => {
           el.textContent = cart.item_count;
@@ -1623,7 +1502,6 @@
     }
   }
 
-  // Expose for backward compatibility
   window.openUploadModal = openModal;
   window.closeUploadModal = closeModal;
 })();

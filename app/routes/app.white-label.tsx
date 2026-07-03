@@ -62,7 +62,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: "Shop not found" }, { status: 404 });
   }
 
-  // Check pro plan (white-label included in Pro)
+
   if (shop.plan !== "pro" && shop.plan !== "enterprise") {
     return json({ error: "White-label requires Pro plan" }, { status: 403 });
   }
@@ -77,7 +77,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const hideBranding = formData.get("hideBranding") === "on";
   const customDomain = formData.get("customDomain") as string;
 
-  // Upsert white label config
+
   await prisma.whiteLabelConfig.upsert({
     where: { shopId: shop.id },
     update: {
@@ -135,7 +135,7 @@ export default function WhiteLabelPage() {
       backAction={{ content: "Settings", url: "/app/settings" }}
     >
         <Layout>
-          {/* Action result banner */}
+
           {actionData && "success" in actionData && (
             <Layout.Section>
               <Banner tone="success" onDismiss={() => {}}>
@@ -151,7 +151,7 @@ export default function WhiteLabelPage() {
             </Layout.Section>
           )}
 
-          {/* Plan restriction */}
+
           {!canUseWhiteLabel && (
             <Layout.Section>
               <Banner tone="warning">
@@ -162,7 +162,7 @@ export default function WhiteLabelPage() {
           )}
 
           <Form method="post">
-            {/* Enable/Disable */}
+
             <Layout.Section>
               <Card>
                 <BlockStack gap="400">
@@ -180,7 +180,7 @@ export default function WhiteLabelPage() {
               </Card>
             </Layout.Section>
 
-            {/* Logo */}
+
             <Layout.Section>
               <Card>
                 <BlockStack gap="400">
@@ -212,7 +212,7 @@ export default function WhiteLabelPage() {
               </Card>
             </Layout.Section>
 
-            {/* Colors */}
+
             <Layout.Section>
               <Card>
                 <BlockStack gap="400">
@@ -271,7 +271,7 @@ export default function WhiteLabelPage() {
               </Card>
             </Layout.Section>
 
-            {/* Branding */}
+
             <Layout.Section>
               <Card>
                 <BlockStack gap="400">
@@ -289,7 +289,7 @@ export default function WhiteLabelPage() {
               </Card>
             </Layout.Section>
 
-            {/* Custom CSS */}
+
             <Layout.Section>
               <Card>
                 <BlockStack gap="400">
@@ -310,7 +310,7 @@ export default function WhiteLabelPage() {
               </Card>
             </Layout.Section>
 
-            {/* Custom Domain */}
+
             <Layout.Section>
               <Card>
                 <BlockStack gap="400">
@@ -334,7 +334,7 @@ export default function WhiteLabelPage() {
               </Card>
             </Layout.Section>
 
-            {/* Save */}
+
             <Layout.Section>
               <InlineStack align="end">
                 <Button

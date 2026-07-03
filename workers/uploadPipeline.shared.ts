@@ -641,11 +641,11 @@ export async function prepareUploadJobContext(
   const stats = await fs.stat(originalPath)
   const detectedType = await detectFileType(originalPath)
 
-  // Pull product-specific sheet dimensions from ProductConfig so the preflight
-  // measurement anchors physical inches to the actual press output. Both
-  // maxWidthIn and maxHeightIn matter: variable-length gang sheets only set
-  // maxWidthIn, but fixed-size sheets (e.g. PERSONAL GS 22×12) set both —
-  // and the shorter of the two becomes the anchor for landscape artwork.
+
+
+
+
+
   let sheetWidthIn: number | undefined
   let sheetLengthIn: number | undefined
   try {

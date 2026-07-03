@@ -1,18 +1,18 @@
-/**
- * Email Service using Resend
- * 
- * Setup: Add RESEND_API_KEY to environment variables
- * Get API key from: https://resend.com/api-keys
- */
+
+
+
+
+
+
 
 import { Resend } from "resend";
 
-// Initialize Resend client (will be undefined if no API key)
-const resend = process.env.RESEND_API_KEY 
+
+const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
   : null;
 
-// Default sender - update after domain verification in Resend
+
 const APP_DOMAIN = process.env.APP_DOMAIN || 'localhost:3000';
 const APP_NAME = process.env.APP_NAME || 'Upload Studio';
 const DEFAULT_FROM = process.env.EMAIL_FROM || `${APP_NAME} <noreply@${APP_DOMAIN}>`;
@@ -37,9 +37,9 @@ export interface SupportTicketEmailData {
   shopDomain?: string;
 }
 
-/**
- * Send an email via Resend
- */
+
+
+
 export async function sendEmail(options: EmailOptions): Promise<{ success: boolean; error?: string; id?: string }> {
   if (!resend) {
     console.warn("[EMAIL] Resend API key not configured - email not sent");
@@ -69,9 +69,9 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
   }
 }
 
-/**
- * Send support ticket confirmation to customer
- */
+
+
+
 export async function sendTicketConfirmation(data: SupportTicketEmailData): Promise<{ success: boolean; error?: string }> {
   const html = `
 <!DOCTYPE html>
@@ -98,22 +98,22 @@ export async function sendTicketConfirmation(data: SupportTicketEmailData): Prom
     <div class="content">
       <p>Hi <strong>${data.name}</strong>,</p>
       <p>Thank you for contacting ${APP_NAME} support. We've received your message and will get back to you within 24 hours.</p>
-      
+
       <div class="ticket-id">
         <p style="margin: 0 0 5px 0; color: #6b7280; font-size: 0.875rem;">Your Ticket ID:</p>
         <code>${data.ticketId}</code>
       </div>
-      
+
       <p><strong>Subject:</strong> ${data.subject}</p>
       <p><strong>Category:</strong> ${data.category}</p>
-      
+
       <div class="message-box">
         <p style="margin: 0 0 5px 0; color: #6b7280; font-size: 0.875rem;">Your Message:</p>
         <p style="margin: 0; white-space: pre-wrap;">${data.message}</p>
       </div>
-      
+
       <p>If you have any additional information to add, please reply to this email with your ticket ID.</p>
-      
+
       <p>Best regards,<br><strong>${APP_NAME} Support Team</strong></p>
     </div>
     <div class="footer">
@@ -154,9 +154,9 @@ ${APP_NAME} Support Team
   });
 }
 
-/**
- * Send new ticket notification to support team
- */
+
+
+
 export async function sendTicketNotification(data: SupportTicketEmailData): Promise<{ success: boolean; error?: string }> {
   const html = `
 <!DOCTYPE html>
@@ -203,14 +203,14 @@ export async function sendTicketNotification(data: SupportTicketEmailData): Prom
         <span class="info-label">Subject:</span>
         <span class="info-value">${data.subject}</span>
       </div>
-      
+
       <div class="message-box">
         <p style="margin: 0 0 10px 0; font-weight: 600;">Message:</p>
         <p style="margin: 0; white-space: pre-wrap;">${data.message}</p>
       </div>
-      
+
       <p style="text-align: center;">
-        <a href="https://${APP_DOMAIN}/admin/support/${data.ticketId}" 
+        <a href="https://${APP_DOMAIN}/admin/support/${data.ticketId}"
            style="display: inline-block; background: #667eea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">
           View Ticket
         </a>
@@ -229,9 +229,9 @@ export async function sendTicketNotification(data: SupportTicketEmailData): Prom
   });
 }
 
-/**
- * Send ticket reply to customer
- */
+
+
+
 export async function sendTicketReply(
   ticketId: string,
   customerEmail: string,
@@ -261,13 +261,13 @@ export async function sendTicketReply(
     </div>
     <div class="content">
       <p>Hi <strong>${customerName}</strong>,</p>
-      
+
       <div class="reply-box">
         <p style="white-space: pre-wrap;">${replyMessage}</p>
       </div>
-      
+
       <p style="margin-top: 20px;">If you have any further questions, please reply to this email.</p>
-      
+
       <p>Best regards,<br><strong>${agentName}</strong><br>${APP_NAME} Support</p>
     </div>
     <div class="footer">
@@ -287,9 +287,9 @@ export async function sendTicketReply(
   });
 }
 
-/**
- * Send ticket status update to customer
- */
+
+
+
 export async function sendTicketStatusUpdate(
   ticketId: string,
   customerEmail: string,
@@ -331,21 +331,21 @@ export async function sendTicketStatusUpdate(
     </div>
     <div class="content">
       <p>Hi <strong>${customerName}</strong>,</p>
-      
+
       <p>Your support ticket <strong>#${ticketId}</strong> has been updated:</p>
-      
+
       <p style="text-align: center; margin: 30px 0;">
         <span class="status-badge">${statusLabels[newStatus]}</span>
       </p>
-      
+
       <p><strong>Subject:</strong> ${subject}</p>
-      
+
       ${note ? `<p><strong>Note:</strong> ${note}</p>` : ''}
-      
+
       ${newStatus === "resolved" ? `
         <p>If this doesn't resolve your issue, please reply to this email and we'll reopen your ticket.</p>
       ` : ''}
-      
+
       <p>Best regards,<br><strong>${APP_NAME} Support Team</strong></p>
     </div>
     <div class="footer">
@@ -365,12 +365,12 @@ export async function sendTicketStatusUpdate(
   });
 }
 
-// Export types for use elsewhere
+
 export type { Resend };
 
-/**
- * Send team invitation email
- */
+
+
+
 export async function sendTeamInvite(
   email: string,
   inviteToken: string,
@@ -379,7 +379,7 @@ export async function sendTeamInvite(
   inviterName?: string
 ): Promise<{ success: boolean; error?: string }> {
   const acceptUrl = `https://${APP_DOMAIN}/auth/accept-invite?token=${inviteToken}`;
-  
+
   const roleDescriptions: Record<string, string> = {
     admin: "Full access to all features",
     operator: "Manage uploads and production queue",
@@ -410,20 +410,20 @@ export async function sendTeamInvite(
     <div class="content">
       <p>Hi there,</p>
       <p>${inviterName ? `<strong>${inviterName}</strong> has` : 'You have been'} invited you to join <strong>${shopName}</strong> on ${APP_NAME} as a team member.</p>
-      
+
       <div class="role-box">
         <strong>Your Role:</strong> ${role.charAt(0).toUpperCase() + role.slice(1)}<br>
         <span style="color: #6b7280; font-size: 0.875rem;">${roleDescriptions[role] || 'Team member access'}</span>
       </div>
-      
+
       <p style="text-align: center;">
         <a href="${acceptUrl}" class="btn">Accept Invitation</a>
       </p>
-      
+
       <p style="font-size: 0.875rem; color: #6b7280;">
         This invitation link will expire in 7 days. If you didn't expect this invitation, you can safely ignore this email.
       </p>
-      
+
       <p>Best regards,<br><strong>${APP_NAME} Team</strong></p>
     </div>
     <div class="footer">

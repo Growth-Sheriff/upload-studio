@@ -1,9 +1,4 @@
-/**
- * Upload Studio - Cart Upload Display (v2 - Fixed)
- * Shows uploaded design info under cart line items
- * 
- * KEY FIX: Uses .cart-line-item with data-key attribute for matching
- */
+
 (function() {
   'use strict';
 
@@ -142,11 +137,11 @@
     const div = document.createElement('div');
     div.className = 'ul-cart-upload-info';
     div.dataset.uploadId = uploadId;
-    
+
     const fileName = designFile || 'Custom Design';
     const shortName = fileName.length > 25 ? fileName.substring(0, 22) + '...' : fileName;
-    
-    const iconHtml = thumbnail 
+
+    const iconHtml = thumbnail
       ? `<img class="ul-cart-upload-icon" src="${thumbnail}" alt="Design preview" onerror="this.style.display='none'">`
       : `<div class="ul-cart-upload-icon placeholder">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -157,7 +152,7 @@
             <polyline points="10 9 9 9 8 9"></polyline>
           </svg>
         </div>`;
-    
+
     div.innerHTML = `
       ${iconHtml}
       <div class="ul-cart-upload-details">
@@ -174,25 +169,25 @@
         Custom
       </span>
     `;
-    
+
     return div;
   }
 
   async function updateUploadInfo(element, uploadId) {
     const shopDomain = window.Shopify?.shop || document.querySelector('meta[name="shopify-domain"]')?.content;
-    
+
     if (!shopDomain) {
       updateStatusDisplay(element, 'ready', 'Design attached');
       return;
     }
 
     const status = await getUploadStatus(uploadId, shopDomain);
-    
+
     if (status) {
       const statusText = getStatusText(status);
       const statusClass = getStatusClass(status);
       updateStatusDisplay(element, statusClass, statusText);
-      
+
       if (status.thumbnailUrl || status.previewUrl) {
         const iconEl = element.querySelector('.ul-cart-upload-icon');
         if (iconEl) {
@@ -236,37 +231,30 @@
   function updateStatusDisplay(element, statusClass, statusText) {
     const dot = element.querySelector('.dot');
     const text = element.querySelector('.status-text');
-    
+
     if (dot) dot.className = 'dot ' + statusClass;
     if (text) text.textContent = statusText;
-    
+
     element.classList.remove('processing', 'error');
     if (statusClass !== 'ready') element.classList.add(statusClass);
   }
 
-  // ============================================
-  // FIND CART LINE ITEMS - Multi-theme support
-  // ============================================
-  
   function findCartLineItems() {
-    // Priority ordered selectors - most specific first
+
     const selectors = [
-      // THIS THEME - highest priority
+
       '.cart-line-item[data-key]',
       '.cart-line-item',
-      
-      // Dawn theme
+
       'cart-items .cart-item',
       '.cart-items .cart-item',
       '[data-cart-item]',
-      
-      // Common patterns
+
       '[data-cart-item-key]',
       '[data-line-item-key]',
       '[data-key][class*="cart"]',
       '[data-key][class*="line"]',
-      
-      // Other themes
+
       '.cart__row',
       '.cart-item',
       '.ajaxcart__product',
@@ -309,15 +297,14 @@
           return Array.from(items);
         }
       } catch (e) {
-        // Invalid selector, skip
+
       }
     }
-    
+
     log('No cart items found with any selector');
     return [];
   }
 
-  // Find where to append upload info within a line item
   function findAppendTarget(lineItem) {
     const selectors = [
       '.line-item-details',
@@ -344,13 +331,9 @@
       const target = lineItem.querySelector(selector);
       if (target && target.offsetParent !== null) return target;
     }
-    
+
     return lineItem;
   }
-
-  // ============================================
-  // MAIN PROCESSING - Simple key-based matching
-  // ============================================
 
   async function processCart() {
     const cart = await getCartData();
@@ -358,16 +341,15 @@
       log('No cart data or empty cart');
       return;
     }
-    
+
     log('Processing cart with', cart.items.length, 'items');
 
-    // Build a map of cart item KEY -> upload data
     const uploadsByKey = new Map();
-    
+
     cart.items.forEach((item, index) => {
-      const uploadId = item.properties?.[CONFIG.propertyKey] || 
+      const uploadId = item.properties?.[CONFIG.propertyKey] ||
                        item.properties?.['_ul_upload_id'];
-      
+
       if (!uploadId) return;
 
       const designFile = item.properties?.[CONFIG.designFileKey] ||
@@ -375,12 +357,11 @@
                          item.properties?.['_ul_file_name'] ||
                          item.properties?.['File Name'] ||
                          item.properties?.['Design Name'];
-      
-      const thumbnail = item.properties?.['_ul_thumbnail'] || 
+
+      const thumbnail = item.properties?.['_ul_thumbnail'] ||
                         item.properties?.['_ul_upload_url'] ||
                         item.properties?.['Uploaded File'];
 
-      // Use item.key as the primary identifier
       uploadsByKey.set(item.key, {
         uploadId,
         designFile,
@@ -389,7 +370,7 @@
         key: item.key,
         variantId: String(item.variant_id)
       });
-      
+
       log('Found upload:', item.key, '→', uploadId);
     });
 
@@ -397,29 +378,26 @@
       log('No upload items in cart');
       return;
     }
-    
+
     log('Total uploads found:', uploadsByKey.size);
 
-    // Find DOM elements
     const lineItemElements = findCartLineItems();
     if (lineItemElements.length === 0) {
       log('No cart line items found in DOM');
       return;
     }
-    
+
     log('Found', lineItemElements.length, 'line item elements');
 
-    // Match and apply
     let matchCount = 0;
-    
+
     lineItemElements.forEach((lineItem, domIndex) => {
-      // Skip if already processed
+
       if (lineItem.querySelector('.ul-cart-upload-info')) {
         return;
       }
 
-      // Get the data-key attribute from the DOM element
-      const domKey = lineItem.dataset.key || 
+      const domKey = lineItem.dataset.key ||
                      lineItem.dataset.lineItemKey ||
                      lineItem.dataset.cartItemKey ||
                      lineItem.getAttribute('data-key') ||
@@ -431,38 +409,35 @@
         return;
       }
 
-      // Look up upload by key
       const uploadData = uploadsByKey.get(domKey);
-      
+
       if (uploadData) {
         log(`DOM[${domIndex}] MATCHED by key:`, domKey, '→', uploadData.uploadId);
-        
+
         const target = findAppendTarget(lineItem);
         const infoEl = createUploadInfoElement(uploadData.uploadId, uploadData.designFile, uploadData.thumbnail);
         target.appendChild(infoEl);
-        
-        // Fetch status asynchronously
+
         updateUploadInfo(infoEl, uploadData.uploadId);
         matchCount++;
       } else {
-        // This is normal for products without uploads
+
         log(`DOM[${domIndex}] key: ${domKey} - no upload (normal product)`);
       }
     });
 
     log(`Finished: ${matchCount} uploads matched out of ${uploadsByKey.size}`);
-    
-    // Warn about unmatched uploads
+
     if (matchCount < uploadsByKey.size) {
       const matchedKeys = new Set();
       lineItemElements.forEach(el => {
         const key = el.dataset.key;
         if (key && uploadsByKey.has(key)) matchedKeys.add(key);
       });
-      
+
       const unmatchedUploads = Array.from(uploadsByKey.entries())
         .filter(([key]) => !matchedKeys.has(key));
-      
+
       if (unmatchedUploads.length > 0) {
         log('WARNING: Unmatched uploads:', unmatchedUploads.map(([key, data]) => ({
           key,
@@ -471,10 +446,6 @@
       }
     }
   }
-
-  // ============================================
-  // INITIALIZATION
-  // ============================================
 
   function init() {
     const isCartPage = window.location.pathname.includes('/cart') ||
@@ -489,7 +460,7 @@
 
     log('Initializing cart display');
     injectStyles();
-    
+
     let retries = 0;
     const tryProcess = () => {
       const items = findCartLineItems();
@@ -500,22 +471,21 @@
         setTimeout(tryProcess, CONFIG.pollInterval);
       }
     };
-    
+
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', tryProcess);
     } else {
       setTimeout(tryProcess, 100);
     }
 
-    // Watch for AJAX cart updates
     const observer = new MutationObserver((mutations) => {
       let shouldProcess = false;
       for (const mutation of mutations) {
         if (mutation.addedNodes.length > 0) {
           for (const node of mutation.addedNodes) {
-            if (node.nodeType === 1 && 
+            if (node.nodeType === 1 &&
                 (node.matches?.('.cart-line-item') ||
-                 node.matches?.('[data-cart-item]') || 
+                 node.matches?.('[data-cart-item]') ||
                  node.querySelector?.('[data-cart-item]') ||
                  node.querySelector?.('.cart-line-item') ||
                  node.classList?.contains('cart-item'))) {
@@ -530,9 +500,9 @@
       }
     });
 
-    observer.observe(document.body, { 
-      childList: true, 
-      subtree: true 
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
     });
 
     document.addEventListener('cart:updated', () => setTimeout(processCart, 200));

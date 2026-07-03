@@ -1,26 +1,4 @@
-{% comment %}
-  ═══════════════════════════════════════════════════════════════════════
-  Upload Studio — DTF Product Listing (Self-Contained Theme Section)
-  ═══════════════════════════════════════════════════════════════════════
-  Standalone section — Shopify extension block limitlerini aşmak için
-  temanın sections/ klasörüne doğrudan kopyalanır.
 
-  Asset'ler kendi sunucumuzdan yüklenir (/apps/customizer/api/ext-assets/)
-  Extension CDN'e bağımlılık yok.
-
-  Her ürüne farklı mod atanabilir:
-  - upload_studio  → DTF Uploader (dtf-uploader.js + modal)
-  - dtf_by_size    → DTF Transfer By Size (dtf-upload.js + modal)
-  - auto_sheet     → Auto Sheet Calculator (ul-auto-sheet.js + modal)
-  - builder        → Gang Sheet Builder sayfasına yönlendir
-  - redirect       → Ürün sayfasına yönlendir
-
-  Kurulum:
-  1. Bu dosyayı temanın sections/ klasörüne kopyala
-  2. Theme Editor → Add Section → "DTF Product Listing"
-  3. Ürünleri seç, her birine mod ve buton yazısı ata
-  ═══════════════════════════════════════════════════════════════════════
-{% endcomment %}
 
 {%- liquid
   assign heading    = section.settings.heading
@@ -31,12 +9,6 @@
   endif
   assign asset_base = tenant_url | append: '/api/ext-assets/'
 -%}
-
-{% comment %} ══════════ ASSET LOADING ══════════ {% endcomment %}
-{% comment %}
-  Collect which modes are used so we only load needed assets.
-  We always load shared deps (ul-state, ul-visitor, ul-common).
-{% endcomment %}
 
 {%- liquid
   assign has_upload_studio = false
@@ -54,11 +26,9 @@
   endfor
 -%}
 
-{% comment %} ── Shared CSS ── {% endcomment %}
 <link rel="stylesheet" href="{{ asset_base }}ul-common.css">
 <link rel="stylesheet" href="{{ asset_base }}dtf-listing.css">
 
-{% comment %} ── Mode-specific CSS ── {% endcomment %}
 {% if has_upload_studio %}
   <link rel="stylesheet" href="{{ asset_base }}dtf-uploader.css">
   <link rel="stylesheet" href="{{ asset_base }}ul-hide-defaults.css">
@@ -74,7 +44,6 @@
   <link rel="stylesheet" href="{{ asset_base }}ul-auto-sheet.css">
 {% endif %}
 
-{% comment %} ── Shared JS ── {% endcomment %}
 <script>
   window.ULCustomer = window.ULCustomer || {
     id: {{ customer.id | default: 'null' }},
@@ -84,7 +53,6 @@
 <script src="{{ asset_base }}ul-state.js" defer></script>
 <script src="{{ asset_base }}ul-visitor.js" defer data-shop-domain="{{ shop.permanent_domain }}"></script>
 
-{% comment %} ── Upload Studio assets ── {% endcomment %}
 {% if has_upload_studio %}
   <script src="{{ asset_base }}ul-remote-logger.js" defer></script>
   <script src="{{ asset_base }}ul-hide-defaults.js" defer></script>
@@ -94,12 +62,10 @@
   <script src="{{ asset_base }}tshirt-modal.js" defer></script>
 {% endif %}
 
-{% comment %} ── DTF By Size assets ── {% endcomment %}
 {% if has_dtf_by_size %}
   <script src="{{ asset_base }}dtf-upload.js" defer></script>
 {% endif %}
 
-{% comment %} ── Auto Sheet Calculator assets ── {% endcomment %}
 {% if has_auto_sheet %}
   <script src="{{ asset_base }}ul-dimension-reader.js" defer></script>
   <script src="{{ asset_base }}ul-nesting-engine.js" defer></script>
@@ -108,8 +74,6 @@
   <script src="{{ asset_base }}ul-auto-sheet.js" defer></script>
 {% endif %}
 
-
-{% comment %} ══════════ PRODUCT LISTING GRID ══════════ {% endcomment %}
 <div class="dtf-listing" id="dtf-listing-root">
   {% if heading != blank %}
     <div class="dtf-listing__header">
@@ -178,10 +142,6 @@
   </div>
 </div>
 
-
-{% comment %} ══════════ HIDDEN ROOTS & MODALS ══════════ {% endcomment %}
-
-{% comment %} ── DTF By Size: Hidden root + Modal ── {% endcomment %}
 {% if has_dtf_by_size %}
   <div
     id="dtf-upload-root"
@@ -226,7 +186,6 @@
   </div>
 {% endif %}
 
-{% comment %} ── Upload Studio: Modal Wrapper ── {% endcomment %}
 {% if has_upload_studio %}
   <style>
     .ul-studio-modal { position:fixed; inset:0; z-index:999999; display:none; align-items:center; justify-content:center; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
@@ -249,13 +208,12 @@
         <button class="ul-studio-modal__close" id="ul-studio-modal-close" type="button" aria-label="Close">&#x2715;</button>
       </div>
       <div class="ul-studio-modal__body" id="ul-studio-modal-body">
-        <!-- Dynamic ULDTFUploader container will be inserted here -->
+
       </div>
     </div>
   </div>
 {% endif %}
 
-{% comment %} ── Auto Sheet Calculator: will be rendered per-product ── {% endcomment %}
 {% if has_auto_sheet %}
   <div id="ul-auto-sheet-root" style="display:none"
     data-shop-domain="{{ shop.permanent_domain }}"
@@ -263,8 +221,6 @@
   ></div>
 {% endif %}
 
-
-{% comment %} ══════════ PRODUCT DATA JSON ══════════ {% endcomment %}
 <script type="application/json" id="dtf-listing-products">
 [{% for block in section.blocks %}{%- assign item = block.settings.product -%}{% if item != blank %}{% unless forloop.first %},{% endunless %}{
   "id": {{ item.id }},
@@ -282,8 +238,6 @@
 }{% endif %}{% endfor %}]
 </script>
 
-
-{% comment %} ══════════ LISTING CONTROLLER ══════════ {% endcomment %}
 <script>
 ;(function() {
   'use strict';
@@ -324,7 +278,6 @@
     var productHandle = btn.getAttribute('data-product-handle');
     var mode = btn.getAttribute('data-upload-mode') || 'upload_studio';
 
-    // Highlight active card
     var cards = document.querySelectorAll('.dtf-listing__card');
     for (var c = 0; c < cards.length; c++) cards[c].classList.remove('dtf-listing__card--active');
     var card = btn.closest('.dtf-listing__card');
@@ -332,34 +285,25 @@
 
     var productData = getProductData(productId);
 
-
-    /* ─── Mode: redirect / builder ─── */
     if (mode === 'redirect' || mode === 'builder') {
       window.location.href = '/products/' + productHandle;
       return;
     }
 
-
-    /* ─── Mode: upload_studio ─── */
     if (mode === 'upload_studio') {
       if (typeof window.ULDTFUploader !== 'undefined') {
-        // Remove existing container if any
         var existingContainer = document.getElementById('ul-dtf-' + productId);
         if (existingContainer) existingContainer.remove();
 
-        // Clear modal body
         var modalBody = document.getElementById('ul-studio-modal-body');
         if (modalBody) modalBody.innerHTML = '';
 
-        // Build the full DOM container that ULDTFUploader expects
         var variants = productData ? productData.variants : [];
         var variantJson = JSON.stringify(variants);
         var firstVariant = variants.length ? variants[0] : { id: '', title: '-', price: 0 };
 
-        // Build option dropdowns HTML from variants
         var optionGroupsHtml = '';
         if (variants.length > 0 && variants[0].options) {
-          // Collect unique option names and values
           var optionNames = [];
           var optionValues = {};
           for (var vi = 0; vi < variants.length; vi++) {
@@ -367,7 +311,6 @@
             if (v.options) {
               for (var oi = 0; oi < v.options.length; oi++) {
                 if (optionNames.indexOf(v.option1 ? 'Option ' + (oi+1) : '') < 0) {
-                  // simplified: use title parsing
                 }
               }
             }
@@ -453,17 +396,14 @@
           '<input type="hidden" id="ul-thumbnail-url-' + productId + '" value="">' +
         '</div>';
 
-        // Insert container into modal body (not document.body)
         if (modalBody) {
           modalBody.innerHTML = containerHtml;
         } else {
           document.body.insertAdjacentHTML('beforeend', containerHtml);
         }
 
-        // Init ULDTFUploader
         window.ULDTFUploader.init(productId);
 
-        // Open the modal
         var studioModal = document.getElementById('ul-studio-modal');
         var modalTitle = document.getElementById('ul-studio-modal-title');
         if (studioModal) {
@@ -472,7 +412,6 @@
           if (modalTitle) modalTitle.textContent = productTitle || 'Upload Your Design';
         }
 
-        // Close handlers
         function closeStudioModal() {
           if (studioModal) {
             studioModal.classList.remove('active');
@@ -485,14 +424,11 @@
         if (backdrop) backdrop.onclick = closeStudioModal;
 
       } else {
-        // Fallback: redirect to product page
         window.location.href = '/products/' + productHandle;
       }
       return;
     }
 
-
-    /* ─── Mode: dtf_by_size ─── */
     if (mode === 'dtf_by_size') {
       var uploadRoot = document.getElementById('dtf-upload-root');
       if (!uploadRoot) return;
@@ -503,11 +439,9 @@
       uploadRoot.setAttribute('data-product-options', JSON.stringify((productData && productData.options) || []));
       uploadRoot.removeAttribute('data-initialized');
 
-      // Set product title in modal header
       var dtfModalTitle = document.getElementById('dtf-modal-product-title');
       if (dtfModalTitle) dtfModalTitle.textContent = productTitle || '';
 
-      // Product-specific metafields
       if (productData && productData.metafields) {
         uploadRoot.setAttribute('data-max-width', String(productData.metafields.max_width || 22));
         uploadRoot.setAttribute('data-max-height', String(productData.metafields.max_height || 36));
@@ -516,7 +450,6 @@
         }
       }
 
-      // Destroy existing instance
       if (window.dtfBlock) {
         window.dtfBlock.files = [];
         window.dtfBlock.activeFileIndex = -1;
@@ -524,7 +457,6 @@
         window.dtfBlock = null;
       }
 
-      // Re-init DtfUploadBlock
       var config = {
         productId: productId,
         productTitle: productTitle || '',
@@ -553,17 +485,12 @@
       return;
     }
 
-
-    /* ─── Mode: auto_sheet ─── */
     if (mode === 'auto_sheet') {
-      // Auto Sheet Calculator
       if (typeof window.ULAutoSheet !== 'undefined') {
-        // Force-enable Auto Sheet if not already initialized
         if (!window.ULAutoSheet.isEnabled()) {
           window.ULAutoSheet.init({ enabled: true });
         }
 
-        // Create a temporary file input and trigger it
         var fileInput = document.createElement('input');
         fileInput.type = 'file';
         fileInput.accept = '.png,.jpg,.jpeg,.webp,.tiff,.tif,.psd,.pdf,.ai,.eps';
@@ -582,7 +509,6 @@
             quantity: 1,
             onSelect: function(result) {
               if (result && result.variantId) {
-                // Add to cart directly
                 fetch('/cart/add.js', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -602,14 +528,12 @@
 
         fileInput.click();
       } else {
-        // Fallback: redirect to product page
         window.location.href = '/products/' + productHandle;
       }
       return;
     }
   }
 
-  // Init
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initListing);
   } else {
@@ -617,7 +541,6 @@
   }
 })();
 </script>
-
 
 {% schema %}
 {

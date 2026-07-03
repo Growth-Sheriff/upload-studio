@@ -1,19 +1,19 @@
 #!/bin/bash
-# ============================================
-# Upload Studio - Deploy Shopify Extensions
-# ============================================
-# Deploys the theme extension to each tenant's Shopify app.
-# Each tenant has its own shopify.app.{slug}.toml config.
-#
-# Prerequisites:
-#   - Shopify CLI installed (npx shopify)
-#   - client_id set correctly in each .toml
-#   - Logged into Shopify Partner Dashboard
-#
-# Usage:
-#   bash scripts/deploy-extensions.sh              # Deploy to ALL tenants
-#   bash scripts/deploy-extensions.sh fastdtftransfer  # Deploy to one tenant
-# ============================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,7 +21,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$PROJECT_DIR"
 
-# All tenant slugs
+
 ALL_SLUGS=(
   fdt
   everydaycustomprint
@@ -36,7 +36,7 @@ ALL_SLUGS=(
   dtfprintarizona
 )
 
-# Determine which tenants to deploy
+
 if [ -n "$1" ]; then
   SLUGS=("$1")
 else
@@ -60,7 +60,7 @@ for slug in "${SLUGS[@]}"; do
     continue
   fi
 
-  # Check if client_id is still placeholder
+
   if grep -q "CHANGE_ME" "$TOML_FILE"; then
     echo "  ⚠️  ${slug}: client_id not set yet (CHANGE_ME), skipping"
     FAILED=$((FAILED + 1))

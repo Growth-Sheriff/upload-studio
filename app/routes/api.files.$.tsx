@@ -8,17 +8,17 @@ import {
   validateLocalFileToken,
 } from '~/lib/storage.server'
 
-/**
- * GET /api/files/:key?token=xxx
- *
- * WI-004: Serves files from local storage with signed URL token validation
- * Token is HMAC-SHA256 signed and time-limited
- *
- * For Bunny URLs: Redirects to CDN
- * For Local files: Serves from filesystem
- */
+
+
+
+
+
+
+
+
+
 export async function loader({ params, request }: LoaderFunctionArgs) {
-  // Handle CORS preflight
+
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
@@ -39,7 +39,7 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
   const decodedKey = decodeURIComponent(key)
 
   try {
-    // WI-004: Token validation applies to ALL storage types
+
     const url = new URL(request.url)
     const token = url.searchParams.get('token')
 
@@ -52,16 +52,16 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
       })
     }
 
-    // Debug logging for R2 issues
+
     if (decodedKey.startsWith('r2:')) {
       console.log('[FileServe] R2 Request:', { key, decodedKey });
       const r2Key = decodedKey.replace('r2:', '')
       const config = getStorageConfig()
-      
-      // Explicitly check config here to debug
+
+
       console.log('[FileServe] Config validation:', {
          hasAccountId: !!process.env.R2_ACCOUNT_ID,
-         hasAccessKey: !!process.env.R2_ACCESS_KEY_ID, 
+         hasAccessKey: !!process.env.R2_ACCESS_KEY_ID,
          hasSecret: !!process.env.R2_SECRET_ACCESS_KEY
       });
 
@@ -75,7 +75,7 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
       return new Response('File not found / R2 Error', { status: 404 })
     }
 
-    // If the key is a Bunny URL or bunny: prefixed, redirect to CDN
+
     if (isBunnyUrl(decodedKey) || decodedKey.startsWith('bunny:')) {
       const cdnUrl = process.env.BUNNY_CDN_URL || 'https://customizerappdev.b-cdn.net'
       let redirectUrl: string
@@ -90,10 +90,10 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
       return Response.redirect(redirectUrl, 302)
     }
 
-    // Otherwise serve from local storage
+
     const buffer = await readLocalFile(decodedKey)
 
-    // Determine content type from file extension
+
     const ext = decodedKey.split('.').pop() || ''
     const contentType = mime.lookup(ext) || 'application/octet-stream'
 

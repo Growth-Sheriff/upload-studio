@@ -23,7 +23,7 @@ export default function TermsOfService() {
       <section style={styles.section}>
         <h2 style={styles.heading}>1. Acceptance of Terms</h2>
         <p style={styles.text}>
-          By installing and using Upload Studio ("the App"), you agree to be bound by these 
+          By installing and using Upload Studio ("the App"), you agree to be bound by these
           Terms of Service. If you do not agree to these terms, please do not use the App.
         </p>
       </section>
@@ -43,7 +43,7 @@ export default function TermsOfService() {
       <section style={styles.section}>
         <h2 style={styles.heading}>3. Account Registration</h2>
         <p style={styles.text}>
-          To use the App, you must have an active Shopify store. By installing the App, you authorize 
+          To use the App, you must have an active Shopify store. By installing the App, you authorize
           us to access your Shopify store data as required to provide our services.
         </p>
       </section>
@@ -58,7 +58,7 @@ export default function TermsOfService() {
           <li style={styles.listItem}><span style={styles.strong}>Enterprise:</span> Custom pricing - White-label, dedicated support</li>
         </ul>
         <p style={styles.text}>
-          Billing is processed through Shopify's billing system. You may cancel at any time through 
+          Billing is processed through Shopify's billing system. You may cancel at any time through
           your Shopify admin panel.
         </p>
       </section>
@@ -77,8 +77,8 @@ export default function TermsOfService() {
       <section style={styles.section}>
         <h2 style={styles.heading}>6. Intellectual Property</h2>
         <p style={styles.text}>
-          The App, including its code, design, and documentation, is owned by us and protected by 
-          intellectual property laws. You may not copy, modify, or distribute any part of the App 
+          The App, including its code, design, and documentation, is owned by us and protected by
+          intellectual property laws. You may not copy, modify, or distribute any part of the App
           without our written permission.
         </p>
       </section>
@@ -97,7 +97,7 @@ export default function TermsOfService() {
       <section style={styles.section}>
         <h2 style={styles.heading}>8. Termination</h2>
         <p style={styles.text}>
-          We may suspend or terminate your access to the App if you violate these terms. Upon 
+          We may suspend or terminate your access to the App if you violate these terms. Upon
           termination, your data will be handled according to our Privacy Policy and GDPR requirements.
         </p>
       </section>
@@ -105,7 +105,7 @@ export default function TermsOfService() {
       <section style={styles.section}>
         <h2 style={styles.heading}>9. Changes to Terms</h2>
         <p style={styles.text}>
-          We may update these terms from time to time. Continued use of the App after changes 
+          We may update these terms from time to time. Continued use of the App after changes
           constitutes acceptance of the updated terms.
         </p>
       </section>

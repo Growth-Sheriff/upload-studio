@@ -1,34 +1,3 @@
-{% comment %}
-  Upload Lift - Cart Upload Display Snippet
-  =========================================
-  Shows uploaded design info under cart line items
-
-  USAGE: Add this to your cart.liquid or cart-template.liquid:
-  {% render 'ul-cart-upload-display', item: item %}
-
-  Place it inside your line item loop, after the product title/details area.
-
-  Example integration in cart.liquid:
-
-  {% for item in cart.items %}
-    <div class="cart-item">
-      <img src="{{ item.image | image_url: width: 100 }}">
-      <div class="cart-item-details">
-        <h3>{{ item.product.title }}</h3>
-        <p>{{ item.variant.title }}</p>
-
-        {%- comment -%} ADD THIS LINE {%- endcomment -%}
-        {% render 'ul-cart-upload-display', item: item %}
-
-        <p>{{ item.final_line_price | money }}</p>
-      </div>
-    </div>
-  {% endfor %}
-
-  Version: 1.0.0
-{% endcomment %}
-
-{% comment %} Check if this item has upload properties {% endcomment %}
 {%- assign upload_id = item.properties['_ul_upload_id'] -%}
 {%- assign design_file = item.properties['_ul_design_file'] | default: item.properties['Design File'] | default: item.properties['File Name'] | default: item.properties['Design Name'] -%}
 {%- assign is_uploaded = item.properties['_ul_uploaded'] -%}

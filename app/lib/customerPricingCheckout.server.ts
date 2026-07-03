@@ -2,10 +2,11 @@ import prisma from '~/lib/prisma.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
 import { getDownloadSignedUrl, getStorageConfig } from '~/lib/storage.server'
 import {
-  computeDocumentDpiInches,
-  computeRollWidthAnchoredInches,
-  type RollWidthSheetSize,
-} from '~/lib/uploadLifecycle.server'
+  applyMainProductMeasurementPolicy,
+  getMainProductSheetSizes,
+  MAIN_PRODUCT_MEASUREMENT_POLICY,
+  shouldUseMainProductMeasurementPolicy,
+} from '~/lib/mainProductMeasurement.server'
 import {
   applyCustomerPricingDefaultsForShop,
   calculateMeasuredLengthQuote,
@@ -142,97 +143,9 @@ function parsePositiveNumber(value: unknown): number | null {
   return parsed
 }
 
-const MAIN_PRODUCT_MEASUREMENT_POLICY = 'main_product_roll_width'
-const DEFAULT_MAIN_PRODUCT_ROLL_WIDTH_IN = 22
-
 function normalizeMeasurementPolicy(value: unknown): string | null {
   const raw = String(value || '').trim()
   return raw || null
-}
-
-function applyMainProductMeasurementPolicy(
-  measurement: VipUploadMeasurement,
-  itemInput: CustomPricingJobItemInput,
-  sheetSizes: RollWidthSheetSize[] = []
-): VipUploadMeasurement {
-  if (normalizeMeasurementPolicy(itemInput.measurementPolicy) !== MAIN_PRODUCT_MEASUREMENT_POLICY) {
-    return measurement
-  }
-
-  const measurementWidthPx =
-    measurement.widthPx > 0 ? measurement.widthPx : measurement.measurementWidthPx
-  const measurementHeightPx =
-    measurement.heightPx > 0 ? measurement.heightPx : measurement.measurementHeightPx
-  const rollWidthIn = parsePositiveNumber(itemInput.rollWidthIn) || DEFAULT_MAIN_PRODUCT_ROLL_WIDTH_IN
-  const documentDpi =
-    parsePositiveNumber(measurement.documentDpi) ||
-    (measurement.documentDpiSource ? parsePositiveNumber(measurement.dpi) : null)
-  const documentSized = computeDocumentDpiInches(
-    measurementWidthPx,
-    measurementHeightPx,
-    documentDpi || undefined
-  )
-
-  if (documentSized && documentDpi) {
-    return {
-      ...measurement,
-      dpi: documentDpi,
-      documentDpi,
-      documentDpiSource: measurement.documentDpiSource || 'document_dpi',
-      measurementWidthPx,
-      measurementHeightPx,
-      effectiveDpi: documentSized.effectiveDpi,
-      sizingSource: 'main_product_document_dpi',
-      widthIn: documentSized.widthIn,
-      heightIn: documentSized.heightIn,
-      measurementMode: 'full',
-    }
-  }
-
-  const anchored = computeRollWidthAnchoredInches(
-    measurementWidthPx,
-    measurementHeightPx,
-    rollWidthIn,
-    sheetSizes
-  )
-
-  return {
-    ...measurement,
-    measurementWidthPx,
-    measurementHeightPx,
-    effectiveDpi: anchored.effectiveDpi,
-    sizingSource: MAIN_PRODUCT_MEASUREMENT_POLICY,
-    widthIn: anchored.widthIn,
-    heightIn: anchored.heightIn,
-    measurementMode: 'full',
-  }
-}
-
-function getMainProductSheetSizes(variants: ProductVariantDef[]): RollWidthSheetSize[] {
-  const seen = new Set<string>()
-  const sizes: RollWidthSheetSize[] = []
-
-  for (const variant of variants) {
-    const values = [
-      variant.title,
-      variant.option1,
-      variant.option2,
-      variant.option3,
-      ...(variant.options || []),
-      ...(variant.selectedOptions || []).map((option) => option.value),
-    ]
-
-    for (const value of values) {
-      const parsed = parseSheetSizeFromTitle(value)
-      if (!parsed) continue
-      const key = `${parsed.widthIn}x${parsed.lengthIn}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      sizes.push({ widthIn: parsed.widthIn, heightIn: parsed.lengthIn })
-    }
-  }
-
-  return sizes
 }
 
 function buildEffectiveResolveConfig(
@@ -516,11 +429,11 @@ export async function prepareCustomPricingJobQuote({
       productCache.set(productId, cachedProduct)
     }
 
-    const measurement = applyMainProductMeasurementPolicy(
-      rawMeasurement,
-      itemInput,
-      getMainProductSheetSizes(cachedProduct.variants)
-    )
+    const measurement = applyMainProductMeasurementPolicy(rawMeasurement, {
+      measurementPolicy: itemInput.measurementPolicy,
+      rollWidthIn: itemInput.rollWidthIn,
+      sheetSizes: getMainProductSheetSizes(cachedProduct.variants),
+    })
 
     const pricePerInch = pricingContext.pricePerInch || pricingContext.businessPricePerInch
     let resolvedVariant: SheetVariantResolution | null = null
@@ -543,7 +456,12 @@ export async function prepareCustomPricingJobQuote({
         variants: cachedProduct.variants,
         optionDefs: cachedProduct.optionDefs,
         selectedVariantId: itemInput.selectedVariantId || null,
-        config: buildEffectiveResolveConfig(cachedProduct.builderConfig, activeShop.shopDomain),
+        config: {
+          ...buildEffectiveResolveConfig(cachedProduct.builderConfig, activeShop.shopDomain),
+          selectionStrategy: shouldUseMainProductMeasurementPolicy(itemInput.measurementPolicy)
+            ? 'smallest_fitting_sheet'
+            : null,
+        },
       })
 
       if (!resolution) {

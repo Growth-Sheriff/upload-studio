@@ -18,14 +18,14 @@ async function main() {
   for (const item of upload.items) {
       console.log('--- ITEM ---')
       console.log('Full Storage Key:', item.storageKey)
-      // Print char codes to detect invisible chars or weird spaces
+
       console.log('Key Length:', item.storageKey.length)
-      
+
       const cleanKey = item.storageKey.replace('r2:', '')
       const url = `https://app.customizerapp.dev/${cleanKey}`
       console.log('Expected URL:', url)
-      
-      // Also try encoding
+
+
       const encoded = cleanKey.split('/').map(s => encodeURIComponent(s)).join('/')
       console.log('Encoded URL:', `https://app.customizerapp.dev/${encoded}`)
   }

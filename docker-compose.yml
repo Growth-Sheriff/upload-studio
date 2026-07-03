@@ -1,20 +1,20 @@
-# ============================================
-# Upload Studio - Multi-Tenant Docker Compose
-# 11 Tenants + Shared Redis
-# ============================================
-# Usage:
-#   docker build -t upload-studio:latest .
-#   docker compose up -d
-#
-# Each tenant runs in its own container with:
-#   - Remix app server
-#   - 4 background workers (preflight, export, flow, commission)
-#   - Its own Redis DB index (0-10)
-#   - Its own PostgreSQL schema
-#
-# Env files must exist at envs/.env.{slug} before starting.
-# Generate them with: bash scripts/generate-tenant-envs.sh
-# ============================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 x-app-common: &app-common
   image: upload-studio:latest
@@ -24,9 +24,9 @@ x-app-common: &app-common
 
 services:
 
-  # ════════════════════════════════════════════
-  # TENANT 1: Fast DTF Transfer
-  # ════════════════════════════════════════════
+
+
+
   fastdtftransfer:
     <<: *app-common
     container_name: us-fastdtftransfer
@@ -36,9 +36,9 @@ services:
     volumes:
       - uploads-fastdtftransfer:/app/uploads
 
-  # ════════════════════════════════════════════
-  # TENANT 2: Everyday Custom Print
-  # ════════════════════════════════════════════
+
+
+
   everydaycustomprint:
     <<: *app-common
     container_name: us-everydaycustomprint
@@ -48,9 +48,9 @@ services:
     volumes:
       - uploads-everydaycustomprint:/app/uploads
 
-  # ════════════════════════════════════════════
-  # TENANT 3: DTF Transfer Ohio
-  # ════════════════════════════════════════════
+
+
+
   dtftransferohio:
     <<: *app-common
     container_name: us-dtftransferohio
@@ -60,9 +60,9 @@ services:
     volumes:
       - uploads-dtftransferohio:/app/uploads
 
-  # ════════════════════════════════════════════
-  # TENANT 4: DTF Print House
-  # ════════════════════════════════════════════
+
+
+
   dtfprinthouse:
     <<: *app-common
     container_name: us-dtfprinthouse
@@ -72,9 +72,9 @@ services:
     volumes:
       - uploads-dtfprinthouse:/app/uploads
 
-  # ════════════════════════════════════════════
-  # TENANT 5: DTF Print Depot
-  # ════════════════════════════════════════════
+
+
+
   dtfprintdepot:
     <<: *app-common
     container_name: us-dtfprintdepot
@@ -84,9 +84,9 @@ services:
     volumes:
       - uploads-dtfprintdepot:/app/uploads
 
-  # ════════════════════════════════════════════
-  # TENANT 6: Eagle DTF Print
-  # ════════════════════════════════════════════
+
+
+
   eagledtfprint:
     <<: *app-common
     container_name: us-eagledtfprint
@@ -96,9 +96,9 @@ services:
     volumes:
       - uploads-eagledtfprint:/app/uploads
 
-  # ════════════════════════════════════════════
-  # TENANT 7: Alpha Print
-  # ════════════════════════════════════════════
+
+
+
   alphaprint:
     <<: *app-common
     container_name: us-alphaprint
@@ -108,9 +108,9 @@ services:
     volumes:
       - uploads-alphaprint:/app/uploads
 
-  # ════════════════════════════════════════════
-  # TENANT 8: Gang Sheet
-  # ════════════════════════════════════════════
+
+
+
   gangsheet:
     <<: *app-common
     container_name: us-gangsheet
@@ -120,9 +120,9 @@ services:
     volumes:
       - uploads-gangsheet:/app/uploads
 
-  # ════════════════════════════════════════════
-  # TENANT 9: Legend Transfers
-  # ════════════════════════════════════════════
+
+
+
   legendtransfers:
     <<: *app-common
     container_name: us-legendtransfers
@@ -132,9 +132,9 @@ services:
     volumes:
       - uploads-legendtransfers:/app/uploads
 
-  # ════════════════════════════════════════════
-  # TENANT 10: Custom Print AZ
-  # ════════════════════════════════════════════
+
+
+
   customprintaz:
     <<: *app-common
     container_name: us-customprintaz
@@ -144,21 +144,21 @@ services:
     volumes:
       - uploads-customprintaz:/app/uploads
 
-  # ════════════════════════════════════════════
-  # TENANT 11: DTF Print Arizona (DISABLED - şimdilik kapalı)
-  # ════════════════════════════════════════════
-  # dtfprintarizona:
-  #   <<: *app-common
-  #   container_name: us-dtfprintarizona
-  #   env_file: envs/.env.dtfprintarizona
-  #   ports:
-  #     - "127.0.0.1:4011:3000"
-  #   volumes:
-  #     - uploads-dtfprintarizona:/app/uploads
 
-# ════════════════════════════════════════════
-# VOLUMES
-# ════════════════════════════════════════════
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 volumes:
   uploads-fastdtftransfer:
     name: us-uploads-fastdtftransfer
@@ -183,9 +183,9 @@ volumes:
   uploads-dtfprintarizona:
     name: us-uploads-dtfprintarizona
 
-# ════════════════════════════════════════════
-# NETWORKS
-# ════════════════════════════════════════════
+
+
+
 networks:
   appnet:
     external: true

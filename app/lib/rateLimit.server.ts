@@ -1,19 +1,19 @@
-/**
- * Rate Limiting Middleware
- * Uses Redis for distributed rate limiting
- *
- * Limits:
- * - Upload intent: 10/min per customer
- * - Preflight: 20/min per shop
- * - Admin API: 100/min per shop
- */
+
+
+
+
+
+
+
+
+
 
 import Redis from "ioredis";
 
 const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
 
 interface RateLimitConfig {
-  windowMs: number;  // Time window in milliseconds
+  windowMs: number;
   maxRequests: number;
   keyPrefix: string;
 }
@@ -25,34 +25,34 @@ interface RateLimitResult {
   retryAfter?: number;
 }
 
-// v4.5.0: Rate limits effectively disabled for enterprise usage
-// Single shop use case - no need for restrictive limits
+
+
 export const RATE_LIMITS = {
   uploadIntent: {
-    windowMs: 60 * 1000,  // 1 minute
-    maxRequests: 10000,   // Effectively unlimited
+    windowMs: 60 * 1000,
+    maxRequests: 10000,
     keyPrefix: "rl:upload:",
   },
   preflight: {
     windowMs: 60 * 1000,
-    maxRequests: 10000,   // Effectively unlimited
+    maxRequests: 10000,
     keyPrefix: "rl:preflight:",
   },
   adminApi: {
     windowMs: 60 * 1000,
-    maxRequests: 10000,   // Effectively unlimited
+    maxRequests: 10000,
     keyPrefix: "rl:admin:",
   },
   storageTest: {
     windowMs: 60 * 1000,
-    maxRequests: 10000,   // Effectively unlimited
+    maxRequests: 10000,
     keyPrefix: "rl:storage:",
   },
 } as const;
 
-/**
- * Check rate limit for a given key
- */
+
+
+
 export async function checkRateLimit(
   identifier: string,
   config: RateLimitConfig
@@ -62,25 +62,25 @@ export async function checkRateLimit(
   const windowStart = now - config.windowMs;
 
   try {
-    // Use Redis sorted set for sliding window
+
     const pipeline = redis.pipeline();
 
-    // Remove old entries outside the window
+
     pipeline.zremrangebyscore(key, 0, windowStart);
 
-    // Count current requests in window
+
     pipeline.zcard(key);
 
-    // Add current request
+
     pipeline.zadd(key, now, `${now}-${Math.random()}`);
 
-    // Set expiry on the key
+
     pipeline.pexpire(key, config.windowMs);
 
     const results = await pipeline.exec();
 
     if (!results) {
-      // Redis error, allow request (fail open)
+
       return { allowed: true, remaining: config.maxRequests - 1, resetAt: now + config.windowMs };
     }
 
@@ -89,7 +89,7 @@ export async function checkRateLimit(
     const resetAt = now + config.windowMs;
 
     if (currentCount >= config.maxRequests) {
-      // Rate limit exceeded
+
       const oldestEntry = await redis.zrange(key, 0, 0, "WITHSCORES");
       const oldestTime = oldestEntry.length > 1 ? parseInt(oldestEntry[1]) : now;
       const retryAfter = Math.ceil((oldestTime + config.windowMs - now) / 1000);
@@ -109,15 +109,15 @@ export async function checkRateLimit(
     };
   } catch (error) {
     console.error("[Rate Limit] Redis error:", error);
-    // Fail open - allow request if Redis is down
+
     return { allowed: true, remaining: config.maxRequests - 1, resetAt: now + config.windowMs };
   }
 }
 
-/**
- * Rate limit middleware for Remix loaders/actions
- * Returns JSON response if rate limited
- */
+
+
+
+
 export async function rateLimitGuard(
   identifier: string,
   limitType: keyof typeof RATE_LIMITS
@@ -148,9 +148,9 @@ export async function rateLimitGuard(
   return null;
 }
 
-/**
- * Add rate limit headers to response
- */
+
+
+
 export function addRateLimitHeaders(
   headers: Headers,
   remaining: number,
@@ -162,12 +162,12 @@ export function addRateLimitHeaders(
   headers.set("X-RateLimit-Reset", String(Math.ceil(resetAt / 1000)));
 }
 
-/**
- * Create identifier from request
- */
+
+
+
 export function getIdentifier(request: Request, type: "customer" | "shop"): string {
   if (type === "customer") {
-    // Use IP + User-Agent hash for customer identification
+
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0] ||
                request.headers.get("x-real-ip") ||
                "unknown";
@@ -175,7 +175,7 @@ export function getIdentifier(request: Request, type: "customer" | "shop"): stri
     return `${ip}:${hashString(ua).slice(0, 8)}`;
   }
 
-  // For shop, we'll get it from session - this is a placeholder
+
   return "shop";
 }
 

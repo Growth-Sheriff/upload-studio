@@ -37,7 +37,7 @@ import { authenticate } from '~/shopify.server'
 
 import { UploadDetailModal } from '~/components/UploadDetailModal'
 
-// Production Queue Statuses
+
 const QUEUE_STATUSES = [
   { value: 'needs_review', label: 'Needs Review', tone: 'attention' as const },
   { value: 'approved', label: 'Approved', tone: 'success' as const },
@@ -80,10 +80,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const page = parseInt(url.searchParams.get('page') || '1')
   const pageSize = 20
 
-  // Build where clause
+
   const where: any = { shopId: shop.id }
 
-  // Only show uploads that have passed initial upload (not draft)
+
   where.status = status ? status : { notIn: ['draft', 'uploaded', 'processing'] }
 
   if (mode) {
@@ -105,7 +105,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     ]
   }
 
-  // Get uploads with pagination
+
   const [uploads, total] = await Promise.all([
     prisma.upload.findMany({
       where,
@@ -127,7 +127,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     prisma.upload.count({ where }),
   ])
 
-  // Get status counts for tabs
+
   const statusCounts = await prisma.upload.groupBy({
     by: ['status'],
     where: {
@@ -141,7 +141,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     statusCounts.map((s: { status: string; _count: number }) => [s.status, s._count])
   )
 
-  // Generate signed URLs for thumbnails
+
   const storageConfig = getStorageConfig({
     storageProvider: shop.storageProvider,
     storageConfig: shop.storageConfig as Record<string, string> | null,
@@ -230,13 +230,13 @@ export async function action({ request }: ActionFunctionArgs) {
       updateData.rejectedAt = new Date()
     }
 
-    // SECURITY: Compound where prevents TOCTOU race condition
+
     await prisma.upload.update({
       where: { id: uploadId, shopId: shop.id },
       data: updateData,
     })
 
-    // Audit log
+
     await prisma.auditLog.create({
       data: {
         shopId: shop.id,
@@ -274,7 +274,7 @@ export async function action({ request }: ActionFunctionArgs) {
       data: updateData,
     })
 
-    // Audit log
+
     await prisma.auditLog.create({
       data: {
         shopId: shop.id,
@@ -295,7 +295,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: 'No uploads selected for export' })
     }
 
-    // Verify all uploadIds belong to this shop
+
     const validUploads = await prisma.upload.findMany({
       where: { id: { in: uploadIds }, shopId: shop.id },
       select: { id: true },
@@ -306,7 +306,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: 'No valid uploads found for this shop' })
     }
 
-    // Create export job
+
     const exportJob = await prisma.exportJob.create({
       data: {
         shopId: shop.id,
@@ -316,7 +316,7 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     })
 
-    // Enqueue export worker job
+
     try {
       const { Queue } = await import('bullmq')
       const Redis = (await import('ioredis')).default
@@ -352,7 +352,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function PreflightBadge({ status }: { status: string }) {
-  // Merchant-friendly labels with softer tones
+
   const config: Record<string, { tone: 'success' | 'info' | 'attention'; label: string }> = {
     ok: { tone: 'success', label: 'Ready ✓' },
     warning: { tone: 'info', label: 'Review' },
@@ -380,7 +380,7 @@ export default function ProductionQueuePage() {
   const [newStatus, setNewStatus] = useState('')
   const [notes, setNotes] = useState('')
 
-  // Tab counts
+
   const totalCount = Object.values(statusCounts as Record<string, number>).reduce(
     (a, b) => a + b,
     0
@@ -519,7 +519,7 @@ export default function ProductionQueuePage() {
       ]}
     >
       <Layout>
-        {/* Action result banner */}
+
         {actionData && 'success' in actionData && (
           <Layout.Section>
             <Banner tone="success" onDismiss={() => {}}>
@@ -535,12 +535,12 @@ export default function ProductionQueuePage() {
           </Layout.Section>
         )}
 
-        {/* Tabs */}
+
         <Layout.Section>
           <Card padding="0">
             <Tabs tabs={tabs} selected={selectedTab} onSelect={handleTabChange}>
               <Box padding="400">
-                {/* Bulk Actions */}
+
                 {selectedUploads.length > 0 && (
                   <Box paddingBlockEnd="400">
                     <InlineStack gap="200" align="start">
@@ -621,7 +621,7 @@ export default function ProductionQueuePage() {
                   </Box>
                 )}
 
-                {/* Hidden forms for bulk actions */}
+
                 <Form method="post" id="bulk-form" style={{ display: 'none' }}>
                   <input type="hidden" name="_action" value="bulk_update" />
                   <input type="hidden" name="uploadIds" value={JSON.stringify(selectedUploads)} />
@@ -633,7 +633,7 @@ export default function ProductionQueuePage() {
                   <input type="hidden" name="uploadIds" value={JSON.stringify(selectedUploads)} />
                 </Form>
 
-                {/* Table */}
+
                 {isLoading ? (
                   <Box padding="400">
                     <InlineStack align="center">
@@ -674,7 +674,7 @@ export default function ProductionQueuePage() {
                       rows={rows}
                     />
 
-                    {/* Pagination */}
+
                     <Box paddingBlockStart="400">
                       <InlineStack align="center">
                         <Pagination
@@ -711,13 +711,13 @@ export default function ProductionQueuePage() {
         </Layout.Section>
       </Layout>
 
-      {/* Hidden Export Form */}
+
       <Form method="post" id="export-form" style={{ display: 'none' }}>
         <input type="hidden" name="_action" value="create_export" />
         <input type="hidden" name="uploadIds" value={JSON.stringify(selectedUploads)} />
       </Form>
 
-      {/* Status Update Modal */}
+
       <Modal
         open={statusModalOpen}
         onClose={() => setStatusModalOpen(false)}
@@ -774,9 +774,9 @@ export default function ProductionQueuePage() {
           </Form>
         </Modal.Section>
       </Modal>
-      <UploadDetailModal 
-          uploadId={selectedUploadId} 
-          onClose={() => setSelectedUploadId(null)} 
+      <UploadDetailModal
+          uploadId={selectedUploadId}
+          onClose={() => setSelectedUploadId(null)}
       />
     </Page>
   )

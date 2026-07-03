@@ -4,11 +4,9 @@
 <script src="{{ 'ul-multipart-uploader.js' | asset_url }}" defer></script>
 <script src="{{ 'main-product-upload-pro.js' | asset_url }}" defer></script>
 <script src="{{ 'main-product-upload-app.js' | asset_url }}" defer></script>
-
 {%- assign accept = block.settings.accepted_files | default: ".png,.jpg,.jpeg,.webp,.tif,.tiff,.psd,.pdf,.ai,.eps,.svg" -%}
 {%- assign roll_width = block.settings.roll_width_in | default: 22 -%}
 {%- assign accent = block.settings.accent_color | default: "#3c7d72" -%}
-
 <section
   class="ump ump-pro"
   data-ul-main-product-upload-app
@@ -29,7 +27,6 @@
   data-enable-checkout="{{ block.settings.enable_checkout_button }}"
   style="--ump-accent: {{ accent }};"
 ></section>
-
 {% schema %}
 {
   "name": "Main upload Pro",

@@ -5,7 +5,7 @@ import prisma from '~/lib/prisma.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
 import { recordOrderForVisitor } from '~/lib/visitor.server'
 
-// Verify Shopify webhook signature
+
 function verifyWebhookSignature(body: string, hmac: string, secret: string): boolean {
   const hash = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('base64')
 
@@ -17,7 +17,7 @@ function extractVipUploadIdFromOrderNote(note: unknown): string | null {
   return match?.[1] || null
 }
 
-// GraphQL mutation to write order metafield
+
 const ORDER_METAFIELD_MUTATION = `
   mutation orderMetafieldSet($input: OrderInput!) {
     orderUpdate(input: $input) {
@@ -32,7 +32,7 @@ const ORDER_METAFIELD_MUTATION = `
   }
 `
 
-// POST /webhooks/orders-paid
+
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
     return json({ error: 'Method not allowed' }, { status: 405 })
@@ -56,7 +56,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const order = JSON.parse(body)
     console.log(`[Webhook] Order paid: ${order.id} for shop: ${shopDomain}`)
 
-    // Get shop from database
+
     const shop = await prisma.shop.findUnique({
       where: { shopDomain },
     })
@@ -66,7 +66,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ success: true })
     }
 
-    // Find all uploads linked to this order's line items
+
     const uploadDesigns: Array<{
       lineItemId: string
       uploadId: string
@@ -83,7 +83,7 @@ export async function action({ request }: ActionFunctionArgs) {
       )?.value
 
       if (uploadId) {
-        // Get upload details
+
         const upload = await prisma.upload.findFirst({
           where: { id: uploadId, shopId: shop.id },
           include: {
@@ -101,10 +101,10 @@ export async function action({ request }: ActionFunctionArgs) {
         })
 
         if (upload) {
-          // WI-007: Idempotent upsert - webhook can be delivered multiple times
+
           await prisma.orderLink.upsert({
             where: {
-              // Unique constraint on orderId + uploadId
+
               orderId_uploadId: {
                 orderId: String(order.id),
                 uploadId: upload.id,
@@ -121,7 +121,7 @@ export async function action({ request }: ActionFunctionArgs) {
             },
           })
 
-          // Update upload status with order revenue data
+
           const orderTotal = parseFloat(order.total_price) || 0
           const orderCurrency = order.currency || 'USD'
 
@@ -140,7 +140,7 @@ export async function action({ request }: ActionFunctionArgs) {
             `[Webhook] Upload ${upload.id} updated with order data: ${orderTotal} ${orderCurrency}`
           )
 
-          // Add to designs array
+
           for (const item of upload.items) {
             uploadDesigns.push({
               lineItemId: String(lineItem.id),
@@ -153,7 +153,7 @@ export async function action({ request }: ActionFunctionArgs) {
             })
           }
 
-          // 📊 Visitor Revenue Tracking: Record order for visitor analytics
+
           if (upload.visitorId) {
             try {
               const orderTotal = parseFloat(order.total_price) || 0
@@ -162,7 +162,7 @@ export async function action({ request }: ActionFunctionArgs) {
                 `[Webhook] Revenue recorded for visitor ${upload.visitorId}: $${orderTotal}`
               )
             } catch (visitorErr) {
-              // Non-blocking: visitor tracking is optional enhancement
+
               console.warn(`[Webhook] Visitor revenue tracking failed:`, visitorErr)
             }
           }
@@ -240,7 +240,7 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    // Write order metafield with design data
+
     if (uploadDesigns.length > 0 && shop.accessToken) {
       const metafieldValue = JSON.stringify({
         version: '1.0',

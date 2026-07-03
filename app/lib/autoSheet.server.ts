@@ -1,17 +1,17 @@
-/**
- * Auto Sheet Size Calculator - Server-side Settings CRUD
- * =====================================================
- * Manages auto sheet calculator settings stored in the shop.settings JSON field.
- * No schema migration needed - uses the existing `settings Json?` field on Shop model.
- *
- * Version: 1.0.0
- */
+
+
+
+
+
+
+
+
 
 import prisma from '~/lib/prisma.server';
 
-/**
- * AutoSheet configuration interface
- */
+
+
+
 export interface AutoSheetConfig {
   enabled: boolean;
   gapMm: number;
@@ -24,9 +24,9 @@ export interface AutoSheetConfig {
   showQuantitySuggestion: boolean;
 }
 
-/**
- * Default auto sheet configuration
- */
+
+
+
 export const DEFAULT_AUTO_SHEET_CONFIG: AutoSheetConfig = {
   enabled: false,
   gapMm: 3,
@@ -39,13 +39,13 @@ export const DEFAULT_AUTO_SHEET_CONFIG: AutoSheetConfig = {
   showQuantitySuggestion: true,
 };
 
-/**
- * Get the auto sheet config for a shop
- * Falls back to defaults if not configured
- *
- * @param shopDomain - The shop's domain
- * @returns AutoSheetConfig
- */
+
+
+
+
+
+
+
 export async function getAutoSheetConfig(
   shopDomain: string
 ): Promise<AutoSheetConfig> {
@@ -74,14 +74,14 @@ export async function getAutoSheetConfig(
   };
 }
 
-/**
- * Save auto sheet config for a shop
- * Merges with existing settings JSON without overwriting other fields
- *
- * @param shopDomain - The shop's domain
- * @param config - Partial AutoSheetConfig to save
- * @returns Updated AutoSheetConfig
- */
+
+
+
+
+
+
+
+
 export async function saveAutoSheetConfig(
   shopDomain: string,
   config: Partial<AutoSheetConfig>
@@ -98,7 +98,7 @@ export async function saveAutoSheetConfig(
   const existingSettings = (shop.settings as Record<string, unknown>) || {};
   const existingAutoSheet = (existingSettings.autoSheet as Partial<AutoSheetConfig>) || {};
 
-  // Validate and sanitize input
+
   const sanitized: Partial<AutoSheetConfig> = {};
 
   if (typeof config.enabled === 'boolean') {
@@ -137,14 +137,14 @@ export async function saveAutoSheetConfig(
     sanitized.showQuantitySuggestion = config.showQuantitySuggestion;
   }
 
-  // Merge
+
   const mergedAutoSheet = {
     ...DEFAULT_AUTO_SHEET_CONFIG,
     ...existingAutoSheet,
     ...sanitized,
   };
 
-  // Update the settings JSON
+
   await prisma.shop.update({
     where: { id: shop.id },
     data: {
@@ -158,22 +158,22 @@ export async function saveAutoSheetConfig(
   return mergedAutoSheet;
 }
 
-/**
- * Check if a strategy value is valid
- */
+
+
+
 function isValidStrategy(
   strategy: string | undefined | null
 ): strategy is 'waste' | 'sheets' | 'balanced' | 'cost' {
   return ['waste', 'sheets', 'balanced', 'cost'].includes(strategy as string);
 }
 
-/**
- * Extract auto sheet config from already-loaded shop settings.
- * Avoids an extra DB query when settings are already available.
- *
- * @param settings - Raw shop.settings JSON object
- * @returns Storefront-safe config object
- */
+
+
+
+
+
+
+
 export function extractAutoSheetFromSettings(
   settings: Record<string, unknown> | null | undefined
 ): Record<string, unknown> {
@@ -193,13 +193,13 @@ export function extractAutoSheetFromSettings(
   };
 }
 
-/**
- * Get auto sheet config formatted for storefront API response.
- * @deprecated Use extractAutoSheetFromSettings() when shop settings are already loaded.
- *
- * @param shopDomain - The shop's domain
- * @returns Storefront-safe config object
- */
+
+
+
+
+
+
+
 export async function getAutoSheetStorefrontConfig(
   shopDomain: string
 ): Promise<Record<string, unknown>> {

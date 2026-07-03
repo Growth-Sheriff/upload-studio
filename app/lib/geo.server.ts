@@ -1,33 +1,33 @@
-/**
- * Geo Location Server Utilities
- * Extracts geo information from Cloudflare/Caddy headers
- * Falls back to IP-based geo lookup if headers unavailable
- *
- * @module geo.server
- * @version 1.1.0
- */
 
-// Simple in-memory cache for IP lookups (5 min TTL)
+
+
+
+
+
+
+
+
+
 const geoCache = new Map<string, { data: GeoInfo; timestamp: number }>()
-const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+const CACHE_TTL = 5 * 60 * 1000
 
 export interface GeoInfo {
   country: string | null
   region: string | null
   city: string | null
   timezone: string | null
-  ip: string | null // Only for rate limiting, NOT stored
+  ip: string | null
 }
 
-/**
- * Extract geo information from request headers
- * Supports Cloudflare and standard forwarding headers
- */
+
+
+
+
 export function extractGeoFromHeaders(request: Request): GeoInfo {
   const headers = request.headers
 
   return {
-    // Cloudflare headers
+
     country: headers.get('cf-ipcountry') || headers.get('x-country-code') || null,
 
     region: headers.get('cf-region') || headers.get('x-region') || null,
@@ -36,7 +36,7 @@ export function extractGeoFromHeaders(request: Request): GeoInfo {
 
     timezone: headers.get('cf-timezone') || headers.get('x-timezone') || null,
 
-    // IP for rate limiting only (not stored in visitor record)
+
     ip:
       headers.get('cf-connecting-ip') ||
       headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
@@ -45,20 +45,20 @@ export function extractGeoFromHeaders(request: Request): GeoInfo {
   }
 }
 
-/**
- * Get geo info with IP-based fallback
- * Uses ip-api.com (free, 45 req/min limit)
- */
+
+
+
+
 export async function getGeoWithFallback(request: Request): Promise<GeoInfo> {
-  // First try headers (Cloudflare etc.)
+
   const headerGeo = extractGeoFromHeaders(request)
 
-  // If we have country from headers, use it
+
   if (headerGeo.country) {
     return headerGeo
   }
 
-  // Get IP for lookup
+
   const ip = headerGeo.ip
   if (
     !ip ||
@@ -67,20 +67,20 @@ export async function getGeoWithFallback(request: Request): Promise<GeoInfo> {
     ip.startsWith('192.168.') ||
     ip.startsWith('10.')
   ) {
-    // Local IP, can't lookup
+
     return headerGeo
   }
 
-  // Check cache first
+
   const cached = geoCache.get(ip)
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.data
   }
 
-  // Lookup via ip-api.com (free tier)
+
   try {
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 2000) // 2s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 2000)
 
     const response = await fetch(
       `http://ip-api.com/json/${ip}?fields=status,country,countryCode,regionName,city,timezone`,
@@ -100,10 +100,10 @@ export async function getGeoWithFallback(request: Request): Promise<GeoInfo> {
           ip,
         }
 
-        // Cache the result
+
         geoCache.set(ip, { data: geoInfo, timestamp: Date.now() })
 
-        // Clean old cache entries periodically
+
         if (geoCache.size > 1000) {
           const now = Date.now()
           for (const [key, val] of geoCache.entries()) {
@@ -117,26 +117,26 @@ export async function getGeoWithFallback(request: Request): Promise<GeoInfo> {
       }
     }
   } catch (error) {
-    // Timeout or network error - fail silently
+
     console.warn(
       '[Geo] IP lookup failed:',
       error instanceof Error ? error.message : 'Unknown error'
     )
   }
 
-  // Return header-based info (may have partial data)
+
   return headerGeo
 }
 
-/**
- * Classify referrer type based on domain
- */
+
+
+
 export function classifyReferrerType(referrerDomain: string | null): string {
   if (!referrerDomain) return 'direct'
 
   const domain = referrerDomain.toLowerCase()
 
-  // Search engines
+
   const searchEngines = [
     'google',
     'bing',
@@ -152,7 +152,7 @@ export function classifyReferrerType(referrerDomain: string | null): string {
     return 'organic_search'
   }
 
-  // Social media
+
   const socialMedia = [
     'facebook',
     'instagram',
@@ -172,7 +172,7 @@ export function classifyReferrerType(referrerDomain: string | null): string {
     return 'social'
   }
 
-  // Email providers
+
   const emailProviders = [
     'mail.google',
     'outlook',
@@ -187,13 +187,13 @@ export function classifyReferrerType(referrerDomain: string | null): string {
     return 'email'
   }
 
-  // If has utm_source=email
+
   return 'referral'
 }
 
-/**
- * Parse referrer URL and extract domain
- */
+
+
+
 export function parseReferrer(referrer: string | null): {
   referrer: string | null
   referrerDomain: string | null
@@ -213,9 +213,9 @@ export function parseReferrer(referrer: string | null): {
   }
 }
 
-/**
- * Extract UTM parameters from URL
- */
+
+
+
 export function extractUtmParams(url: string | URL): {
   utmSource: string | null
   utmMedium: string | null
@@ -257,9 +257,9 @@ export function extractUtmParams(url: string | URL): {
   }
 }
 
-/**
- * Determine referrer type considering UTM params and click IDs
- */
+
+
+
 export function determineReferrerType(
   referrerDomain: string | null,
   utmMedium: string | null,
@@ -268,13 +268,13 @@ export function determineReferrerType(
   msclkid: string | null,
   ttclid: string | null
 ): string {
-  // Click IDs indicate paid traffic
+
   if (gclid) return 'paid_search'
   if (fbclid) return 'paid_social'
   if (msclkid) return 'paid_search'
   if (ttclid) return 'paid_social'
 
-  // UTM medium hints
+
   if (utmMedium) {
     const medium = utmMedium.toLowerCase()
     if (medium === 'cpc' || medium === 'ppc' || medium === 'paid') {
@@ -294,6 +294,6 @@ export function determineReferrerType(
     }
   }
 
-  // Fall back to domain-based classification
+
   return classifyReferrerType(referrerDomain)
 }

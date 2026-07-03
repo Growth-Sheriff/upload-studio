@@ -1,9 +1,9 @@
-/**
- * Public API v1 - Authentication & Helpers
- *
- * Authentication: Bearer token (API Key)
- * Rate Limiting: Per API key configured limit
- */
+
+
+
+
+
+
 
 import { json } from "@remix-run/node";
 import prisma from "~/lib/prisma.server";
@@ -17,9 +17,9 @@ export interface ApiContext {
   permissions: string[];
 }
 
-/**
- * Authenticate API request
- */
+
+
+
 export async function authenticateApiRequest(request: Request): Promise<ApiContext | Response> {
   const authHeader = request.headers.get("Authorization");
 
@@ -39,7 +39,7 @@ export async function authenticateApiRequest(request: Request): Promise<ApiConte
     );
   }
 
-  // Hash the token and look up
+
   const keyHash = crypto.createHash("sha256").update(token).digest("hex");
 
   const apiKey = await prisma.apiKey.findFirst({
@@ -61,7 +61,7 @@ export async function authenticateApiRequest(request: Request): Promise<ApiConte
     );
   }
 
-  // Check expiry
+
   if (apiKey.expiresAt && apiKey.expiresAt < new Date()) {
     return json(
       { error: "API key has expired", code: "EXPIRED_KEY" },
@@ -69,7 +69,7 @@ export async function authenticateApiRequest(request: Request): Promise<ApiConte
     );
   }
 
-  // Check shop billing status
+
   if (apiKey.shop.billingStatus !== "active") {
     return json(
       { error: "Shop billing is not active", code: "BILLING_INACTIVE" },
@@ -77,7 +77,7 @@ export async function authenticateApiRequest(request: Request): Promise<ApiConte
     );
   }
 
-  // Check enterprise plan
+
   if (apiKey.shop.plan !== "enterprise") {
     return json(
       { error: "API access requires Enterprise plan", code: "PLAN_REQUIRED" },
@@ -85,7 +85,7 @@ export async function authenticateApiRequest(request: Request): Promise<ApiConte
     );
   }
 
-  // Rate limit check
+
   const rateLimitResult = await checkRateLimit(`api:${apiKey.id}`, {
     windowMs: 60 * 1000,
     maxRequests: apiKey.rateLimit,
@@ -110,7 +110,7 @@ export async function authenticateApiRequest(request: Request): Promise<ApiConte
     );
   }
 
-  // Update usage stats
+
   await prisma.apiKey.update({
     where: { id: apiKey.id },
     data: {
@@ -127,16 +127,16 @@ export async function authenticateApiRequest(request: Request): Promise<ApiConte
   };
 }
 
-/**
- * Check if API context has required permission
- */
+
+
+
 export function hasApiPermission(ctx: ApiContext, permission: string): boolean {
   return ctx.permissions.includes(permission);
 }
 
-/**
- * Require permission - returns error response if missing
- */
+
+
+
 export function requireApiPermission(ctx: ApiContext, permission: string): Response | null {
   if (!hasApiPermission(ctx, permission)) {
     return json(
@@ -151,14 +151,14 @@ export function requireApiPermission(ctx: ApiContext, permission: string): Respo
   return null;
 }
 
-/**
- * Verify resource ownership - ensures resource belongs to the authenticated shop
- * This is a critical security check for ID-based resource access
- * 
- * @param resourceShopId - The shopId of the resource being accessed
- * @param ctx - The authenticated API context
- * @returns Response error if ownership fails, null if verified
- */
+
+
+
+
+
+
+
+
 export function verifyResourceOwnership(
   resourceShopId: string | undefined,
   ctx: ApiContext
@@ -170,26 +170,26 @@ export function verifyResourceOwnership(
       { status: 404 }
     );
   }
-  
+
   if (resourceShopId !== ctx.shopId) {
-    // Log potential cross-tenant access attempt (security audit)
+
     console.error(
       `[OWNERSHIP VIOLATION] Shop ${ctx.shopId} attempted to access resource belonging to shop ${resourceShopId}`
     );
-    
-    // Return generic 404 to prevent information leakage
+
+
     return json(
       { error: "Resource not found", code: "NOT_FOUND" },
       { status: 404 }
     );
   }
-  
+
   return null;
 }
 
-/**
- * Create audit log entry for security-sensitive operations
- */
+
+
+
 export async function createSecurityAuditLog(
   shopId: string,
   action: string,

@@ -2,7 +2,6 @@
 <script src="{{ 'ul-upload-telemetry.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-multipart-uploader.js' | asset_url }}" defer></script>
 <script src="{{ 'main-product-upload-app.js' | asset_url }}" defer></script>
-
 {%- assign ump_default_accept = ".png,.jpg,.jpeg,.webp,.tif,.tiff,.psd,.pdf,.ai,.eps,.svg,image/png,image/jpeg,image/webp,image/tiff,image/x-tiff,image/vnd.adobe.photoshop,application/vnd.adobe.photoshop,application/x-photoshop,image/x-psd,application/photoshop,application/psd,application/pdf,application/postscript,application/illustrator,application/vnd.adobe.illustrator,application/eps,application/x-eps,image/x-eps,image/svg+xml" -%}
 {%- assign ump_accept = block.settings.accepted_files | default: ump_default_accept -%}
 {%- if ump_accept == ".png" or ump_accept == ".png,image/png" -%}
@@ -10,19 +9,20 @@
 {%- endif -%}
 {%- assign ump_roll_width = block.settings.roll_width_in | default: 22 -%}
 {%- assign ump_accent = block.settings.accent_color | default: "#4f7cff" -%}
-
 <section
   class="ump"
   data-ul-main-product-upload-app
   data-section-id="{{ section.id }}"
   data-product-id="{{ product.id }}"
   data-product-title="{{ product.title | escape }}"
+  data-current-variant-id="{{ product.selected_or_first_available_variant.id | default: '' }}"
   data-product-variants="{{ product.variants | json | escape }}"
   data-product-options="{{ product.options_with_values | json | escape }}"
   data-currency="{{ cart.currency.iso_code | default: shop.currency | default: 'USD' }}"
   data-shop-domain="{{ shop.permanent_domain }}"
   data-customer-id="{{ customer.id | default: '' }}"
   data-customer-email="{{ customer.email | default: '' | escape }}"
+  data-customer-name="{{ customer.name | default: '' | escape }}"
   data-api-base="/apps/customizer"
   data-roll-width-in="{{ ump_roll_width }}"
   data-accepted-files="{{ ump_accept | escape }}"
@@ -53,7 +53,6 @@
           <p class="ump__hint">{{ block.settings.support_text | default: 'PNG, JPG, TIFF, PSD, PDF, AI, EPS and SVG are supported. You can upload one or more gang sheets.' }}</p>
         </div>
       </div>
-
       <div class="ump__status" data-ump-status-panel hidden>
         <div class="ump__file">
           <img class="ump__thumb" data-ump-thumb alt="" width="76" height="76" hidden>
@@ -87,10 +86,8 @@
           <span class="ump__stage-label" data-ump-stage-ready-label>Ready</span>
         </div>
       </div>
-
       <div class="ump__queue" data-ump-queue hidden></div>
     </div>
-
     <aside class="ump__inspector" aria-live="polite">
       <div class="ump__preview-card" data-ump-preview-card>
         <div class="ump__preview-head">
@@ -100,7 +97,6 @@
           </div>
           <span class="ump__badge" data-ump-badge>Locked</span>
         </div>
-
         <div class="ump__sheet" data-ump-sheet>
           <div class="ump__ruler ump__ruler--top" data-ump-ruler-top></div>
           <div class="ump__ruler ump__ruler--side" data-ump-ruler-side></div>
@@ -110,7 +106,6 @@
             </div>
           </div>
         </div>
-
         <div class="ump__metrics">
           <div>
             <span>Width</span>
@@ -131,9 +126,7 @@
         </div>
         <p class="ump__method" data-ump-method>Upload required before this product can be added to cart.</p>
       </div>
-
       <div class="ump__price-strip" data-ump-price-strip hidden></div>
-
       <div class="ump__actions">
         <button class="ump__cart" type="button" data-ump-add data-default-label="{{ block.settings.add_to_cart_label | default: 'Add to cart' | escape }}" disabled>
           <span>{{ block.settings.add_to_cart_label | default: 'Add to cart' }}</span>
@@ -148,7 +141,6 @@
     </aside>
   </div>
 </section>
-
 {% schema %}
 {
   "name": "Main product upload",

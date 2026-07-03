@@ -157,26 +157,26 @@ const styles = {
   title: { fontSize: "1.875rem", fontWeight: 700, color: "#1f2937", marginBottom: "0.5rem" },
   subtitle: { fontSize: "0.875rem", color: "#6b7280", marginBottom: "2rem" },
   divider: { height: "1px", background: "#e5e7eb", margin: "1.5rem 0" },
-  versionCard: { 
-    background: "#f9fafb", 
-    borderRadius: "8px", 
+  versionCard: {
+    background: "#f9fafb",
+    borderRadius: "8px",
     padding: "1.25rem",
     border: "1px solid #e5e7eb",
     marginBottom: "1rem"
   },
-  versionHeader: { 
-    display: "flex", 
-    alignItems: "center", 
-    gap: "0.75rem", 
+  versionHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.75rem",
     marginBottom: "1rem",
     flexWrap: "wrap" as const
   },
   versionNumber: { fontSize: "1.125rem", fontWeight: 700, color: "#1f2937", fontFamily: "monospace" },
   date: { fontSize: "0.875rem", color: "#6b7280" },
-  typeBadge: { 
-    padding: "3px 8px", 
-    borderRadius: "4px", 
-    fontSize: "0.7rem", 
+  typeBadge: {
+    padding: "3px 8px",
+    borderRadius: "4px",
+    fontSize: "0.7rem",
     fontWeight: 600,
     textTransform: "uppercase" as const
   },
@@ -184,17 +184,17 @@ const styles = {
   typeMinor: { background: "#dbeafe", color: "#1e40af" },
   typePatch: { background: "#d1fae5", color: "#065f46" },
   changeList: { listStyle: "none", padding: 0, margin: 0 },
-  changeItem: { 
-    display: "flex", 
-    gap: "0.75rem", 
-    marginBottom: "0.5rem", 
+  changeItem: {
+    display: "flex",
+    gap: "0.75rem",
+    marginBottom: "0.5rem",
     fontSize: "0.875rem",
     lineHeight: 1.6
   },
-  categoryBadge: { 
-    padding: "2px 8px", 
-    borderRadius: "3px", 
-    fontSize: "0.7rem", 
+  categoryBadge: {
+    padding: "2px 8px",
+    borderRadius: "3px",
+    fontSize: "0.7rem",
     fontWeight: 600,
     textTransform: "uppercase" as const,
     flexShrink: 0
@@ -205,18 +205,18 @@ const styles = {
   categorySecurity: { background: "#fef3c7", color: "#92400e" },
   categoryBreaking: { background: "#fee2e2", color: "#991b1b" },
   changeText: { color: "#4b5563" },
-  statsCard: { 
-    display: "grid", 
-    gridTemplateColumns: "repeat(4, 1fr)", 
-    gap: "1rem", 
-    marginBottom: "1.5rem" 
+  statsCard: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, 1fr)",
+    gap: "1rem",
+    marginBottom: "1.5rem"
   },
-  statBox: { 
-    background: "#f9fafb", 
-    border: "1px solid #e5e7eb", 
-    borderRadius: "8px", 
-    padding: "1rem", 
-    textAlign: "center" as const 
+  statBox: {
+    background: "#f9fafb",
+    border: "1px solid #e5e7eb",
+    borderRadius: "8px",
+    padding: "1rem",
+    textAlign: "center" as const
   },
   statNumber: { fontSize: "1.5rem", fontWeight: 700, color: "#667eea" },
   statLabel: { fontSize: "0.75rem", color: "#6b7280", marginTop: "0.25rem" },
@@ -244,11 +244,11 @@ const getTypeStyle = (type: string) => {
 
 export default function Changelog() {
   const totalChanges = changelog.reduce((acc, entry) => acc + entry.changes.length, 0);
-  const features = changelog.reduce((acc, entry) => 
+  const features = changelog.reduce((acc, entry) =>
     acc + entry.changes.filter(c => c.category === "feature").length, 0);
-  const improvements = changelog.reduce((acc, entry) => 
+  const improvements = changelog.reduce((acc, entry) =>
     acc + entry.changes.filter(c => c.category === "improvement").length, 0);
-  const securityFixes = changelog.reduce((acc, entry) => 
+  const securityFixes = changelog.reduce((acc, entry) =>
     acc + entry.changes.filter(c => c.category === "security").length, 0);
 
   return (
@@ -258,7 +258,7 @@ export default function Changelog() {
 
       <div style={styles.divider} />
 
-      {/* Stats */}
+
       <div style={styles.statsCard}>
         <div style={styles.statBox}>
           <div style={styles.statNumber}>{changelog.length}</div>
@@ -278,7 +278,7 @@ export default function Changelog() {
         </div>
       </div>
 
-      {/* Version List */}
+
       {changelog.map((entry) => (
         <div key={entry.version} style={styles.versionCard}>
           <div style={styles.versionHeader}>
@@ -286,7 +286,7 @@ export default function Changelog() {
             <span style={{ ...styles.typeBadge, ...getTypeStyle(entry.type) }}>{entry.type}</span>
             <span style={styles.date}>{entry.date}</span>
           </div>
-          
+
           <ul style={styles.changeList}>
             {entry.changes.map((change, idx) => (
               <li key={idx} style={styles.changeItem}>

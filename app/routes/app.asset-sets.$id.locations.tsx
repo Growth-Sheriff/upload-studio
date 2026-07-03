@@ -116,7 +116,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
     const printLocations = [...((currentSchema as any).printLocations || [])];
 
-    // Check for duplicate code
+
     if (printLocations.some((l: any) => l.code === code)) {
       return json({ error: `Location with code "${code}" already exists` });
     }
@@ -228,7 +228,7 @@ export default function AssetSetLocationsPage() {
         ]}
       >
         <Layout>
-          {/* Action result banner */}
+
           {actionData && "success" in actionData && (
             <Layout.Section>
               <Banner tone="success" onDismiss={() => {}}>
@@ -244,13 +244,13 @@ export default function AssetSetLocationsPage() {
             </Layout.Section>
           )}
 
-          {/* Hidden save form */}
+
           <Form method="post" id="save-form">
             <input type="hidden" name="_action" value="save_locations" />
             <input type="hidden" name="locations" value={JSON.stringify(locations)} />
           </Form>
 
-          {/* Locations */}
+
           {locations.map((location: any, index: number) => (
             <Layout.Section key={location.code}>
               <Card>
@@ -361,7 +361,7 @@ export default function AssetSetLocationsPage() {
             </Layout.Section>
           ))}
 
-          {/* Add Location Form */}
+
           {showAddForm && (
             <Layout.Section>
               <Card>

@@ -59,7 +59,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const customStart = url.searchParams.get('startDate')
   const customEnd = url.searchParams.get('endDate')
 
-  // Calculate date range
+
   const now = new Date()
   let startDate: Date
   let endDate = now
@@ -67,7 +67,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (period === 'custom' && customStart && customEnd) {
     startDate = new Date(customStart)
     endDate = new Date(customEnd)
-    // Ensure endDate includes the full day
+
     endDate.setHours(23, 59, 59, 999)
   } else {
     switch (period) {
@@ -81,20 +81,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
         startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
         break
       case 'all':
-        startDate = new Date(0) // Beginning of time
+        startDate = new Date(0)
         break
       default:
         startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
     }
   }
 
-  // Format dates for display
+
   const dateRangeText =
     period === 'all'
       ? 'All time'
       : `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
 
-  // Get basic metrics
+
   const [
     totalUploads,
     completedUploads,
@@ -104,43 +104,43 @@ export async function loader({ request }: LoaderFunctionArgs) {
     uploadsByStatus,
     recentUploads,
     uploadsByDay,
-    // ORDER METRICS - NEW
+
     totalOrders,
     ordersWithUploads,
     recentOrders,
   ] = await Promise.all([
-    // Total uploads in period
+
     prisma.upload.count({
       where: { shopId: shop.id, createdAt: { gte: startDate } },
     }),
-    // Completed uploads (uploaded status = successfully processed)
+
     prisma.upload.count({
       where: { shopId: shop.id, createdAt: { gte: startDate }, status: 'uploaded' },
     }),
-    // Blocked uploads (rejected/failed)
+
     prisma.upload.count({
       where: { shopId: shop.id, createdAt: { gte: startDate }, status: 'blocked' },
     }),
-    // Uploads with warnings
+
     prisma.uploadItem.count({
       where: {
         upload: { shopId: shop.id, createdAt: { gte: startDate } },
         preflightStatus: 'warning',
       },
     }),
-    // Uploads by mode
+
     prisma.upload.groupBy({
       by: ['mode'],
       where: { shopId: shop.id, createdAt: { gte: startDate } },
       _count: true,
     }),
-    // Uploads by status
+
     prisma.upload.groupBy({
       by: ['status'],
       where: { shopId: shop.id, createdAt: { gte: startDate } },
       _count: true,
     }),
-    // Recent uploads for table
+
     prisma.upload.findMany({
       where: { shopId: shop.id },
       include: {
@@ -151,20 +151,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
       orderBy: { createdAt: 'desc' },
       take: 10,
     }),
-    // Daily upload counts (simplified - actual would need raw SQL for grouping)
+
     prisma.upload.findMany({
       where: { shopId: shop.id, createdAt: { gte: startDate } },
       select: { createdAt: true },
       orderBy: { createdAt: 'asc' },
     }),
-    // ORDER METRICS - Total unique orders linked to uploads
+
     prisma.orderLink
       .groupBy({
         by: ['orderId'],
         where: { shopId: shop.id, createdAt: { gte: startDate } },
       })
       .then((orders) => orders.length),
-    // Uploads that have been ordered
+
     prisma.upload.count({
       where: {
         shopId: shop.id,
@@ -172,7 +172,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         orderId: { not: null },
       },
     }),
-    // Recent orders with uploads
+
     prisma.orderLink.findMany({
       where: { shopId: shop.id },
       include: {
@@ -185,7 +185,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }),
   ])
 
-  // Get enhanced analytics
+
   const [customerSegmentation, customerMetrics, fileMetrics, fileTypeBreakdown, revenueStats] =
     await Promise.all([
       getCustomerSegmentation(shop.id, startDate, now),
@@ -195,14 +195,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
       getRevenueStats(shop.id, startDate, now),
     ])
 
-  // Process uploads by day for chart
+
   const dailyCounts: Record<string, number> = {}
   uploadsByDay.forEach((u: { createdAt: Date }) => {
     const day = u.createdAt.toISOString().split('T')[0]
     dailyCounts[day] = (dailyCounts[day] || 0) + 1
   })
 
-  // Get location usage
+
   const locationUsage = await prisma.uploadItem.groupBy({
     by: ['location'],
     where: {
@@ -211,14 +211,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     _count: true,
   })
 
-  // Calculate success rate (uploaded = completed successfully)
+
   const successRate = totalUploads > 0 ? Math.round((completedUploads / totalUploads) * 100) : 0
 
   const warningRate = totalUploads > 0 ? Math.round((warningUploads / totalUploads) * 100) : 0
 
   const blockedRate = totalUploads > 0 ? Math.round((blockedUploads / totalUploads) * 100) : 0
 
-  // Order conversion rate - what % of uploads resulted in orders
+
   const orderConversionRate =
     totalUploads > 0 ? Math.round((ordersWithUploads / totalUploads) * 100) : 0
 
@@ -233,7 +233,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       successRate,
       warningRate,
       blockedRate,
-      // ORDER METRICS
+
       totalOrders,
       ordersWithUploads,
       orderConversionRate,
@@ -279,7 +279,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       uploadStatus: o.upload?.status || 'unknown',
       createdAt: o.createdAt.toISOString(),
     })),
-    // NEW: Enhanced analytics data
+
     customerSegmentation,
     customerMetrics,
     fileMetrics,
@@ -430,7 +430,7 @@ export default function AnalyticsPage() {
     right_sleeve: '#F49342',
   }
 
-  // Friendly status labels
+
   const statusLabels: Record<string, string> = {
     uploaded: 'Received',
     blocked: 'On Hold',
@@ -506,7 +506,7 @@ export default function AnalyticsPage() {
       ]}
     >
       <Layout>
-        {/* Period Selector */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -564,7 +564,7 @@ export default function AnalyticsPage() {
           </Card>
         </Layout.Section>
 
-        {/* Key Metrics */}
+
         <Layout.Section variant="oneThird">
           <MetricCard
             title="Total Uploads"
@@ -591,7 +591,7 @@ export default function AnalyticsPage() {
           />
         </Layout.Section>
 
-        {/* Order Metrics Row */}
+
         <Layout.Section variant="oneThird">
           <MetricCard
             title="Total Orders"
@@ -619,7 +619,7 @@ export default function AnalyticsPage() {
           />
         </Layout.Section>
 
-        {/* Customer Segmentation */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -689,7 +689,7 @@ export default function AnalyticsPage() {
           </Card>
         </Layout.Section>
 
-        {/* Revenue Stats */}
+
         {(revenueStats?.totalRevenue ?? 0) > 0 && (
           <Layout.Section>
             <Card>
@@ -744,7 +744,7 @@ export default function AnalyticsPage() {
                     </BlockStack>
                   </Box>
                 </InlineGrid>
-                {/* Revenue by Mode */}
+
                 {(revenueStats?.revenueByMode?.length ?? 0) > 0 && (
                   <BlockStack gap="300">
                     <Text as="h3" variant="headingSm">
@@ -770,7 +770,7 @@ export default function AnalyticsPage() {
           </Layout.Section>
         )}
 
-        {/* File Metrics */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -824,7 +824,7 @@ export default function AnalyticsPage() {
                 </Box>
               </InlineGrid>
 
-              {/* File Size Distribution */}
+
               {(fileMetrics?.fileSizeDistribution?.length ?? 0) > 0 && (
                 <BlockStack gap="300">
                   <Text as="h3" variant="headingSm">
@@ -846,7 +846,7 @@ export default function AnalyticsPage() {
                 </BlockStack>
               )}
 
-              {/* File Types */}
+
               {(fileTypeBreakdown?.length ?? 0) > 0 && (
                 <BlockStack gap="300">
                   <Text as="h3" variant="headingSm">
@@ -866,7 +866,7 @@ export default function AnalyticsPage() {
           </Card>
         </Layout.Section>
 
-        {/* Customer Metrics */}
+
         {(customerMetrics?.uniqueCustomers ?? 0) > 0 && (
           <Layout.Section>
             <Card>
@@ -930,7 +930,7 @@ export default function AnalyticsPage() {
           </Layout.Section>
         )}
 
-        {/* Mode Breakdown */}
+
         <Layout.Section variant="oneHalf">
           <Card>
             <BlockStack gap="400">
@@ -966,7 +966,7 @@ export default function AnalyticsPage() {
           </Card>
         </Layout.Section>
 
-        {/* Location Usage */}
+
         <Layout.Section variant="oneHalf">
           <Card>
             <BlockStack gap="400">
@@ -1002,7 +1002,7 @@ export default function AnalyticsPage() {
           </Card>
         </Layout.Section>
 
-        {/* Status Breakdown */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -1042,7 +1042,7 @@ export default function AnalyticsPage() {
           </Card>
         </Layout.Section>
 
-        {/* Daily Trend (Simple) */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -1086,7 +1086,7 @@ export default function AnalyticsPage() {
           </Card>
         </Layout.Section>
 
-        {/* Recent Uploads */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -1106,7 +1106,7 @@ export default function AnalyticsPage() {
           </Card>
         </Layout.Section>
 
-        {/* Recent Orders with Uploads */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -1139,9 +1139,9 @@ export default function AnalyticsPage() {
           </Card>
         </Layout.Section>
 
-        <UploadDetailModal 
-            uploadId={selectedUploadId} 
-            onClose={() => setSelectedUploadId(null)} 
+        <UploadDetailModal
+            uploadId={selectedUploadId}
+            onClose={() => setSelectedUploadId(null)}
         />
       </Layout>
     </Page>

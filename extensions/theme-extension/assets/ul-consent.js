@@ -1,47 +1,21 @@
-/**
- * Upload Studio - Consent Management Module
- * GDPR/CCPA compliant consent banner for visitor tracking
- *
- * @version 1.0.0
- * @module ul-consent
- *
- * ⚠️ ADDITIVE ONLY - Does NOT modify existing upload/cart flows
- *
- * Usage:
- * 1. Include this script in your theme
- * 2. Customize the banner text via data attributes or ULConsent.config()
- * 3. The banner will auto-show if consent hasn't been given
- *
- * Events:
- * - ul:consent:given - Fired when user accepts tracking
- * - ul:consent:denied - Fired when user declines tracking
- * - ul:consent:changed - Fired on any consent change
- */
+
 
 ;(function () {
   'use strict'
 
-  // Prevent multiple initializations
   if (window.ULConsent) return
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // CONFIGURATION
-  // ═══════════════════════════════════════════════════════════════════════════
-
   const DEFAULT_CONFIG = {
-    // Storage key
+
     storageKey: 'ul_consent',
     storageTimestampKey: 'ul_consent_timestamp',
 
-    // Banner settings
-    position: 'bottom', // 'bottom' | 'top'
+    position: 'bottom',
     showOnLoad: true,
-    autoHideDelay: 0, // 0 = don't auto-hide
+    autoHideDelay: 0,
 
-    // Consent expiry (days) - re-ask after this period
     expiryDays: 365,
 
-    // Text content (can be overridden)
     text: {
       title: 'We value your privacy',
       message:
@@ -52,7 +26,6 @@
       learnMoreText: 'Learn more',
     },
 
-    // Styling
     theme: {
       backgroundColor: '#ffffff',
       textColor: '#1a1a1a',
@@ -65,15 +38,10 @@
       shadowColor: 'rgba(0,0,0,0.1)',
     },
 
-    // Callbacks
     onAccept: null,
     onDecline: null,
     onChange: null,
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // STORAGE HELPERS
-  // ═══════════════════════════════════════════════════════════════════════════
 
   const Storage = {
     get(key) {
@@ -93,21 +61,12 @@
     },
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // MAIN CONSENT MODULE
-  // ═══════════════════════════════════════════════════════════════════════════
-
   const ULConsent = {
     config: { ...DEFAULT_CONFIG },
     bannerElement: null,
     initialized: false,
 
-    /**
-     * Configure the consent module
-     * @param {object} options - Configuration options
-     */
     configure(options = {}) {
-      // Deep merge for nested objects
       this.config = {
         ...this.config,
         ...options,
@@ -117,17 +76,12 @@
       return this
     },
 
-    /**
-     * Initialize the consent module
-     */
     init() {
       if (this.initialized) return this
 
-      // Check if consent already given and not expired
       const consentStatus = this.getConsentStatus()
 
       if (consentStatus === null && this.config.showOnLoad) {
-        // No consent recorded, show banner
         this.showBanner()
       }
 
@@ -135,22 +89,16 @@
       return this
     },
 
-    /**
-     * Get current consent status
-     * @returns {boolean|null} - true if accepted, false if declined, null if not set
-     */
     getConsentStatus() {
       const consent = Storage.get(this.config.storageKey)
       const timestamp = Storage.get(this.config.storageTimestampKey)
 
       if (consent === null) return null
 
-      // Check expiry
       if (timestamp) {
         const expiryMs = this.config.expiryDays * 24 * 60 * 60 * 1000
         const consentDate = parseInt(timestamp, 10)
         if (Date.now() - consentDate > expiryMs) {
-          // Consent expired, clear and return null
           this.clearConsent()
           return null
         }
@@ -159,29 +107,19 @@
       return consent === 'true'
     },
 
-    /**
-     * Check if user has given consent
-     * @returns {boolean}
-     */
     hasConsent() {
       return this.getConsentStatus() === true
     },
 
-    /**
-     * Set consent status
-     * @param {boolean} given - Whether consent was given
-     */
     setConsent(given) {
       const status = given ? 'true' : 'false'
       Storage.set(this.config.storageKey, status)
       Storage.set(this.config.storageTimestampKey, Date.now().toString())
 
-      // Also sync with ULVisitor if available
       if (window.ULVisitor?.setConsent) {
         window.ULVisitor.setConsent(given)
       }
 
-      // Fire events
       const eventDetail = { consent: given, timestamp: Date.now() }
 
       window.dispatchEvent(new CustomEvent('ul:consent:changed', { detail: eventDetail }))
@@ -205,47 +143,33 @@
       return this
     },
 
-    /**
-     * Accept consent
-     */
     accept() {
       this.setConsent(true)
       this.hideBanner()
       return this
     },
 
-    /**
-     * Decline consent
-     */
     decline() {
       this.setConsent(false)
       this.hideBanner()
       return this
     },
 
-    /**
-     * Clear consent (for re-asking)
-     */
     clearConsent() {
       try {
         localStorage.removeItem(this.config.storageKey)
         localStorage.removeItem(this.config.storageTimestampKey)
       } catch (e) {
-        // Ignore
       }
       return this
     },
 
-    /**
-     * Show the consent banner
-     */
     showBanner() {
       if (this.bannerElement) return this
 
       this.bannerElement = this.createBannerElement()
       document.body.appendChild(this.bannerElement)
 
-      // Animate in
       requestAnimationFrame(() => {
         this.bannerElement.style.transform = 'translateY(0)'
         this.bannerElement.style.opacity = '1'
@@ -254,9 +178,6 @@
       return this
     },
 
-    /**
-     * Hide the consent banner
-     */
     hideBanner() {
       if (!this.bannerElement) return this
 
@@ -274,9 +195,6 @@
       return this
     },
 
-    /**
-     * Create the banner DOM element
-     */
     createBannerElement() {
       const { text, theme, position } = this.config
 
@@ -425,7 +343,6 @@
         </div>
       `
 
-      // Bind events
       const acceptBtn = banner.querySelector('.ul-consent-btn-accept')
       const declineBtn = banner.querySelector('.ul-consent-btn-decline')
 
@@ -436,24 +353,17 @@
     },
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // AUTO-INITIALIZATION
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  // Don't auto-show if ULVisitor already has consent recorded
   if (window.ULVisitor?.hasConsent?.()) {
     ULConsent.config.showOnLoad = false
   }
 
-  // Initialize when DOM is ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => ULConsent.init())
   } else {
-    // Small delay to let ULVisitor initialize first
+
     setTimeout(() => ULConsent.init(), 100)
   }
 
-  // Expose globally
   window.ULConsent = ULConsent
 
   console.log('[ULConsent] Module loaded')

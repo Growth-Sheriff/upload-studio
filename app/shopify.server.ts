@@ -9,29 +9,29 @@ import {
 import { RedisSessionStorage } from "@shopify/shopify-app-session-storage-redis";
 import prisma from "~/lib/prisma.server";
 
-// Redis session storage
+
 const redisSessionStorage = new RedisSessionStorage(
   process.env.REDIS_URL || "redis://localhost:6379"
 );
 
-// ===== BILLING PLANS v2.0 =====
-// Two-tier usage-based pricing model
+
+
 const BILLING_PLANS = {
   STARTER: {
     amount: 9,
     currencyCode: "USD",
     interval: BillingInterval.Every30Days,
     trialDays: 7,
-    // Usage charges handled via AppUsageRecord API
-    // 20 free orders, then $0.05/order
+
+
   },
   PRO: {
     amount: 19,
     currencyCode: "USD",
     interval: BillingInterval.Every30Days,
     trialDays: 7,
-    // Usage charges handled via AppUsageRecord API
-    // 30 free orders, then $0.06/order
+
+
   },
 };
 
@@ -85,10 +85,10 @@ const shopify = shopifyApp({
   },
   hooks: {
     afterAuth: async ({ session }) => {
-      // Register webhooks after auth
+
       shopify.registerWebhooks({ session });
 
-      // Sync shop to database
+
       await prisma.shop.upsert({
         where: { shopDomain: session.shop },
         update: {

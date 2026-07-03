@@ -1,7 +1,7 @@
-/**
- * Analytics - Cohorts Page
- * Weekly retention cohorts with visual heatmap
- */
+
+
+
+
 
 import { json, type LoaderFunctionArgs } from '@remix-run/node'
 import { useLoaderData, useNavigate } from '@remix-run/react'
@@ -42,7 +42,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     })
   }
 
-  // Get weeks from URL
+
   const url = new URL(request.url)
   const weeksParam = url.searchParams.get('weeks')
   const weeks = weeksParam ? parseInt(weeksParam, 10) : 8
@@ -155,7 +155,7 @@ export default function AnalyticsCohorts() {
       backAction={{ url: '/app/analytics' }}
     >
       <Layout>
-        {/* Period Selector */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -205,7 +205,7 @@ export default function AnalyticsCohorts() {
           </Card>
         </Layout.Section>
 
-        {/* Legend */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="300">
@@ -283,7 +283,7 @@ export default function AnalyticsCohorts() {
           </Card>
         </Layout.Section>
 
-        {/* Cohort Table */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -298,7 +298,7 @@ export default function AnalyticsCohorts() {
               {hasData ? (
                 <Box overflowX="auto">
                   <BlockStack gap="200">
-                    {/* Header Row */}
+
                     <InlineStack gap="200" wrap={false}>
                       <Box minWidth="100px" padding="200">
                         <Text as="span" variant="bodySm" fontWeight="bold">
@@ -317,7 +317,7 @@ export default function AnalyticsCohorts() {
                       <CohortCell value="Week 4" isHeader />
                     </InlineStack>
 
-                    {/* Data Rows */}
+
                     {cohorts.map((cohort, i) => (
                       <InlineStack key={i} gap="200" wrap={false}>
                         <Box minWidth="100px" padding="200">
@@ -359,7 +359,7 @@ export default function AnalyticsCohorts() {
           </Card>
         </Layout.Section>
 
-        {/* Summary Stats */}
+
         {hasData && (
           <Layout.Section>
             <Card>
@@ -420,7 +420,7 @@ export default function AnalyticsCohorts() {
           </Layout.Section>
         )}
 
-        {/* Tips */}
+
         <Layout.Section>
           <Banner title="Improving Retention" tone="info">
             <BlockStack gap="200">

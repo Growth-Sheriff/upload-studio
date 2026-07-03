@@ -1,7 +1,7 @@
-/**
- * Analytics - AI Insights Page
- * AI-powered analytics insights with recommendations
- */
+
+
+
+
 
 import { json, type LoaderFunctionArgs } from '@remix-run/node'
 import { useLoaderData, useNavigate } from '@remix-run/react'
@@ -103,13 +103,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
     })
   }
 
-  // Get period from URL
+
   const url = new URL(request.url)
   const period = url.searchParams.get('period') || '30d'
   const customStart = url.searchParams.get('startDate')
   const customEnd = url.searchParams.get('endDate')
 
-  // Calculate date range
+
   let endDate = new Date()
   let startDate: Date
 
@@ -152,7 +152,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         getRevenueStats(shopId, startDate, endDate),
       ])
 
-    // Calculate funnel data
+
     const funnelData = [
       {
         stage: 'Visitors',
@@ -412,7 +412,7 @@ export default function AnalyticsInsights() {
       backAction={{ url: '/app/analytics' }}
     >
       <Layout>
-        {/* Period Selector */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -466,7 +466,7 @@ export default function AnalyticsInsights() {
           </Card>
         </Layout.Section>
 
-        {/* Key Metrics Overview */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -506,7 +506,7 @@ export default function AnalyticsInsights() {
           </Card>
         </Layout.Section>
 
-        {/* Conversion Funnel */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -568,7 +568,7 @@ export default function AnalyticsInsights() {
           </Card>
         </Layout.Section>
 
-        {/* AI Insights */}
+
         <Layout.Section>
           <BlockStack gap="400">
             <InlineStack align="space-between">
@@ -602,7 +602,7 @@ export default function AnalyticsInsights() {
           </BlockStack>
         </Layout.Section>
 
-        {/* Upload Performance */}
+
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -656,7 +656,7 @@ export default function AnalyticsInsights() {
           </Card>
         </Layout.Section>
 
-        {/* Pro Tips */}
+
         <Layout.Section>
           <Banner title="Pro Tips for Better Conversions" tone="info">
             <BlockStack gap="200">

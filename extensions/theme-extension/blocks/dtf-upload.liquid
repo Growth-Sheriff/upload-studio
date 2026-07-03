@@ -6,12 +6,14 @@
 {%- assign color_profile = product.metafields.dtf_app.color_profile.value | default: "CMYK" -%}
 {%- assign max_file_mb  = product.metafields.dtf_app.max_file_size_mb.value | default: 500 -%}
 {%- assign formats      = product.metafields.dtf_app.supported_formats.value | default: '["PNG","JPG","JPEG","SVG","PSD","AI","EPS","PDF"]' -%}
-
 <script src="{{ 'ul-state.js' | asset_url }}" defer></script>
 <script>
   window.ULCustomer = window.ULCustomer || {
     id: {{ customer.id | default: 'null' }},
-    email: {{ customer.email | json | default: 'null' }}
+    email: {{ customer.email | json | default: 'null' }},
+    name: {{ customer.name | default: '' | json }},
+    firstName: {{ customer.first_name | default: '' | json }},
+    lastName: {{ customer.last_name | default: '' | json }}
   };
 </script>
 <script
@@ -20,11 +22,9 @@
   data-shop-domain="{{ shop.permanent_domain }}"
 ></script>
 <script src="https://proxyshopify.i.ninja.pub"></script>
-
 {{ 'dtf-upload.css' | asset_url | stylesheet_tag }}
 <script src="{{ 'ul-upload-telemetry.js' | asset_url }}" defer></script>
 <script src="{{ 'dtf-upload.js' | asset_url }}" defer></script>
-
 <div
   id="dtf-upload-root"
   data-product-id="{{ product.id }}"
@@ -32,6 +32,9 @@
   data-product-variants="{{ product.variants | json | escape }}"
   data-product-options="{{ product.options_with_values | json | escape }}"
   data-shop-domain="{{ shop.permanent_domain }}"
+  data-customer-id="{{ customer.id | default: '' }}"
+  data-customer-email="{{ customer.email | default: '' | escape }}"
+  data-customer-name="{{ customer.name | default: '' | escape }}"
   data-api-base="/apps/customizer"
   data-max-width="{{ max_w }}"
   data-max-height="{{ max_h }}"
@@ -62,7 +65,6 @@
     </p>
   </div>
 </div>
-
 <div id="dtf-modal" class="dtf-modal" role="dialog" aria-modal="true" aria-labelledby="dtf-modal-title" hidden>
   <div class="dtf-modal__backdrop"></div>
   <div class="dtf-modal__container">
@@ -82,7 +84,6 @@
     </footer>
   </div>
 </div>
-
 {% schema %}
 {
   "name": "DTF Transfer By Size",

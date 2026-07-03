@@ -9,15 +9,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 export default function PrivacyPolicyPage() {
-  const lastUpdated = new Date().toLocaleDateString("en-US", { 
-    year: "numeric", 
-    month: "long", 
-    day: "numeric" 
+  const lastUpdated = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric"
   });
 
   return (
-    <Page 
-      title="Privacy Policy" 
+    <Page
+      title="Privacy Policy"
       backAction={{ content: "Dashboard", url: "/app" }}
     >
       <Layout>
@@ -29,8 +29,8 @@ export default function PrivacyPolicyPage() {
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">1. Introduction</Text>
                 <Text as="p">
-                  Upload Studio ("we," "our," or "us") is committed to protecting your privacy. 
-                  This Privacy Policy explains how we collect, use, disclose, and safeguard your information when 
+                  Upload Studio ("we," "our," or "us") is committed to protecting your privacy.
+                  This Privacy Policy explains how we collect, use, disclose, and safeguard your information when
                   you use our Shopify application.
                 </Text>
               </BlockStack>

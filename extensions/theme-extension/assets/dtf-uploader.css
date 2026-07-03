@@ -1,18 +1,4 @@
-/**
- * DTF Uploader Styles
- * ====================
- * FAZ 1: Core DTF Upload Widget
- * FAZ 6: Mobile Experience Optimizations
- *
- * Features:
- * - FAZ 2: T-Shirt Modal integration
- * - FAZ 3: Confirmation Screen
- * - Mobile responsive (touch-optimized)
- * - Safe area support (notch devices)
- * - Reduced motion support
- *
- * Version: 4.1.0
- */
+
 
 :root {
   --ul-primary: #6366f1;
@@ -38,7 +24,6 @@
   --ul-transition: all 0.2s ease;
 }
 
-/* ===== CONTAINER ===== */
 .ul-dtf-uploader {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
   background: var(--ul-bg);
@@ -53,7 +38,6 @@
   box-sizing: border-box;
 }
 
-/* ===== LOADING STATE ===== */
 .ul-loading {
   display: none;
   text-align: center;
@@ -81,7 +65,6 @@
   }
 }
 
-/* ===== SECTION ===== */
 .ul-section {
   margin-bottom: 24px;
 }
@@ -130,7 +113,6 @@
   opacity: 0.8;
 }
 
-/* ===== CENTERED HEADER STYLE ===== */
 .ul-section-header--centered {
   flex-direction: column;
   text-align: center;
@@ -162,7 +144,6 @@
   }
 }
 
-/* ===== DROPZONE ===== */
 .ul-dropzone {
   border: 2px dashed var(--ul-border);
   border-radius: var(--ul-radius);
@@ -232,7 +213,6 @@
   display: none;
 }
 
-/* ===== UPLOAD PROGRESS ===== */
 .ul-upload-progress {
   display: none;
   padding: 20px;
@@ -260,7 +240,6 @@
   width: 0%;
 }
 
-/* v4.2.0: Progress info wrapper with cancel button */
 .ul-progress-info {
   display: flex;
   align-items: center;
@@ -275,7 +254,6 @@
   text-align: left;
 }
 
-/* v4.2.0: Cancel upload button */
 .ul-cancel-upload {
   display: inline-flex;
   align-items: center;
@@ -302,7 +280,6 @@
   height: 14px;
 }
 
-/* ===== FILE PREVIEW ===== */
 .ul-file-preview {
   display: none;
   padding: 16px;
@@ -398,7 +375,6 @@
   color: white;
 }
 
-/* ===== OPTION DROPDOWNS (Separate dropdown for each option) ===== */
 .ul-option-dropdown-group {
   margin-bottom: 16px;
 }
@@ -465,7 +441,6 @@
   color: var(--ul-primary);
 }
 
-/* Selected variant display */
 .ul-selected-variant-display {
   display: flex;
   justify-content: space-between;
@@ -487,7 +462,6 @@
   color: var(--ul-primary);
 }
 
-/* ===== OPTION BUTTONS (kept for alternative use) ===== */
 .ul-option-group {
   margin-bottom: 16px;
 }
@@ -547,7 +521,6 @@
   background: var(--ul-bg);
 }
 
-/* Selected variant display (legacy) */
 .ul-selected-variant {
   display: flex;
   justify-content: space-between;
@@ -569,7 +542,6 @@
   color: var(--ul-primary);
 }
 
-/* ===== SIZE DROPDOWN (Legacy - kept for backward compatibility) ===== */
 .ul-size-dropdown-wrapper {
   position: relative;
   width: 100%;
@@ -624,7 +596,6 @@
   color: var(--ul-primary);
 }
 
-/* Legacy grid styles (kept for backward compatibility) */
 .ul-size-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
@@ -696,7 +667,6 @@
   border-radius: 10px;
 }
 
-/* ===== QUANTITY ===== */
 .ul-quantity-row {
   display: flex;
   align-items: center;
@@ -759,7 +729,6 @@
   gap: 6px;
 }
 
-/* ===== EXTRA QUESTIONS ===== */
 .ul-questions-container {
   display: flex;
   flex-direction: column;
@@ -821,14 +790,12 @@
   cursor: pointer;
 }
 
-/* ===== DIVIDER ===== */
 .ul-divider {
   height: 1px;
   background: var(--ul-border);
   margin: 24px 0;
 }
 
-/* ===== BUTTONS ===== */
 .ul-btn {
   display: inline-flex;
   align-items: center;
@@ -881,7 +848,6 @@
   height: 20px;
 }
 
-/* Button States */
 .ul-btn.loading .ul-btn-text {
   opacity: 0;
 }
@@ -901,7 +867,6 @@
   background: var(--ul-success);
 }
 
-/* ===== PRICE DISPLAY ===== */
 .ul-price-summary {
   background: var(--ul-bg-secondary);
   border-radius: var(--ul-radius-sm);
@@ -943,14 +908,12 @@
   color: var(--ul-text);
 }
 
-/* ===== BUTTONS STACK ===== */
 .ul-buttons-stack {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-/* ===== ERROR MESSAGE ===== */
 .ul-error {
   display: none;
   padding: 14px 16px;
@@ -974,7 +937,6 @@
   height: 20px;
 }
 
-/* ===== TOAST ===== */
 .ul-toast {
   position: fixed;
   bottom: 24px;
@@ -1008,7 +970,6 @@
   background: var(--ul-error);
 }
 
-/* ===== RESPONSIVE ===== */
 @media (max-width: 600px) {
   .ul-dtf-uploader {
     padding: 16px;
@@ -1060,9 +1021,8 @@
   }
 }
 
-/* ===== ENHANCED MOBILE (FAZ 6) ===== */
 @media (max-width: 768px) {
-  /* Touch-friendly targets (44px minimum) */
+
   .ul-btn,
   .ul-size-btn,
   .ul-color-btn,
@@ -1071,7 +1031,6 @@
     min-width: 44px;
   }
 
-  /* Larger touch areas for quantity controls */
   .ul-quantity-btn {
     width: 44px;
     height: 44px;
@@ -1080,16 +1039,14 @@
 
   .ul-quantity-input {
     height: 44px;
-    font-size: 16px; /* Prevents zoom on iOS */
+    font-size: 16px;
   }
 
-  /* Color buttons larger for touch */
   .ul-color-btn {
     width: 44px;
     height: 44px;
   }
 
-  /* Size buttons stacked */
   .ul-size-grid {
     gap: 8px;
   }
@@ -1099,13 +1056,11 @@
     font-size: 14px;
   }
 
-  /* Preview image larger on mobile */
   .ul-file-thumb {
     width: 80px;
     height: 80px;
   }
 
-  /* Action buttons full width */
   .ul-actions {
     flex-direction: column;
   }
@@ -1115,13 +1070,11 @@
     justify-content: center;
   }
 
-  /* Safe area support for bottom elements */
   .ul-dtf-uploader {
     padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   }
 }
 
-/* ===== SMALL MOBILE ===== */
 @media (max-width: 480px) {
   .ul-dtf-uploader {
     padding: 12px;
@@ -1140,12 +1093,10 @@
     font-size: 12px;
   }
 
-  /* Single column for sizes on very small screens */
   .ul-size-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  /* Stack file info vertically */
   .ul-file-info {
     flex-direction: column;
     gap: 4px;
@@ -1159,7 +1110,6 @@
     font-size: 12px;
   }
 
-  /* Toast full width with padding */
   .ul-toast {
     left: 8px;
     right: 8px;
@@ -1169,9 +1119,8 @@
   }
 }
 
-/* ===== TOUCH DEVICE OPTIMIZATIONS ===== */
 @media (pointer: coarse) {
-  /* Remove hover effects for touch */
+
   .ul-dropzone:hover {
     border-color: var(--ul-border);
     background: var(--ul-bg-secondary);
@@ -1182,14 +1131,12 @@
     background: var(--ul-primary-light);
   }
 
-  /* Larger hit areas */
   .ul-file-remove {
     width: 36px;
     height: 36px;
     font-size: 18px;
   }
 
-  /* Active state feedback */
   .ul-btn:active,
   .ul-size-btn:active,
   .ul-color-btn:active {
@@ -1198,7 +1145,6 @@
   }
 }
 
-/* ===== REDUCED MOTION ===== */
 @media (prefers-reduced-motion: reduce) {
   .ul-dropzone,
   .ul-btn,
@@ -1221,7 +1167,6 @@
   }
 }
 
-/* ===== LANDSCAPE MOBILE ===== */
 @media (max-height: 500px) and (orientation: landscape) {
   .ul-dtf-uploader {
     padding: 12px 16px;
@@ -1241,9 +1186,6 @@
   }
 }
 
-/* ===== FAZ 7: ERROR HANDLING STYLES ===== */
-
-/* Error Toast (Global) */
 .ul-error-toast {
   position: fixed;
   bottom: 24px;
@@ -1342,7 +1284,6 @@
   margin-top: 8px;
 }
 
-/* Toast Types */
 .ul-error-toast.error .ul-toast-icon {
   color: var(--ul-error);
 }
@@ -1389,7 +1330,6 @@
   border-left: 4px solid var(--ul-primary);
 }
 
-/* Inline Error States */
 .ul-has-error {
   border-color: var(--ul-error) !important;
   background-color: rgba(231, 76, 60, 0.05) !important;
@@ -1412,7 +1352,6 @@
   border-color: var(--ul-success) !important;
 }
 
-/* Inline Error Message */
 .ul-inline-error {
   display: none;
   align-items: center;
@@ -1441,7 +1380,6 @@
   line-height: 1.3;
 }
 
-/* Error Shake Animation */
 @keyframes ul-shake {
   0%,
   100% {
@@ -1466,7 +1404,6 @@
   animation: ul-shake 0.5s ease-in-out;
 }
 
-/* Error Pulse Animation */
 @keyframes ul-pulse-error {
   0%,
   100% {
@@ -1481,7 +1418,6 @@
   animation: ul-pulse-error 1s ease-in-out 2;
 }
 
-/* Warning Badge */
 .ul-warning-badge {
   display: inline-flex;
   align-items: center;
@@ -1499,7 +1435,6 @@
   height: 12px;
 }
 
-/* Error Badge */
 .ul-error-badge {
   display: inline-flex;
   align-items: center;
@@ -1512,7 +1447,6 @@
   font-weight: 600;
 }
 
-/* Disabled State with Error */
 .ul-btn:disabled.ul-has-validation-error {
   background: var(--ul-bg-secondary);
   border: 2px dashed var(--ul-error);
@@ -1520,7 +1454,6 @@
   cursor: not-allowed;
 }
 
-/* DPI Warning in File Preview */
 .ul-dpi-warning {
   display: flex;
   align-items: center;
@@ -1540,7 +1473,6 @@
   height: 16px;
 }
 
-/* Retry Button in Error State */
 .ul-retry-btn {
   display: inline-flex;
   align-items: center;
@@ -1565,7 +1497,6 @@
   height: 14px;
 }
 
-/* Error Toast Mobile */
 @media (max-width: 600px) {
   .ul-error-toast {
     left: 12px;

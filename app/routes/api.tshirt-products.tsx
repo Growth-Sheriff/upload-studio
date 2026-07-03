@@ -1,9 +1,9 @@
-/**
- * T-Shirt Products API
- * 
- * Returns available t-shirt products for the "T-Shirt Included" mode
- * These products are linked to DTF products as add-on items
- */
+
+
+
+
+
+
 
 import { json, type LoaderFunctionArgs } from "@remix-run/node";
 import { authenticate } from "~/shopify.server";
@@ -18,8 +18,8 @@ interface TshirtProduct {
     title: string;
     price: string;
     available: boolean;
-    option1: string | null; // Size
-    option2: string | null; // Color
+    option1: string | null;
+    option2: string | null;
   }[];
   featuredImage: string | null;
   colors: string[];
@@ -29,11 +29,11 @@ interface TshirtProduct {
 export async function loader({ request }: LoaderFunctionArgs) {
   try {
     const { admin } = await authenticate.admin(request);
-    
+
     const url = new URL(request.url);
     const handle = url.searchParams.get("handle");
-    
-    // If handle provided, validate specific product
+
+
     if (handle) {
       const response = await admin.graphql(`
         query GetProductByHandle($handle: String!) {
@@ -59,23 +59,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
           }
         }
       `, { variables: { handle } });
-      
+
       const data = await response.json();
       const product = data.data?.productByHandle;
-      
+
       if (!product) {
         return json({ error: "Product not found" }, { status: 404 });
       }
-      
-      // Find color and size options
-      const colorOption = product.options?.find((o: any) => 
-        o.name.toLowerCase().includes("color") || 
+
+
+      const colorOption = product.options?.find((o: any) =>
+        o.name.toLowerCase().includes("color") ||
         o.name.toLowerCase().includes("renk") ||
         o.name.toLowerCase().includes("colour")
       );
-      
-      const sizeOption = product.options?.find((o: any) => 
-        o.name.toLowerCase().includes("size") || 
+
+      const sizeOption = product.options?.find((o: any) =>
+        o.name.toLowerCase().includes("size") ||
         o.name.toLowerCase().includes("beden")
       );
 
@@ -93,8 +93,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         variantCount: product.variants?.edges?.length || 0,
       });
     }
-    
-    // Original logic: Query products tagged with "custom-upload-tshirt"
+
+
     const response = await admin.graphql(`
       query GetTshirtProducts {
         products(first: 20, query: "tag:custom-upload-tshirt OR product_type:T-Shirt") {
@@ -137,7 +137,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     `);
 
     const data = await response.json();
-    
+
     if (data.errors) {
       console.error("[T-Shirt Products API] GraphQL errors:", data.errors);
       return json({ error: "Failed to fetch products" }, { status: 500 });
@@ -145,11 +145,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
     const products: TshirtProduct[] = data.data.products.edges.map((edge: any) => {
       const node = edge.node;
-      
-      // Extract colors and sizes from options
+
+
       let colors: string[] = [];
       let sizes: string[] = [];
-      
+
       node.options.forEach((option: any) => {
         if (option.name.toLowerCase() === 'color' || option.name.toLowerCase() === 'colour') {
           colors = option.values;
@@ -167,7 +167,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
           const variant = v.node;
           let option1 = null;
           let option2 = null;
-          
+
           variant.selectedOptions.forEach((opt: any) => {
             if (opt.name.toLowerCase() === 'size') {
               option1 = opt.value;
@@ -181,8 +181,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
             title: variant.title,
             price: variant.price,
             available: variant.availableForSale,
-            option1, // Size
-            option2, // Color
+            option1,
+            option2,
           };
         }),
         featuredImage: node.featuredImage?.url || null,

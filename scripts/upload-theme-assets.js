@@ -1,14 +1,14 @@
-/**
- * Upload theme assets to Shopify using Admin API
- * Usage: node scripts/upload-theme-assets.js
- *
- * Requires: SHOPIFY_STORE_DOMAIN and SHOPIFY_ADMIN_ACCESS_TOKEN in .env
- */
+
+
+
+
+
+
 
 const fs = require('fs')
 const path = require('path')
 
-// Configuration - update these or use env vars
+
 const STORE_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN || 'fastdtftransfer.myshopify.com'
 const ACCESS_TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN
 
@@ -21,7 +21,7 @@ if (!ACCESS_TOKEN) {
 
 const THEME_SNIPPETS_DIR = path.join(__dirname, '..', 'theme-snippets')
 
-// Files to upload
+
 const FILES = [
   { local: 'assets/shopify-live-shipping.js', remote: 'assets/shopify-live-shipping.js' },
   { local: 'assets/live-shipping-rates.js', remote: 'assets/live-shipping-rates.js' },
@@ -77,11 +77,11 @@ async function main() {
   console.log(`Store: ${STORE_DOMAIN}`)
 
   try {
-    // Get themes
+
     console.log('\n📋 Getting themes...')
     const themes = await getThemes()
 
-    // Find live theme
+
     const liveTheme = themes.find((t) => t.role === 'main')
     if (!liveTheme) {
       throw new Error('No live theme found')
@@ -89,7 +89,7 @@ async function main() {
 
     console.log(`✅ Live theme: "${liveTheme.name}" (ID: ${liveTheme.id})\n`)
 
-    // Upload each file
+
     for (const file of FILES) {
       const localPath = path.join(THEME_SNIPPETS_DIR, file.local)
 

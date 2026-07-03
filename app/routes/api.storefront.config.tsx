@@ -4,25 +4,29 @@ import { rateLimitGuard, getIdentifier } from "~/lib/rateLimit.server";
 import prisma from "~/lib/prisma.server";
 import { extractAutoSheetFromSettings } from "~/lib/autoSheet.server";
 import { getMaxWidthLimitForShop, isDtfPrintHouseShop } from "~/lib/customerPricing.server";
+import {
+  applyAlphaProBuilderDefaults,
+  buildAlphaProCustomerOffer,
+} from "~/lib/alphaProDiscounts";
 
-/**
- * GET /api/storefront/config?shopDomain=xxx&productId=xxx
- * 
- * Returns combined storefront configuration:
- * - White-label settings (colors, branding)
- * - Product-specific config (if productId provided)
- * - Default asset set (if configured)
- * - Shop settings that affect storefront
- * 
- * This is the single endpoint that theme extensions call to get all config.
- */
+
+
+
+
+
+
+
+
+
+
+
 export async function loader({ request }: LoaderFunctionArgs) {
-  // Handle CORS preflight
+
   if (request.method === "OPTIONS") {
     return handleCorsOptions(request);
   }
 
-  // Rate limiting - use adminApi as it's for public storefront access
+
   const identifier = getIdentifier(request, "customer");
   const rateLimitResponse = await rateLimitGuard(identifier, "adminApi");
   if (rateLimitResponse) return rateLimitResponse;
@@ -30,12 +34,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const shopDomain = url.searchParams.get("shopDomain");
   const productId = url.searchParams.get("productId");
+  const customerId = url.searchParams.get("customerId");
+  const customerEmail = url.searchParams.get("customerEmail");
+  const customerName = url.searchParams.get("customerName");
 
   if (!shopDomain) {
     return corsJson({ error: "Missing shopDomain parameter" }, request, { status: 400 });
   }
 
-  // Get shop with all related config
+
   const shop = await prisma.shop.findUnique({
     where: { shopDomain },
     include: {
@@ -43,7 +50,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       assetSets: {
         where: { status: "active" },
         orderBy: { createdAt: "desc" },
-        take: 1, // Get default/latest asset set
+        take: 1,
       },
     },
   });
@@ -52,10 +59,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return corsJson({ error: "Shop not found" }, request, { status: 404 });
   }
 
-  // Parse shop settings
+
   const settings = (shop.settings as Record<string, any>) || {};
 
-  // Get product config if productId provided
+
   let productConfig = null;
   if (productId) {
     const normalizedProductId = productId.startsWith("gid://")
@@ -72,7 +79,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
   }
 
-  // Build white-label config
+
   const whiteLabel = shop.whiteLabelConfig
     ? {
         enabled: shop.whiteLabelConfig.enabled,
@@ -91,10 +98,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
         hideBranding: false,
       };
 
-  // Build asset set config (3D model, print locations, etc.)
+
   const defaultAssetSet = shop.assetSets[0];
   let assetSet = null;
-  
+
   if (defaultAssetSet) {
     const schema = defaultAssetSet.schema as Record<string, any>;
     assetSet = {
@@ -103,7 +110,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       model: {
         type: (schema.model as any)?.type || "glb",
         source: (schema.model as any)?.source || "default_tshirt.glb",
-        // Generate URL for model
+
         url: `/apps/customizer/api/asset-sets/${defaultAssetSet.id}/model`,
       },
       printLocations: (schema as any).printLocations || [
@@ -124,12 +131,51 @@ export async function loader({ request }: LoaderFunctionArgs) {
     };
   }
 
-  // Build product config
+
   const builderConfigRaw = productConfig
     ? (productConfig.builderConfig as Record<string, any>) || {}
     : {};
   const shopMaxWidthLimit = getMaxWidthLimitForShop(shopDomain);
   const isDtfPrintHouse = isDtfPrintHouseShop(shopDomain);
+
+  const rawBuilderConfigResponse = productConfig
+    ? {
+        pricingMode: builderConfigRaw.pricingMode === "sheet" ? "sheet" : "area",
+        sheetOptionName: builderConfigRaw.sheetOptionName ?? null,
+        widthOptionName: builderConfigRaw.widthOptionName ?? null,
+        heightOptionName: builderConfigRaw.heightOptionName ?? null,
+        modalOptionNames: Array.isArray(builderConfigRaw.modalOptionNames) ? builderConfigRaw.modalOptionNames : [],
+        artboardMarginIn: isDtfPrintHouse ? Math.max(0, Number(builderConfigRaw.artboardMarginIn ?? 0)) : Math.max(0.125, Number(builderConfigRaw.artboardMarginIn ?? 0.125)),
+        imageMarginIn: isDtfPrintHouse ? Math.max(0, Number(builderConfigRaw.imageMarginIn ?? 0)) : Math.max(0.125, Number(builderConfigRaw.imageMarginIn ?? 0.125)),
+        maxWidthIn: Math.max(Number(builderConfigRaw.maxWidthIn ?? 0) || 0, shopMaxWidthLimit),
+        maxHeightIn: builderConfigRaw.maxHeightIn ?? 35.75,
+        minWidthIn: builderConfigRaw.minWidthIn ?? 1,
+        minHeightIn: builderConfigRaw.minHeightIn ?? 1,
+        colorProfile: builderConfigRaw.colorProfile ?? "CMYK",
+        maxFileSizeMb: builderConfigRaw.maxFileSizeMb ?? 500,
+        supportedFormats: builderConfigRaw.supportedFormats ?? ["PNG","JPG","JPEG","SVG","PSD","AI","EPS","PDF"],
+        volumeDiscountTiers: builderConfigRaw.volumeDiscountTiers ?? [
+          { min_qty: 1, max_qty: 9, price_per_sqin: 0.06 },
+          { min_qty: 10, max_qty: 49, price_per_sqin: 0.054 },
+          { min_qty: 50, max_qty: 99, price_per_sqin: 0.051 },
+          { min_qty: 100, max_qty: null, price_per_sqin: 0.0492 }
+        ]
+      }
+    : null;
+  const normalizedProductIdForAlpha = productId
+    ? (productId.startsWith("gid://") ? productId : `gid://shopify/Product/${productId}`)
+    : null;
+  const alphaCustomerOffer = buildAlphaProCustomerOffer({
+    shopDomain,
+    productId: normalizedProductIdForAlpha,
+    settings: shop.settings,
+    customerId,
+    customerEmail,
+    customerName,
+  });
+  const builderConfigResponse = rawBuilderConfigResponse
+    ? applyAlphaProBuilderDefaults(shopDomain, normalizedProductIdForAlpha, rawBuilderConfigResponse)
+    : null;
 
   const product = productConfig
     ? {
@@ -140,33 +186,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
         sizes: (productConfig.tshirtConfig as any)?.sizes || [],
         extraQuestions: productConfig.extraQuestions || [],
         pricing: (productConfig.tshirtConfig as any)?.pricing || {},
-        // DTF By Size config
-        builderConfig: {
-          pricingMode: builderConfigRaw.pricingMode === "sheet" ? "sheet" : "area",
-          sheetOptionName: builderConfigRaw.sheetOptionName ?? null,
-          widthOptionName: builderConfigRaw.widthOptionName ?? null,
-          heightOptionName: builderConfigRaw.heightOptionName ?? null,
-          modalOptionNames: Array.isArray(builderConfigRaw.modalOptionNames) ? builderConfigRaw.modalOptionNames : [],
-          artboardMarginIn: isDtfPrintHouse ? Math.max(0, Number(builderConfigRaw.artboardMarginIn ?? 0)) : Math.max(0.125, Number(builderConfigRaw.artboardMarginIn ?? 0.125)),
-          imageMarginIn: isDtfPrintHouse ? Math.max(0, Number(builderConfigRaw.imageMarginIn ?? 0)) : Math.max(0.125, Number(builderConfigRaw.imageMarginIn ?? 0.125)),
-          maxWidthIn: Math.max(Number(builderConfigRaw.maxWidthIn ?? 0) || 0, shopMaxWidthLimit),
-          maxHeightIn: builderConfigRaw.maxHeightIn ?? 35.75,
-          minWidthIn: builderConfigRaw.minWidthIn ?? 1,
-          minHeightIn: builderConfigRaw.minHeightIn ?? 1,
-          colorProfile: builderConfigRaw.colorProfile ?? "CMYK",
-          maxFileSizeMb: builderConfigRaw.maxFileSizeMb ?? 500,
-          supportedFormats: builderConfigRaw.supportedFormats ?? ["PNG","JPG","JPEG","SVG","PSD","AI","EPS","PDF"],
-          volumeDiscountTiers: builderConfigRaw.volumeDiscountTiers ?? [
-            { min_qty: 1, max_qty: 9, price_per_sqin: 0.06 },
-            { min_qty: 10, max_qty: 49, price_per_sqin: 0.054 },
-            { min_qty: 50, max_qty: 99, price_per_sqin: 0.051 },
-            { min_qty: 100, max_qty: null, price_per_sqin: 0.0492 }
-          ]
-        },
+
+        builderConfig: alphaCustomerOffer
+          ? { ...builderConfigResponse, customerOffer: alphaCustomerOffer }
+          : builderConfigResponse,
       }
     : null;
 
-  // Build settings that affect storefront
+
   const storefrontSettings = {
     autoApprove: settings.autoApprove ?? true,
     requireUpload: settings.requireUpload ?? true,
@@ -178,7 +205,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     ],
   };
 
-  // Auto Sheet Calculator config (extracted from already-loaded settings, no extra DB query)
+
   const autoSheet = extractAutoSheetFromSettings(settings);
 
   return corsJson({

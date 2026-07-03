@@ -51,14 +51,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
   }
 
-  // WI-005: Get current user role from team members or default to owner
+
   let currentUserRole: Role = "owner";
   if (userEmail && shop.teamMembers.length > 0) {
     const teamMember = shop.teamMembers.find(m => m.email === userEmail);
     if (teamMember) {
       currentUserRole = teamMember.role as Role;
     } else {
-      // User not in team members but has shop access = owner (original account holder)
+
       currentUserRole = "owner";
     }
   }
@@ -93,7 +93,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: "Shop not found" }, { status: 404 });
   }
 
-  // Check enterprise plan for team management
+
   if (!["pro", "enterprise"].includes(shop.plan)) {
     return json({ error: "Team management requires Pro or Enterprise plan" }, { status: 403 });
   }
@@ -110,7 +110,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: "Email and role are required" });
     }
 
-    // Check if member already exists
+
     const existing = await prisma.teamMember.findUnique({
       where: { shopId_email: { shopId: shop.id, email } },
     });
@@ -119,7 +119,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: "Team member already exists" });
     }
 
-    // Create invite token
+
     const inviteToken = nanoid(32);
 
     await prisma.teamMember.create({
@@ -133,7 +133,7 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     });
 
-    // WI-006: Send invite email
+
     const emailResult = await sendTeamInvite(email, inviteToken, shop.shopDomain, role);
     if (!emailResult.success) {
       console.warn(`[Team] Failed to send invite email to ${email}:`, emailResult.error);
@@ -167,7 +167,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: "Cannot change owner role" });
     }
 
-    // SECURITY: Compound where prevents TOCTOU race condition
+
     await prisma.teamMember.update({
       where: { id: memberId, shopId: shop.id },
       data: { role: newRole },
@@ -201,7 +201,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: "Cannot remove owner" });
     }
 
-    // SECURITY: Compound where prevents TOCTOU race condition
+
     await prisma.teamMember.delete({
       where: { id: memberId, shopId: shop.id },
     });
@@ -230,16 +230,16 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: "Pending invitation not found" });
     }
 
-    // Generate new token
+
     const inviteToken = nanoid(32);
 
-    // SECURITY: Compound where prevents TOCTOU race condition
+
     await prisma.teamMember.update({
       where: { id: memberId, shopId: shop.id },
       data: { inviteToken, invitedAt: new Date() },
     });
 
-    // WI-006: Resend invite email
+
     const emailResult = await sendTeamInvite(member.email, inviteToken, shop.shopDomain, member.role);
     if (!emailResult.success) {
       console.warn(`[Team] Failed to resend invite email to ${member.email}:`, emailResult.error);
@@ -339,7 +339,7 @@ export default function TeamPage() {
       }
     >
         <Layout>
-          {/* Action result banner */}
+
           {actionData && "success" in actionData && (
             <Layout.Section>
               <Banner tone="success" onDismiss={() => {}}>
@@ -355,7 +355,7 @@ export default function TeamPage() {
             </Layout.Section>
           )}
 
-          {/* Plan restriction */}
+
           {!canManageTeam && (
             <Layout.Section>
               <Banner tone="warning">
@@ -365,7 +365,7 @@ export default function TeamPage() {
             </Layout.Section>
           )}
 
-          {/* Role descriptions */}
+
           <Layout.Section>
             <Card>
               <BlockStack gap="300">
@@ -394,7 +394,7 @@ export default function TeamPage() {
             </Card>
           </Layout.Section>
 
-          {/* Team list */}
+
           <Layout.Section>
             <Card>
               {teamMembers.length > 0 ? (
@@ -420,7 +420,7 @@ export default function TeamPage() {
           </Layout.Section>
         </Layout>
 
-        {/* Invite Modal */}
+
         <Modal
           open={inviteModalOpen}
           onClose={() => setInviteModalOpen(false)}
@@ -472,7 +472,7 @@ export default function TeamPage() {
           </Modal.Section>
         </Modal>
 
-        {/* Edit Role Modal */}
+
         <Modal
           open={editModalOpen}
           onClose={() => setEditModalOpen(false)}

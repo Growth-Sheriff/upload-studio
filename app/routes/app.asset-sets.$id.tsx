@@ -42,7 +42,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const schema = assetSet.schema as Record<string, unknown>
 
-  // Get signed URL for model if it's a storage key
+
   let modelUrl = (schema.model as any)?.source || ''
   if (modelUrl && !modelUrl.startsWith('http') && !modelUrl.startsWith('default_')) {
     try {
@@ -90,7 +90,7 @@ export default function AssetSetPreviewPage() {
                 3D Preview
               </Text>
 
-              {/* 3D Canvas Container */}
+
               <Box
                 id="3d-preview-container"
                 background="bg-surface-secondary"
@@ -119,7 +119,7 @@ export default function AssetSetPreviewPage() {
           </Card>
         </Layout.Section>
 
-        {/* Schema Details */}
+
         <Layout.Section variant="oneThird">
           <Card>
             <BlockStack gap="300">
@@ -174,7 +174,7 @@ export default function AssetSetPreviewPage() {
         </Layout.Section>
       </Layout>
 
-      {/* Load 3D preview script */}
+
       <script
         dangerouslySetInnerHTML={{
           __html: `

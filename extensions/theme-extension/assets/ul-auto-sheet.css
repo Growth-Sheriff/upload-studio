@@ -1,11 +1,5 @@
-/* ============================================================
-   UL Auto Sheet Size Calculator - Styles
-   Version: 1.0.0
-   Design: Soft, elegant, light-colored premium UI
-   Prefix: ul-sheet-
-   ============================================================ */
 
-/* ── CSS Variables ── */
+
 :root {
   --ul-sheet-primary: #6366f1;
   --ul-sheet-primary-hover: #5558e3;
@@ -42,7 +36,6 @@
   --ul-sheet-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
 }
 
-/* ── Modal Overlay ── */
 .ul-sheet-modal {
   position: fixed;
   top: 0;
@@ -74,15 +67,13 @@
   animation: ulSheetFadeIn 0.3s ease;
 }
 
-/* ── Modal Container ── */
 .ul-sheet-modal-container {
   position: relative;
   background: var(--ul-sheet-bg);
-  border-radius: 14px;
-  width: 96vw;
-  max-width: 1800px;
-  height: 95vh;
-  max-height: 95vh;
+  border-radius: var(--ul-sheet-radius);
+  width: 92vw;
+  max-width: 960px;
+  max-height: 92vh;
   overflow: hidden;
   box-shadow: var(--ul-sheet-shadow-xl);
   animation: ulSheetSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
@@ -90,12 +81,11 @@
   flex-direction: column;
 }
 
-/* ── Modal Header (compact) ── */
 .ul-sheet-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 20px;
+  padding: 20px 24px;
   border-bottom: 1px solid var(--ul-sheet-border-light);
   background: var(--ul-sheet-bg);
   flex-shrink: 0;
@@ -108,9 +98,9 @@
 }
 
 .ul-sheet-header-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--ul-sheet-radius-sm);
   background: var(--ul-sheet-primary-light);
   display: flex;
   align-items: center;
@@ -120,21 +110,21 @@
 }
 
 .ul-sheet-header-icon svg {
-  width: 17px;
-  height: 17px;
+  width: 20px;
+  height: 20px;
 }
 
 .ul-sheet-header-title {
   margin: 0;
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 650;
   color: var(--ul-sheet-text);
   letter-spacing: -0.01em;
 }
 
 .ul-sheet-header-subtitle {
-  margin: 1px 0 0;
-  font-size: 12px;
+  margin: 2px 0 0;
+  font-size: 13px;
   color: var(--ul-sheet-text-muted);
 }
 
@@ -159,16 +149,16 @@
   color: var(--ul-sheet-text);
 }
 
-/* ── Modal Body ── */
 .ul-sheet-body {
   flex: 1;
-  overflow: hidden;
-  padding: 16px;
-  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px;
+  overscroll-behavior: contain;
 }
 
 .ul-sheet-body::-webkit-scrollbar {
-  width: 5px;
+  width: 6px;
 }
 
 .ul-sheet-body::-webkit-scrollbar-track {
@@ -180,42 +170,18 @@
   border-radius: 3px;
 }
 
-/* ── Dashboard Layout: 2-column, full height ── */
 .ul-sheet-layout {
   display: grid;
-  grid-template-columns: minmax(340px, 1fr) minmax(400px, 1.2fr);
-  gap: 16px;
-  align-items: stretch;
-  height: 100%;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: start;
 }
 
-/* Left column: scrollable controls + results */
-.ul-sheet-left-col {
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 8px;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--ul-sheet-border) transparent;
-}
-.ul-sheet-left-col::-webkit-scrollbar { width: 5px; }
-.ul-sheet-left-col::-webkit-scrollbar-track { background: transparent; }
-.ul-sheet-left-col::-webkit-scrollbar-thumb { background: var(--ul-sheet-border); border-radius: 3px; }
-
-/* Right column: simulator stretches full height */
-.ul-sheet-right-col {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 0;
-}
-
-/* ── Section Card (compact) ── */
 .ul-sheet-section {
   background: var(--ul-sheet-bg);
   border: 1px solid var(--ul-sheet-border);
   border-radius: var(--ul-sheet-radius-sm);
-  padding: 14px;
+  padding: 20px;
   transition: var(--ul-sheet-transition);
 }
 
@@ -227,8 +193,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 10px;
-  font-size: 13px;
+  margin: 0 0 16px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--ul-sheet-text);
 }
@@ -246,7 +212,6 @@
   font-weight: 700;
 }
 
-/* ── Design Info Card ── */
 .ul-sheet-design-info {
   display: flex;
   align-items: center;
@@ -293,7 +258,6 @@
   font-weight: 600;
 }
 
-/* ── Quantity Input ── */
 .ul-sheet-quantity-row {
   display: flex;
   align-items: center;
@@ -364,7 +328,6 @@
   -webkit-appearance: none;
 }
 
-/* ── Result Cards ── */
 .ul-sheet-result {
   padding: 16px;
   background: var(--ul-sheet-bg-secondary);
@@ -450,7 +413,6 @@
   margin-top: 2px;
 }
 
-/* ── Efficiency Bar ── */
 .ul-sheet-efficiency {
   margin-bottom: 12px;
 }
@@ -511,7 +473,6 @@
   background: var(--ul-sheet-error);
 }
 
-/* ── Select Button ── */
 .ul-sheet-select-btn {
   width: 100%;
   padding: 10px 16px;
@@ -543,17 +504,12 @@
   color: white;
 }
 
-/* ── Canvas Simulator (fills right column) ── */
 .ul-sheet-simulator {
   position: relative;
   background: var(--ul-sheet-bg);
   border: 1px solid var(--ul-sheet-border);
   border-radius: var(--ul-sheet-radius-sm);
   overflow: hidden;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
 }
 
 .ul-sheet-simulator-header {
@@ -605,8 +561,7 @@
   position: relative;
   padding: 16px;
   background: var(--ul-sheet-bg-secondary);
-  flex: 1;
-  min-height: 200px;
+  min-height: 280px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -631,7 +586,6 @@
   border-radius: 4px;
 }
 
-/* ── Sheet Navigation (for multi-sheet) ── */
 .ul-sheet-nav {
   display: flex;
   align-items: center;
@@ -675,40 +629,9 @@
   color: var(--ul-sheet-text-secondary);
 }
 
-/* ── Alternatives List ── */
 .ul-sheet-alternatives {
   margin-top: 12px;
-  max-height: 280px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--ul-sheet-border) transparent;
 }
-.ul-sheet-alternatives::-webkit-scrollbar { width: 5px; }
-.ul-sheet-alternatives::-webkit-scrollbar-track { background: transparent; }
-.ul-sheet-alternatives::-webkit-scrollbar-thumb { background: var(--ul-sheet-border); border-radius: 3px; }
-
-/* ── All Sheets List (scroll container, max ~5 items visible) ── */
-#ul-sheet-all-sheets .ul-sheet-section {
-  max-height: 320px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--ul-sheet-border) transparent;
-}
-#ul-sheet-all-sheets .ul-sheet-section::-webkit-scrollbar { width: 5px; }
-#ul-sheet-all-sheets .ul-sheet-section::-webkit-scrollbar-track { background: transparent; }
-#ul-sheet-all-sheets .ul-sheet-section::-webkit-scrollbar-thumb { background: var(--ul-sheet-border); border-radius: 3px; }
-
-/* ── Comparison table scroll ── */
-#ul-sheet-comparison .ul-sheet-section {
-  max-height: 320px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-#ul-sheet-comparison .ul-sheet-section::-webkit-scrollbar { width: 5px; }
-#ul-sheet-comparison .ul-sheet-section::-webkit-scrollbar-track { background: transparent; }
-#ul-sheet-comparison .ul-sheet-section::-webkit-scrollbar-thumb { background: var(--ul-sheet-border); border-radius: 3px; }
 
 .ul-sheet-alternatives-title {
   font-size: 12px;
@@ -769,7 +692,6 @@
   color: var(--ul-sheet-text-muted);
 }
 
-/* ── Info Banner ── */
 .ul-sheet-info-banner {
   display: flex;
   align-items: flex-start;
@@ -814,12 +736,11 @@
   font-weight: 700;
 }
 
-/* ── Modal Footer ── */
 .ul-sheet-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 20px;
+  padding: 16px 24px;
   border-top: 1px solid var(--ul-sheet-border-light);
   background: var(--ul-sheet-bg);
   flex-shrink: 0;
@@ -890,7 +811,6 @@
   color: var(--ul-sheet-text);
 }
 
-/* ── Loading State ── */
 .ul-sheet-loading {
   display: flex;
   flex-direction: column;
@@ -914,7 +834,6 @@
   color: var(--ul-sheet-text-muted);
 }
 
-/* ── Empty State ── */
 .ul-sheet-empty {
   display: flex;
   flex-direction: column;
@@ -938,7 +857,6 @@
   margin: 0;
 }
 
-/* ── Tooltip ── */
 .ul-sheet-tooltip {
   position: relative;
   display: inline-flex;
@@ -987,7 +905,6 @@
   border-top-color: var(--ul-sheet-text);
 }
 
-/* ── Comparison Table ── */
 .ul-sheet-comparison {
   width: 100%;
   border-collapse: separate;
@@ -1051,7 +968,6 @@
   vertical-align: middle;
 }
 
-/* ── Pulse dot for live recalculation ── */
 .ul-sheet-pulse {
   display: inline-block;
   width: 8px;
@@ -1062,7 +978,6 @@
   animation: ulSheetPulse 2s ease-in-out infinite;
 }
 
-/* ── Animations ── */
 @keyframes ulSheetFadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -1088,7 +1003,6 @@
   50% { opacity: 0.4; }
 }
 
-/* ── Responsive ── */
 @media (max-width: 768px) {
   .ul-sheet-modal-container {
     width: 100%;
@@ -1103,7 +1017,6 @@
     gap: 16px;
   }
 
-  /* Show simulator before results on mobile for immediate visual feedback */
   .ul-sheet-right-col {
     order: -1;
   }
@@ -1143,7 +1056,7 @@
     grid-template-columns: repeat(3, 1fr);
     gap: 6px;
   }
-  
+
   .ul-sheet-canvas-wrapper {
     min-height: 200px;
     padding: 12px;
@@ -1177,7 +1090,6 @@
   }
 }
 
-/* ── DPI Override Buttons ── */
 .ul-sheet-dpi-btn {
   display: inline-flex;
   align-items: center;
@@ -1208,7 +1120,6 @@
   color: #fff;
 }
 
-/* ── Visible Widget (Product Page Card) ── */
 .ul-calc-widget {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -1260,7 +1171,7 @@
   line-height: 1.5;
   margin: 0 0 16px 0;
 }
-/* Upload drop zone */
+
 .ul-calc-dropzone {
   border: 2px dashed #cbd5e1;
   border-radius: 12px;
@@ -1303,7 +1214,7 @@
   width: 100%;
   height: 100%;
 }
-/* Preview state */
+
 .ul-calc-preview {
   display: none;
   align-items: center;
@@ -1353,7 +1264,7 @@
   flex-shrink: 0;
 }
 .ul-calc-preview-remove:hover { background: #fee2e2; color: #ef4444; }
-/* Calculate button */
+
 .ul-calc-btn {
   display: flex;
   align-items: center;
@@ -1374,7 +1285,7 @@
 }
 .ul-calc-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35); }
 .ul-calc-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
-/* Result badge */
+
 .ul-calc-result {
   display: none;
   margin-top: 14px;
@@ -1400,7 +1311,6 @@
 }
 .ul-calc-result-text strong { color: #6366f1; }
 
-/* ── DPI Selector (always visible) ── */
 .ul-sheet-dpi-section {
   display: flex;
   align-items: center;
@@ -1421,7 +1331,6 @@
   flex-wrap: wrap;
 }
 
-/* ── Dimension Override Inputs ── */
 .ul-sheet-dim-override {
   display: flex;
   align-items: center;
@@ -1470,7 +1379,6 @@
   font-weight: 500;
 }
 
-/* ── All Sheets List ── */
 .ul-sheet-all-sheets {
   margin-top: 8px;
 }

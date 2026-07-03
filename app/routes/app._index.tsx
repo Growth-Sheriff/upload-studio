@@ -28,7 +28,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     },
   });
 
-  // Create shop if not exists
+
   if (!shop) {
     shop = await prisma.shop.create({
       data: {
@@ -47,7 +47,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
   }
 
-  // Get uploads
+
   const uploads = await prisma.upload.findMany({
     where: { shopId: shop.id },
     include: {
@@ -59,7 +59,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     take: 50,
   });
 
-  // Get stats
+
   const startOfMonth = new Date();
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
@@ -69,7 +69,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     prisma.upload.count({ where: { shopId: shop.id, createdAt: { gte: startOfMonth } } }),
     prisma.productConfig.count({ where: { shopId: shop.id, enabled: true } }),
     prisma.upload.count({ where: { shopId: shop.id, status: "needs_review" } }),
-    // Order stats from OrderLink
+
     prisma.orderLink.groupBy({
       by: ["orderId"],
       where: { shopId: shop.id },
@@ -80,10 +80,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }).then(groups => groups.length),
   ]);
 
-  // No monthly upload limits anymore
+
   const monthlyLimit = -1;
 
-  // Usage alerts (no plan-based limits anymore)
+
   const usageAlerts: Array<{ type: string; message: string; action?: { label: string; url: string } }> = [];
 
   return json({
@@ -172,7 +172,7 @@ export async function action({ request }: ActionFunctionArgs) {
   return json({ error: "Invalid intent" }, { status: 400 });
 }
 
-// Friendly status labels
+
 const statusLabels: Record<string, string> = {
   ok: "Ready",
   warning: "Review",
@@ -188,24 +188,24 @@ const statusLabels: Record<string, string> = {
   printed: "Completed",
 };
 
-// Status badge helper
+
 function StatusBadge({ status }: { status: string }) {
   const toneMap: Record<string, "success" | "warning" | "critical" | "info" | "attention"> = {
     ok: "success", warning: "attention", error: "warning", pending: "info",
     draft: "info", uploaded: "success", processing: "info",
-    needs_review: "attention", approved: "success", rejected: "critical", 
+    needs_review: "attention", approved: "success", rejected: "critical",
     blocked: "attention", printed: "success",
   };
   return <Badge tone={toneMap[status] || "info"}>{statusLabels[status] || status}</Badge>;
 }
 
-// Onboarding Checklist Component
-function OnboardingChecklist({ 
-  shop, 
-  onComplete, 
-  onSkip 
-}: { 
-  shop: any; 
+
+function OnboardingChecklist({
+  shop,
+  onComplete,
+  onSkip
+}: {
+  shop: any;
   onComplete: (stepId: number, data?: any) => void;
   onSkip: () => void;
 }) {
@@ -240,7 +240,7 @@ function OnboardingChecklist({
 
         <Divider />
 
-        {/* Step 1: Business Type */}
+
         <Box padding="200" background={isStepComplete(1) ? "bg-surface-success" : undefined} borderRadius="200">
           <InlineStack align="space-between" blockAlign="start">
             <InlineStack gap="300" blockAlign="start">
@@ -291,8 +291,8 @@ function OnboardingChecklist({
               </BlockStack>
             </InlineStack>
             {!isStepComplete(1) && (
-              <Button 
-                size="slim" 
+              <Button
+                size="slim"
                 onClick={() => onComplete(1, { businessType, printMethod })}
               >
                 Save
@@ -301,7 +301,7 @@ function OnboardingChecklist({
           </InlineStack>
         </Box>
 
-        {/* Step 2: Storage */}
+
         <Box padding="200" background={isStepComplete(2) ? "bg-surface-success" : undefined} borderRadius="200">
           <InlineStack align="space-between" blockAlign="start">
             <InlineStack gap="300" blockAlign="start">
@@ -339,8 +339,8 @@ function OnboardingChecklist({
               </BlockStack>
             </InlineStack>
             {!isStepComplete(2) && isStepComplete(1) && (
-              <Button 
-                size="slim" 
+              <Button
+                size="slim"
                 onClick={() => onComplete(2, { storageProvider })}
               >
                 Save
@@ -349,7 +349,7 @@ function OnboardingChecklist({
           </InlineStack>
         </Box>
 
-        {/* Step 3: First Product */}
+
         <Box padding="200" background={isStepComplete(3) ? "bg-surface-success" : undefined} borderRadius="200">
           <InlineStack align="space-between" blockAlign="start">
             <InlineStack gap="300" blockAlign="start">
@@ -389,7 +389,7 @@ function OnboardingChecklist({
           </InlineStack>
         </Box>
 
-        {/* Step 4: Theme Setup */}
+
         <Box padding="200" background={isStepComplete(4) ? "bg-surface-success" : undefined} borderRadius="200">
           <InlineStack align="space-between" blockAlign="start">
             <InlineStack gap="300" blockAlign="start">
@@ -456,7 +456,7 @@ export default function AppDashboard() {
     if (data?.printMethod) formData.append("printMethod", data.printMethod);
     if (data?.storageProvider) formData.append("storageProvider", data.storageProvider);
     fetcher.submit(formData, { method: "post" });
-    
+
     if (stepId >= 4) setOnboardingComplete(true);
   }, [fetcher]);
 
@@ -473,10 +473,10 @@ export default function AppDashboard() {
     new Date(upload.createdAt).toLocaleDateString(),
   ]);
 
-  const successRate = stats.totalUploads > 0 
-    ? Math.round((stats.totalUploads - stats.pendingQueue) / stats.totalUploads * 100) 
+  const successRate = stats.totalUploads > 0
+    ? Math.round((stats.totalUploads - stats.pendingQueue) / stats.totalUploads * 100)
     : 100;
-  
+
   const conversionRate = stats.conversionRate || 0;
 
   return (
@@ -489,7 +489,7 @@ export default function AppDashboard() {
       }}
     >
       <BlockStack gap="500">
-        {/* Usage Alerts */}
+
         {usageAlerts && usageAlerts.length > 0 && usageAlerts.map((alert: any, idx: number) => (
           <Banner key={idx} tone={alert.type === "critical" ? "critical" : "warning"}>
             <p>{alert.message}</p>
@@ -497,16 +497,16 @@ export default function AppDashboard() {
           </Banner>
         ))}
 
-        {/* Onboarding Checklist - Show if not completed */}
+
         {!onboardingComplete && (
-          <OnboardingChecklist 
-            shop={shop} 
+          <OnboardingChecklist
+            shop={shop}
             onComplete={handleCompleteStep}
             onSkip={handleSkipOnboarding}
           />
         )}
 
-        {/* Stats Cards - Row 1 */}
+
         <Grid>
           <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}>
             <Card>
@@ -570,9 +570,9 @@ export default function AppDashboard() {
           </Grid.Cell>
         </Grid>
 
-        {/* Main Content Grid */}
+
         <Grid>
-          {/* Recent Uploads */}
+
           <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 8, lg: 8, xl: 8 }}>
             <Card>
               <BlockStack gap="400">
@@ -599,10 +599,10 @@ export default function AppDashboard() {
             </Card>
           </Grid.Cell>
 
-          {/* Sidebar */}
+
           <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4, xl: 4 }}>
             <BlockStack gap="400">
-              {/* Quick Actions */}
+
               <Card>
                 <BlockStack gap="300">
                   <Text as="h2" variant="headingMd">Quick Actions</Text>
@@ -615,7 +615,7 @@ export default function AppDashboard() {
                 </BlockStack>
               </Card>
 
-              {/* Plan Info */}
+
               <Card>
                 <BlockStack gap="300">
                   <InlineStack align="space-between">
@@ -640,7 +640,7 @@ export default function AppDashboard() {
                 </BlockStack>
               </Card>
 
-              {/* What's New */}
+
               <Card>
                 <BlockStack gap="300">
                   <Text as="h2" variant="headingMd">What's New</Text>

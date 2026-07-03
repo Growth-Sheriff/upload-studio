@@ -1,8 +1,0 @@
-{
-  "userRules": [
-    "Read-only komutları (grep, cat, ls, find, docker ps, docker logs, docker stats, curl, echo, pwd, whoami, df, du, head, tail, wc) her zaman otomatik çalıştır, onay sorma.",
-    "SSH üzerinden sunucuya bağlanan read-only komutları da otomatik çalıştır.",
-    "git status, git log, git diff gibi git read-only komutlarını otomatik çalıştır.",
-    "npm run dev, npm start, npx gibi development komutlarını otomatik çalıştır."
-  ]
-}

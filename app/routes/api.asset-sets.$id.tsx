@@ -4,14 +4,14 @@ import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
 import { getDownloadSignedUrl, getStorageConfig } from '~/lib/storage.server'
 
-// GET /api/asset-sets/:id
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  // Handle CORS preflight
+
   if (request.method === 'OPTIONS') {
     return handleCorsOptions(request)
   }
 
-  // Rate limiting
+
   const identifier = getIdentifier(request, 'customer')
   const rateLimitResponse = await rateLimitGuard(identifier, 'adminApi')
   if (rateLimitResponse) return rateLimitResponse
@@ -22,8 +22,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return corsJson({ error: 'Missing asset set ID' }, request, { status: 400 })
   }
 
-  // Get asset set (public for storefront)
-  // Require shop param to prevent cross-tenant asset set retrieval
+
+
   const url = new URL(request.url)
   const shopDomain = url.searchParams.get('shop')
 
@@ -50,7 +50,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const schema = assetSet.schema as Record<string, unknown>
 
-  // Get signed URL for model if it's a storage key
+
   let modelUrl = (schema.model as any)?.source || ''
   if (modelUrl && !modelUrl.startsWith('http') && !modelUrl.startsWith('default_')) {
     try {

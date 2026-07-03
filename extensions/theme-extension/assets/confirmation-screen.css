@@ -1,30 +1,10 @@
-/**
- * Confirmation Screen Styles
- * ===========================
- * FAZ 3: Cart Confirmation Overlay
- * FAZ 6: Mobile Bottom Sheet
- * 
- * Shows after successful cart addition with:
- * - Cart items summary
- * - Total price
- * - Proceed to Checkout button
- * - Continue Shopping button
- * 
- * Version: 1.1.0
- * Architecture: DTF_TSHIRT_MODAL_ARCHITECTURE.md
- */
 
-/* =============================================================================
-   CSS Variables (inherit from main)
-   ============================================================================= */
+
 :root {
   --ul-confirm-z: 10000;
   --ul-confirm-bg: rgba(0, 0, 0, 0.75);
 }
 
-/* =============================================================================
-   Overlay
-   ============================================================================= */
 .ul-confirm-overlay {
   display: none;
   position: fixed;
@@ -47,9 +27,6 @@
   to { opacity: 1; }
 }
 
-/* =============================================================================
-   Modal Container
-   ============================================================================= */
 .ul-confirm-modal {
   background: #fff;
   border-radius: 20px;
@@ -64,19 +41,16 @@
 }
 
 @keyframes ulConfirmSlideUp {
-  from { 
-    opacity: 0; 
-    transform: translateY(30px) scale(0.95); 
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
   }
-  to { 
-    opacity: 1; 
-    transform: translateY(0) scale(1); 
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
-/* =============================================================================
-   Header
-   ============================================================================= */
 .ul-confirm-header {
   padding: 24px 24px 20px;
   text-align: center;
@@ -121,9 +95,6 @@
   margin-top: 4px;
 }
 
-/* =============================================================================
-   Body / Cart Items
-   ============================================================================= */
 .ul-confirm-body {
   flex: 1;
   overflow-y: auto;
@@ -150,7 +121,6 @@
   border-radius: 10px;
 }
 
-/* Cart Items List */
 .ul-confirm-items {
   display: flex;
   flex-direction: column;
@@ -213,7 +183,6 @@
   white-space: nowrap;
 }
 
-/* Cart Total */
 .ul-confirm-total {
   display: flex;
   justify-content: space-between;
@@ -235,9 +204,6 @@
   color: #1f2937;
 }
 
-/* =============================================================================
-   Footer / Actions
-   ============================================================================= */
 .ul-confirm-footer {
   padding: 20px 24px 24px;
   border-top: 1px solid #e5e7eb;
@@ -287,9 +253,6 @@
   border-color: #9ca3af;
 }
 
-/* =============================================================================
-   Empty State
-   ============================================================================= */
 .ul-confirm-empty {
   text-align: center;
   padding: 32px 16px;
@@ -305,9 +268,6 @@
   font-size: 14px;
 }
 
-/* =============================================================================
-   Responsive
-   ============================================================================= */
 @media (max-width: 480px) {
   .ul-confirm-modal {
     width: 100%;
@@ -337,9 +297,6 @@
   }
 }
 
-/* =============================================================================
-   FAZ 6: Mobile Bottom Sheet
-   ============================================================================= */
 @media (max-width: 768px) {
   .ul-confirm-overlay.active {
     align-items: flex-end;
@@ -355,17 +312,16 @@
   }
 
   @keyframes ulBottomSheetUp {
-    from { 
+    from {
       transform: translateY(100%);
       opacity: 0;
     }
-    to { 
+    to {
       transform: translateY(0);
       opacity: 1;
     }
   }
 
-  /* Drag handle */
   .ul-confirm-modal::before {
     content: '';
     position: absolute;
@@ -419,13 +375,10 @@
   }
 
   .ul-confirm-btn.primary {
-    order: -1; /* Primary button first on mobile */
+    order: -1;
   }
 }
 
-/* =============================================================================
-   FAZ 6: Touch Optimization
-   ============================================================================= */
 @media (pointer: coarse) {
   .ul-confirm-btn {
     min-height: 48px;
@@ -436,9 +389,6 @@
   }
 }
 
-/* =============================================================================
-   FAZ 6: Safe Area Support
-   ============================================================================= */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   @media (max-width: 768px) {
     .ul-confirm-footer {
@@ -447,9 +397,6 @@
   }
 }
 
-/* =============================================================================
-   FAZ 6: Reduced Motion
-   ============================================================================= */
 @media (prefers-reduced-motion: reduce) {
   .ul-confirm-overlay,
   .ul-confirm-modal {

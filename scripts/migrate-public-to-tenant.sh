@@ -1,40 +1,40 @@
 #!/bin/bash
-# ============================================
-# Upload Studio - Migrate Public → Tenant Schema
-# ============================================
-# Copies ALL data from the 'public' schema to the 'fastdtftransfer'
-# tenant schema. Only fastdtftransfer has existing production data.
-# Other 10 tenants start fresh (empty schemas created by init-tenant-schemas.sh).
-#
-# SAFETY:
-#   - Does NOT delete the public schema (kept as backup)
-#   - Validates row counts after migration
-#   - Can be run multiple times (TRUNCATE + re-insert)
-#
-# Prerequisites:
-#   - init-tenant-schemas.sh already run (target schema exists with tables)
-#   - psql CLI available
-#   - Database access credentials
-#
-# Usage:
-#   bash scripts/migrate-public-to-tenant.sh
-#   DB_PASS=actual_password bash scripts/migrate-public-to-tenant.sh
-#
-# DRY RUN (just show what would happen):
-#   DRY_RUN=1 bash scripts/migrate-public-to-tenant.sh
-# ============================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 set -e
 
-# Colors
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# ─────────────────────────────────────────────
-# Configuration
-# ─────────────────────────────────────────────
+
+
+
 DB_HOST="${DB_HOST:-34.44.26.92}"
 DB_PORT="${DB_PORT:-5432}"
 DB_USER="${DB_USER:-postgres}"
@@ -46,8 +46,8 @@ SOURCE_SCHEMA="public"
 TARGET_SCHEMA="fastdtftransfer"
 DRY_RUN="${DRY_RUN:-0}"
 
-# All 19 tables in dependency order (parents before children)
-# FK dependencies: shops first, then tables referencing shops, etc.
+
+
 TABLES=(
   "sessions"
   "shops"
@@ -70,7 +70,7 @@ TABLES=(
   "upload_logs"
 )
 
-# PSQL helper
+
 run_sql() {
   PGPASSWORD="${DB_PASS}" psql \
     -h "${DB_HOST}" \
@@ -102,19 +102,19 @@ if [ "$DRY_RUN" = "1" ]; then
 fi
 echo ""
 
-# ─────────────────────────────────────────────
-# Step 0: Verify connection and schemas exist
-# ─────────────────────────────────────────────
+
+
+
 echo "[0/4] Verifying database connection..."
 
-# Check source schema exists
+
 SOURCE_EXISTS=$(run_sql "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = '${SOURCE_SCHEMA}';")
 if [ "$SOURCE_EXISTS" != "1" ]; then
   echo -e "${RED}ERROR: Source schema '${SOURCE_SCHEMA}' does not exist!${NC}"
   exit 1
 fi
 
-# Check target schema exists
+
 TARGET_EXISTS=$(run_sql "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = '${TARGET_SCHEMA}';")
 if [ "$TARGET_EXISTS" != "1" ]; then
   echo -e "${RED}ERROR: Target schema '${TARGET_SCHEMA}' does not exist!${NC}"
@@ -125,9 +125,9 @@ fi
 echo -e "  ${GREEN}✅${NC} Both schemas exist"
 echo ""
 
-# ─────────────────────────────────────────────
-# Step 1: Pre-migration row counts
-# ─────────────────────────────────────────────
+
+
+
 echo "[1/4] Counting source rows..."
 
 declare -A SOURCE_COUNTS
@@ -156,28 +156,28 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-# ─────────────────────────────────────────────
-# Step 2: Disable FK constraints & copy data
-# ─────────────────────────────────────────────
+
+
+
 echo "[2/4] Migrating data..."
 
-# Build the full migration SQL as a single transaction
+
 MIGRATION_SQL="BEGIN;"
 
-# Disable triggers (FK checks) on target tables
+
 for table in "${TABLES[@]}"; do
   MIGRATION_SQL="${MIGRATION_SQL}
 ALTER TABLE \"${TARGET_SCHEMA}\".\"${table}\" DISABLE TRIGGER ALL;"
 done
 
-# Truncate target tables (in reverse order for FK safety)
+
 for (( i=${#TABLES[@]}-1; i>=0; i-- )); do
   table="${TABLES[$i]}"
   MIGRATION_SQL="${MIGRATION_SQL}
 TRUNCATE TABLE \"${TARGET_SCHEMA}\".\"${table}\" CASCADE;"
 done
 
-# Copy data table by table
+
 for table in "${TABLES[@]}"; do
   count="${SOURCE_COUNTS[$table]}"
   if [ "$count" != "0" ] && [ -n "$count" ]; then
@@ -186,7 +186,7 @@ INSERT INTO \"${TARGET_SCHEMA}\".\"${table}\" SELECT * FROM \"${SOURCE_SCHEMA}\"
   fi
 done
 
-# Re-enable triggers
+
 for table in "${TABLES[@]}"; do
   MIGRATION_SQL="${MIGRATION_SQL}
 ALTER TABLE \"${TARGET_SCHEMA}\".\"${table}\" ENABLE TRIGGER ALL;"
@@ -195,7 +195,7 @@ done
 MIGRATION_SQL="${MIGRATION_SQL}
 COMMIT;"
 
-# Execute the migration
+
 echo "  Executing migration transaction..."
 run_sql_verbose "$MIGRATION_SQL"
 
@@ -207,12 +207,12 @@ else
 fi
 echo ""
 
-# ─────────────────────────────────────────────
-# Step 3: Sync sequences
-# ─────────────────────────────────────────────
+
+
+
 echo "[3/4] Syncing sequences..."
 
-# Get all sequences in target schema and reset them
+
 SEQUENCES=$(run_sql "
   SELECT sequence_name
   FROM information_schema.sequences
@@ -222,7 +222,7 @@ SEQUENCES=$(run_sql "
 if [ -n "$SEQUENCES" ]; then
   while IFS= read -r seq; do
     if [ -n "$seq" ]; then
-      # Find the table and column this sequence belongs to
+
       TABLE_COL=$(run_sql "
         SELECT table_name || '.' || column_name
         FROM information_schema.columns
@@ -247,9 +247,9 @@ else
 fi
 echo ""
 
-# ─────────────────────────────────────────────
-# Step 4: Verify row counts
-# ─────────────────────────────────────────────
+
+
+
 echo "[4/4] Verifying migration..."
 
 ERRORS=0

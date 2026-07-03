@@ -1,13 +1,13 @@
 #!/bin/bash
-# ============================================
-# Upload Studio - Tenant Health Check
-# ============================================
-# Checks all 11 tenant containers + Caddy + Redis status.
-#
-# Usage: bash scripts/tenant-health-check.sh
-# ============================================
 
-# Colors
+
+
+
+
+
+
+
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -32,7 +32,7 @@ echo "Upload Studio - Health Check"
 echo "============================================"
 echo ""
 
-# ─── Docker Status ───
+
 echo "🐳 Docker Containers:"
 RUNNING=0
 STOPPED=0
@@ -57,7 +57,7 @@ echo ""
 echo "  Running: ${RUNNING}/11 | Stopped: ${STOPPED}/11"
 echo ""
 
-# ─── Redis ───
+
 echo "📦 Redis:"
 REDIS_STATUS=$(docker inspect -f '{{.State.Status}}' us-redis 2>/dev/null || echo "not_found")
 if [ "$REDIS_STATUS" = "running" ]; then
@@ -68,7 +68,7 @@ else
 fi
 echo ""
 
-# ─── Caddy ───
+
 echo "🌐 Caddy:"
 if systemctl is-active --quiet caddy; then
   echo -e "  ${GREEN}✅${NC} Caddy — active"
@@ -77,7 +77,7 @@ else
 fi
 echo ""
 
-# ─── HTTP Health Checks ───
+
 echo "🔗 HTTP Health (localhost):"
 for tenant in "${TENANTS[@]}"; do
   IFS='|' read -r SLUG PORT <<< "$tenant"

@@ -1,18 +1,10 @@
-/* ============================================================
-   UL Sheet Simulator - Canvas 2D Layout Visualization
-   Version: 1.0.0
-   Renders sheet layouts on HTML5 Canvas with smooth animations
-   Namespace: window.ULSheetSimulator
-   ============================================================ */
+
 
 (function () {
   'use strict';
 
   if (window.ULSheetSimulator) return;
 
-  /**
-   * Color palette for the simulator
-   */
   var COLORS = {
     sheetBg: '#ffffff',
     sheetBorder: '#e2e8f0',
@@ -34,11 +26,6 @@
     gridDot: 'rgba(226, 232, 240, 0.5)',
   };
 
-  /**
-   * Simulator instance
-   * @param {HTMLCanvasElement} canvas
-   * @param {Object} options
-   */
   function SheetSimulator(canvas, options) {
     if (!canvas || !canvas.getContext) {
       throw new Error('Invalid canvas element');
@@ -55,7 +42,7 @@
         showDesignIndex: true,
         showGaps: false,
         animateIn: true,
-        designImage: null, // Optional: design thumbnail to render
+        designImage: null,
         maxCanvasWidth: 600,
         maxCanvasHeight: 400,
       },
@@ -73,12 +60,6 @@
     this._bindEvents();
   }
 
-  /**
-   * Set the layout data and render
-   * @param {Object} layout - SheetLayout from NestingEngine
-   * @param {Object} sheet - SheetSpec
-   * @param {number} marginInch - Sheet margin in inches
-   */
   SheetSimulator.prototype.setLayout = function (layout, sheet, marginInch) {
     this.layout = layout;
     this.sheet = sheet;
@@ -93,16 +74,12 @@
     }
   };
 
-  /**
-   * Calculate the scale factor to fit sheet in canvas
-   */
   SheetSimulator.prototype._calculateScale = function () {
     if (!this.sheet) return;
 
     var padding = this.options.padding;
     var dimSpace = this.options.showDimensions ? 28 : 0;
 
-    // Get container width for responsive sizing
     var containerWidth = this.canvas.parentElement
       ? this.canvas.parentElement.clientWidth - 32
       : this.options.maxCanvasWidth;
@@ -114,11 +91,9 @@
     var scaleY = availHeight / this.sheet.heightInch;
     this.scale = Math.min(scaleX, scaleY);
 
-    // Set canvas size
     var canvasWidth = Math.ceil(this.sheet.widthInch * this.scale + padding * 2 + dimSpace);
     var canvasHeight = Math.ceil(this.sheet.heightInch * this.scale + padding * 2 + dimSpace);
 
-    // Handle DPR for crisp rendering
     var dpr = window.devicePixelRatio || 1;
     this.canvas.width = canvasWidth * dpr;
     this.canvas.height = canvasHeight * dpr;
@@ -126,24 +101,20 @@
     this.canvas.style.height = canvasHeight + 'px';
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Store origin offset (accounting for dimension labels)
     this.originX = padding + dimSpace;
     this.originY = padding;
   };
 
-  /**
-   * Animate the render with designs appearing one by one
-   */
   SheetSimulator.prototype._animateRender = function () {
     var self = this;
     var startTime = performance.now();
-    var duration = 500; // ms total
+    var duration = 500;
     var designCount = this.layout ? this.layout.placements.length : 0;
 
     function frame(now) {
       var elapsed = now - startTime;
       var progress = Math.min(elapsed / duration, 1);
-      // Ease out cubic
+
       var eased = 1 - Math.pow(1 - progress, 3);
 
       self.render(eased);
@@ -160,10 +131,6 @@
     this.animationFrame = requestAnimationFrame(frame);
   };
 
-  /**
-   * Main render function
-   * @param {number} progress - Animation progress (0-1)
-   */
   SheetSimulator.prototype.render = function (progress) {
     progress = progress === undefined ? 1 : progress;
 
@@ -172,7 +139,6 @@
     var ox = this.originX;
     var oy = this.originY;
 
-    // Clear canvas
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
     if (!this.layout || !this.sheet) return;
@@ -180,7 +146,6 @@
     var sw = this.sheet.widthInch * s;
     var sh = this.sheet.heightInch * s;
 
-    // ── Sheet shadow ──
     ctx.save();
     ctx.shadowColor = COLORS.sheetShadow;
     ctx.shadowBlur = 12;
@@ -190,18 +155,15 @@
     ctx.fill();
     ctx.restore();
 
-    // ── Sheet border ──
     ctx.strokeStyle = COLORS.sheetBorder;
     ctx.lineWidth = 1;
     this._roundRect(ctx, ox, oy, sw, sh, 4);
     ctx.stroke();
 
-    // ── Grid dots ──
     if (this.options.showGrid) {
       this._drawGrid(ctx, ox, oy, sw, sh, s);
     }
 
-    // ── Margins ──
     if (this.options.showMargins && this.margin > 0) {
       var m = this.margin * s;
       ctx.strokeStyle = COLORS.marginDash;
@@ -211,7 +173,6 @@
       ctx.setLineDash([]);
     }
 
-    // ── Designs ──
     var placements = this.layout.placements;
     var designsToShow = Math.ceil(placements.length * progress);
 
@@ -222,7 +183,6 @@
       var dw = p.width * s;
       var dh = p.height * s;
 
-      // Animate individual design
       var designProgress = Math.min((progress * placements.length - i) * 2, 1);
       if (designProgress <= 0) continue;
 
@@ -232,14 +192,12 @@
       ctx.save();
       ctx.globalAlpha = alpha;
 
-      // Scale from center
       var cx = dx + dw / 2;
       var cy = dy + dh / 2;
       ctx.translate(cx, cy);
       ctx.scale(scaleAnim, scaleAnim);
       ctx.translate(-cx, -cy);
 
-      // Fill
       var isHovered = i === this.hoveredDesign;
       var isRotated = p.rotated;
       ctx.fillStyle = isRotated ? COLORS.designRotatedFill : COLORS.designFill;
@@ -249,7 +207,6 @@
       this._roundRect(ctx, dx, dy, dw, dh, 3);
       ctx.fill();
 
-      // Border
       ctx.strokeStyle = isRotated ? COLORS.designRotatedStroke : COLORS.designStroke;
       if (isHovered) {
         ctx.strokeStyle = COLORS.designStrokeHover;
@@ -259,7 +216,6 @@
       }
       ctx.stroke();
 
-      // Design thumbnail or index
       if (this.options.designImage && this.options.designImage.complete) {
         var imgPad = 4;
         ctx.drawImage(
@@ -277,7 +233,6 @@
         ctx.fillText('#' + (p.index + 1), cx, cy);
       }
 
-      // Rotation indicator
       if (isRotated && dw > 28 && dh > 28) {
         ctx.fillStyle = COLORS.designRotatedStroke;
         ctx.font = '10px system-ui, sans-serif';
@@ -289,17 +244,13 @@
       ctx.restore();
     }
 
-    // ── Dimension Labels ──
     if (this.options.showDimensions) {
       this._drawDimensions(ctx, ox, oy, sw, sh);
     }
   };
 
-  /**
-   * Draw grid dots on the sheet
-   */
   SheetSimulator.prototype._drawGrid = function (ctx, ox, oy, sw, sh, scale) {
-    var gridStep = scale; // 1 inch grid
+    var gridStep = scale;
     ctx.fillStyle = COLORS.gridDot;
 
     for (var x = gridStep; x < sw; x += gridStep) {
@@ -311,20 +262,15 @@
     }
   };
 
-  /**
-   * Draw dimension labels (width × height)
-   */
   SheetSimulator.prototype._drawDimensions = function (ctx, ox, oy, sw, sh) {
     ctx.fillStyle = COLORS.dimensionText;
     ctx.font = '500 11px system-ui, sans-serif';
 
-    // Width label (top)
     var widthLabel = this.sheet.widthInch + '"';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
     ctx.fillText(widthLabel, ox + sw / 2, oy - 8);
 
-    // Width arrows
     ctx.strokeStyle = COLORS.dimensionLine;
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -332,11 +278,9 @@
     ctx.lineTo(ox + sw, oy - 14);
     ctx.stroke();
 
-    // Arrow tips
     this._drawArrowTip(ctx, ox, oy - 14, 'left');
     this._drawArrowTip(ctx, ox + sw, oy - 14, 'right');
 
-    // Height label (left)
     var heightLabel = this.sheet.heightInch + '"';
     ctx.save();
     ctx.translate(ox - 14, oy + sh / 2);
@@ -346,7 +290,6 @@
     ctx.fillText(heightLabel, 0, 0);
     ctx.restore();
 
-    // Height line
     ctx.beginPath();
     ctx.moveTo(ox - 20, oy);
     ctx.lineTo(ox - 20, oy + sh);
@@ -356,9 +299,6 @@
     this._drawArrowTip(ctx, ox - 20, oy + sh, 'down');
   };
 
-  /**
-   * Draw a small arrow tip
-   */
   SheetSimulator.prototype._drawArrowTip = function (ctx, x, y, direction) {
     var size = 4;
     ctx.fillStyle = COLORS.dimensionLine;
@@ -391,9 +331,6 @@
     ctx.fill();
   };
 
-  /**
-   * Draw a rounded rectangle path
-   */
   SheetSimulator.prototype._roundRect = function (ctx, x, y, w, h, r) {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
@@ -408,9 +345,6 @@
     ctx.closePath();
   };
 
-  /**
-   * Bind mouse events for hover effects
-   */
   SheetSimulator.prototype._bindEvents = function () {
     var self = this;
 
@@ -450,12 +384,6 @@
     });
   };
 
-  /**
-   * Hit test: find which design is under the mouse
-   * @param {number} mx - Mouse X in canvas coords
-   * @param {number} my - Mouse Y in canvas coords
-   * @returns {number} Design index or -1
-   */
   SheetSimulator.prototype._hitTest = function (mx, my) {
     if (!this.layout || !this.layout.placements) return -1;
 
@@ -478,18 +406,10 @@
     return -1;
   };
 
-  /**
-   * Set a callback for tooltip display on hover
-   * @param {Function} callback
-   */
   SheetSimulator.prototype.onTooltip = function (callback) {
     this.tooltipCallback = callback;
   };
 
-  /**
-   * Set design thumbnail image for rendering inside placement boxes
-   * @param {string} imageUrl - Data URL or regular URL
-   */
   SheetSimulator.prototype.setDesignImage = function (imageUrl) {
     if (!imageUrl) {
       this.options.designImage = null;
@@ -506,42 +426,26 @@
     img.src = imageUrl;
   };
 
-  /**
-   * Toggle grid visibility
-   */
   SheetSimulator.prototype.toggleGrid = function () {
     this.options.showGrid = !this.options.showGrid;
     this.render(1);
   };
 
-  /**
-   * Toggle dimension labels
-   */
   SheetSimulator.prototype.toggleDimensions = function () {
     this.options.showDimensions = !this.options.showDimensions;
     this._calculateScale();
     this.render(1);
   };
 
-  /**
-   * Toggle margin display
-   */
   SheetSimulator.prototype.toggleMargins = function () {
     this.options.showMargins = !this.options.showMargins;
     this.render(1);
   };
 
-  /**
-   * Export canvas as PNG data URL
-   * @returns {string}
-   */
   SheetSimulator.prototype.exportImage = function () {
     return this.canvas.toDataURL('image/png');
   };
 
-  /**
-   * Clean up
-   */
   SheetSimulator.prototype.destroy = function () {
     if (this.animationFrame) {
       cancelAnimationFrame(this.animationFrame);
@@ -552,18 +456,10 @@
     this.canvas = null;
   };
 
-  // ── Factory Function ──
-  /**
-   * Create a new simulator instance
-   * @param {HTMLCanvasElement} canvas
-   * @param {Object} options
-   * @returns {SheetSimulator}
-   */
   function create(canvas, options) {
     return new SheetSimulator(canvas, options);
   }
 
-  // ── Public API ──
   window.ULSheetSimulator = {
     create: create,
     COLORS: COLORS,

@@ -1,22 +1,22 @@
-/**
- * Visitor Server Utilities
- * Handles visitor identification, session management, and tracking
- *
- * @module visitor.server
- * @version 1.0.0
- *
- * ⚠️ IMPORTANT: This module is ADDITIVE ONLY
- * - Does NOT modify existing upload/cart/webhook flows
- * - All visitor fields are OPTIONAL/NULLABLE
- * - Mevcut sistem etkilenmez
- */
+
+
+
+
+
+
+
+
+
+
+
+
 
 import { determineReferrerType, getGeoWithFallback, parseReferrer } from './geo.server'
 import { prisma } from './prisma.server'
 
-// ═══════════════════════════════════════════════════════════════════════════
-// TYPES
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 export interface VisitorIdentity {
   localStorageId: string
@@ -56,14 +56,14 @@ export interface VisitorUpsertResult {
   isNewSession: boolean
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// CORE FUNCTIONS
-// ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * Upsert visitor and session with full attribution tracking
- * This is the main entry point for visitor identification
- */
+
+
+
+
+
+
+
 export async function upsertVisitorAndSession(
   shopId: string,
   identity: VisitorIdentity,
@@ -71,13 +71,13 @@ export async function upsertVisitorAndSession(
   attribution: AttributionData,
   request: Request
 ): Promise<VisitorUpsertResult> {
-  // Get geo with IP-based fallback
+
   const geo = await getGeoWithFallback(request)
 
-  // Parse referrer
+
   const { referrerDomain } = parseReferrer(attribution.referrer || null)
 
-  // Determine referrer type
+
   const referrerType = determineReferrerType(
     referrerDomain,
     attribution.utmMedium || null,
@@ -87,7 +87,7 @@ export async function upsertVisitorAndSession(
     attribution.ttclid || null
   )
 
-  // Parse landing page path
+
   let landingPath: string | null = null
   if (attribution.landingPage) {
     try {
@@ -97,13 +97,13 @@ export async function upsertVisitorAndSession(
     }
   }
 
-  // Try to find existing visitor
+
   let visitor = await findVisitor(shopId, identity)
   let isNewVisitor = false
   let isNewSession = false
 
   if (!visitor) {
-    // Create new visitor
+
     visitor = await prisma.visitor.create({
       data: {
         shopId,
@@ -125,19 +125,19 @@ export async function upsertVisitorAndSession(
     })
     isNewVisitor = true
   } else {
-    // Update last seen
+
     await prisma.visitor.update({
       where: { id: visitor.id },
       data: {
         lastSeenAt: new Date(),
-        // Update geo if we have newer info
+
         ...(geo.country && { country: geo.country }),
         ...(geo.city && { city: geo.city }),
       },
     })
   }
 
-  // Check for existing session
+
   let session = await prisma.visitorSession.findUnique({
     where: {
       session_shop_token: {
@@ -148,7 +148,7 @@ export async function upsertVisitorAndSession(
   })
 
   if (!session) {
-    // Create new session
+
     session = await prisma.visitorSession.create({
       data: {
         shopId,
@@ -172,7 +172,7 @@ export async function upsertVisitorAndSession(
     })
     isNewSession = true
 
-    // Increment visitor session count if new session
+
     if (!isNewVisitor) {
       await prisma.visitor.update({
         where: { id: visitor.id },
@@ -182,7 +182,7 @@ export async function upsertVisitorAndSession(
       })
     }
   } else {
-    // Update session activity
+
     await prisma.visitorSession.update({
       where: { id: session.id },
       data: {
@@ -200,12 +200,12 @@ export async function upsertVisitorAndSession(
   }
 }
 
-/**
- * Find existing visitor by fingerprint or localStorage ID
- * Priority: fingerprint > localStorageId
- */
+
+
+
+
 async function findVisitor(shopId: string, identity: VisitorIdentity) {
-  // First try fingerprint match (more reliable)
+
   if (identity.fingerprint) {
     const byFingerprint = await prisma.visitor.findUnique({
       where: {
@@ -218,7 +218,7 @@ async function findVisitor(shopId: string, identity: VisitorIdentity) {
     if (byFingerprint) return byFingerprint
   }
 
-  // Fall back to localStorage ID
+
   const byLocalStorage = await prisma.visitor.findUnique({
     where: {
       visitor_shop_localStorage: {
@@ -231,10 +231,10 @@ async function findVisitor(shopId: string, identity: VisitorIdentity) {
   return byLocalStorage
 }
 
-/**
- * Link upload to visitor and session
- * Called when an upload is created
- */
+
+
+
+
 export async function linkUploadToVisitor(
   shopId: string,
   uploadId: string,
@@ -242,13 +242,13 @@ export async function linkUploadToVisitor(
   sessionId: string
 ): Promise<void> {
   const results = await prisma.$transaction([
-    // Update upload with visitor info (scoped to shop)
+
     prisma.upload.updateMany({
       where: { id: uploadId, shopId },
       data: { visitorId, sessionId },
     }),
 
-    // Increment visitor upload count (scoped to shop)
+
     prisma.visitor.updateMany({
       where: { id: visitorId, shopId },
       data: {
@@ -256,7 +256,7 @@ export async function linkUploadToVisitor(
       },
     }),
 
-    // Increment session upload count (scoped to shop)
+
     prisma.visitorSession.updateMany({
       where: { id: sessionId, shopId },
       data: {
@@ -272,9 +272,9 @@ export async function linkUploadToVisitor(
   }
 }
 
-/**
- * Record add to cart event
- */
+
+
+
 export async function recordAddToCart(shopId: string, sessionId: string): Promise<void> {
   await prisma.visitorSession.updateMany({
     where: { id: sessionId, shopId },
@@ -284,9 +284,9 @@ export async function recordAddToCart(shopId: string, sessionId: string): Promis
   })
 }
 
-/**
- * Record order completion (called from webhook, OPTIONAL enhancement)
- */
+
+
+
 export async function recordOrderForVisitor(shopId: string, visitorId: string, orderTotal: number): Promise<void> {
   await prisma.visitor.updateMany({
     where: { id: visitorId, shopId },
@@ -297,9 +297,9 @@ export async function recordOrderForVisitor(shopId: string, visitorId: string, o
   })
 }
 
-/**
- * Get visitor by ID with sessions
- */
+
+
+
 export async function getVisitorWithSessions(shopId: string, visitorId: string) {
   return prisma.visitor.findFirst({
     where: {
@@ -325,9 +325,9 @@ export async function getVisitorWithSessions(shopId: string, visitorId: string) 
   })
 }
 
-/**
- * Get visitor statistics for analytics dashboard
- */
+
+
+
 export async function getVisitorStats(shopId: string, dateRange?: { start: Date; end: Date }) {
   const where = {
     shopId,
@@ -341,10 +341,10 @@ export async function getVisitorStats(shopId: string, dateRange?: { start: Date;
 
   const [totalVisitors, returningVisitors, topCountries, topReferrerTypes, topCampaigns] =
     await Promise.all([
-      // Total unique visitors
+
       prisma.visitor.count({ where }),
 
-      // Returning visitors (more than 1 session)
+
       prisma.visitor.count({
         where: {
           ...where,
@@ -352,7 +352,7 @@ export async function getVisitorStats(shopId: string, dateRange?: { start: Date;
         },
       }),
 
-      // Top countries
+
       prisma.visitor.groupBy({
         by: ['country'],
         where,
@@ -361,7 +361,7 @@ export async function getVisitorStats(shopId: string, dateRange?: { start: Date;
         take: 10,
       }),
 
-      // Top referrer types
+
       prisma.visitorSession.groupBy({
         by: ['referrerType'],
         where: { shopId },
@@ -370,7 +370,7 @@ export async function getVisitorStats(shopId: string, dateRange?: { start: Date;
         take: 10,
       }),
 
-      // Top campaigns
+
       prisma.visitorSession.groupBy({
         by: ['utmCampaign'],
         where: {
@@ -403,9 +403,9 @@ export async function getVisitorStats(shopId: string, dateRange?: { start: Date;
   }
 }
 
-/**
- * Update visitor consent status
- */
+
+
+
 export async function updateVisitorConsent(
   shopId: string,
   visitorId: string,
@@ -421,9 +421,9 @@ export async function updateVisitorConsent(
   })
 }
 
-/**
- * Link Shopify customer to visitor (when they log in)
- */
+
+
+
 export async function linkCustomerToVisitor(
   shopId: string,
   visitorId: string,

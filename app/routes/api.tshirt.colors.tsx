@@ -1,21 +1,21 @@
-/**
- * T-Shirt Colors API
- * ==================
- * FAZ 5: API Endpoints
- * 
- * GET /api/tshirt/colors?shop=xxx.myshopify.com
- * 
- * Returns available t-shirt colors from shop configuration.
- * Falls back to default colors if none configured.
- * 
- * Response: { colors: [{ id, name, hex, available }] }
- */
+
+
+
+
+
+
+
+
+
+
+
+
 
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, getCorsHeaders } from "~/lib/cors.server";
 import prisma from "~/lib/prisma.server";
 
-// Default colors when shop has no custom configuration
+
 const DEFAULT_COLORS = [
   { id: "white", name: "White", hex: "#FFFFFF", available: true },
   { id: "black", name: "Black", hex: "#1A1A1A", available: true },
@@ -35,20 +35,20 @@ const DEFAULT_COLORS = [
   { id: "cream", name: "Cream", hex: "#FFFDD0", available: true },
 ];
 
-// Helper to create cached CORS JSON response
+
 function cachedCorsJson<T>(data: T, request: Request, options: { status?: number; maxAge?: number } = {}) {
   const corsHeaders = getCorsHeaders(request);
   const headers = new Headers();
-  
+
   for (const [key, value] of Object.entries(corsHeaders)) {
     if (value) headers.set(key, value);
   }
-  
-  // Cache for specified time (default 5 minutes)
+
+
   const maxAge = options.maxAge ?? 300;
   headers.set('Cache-Control', `public, max-age=${maxAge}, s-maxage=${maxAge}`);
   headers.set('Content-Type', 'application/json');
-  
+
   return new Response(JSON.stringify(data), {
     status: options.status || 200,
     headers,
@@ -56,7 +56,7 @@ function cachedCorsJson<T>(data: T, request: Request, options: { status?: number
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  // Handle CORS preflight
+
   if (request.method === "OPTIONS") {
     return handleCorsOptions(request);
   }
@@ -64,7 +64,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const shopDomain = url.searchParams.get("shop");
 
-  // If no shop specified, return default colors
+
   if (!shopDomain) {
     return cachedCorsJson({
       colors: DEFAULT_COLORS,
@@ -73,7 +73,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   try {
-    // Find shop
+
     const shop = await prisma.shop.findUnique({
       where: { shopDomain },
       select: {
@@ -83,14 +83,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
 
     if (!shop) {
-      // Shop not found, return defaults
+
       return cachedCorsJson({
         colors: DEFAULT_COLORS,
         source: "default"
       }, request);
     }
 
-    // Check if shop has custom color configuration
+
     const settings = shop.settings as Record<string, unknown> | null;
     const customColors = settings?.tshirtColors as typeof DEFAULT_COLORS | undefined;
 
@@ -101,7 +101,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       }, request);
     }
 
-    // Return default colors
+
     return cachedCorsJson({
       colors: DEFAULT_COLORS,
       source: "default"
@@ -109,8 +109,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   } catch (error) {
     console.error("[T-Shirt Colors API] Error:", error);
-    
-    // Return defaults on error
+
+
     return cachedCorsJson({
       colors: DEFAULT_COLORS,
       source: "default",

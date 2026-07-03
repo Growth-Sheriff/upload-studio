@@ -1,11 +1,4 @@
-{% comment %}
-  Product Showcase Bar - Collection Based
-  Merchant selects a collection, products from that collection are displayed in grid
-{% endcomment %}
-
 {{ 'ul-showcase.css' | asset_url | stylesheet_tag }}
-
-{% comment %} Mobile ordering - showcase bar comes after DTF block {% endcomment %}
 <style>
   @media (max-width: 749px) {
     .ul-showcase-section {
@@ -13,13 +6,10 @@
     }
   }
 </style>
-
-{% comment %} Check if we're in theme editor {% endcomment %}
 {% assign is_design_mode = false %}
 {% if request.design_mode %}
   {% assign is_design_mode = true %}
 {% endif %}
-
 <div class="ul-showcase-section" data-block-id="{{ block.id }}" data-design-mode="{{ is_design_mode }}" style="background:{{ block.settings.bg_color | default: '#f8f9fa' }};padding:40px 20px;">
   {% if block.settings.show_header %}
   <div class="ul-showcase-header">
@@ -27,11 +17,9 @@
     <p class="ul-sh-header-subtitle">{{ block.settings.header_subtitle | default: 'Handpicked products just for you' }}</p>
   </div>
   {% endif %}
-
   <div class="ul-showcase-grid">
     {% assign max_products = block.settings.max_products | default: 5 %}
     {% assign collection = block.settings.collection %}
-
     {% if collection and collection.products.size > 0 %}
       {% for p in collection.products limit: max_products %}
       <div class="ul-showcase-card" data-product-id="{{ p.id }}" data-variant-id="{{ p.selected_or_first_available_variant.id }}" data-product-title="{{ p.title | escape }}" data-product-price="{{ p.price | money }}" data-product-image="{{ p.featured_image | image_url: width: 350 }}">
@@ -55,7 +43,6 @@
     {% endif %}
   </div>
 </div>
-
 <div class="ul-sh-modal-overlay" id="ulShowcaseModal-{{ block.id }}">
   <div class="ul-sh-modal">
     <div class="ul-sh-modal-header"><h3>Upload Your Design</h3><button class="ul-sh-modal-close" onclick="closeULShowcaseModal('{{ block.id }}')">×</button></div>
@@ -83,9 +70,7 @@
     <div class="ul-sh-modal-footer"><button class="ul-sh-cart-btn" id="ulShowcaseCartBtn-{{ block.id }}" onclick="addULShowcaseToCart('{{ block.id }}')" disabled>Upload design to continue</button></div>
   </div>
 </div>
-
 <script src="{{ 'ul-showcase.js' | asset_url }}" defer></script>
-
 {% schema %}
 {
   "name": "Product Showcase Bar",

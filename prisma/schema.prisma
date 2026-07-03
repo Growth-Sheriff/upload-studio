@@ -1,5 +1,5 @@
-// Prisma Schema - Product 3D Customizer & Upload
-// Tenant-scoped multi-shop model
+
+
 
 generator client {
   provider = "prisma-client-js"
@@ -10,9 +10,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ══════════════════════════════════════════════════════════════
-// SESSIONS (Shopify OAuth)
-// ══════════════════════════════════════════════════════════════
+
+
+
 model Session {
   id            String    @id
   shop          String
@@ -33,42 +33,42 @@ model Session {
   @@map("sessions")
 }
 
-// ══════════════════════════════════════════════════════════════
-// SHOPS (Tenant)
-// ══════════════════════════════════════════════════════════════
+
+
+
 model Shop {
   id              String @id @default(cuid())
   shopDomain      String @unique @map("shop_domain")
   accessToken     String @map("access_token")
-  plan            String @default("free") // free, starter, pro, enterprise
+  plan            String @default("free")
   billingStatus   String @default("active") @map("billing_status")
-  storageProvider String @default("local") @map("storage_provider") // local only (R2/S3/Shopify removed)
-  storageConfig   Json?  @map("storage_config_json") // deprecated - kept for migration
+  storageProvider String @default("local") @map("storage_provider")
+  storageConfig   Json?  @map("storage_config_json")
   settings        Json?  @map("settings_json")
 
-  // Onboarding
+
   onboardingCompleted Boolean @default(false) @map("onboarding_completed")
-  onboardingStep      Int     @default(0) @map("onboarding_step") // 0-5
+  onboardingStep      Int     @default(0) @map("onboarding_step")
   onboardingData      Json?   @map("onboarding_data_json")
 
-  // PayPal Vault (automatic payments)
-  paypalVaultId     String?   @map("paypal_vault_id")      // PayPal saved payment token
-  paypalPayerId     String?   @map("paypal_payer_id")      // PayPal payer ID
-  paypalPayerEmail  String?   @map("paypal_payer_email")   // PayPal payer email
-  paypalAutoCharge  Boolean   @default(false) @map("paypal_auto_charge") // Auto-charge enabled
-  paypalVaultedAt   DateTime? @map("paypal_vaulted_at")    // When payment method was saved
 
-  // Stripe (automatic payments)
-  stripeCustomerId      String?   @map("stripe_customer_id")       // Stripe Customer ID
-  stripePaymentMethodId String?   @map("stripe_payment_method_id") // Stripe saved payment method
+  paypalVaultId     String?   @map("paypal_vault_id")
+  paypalPayerId     String?   @map("paypal_payer_id")
+  paypalPayerEmail  String?   @map("paypal_payer_email")
+  paypalAutoCharge  Boolean   @default(false) @map("paypal_auto_charge")
+  paypalVaultedAt   DateTime? @map("paypal_vaulted_at")
+
+
+  stripeCustomerId      String?   @map("stripe_customer_id")
+  stripePaymentMethodId String?   @map("stripe_payment_method_id")
   stripeAutoCharge      Boolean   @default(false) @map("stripe_auto_charge")
-  stripeEmail           String?   @map("stripe_email")             // Stripe billing email
-  stripeSetupAt         DateTime? @map("stripe_setup_at")          // When Stripe was set up
+  stripeEmail           String?   @map("stripe_email")
+  stripeSetupAt         DateTime? @map("stripe_setup_at")
 
   installedAt DateTime @default(now()) @map("installed_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  // Relations
+
   productsConfig   ProductConfig[]
   assetSets        AssetSet[]
   uploads          Upload[]
@@ -86,45 +86,45 @@ model Shop {
   @@map("shops")
 }
 
-// ══════════════════════════════════════════════════════════════
-// PRODUCT CONFIG
-// ══════════════════════════════════════════════════════════════
+
+
+
 model ProductConfig {
   id        String @id @default(cuid())
   shopId    String @map("shop_id")
-  productId String @map("product_id") // Shopify product GID
+  productId String @map("product_id")
 
-  // Upload Settings
+
   uploadEnabled Boolean @default(true) @map("upload_enabled")
 
-  // Extra Questions (dynamic form fields for customer)
-  // Format: [{ id, type: "text"|"select"|"checkbox", label, options?, required? }]
+
+
   extraQuestions Json? @map("extra_questions_json")
 
-  // T-Shirt Addon Settings
+
   tshirtEnabled Boolean @default(false) @map("tshirt_enabled")
   tshirtConfig  Json?   @map("tshirt_config_json")
-  // Format: {
-  //   colorVariantOption: "Color",  // Shopify option name for color
-  //   sizeVariantOption: "Size",    // Shopify option name for size
-  //   priceAddon: 15.00,            // Extra price for t-shirt
-  //   positions: ["front", "back"]  // Available print positions
-  // }
 
-  // Legacy fields (keeping for compatibility)
-  mode            String  @default("dtf") // dtf (default), legacy modes: 3d_designer, classic, quick
+
+
+
+
+
+
+
+  mode            String  @default("dtf")
   enabled         Boolean @default(true)
   assetSetId      String? @map("asset_set_id")
   policyOverrides Json?   @map("policy_overrides_json")
 
-  // Builder Modal pricing config
-  // Format: { tiers: [{minSqIn, maxSqIn, ratePerSqIn}], volumeDiscounts: [{minQty, discountPercent}], minimumCharge: number, setupFee: number }
+
+
   builderConfig Json? @map("builder_config_json")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  // Relations
+
   shop     Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
   assetSet AssetSet? @relation(fields: [assetSetId], references: [id])
 
@@ -132,37 +132,37 @@ model ProductConfig {
   @@map("products_config")
 }
 
-// ══════════════════════════════════════════════════════════════
-// ASSET SETS (3D Models + Print Locations)
-// ══════════════════════════════════════════════════════════════
+
+
+
 model AssetSet {
   id           String   @id @default(cuid())
   shopId       String   @map("shop_id")
   name         String
-  schema       Json     @map("schema_json") // printLocations, camera, render preset
+  schema       Json     @map("schema_json")
   thumbnailUrl String?  @map("thumbnail_url")
-  status       String   @default("active") // active, archived
+  status       String   @default("active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  // Relations
+
   shop           Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
   productsConfig ProductConfig[]
 
   @@map("asset_sets")
 }
 
-// ══════════════════════════════════════════════════════════════
-// UPLOADS
-// ══════════════════════════════════════════════════════════════
+
+
+
 model Upload {
   id               String    @id @default(cuid())
   shopId           String    @map("shop_id")
   productId        String?   @map("product_id")
   variantId        String?   @map("variant_id")
   orderId          String?   @map("order_id")
-  mode             String // 3d_designer, classic, quick
-  status           String    @default("draft") // draft, uploaded, processing, needs_review, approved, rejected, blocked, printed, archived
+  mode             String
+  status           String    @default("draft")
   customerId       String?   @map("customer_id")
   customerEmail    String?   @map("customer_email")
   preflightSummary Json?     @map("preflight_summary_json")
@@ -171,21 +171,21 @@ model Upload {
   approvedAt       DateTime? @map("approved_at")
   rejectedAt       DateTime? @map("rejected_at")
 
-  // ─────────────────────────────────────────────────────────────
-  // Visitor Tracking (NULLABLE - backward compatible)
-  // ─────────────────────────────────────────────────────────────
+
+
+
   visitorId String? @map("visitor_id")
   sessionId String? @map("session_id")
 
-  // ─────────────────────────────────────────────────────────────
-  // Revenue Attribution (NULLABLE - for analytics)
-  // ─────────────────────────────────────────────────────────────
+
+
+
   cartAddedAt   DateTime? @map("cart_added_at")
   orderPaidAt   DateTime? @map("order_paid_at")
   orderTotal    Decimal?  @map("order_total") @db.Decimal(10, 2)
-  orderCurrency String?   @map("order_currency") // USD, EUR, etc.
+  orderCurrency String?   @map("order_currency")
 
-  // Relations
+
   shop       Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
   items      UploadItem[]
   ordersLink OrderLink[]
@@ -200,34 +200,34 @@ model Upload {
   @@map("uploads")
 }
 
-// ══════════════════════════════════════════════════════════════
-// UPLOAD ITEMS (per location)
-// ══════════════════════════════════════════════════════════════
+
+
+
 model UploadItem {
   id              String   @id @default(cuid())
   uploadId        String   @map("upload_id")
-  location        String // front, back, left_sleeve, right_sleeve
+  location        String
   storageKey      String   @map("storage_key")
   previewKey      String?  @map("preview_key")
   thumbnailKey    String?  @map("thumbnail_key")
   originalName    String?  @map("original_name")
   mimeType        String?  @map("mime_type")
   fileSize        Int?     @map("file_size")
-  uploadDurationMs Int?    @map("upload_duration_ms") // Upload time in milliseconds
-  transform       Json?    @map("transform_json") // scale, rotation, position
-  preflightStatus String   @default("pending") @map("preflight_status") // pending, ok, warning, error
+  uploadDurationMs Int?    @map("upload_duration_ms")
+  transform       Json?    @map("transform_json")
+  preflightStatus String   @default("pending") @map("preflight_status")
   preflightResult Json?    @map("preflight_result_json")
   createdAt       DateTime @default(now()) @map("created_at")
 
-  // Relations
+
   upload Upload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
 
   @@map("upload_items")
 }
 
-// ══════════════════════════════════════════════════════════════
-// ORDER LINKS
-// ══════════════════════════════════════════════════════════════
+
+
+
 model OrderLink {
   id         String   @id @default(cuid())
   shopId     String   @map("shop_id")
@@ -236,112 +236,112 @@ model OrderLink {
   lineItemId String?  @map("line_item_id")
   createdAt  DateTime @default(now()) @map("created_at")
 
-  // Relations
+
   shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
   upload Upload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
 
-  // WI-007: Named unique constraint for idempotent upsert
+
   @@unique([orderId, uploadId], name: "orderId_uploadId")
   @@map("orders_link")
 }
 
-// ══════════════════════════════════════════════════════════════
-// EXPORT JOBS
-// ══════════════════════════════════════════════════════════════
+
+
+
 model ExportJob {
   id          String    @id @default(cuid())
   shopId      String    @map("shop_id")
   uploadIds   String[]  @map("upload_ids")
-  status      String    @default("pending") // pending, processing, completed, failed, expired
+  status      String    @default("pending")
   downloadUrl String?   @map("download_url")
   expiresAt   DateTime? @map("expires_at")
   createdAt   DateTime  @default(now()) @map("created_at")
   completedAt DateTime? @map("completed_at")
 
-  // Relations
+
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   @@map("export_jobs")
 }
 
-// ══════════════════════════════════════════════════════════════
-// AUDIT LOGS
-// ══════════════════════════════════════════════════════════════
+
+
+
 model AuditLog {
   id           String   @id @default(cuid())
   shopId       String   @map("shop_id")
   userId       String?  @map("user_id")
-  action       String // create, update, delete, approve, reject, export
-  resourceType String   @map("resource_type") // upload, product_config, asset_set, etc.
+  action       String
+  resourceType String   @map("resource_type")
   resourceId   String?  @map("resource_id")
   metadata     Json?    @map("metadata_json")
   createdAt    DateTime @default(now()) @map("created_at")
 
-  // Relations
+
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   @@index([shopId, createdAt])
   @@map("audit_logs")
 }
 
-// ══════════════════════════════════════════════════════════════
-// TEAM MEMBERS (RBAC)
-// ══════════════════════════════════════════════════════════════
+
+
+
 model TeamMember {
   id          String    @id @default(cuid())
   shopId      String    @map("shop_id")
   email       String
   name        String?
-  role        String    @default("viewer") // owner, admin, operator, viewer
+  role        String    @default("viewer")
   inviteToken String?   @map("invite_token")
   invitedAt   DateTime  @default(now()) @map("invited_at")
   acceptedAt  DateTime? @map("accepted_at")
   lastLoginAt DateTime? @map("last_login_at")
-  status      String    @default("pending") // pending, active, suspended
+  status      String    @default("pending")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  // Relations
+
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   @@unique([shopId, email])
   @@map("team_members")
 }
 
-// ══════════════════════════════════════════════════════════════
-// API KEYS (Public API)
-// ══════════════════════════════════════════════════════════════
+
+
+
 model ApiKey {
   id          String    @id @default(cuid())
   shopId      String    @map("shop_id")
   name        String
-  keyHash     String    @map("key_hash") // SHA256 hash of the key
-  keyPrefix   String    @map("key_prefix") // First 8 chars for display
-  permissions String[] // Array of allowed permissions
-  rateLimit   Int       @default(100) @map("rate_limit") // Requests per minute
+  keyHash     String    @map("key_hash")
+  keyPrefix   String    @map("key_prefix")
+  permissions String[]
+  rateLimit   Int       @default(100) @map("rate_limit")
   expiresAt   DateTime? @map("expires_at")
   lastUsedAt  DateTime? @map("last_used_at")
   usageCount  Int       @default(0) @map("usage_count")
-  status      String    @default("active") // active, revoked
+  status      String    @default("active")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  // Relations
+
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   @@index([keyHash])
   @@map("api_keys")
 }
 
-// ══════════════════════════════════════════════════════════════
-// WHITE LABEL SETTINGS
-// ══════════════════════════════════════════════════════════════
+
+
+
 model WhiteLabelConfig {
   id             String   @id @default(cuid())
   shopId         String   @unique @map("shop_id")
   enabled        Boolean  @default(false)
   logoUrl        String?  @map("logo_url")
-  primaryColor   String?  @map("primary_color") // Hex color
+  primaryColor   String?  @map("primary_color")
   secondaryColor String?  @map("secondary_color")
   customCss      String?  @map("custom_css")
   hideBranding   Boolean  @default(false) @map("hide_branding")
@@ -349,59 +349,59 @@ model WhiteLabelConfig {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  // Relations
+
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   @@map("white_label_config")
 }
 
-// ══════════════════════════════════════════════════════════════
-// FLOW TRIGGERS LOG
-// ══════════════════════════════════════════════════════════════
+
+
+
 model FlowTrigger {
   id         String    @id @default(cuid())
   shopId     String    @map("shop_id")
-  eventType  String    @map("event_type") // upload_received, upload_approved, etc.
+  eventType  String    @map("event_type")
   resourceId String    @map("resource_id")
   payload    Json      @map("payload_json")
-  status     String    @default("pending") // pending, sent, failed
+  status     String    @default("pending")
   attempts   Int       @default(0)
   sentAt     DateTime? @map("sent_at")
   error      String?
   createdAt  DateTime  @default(now()) @map("created_at")
 
-  // Relations
+
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   @@index([shopId, eventType])
   @@map("flow_triggers")
 }
 
-// ══════════════════════════════════════════════════════════════
-// SUPPORT TICKETS
-// ══════════════════════════════════════════════════════════════
+
+
+
 model SupportTicket {
   id           String @id @default(cuid())
-  ticketNumber String @unique @map("ticket_number") // UL-XXXXX format
+  ticketNumber String @unique @map("ticket_number")
 
-  // Contact Info
+
   name       String
   email      String
-  shopDomain String? @map("shop_domain") // If logged in merchant
+  shopDomain String? @map("shop_domain")
 
-  // Ticket Details
-  category String // general, support, billing, feature, bug, partnership, gdpr
+
+  category String
   subject  String
   message  String @db.Text
 
-  // Status
-  status   String @default("open") // open, in_progress, resolved, closed
-  priority String @default("normal") // low, normal, high, urgent
 
-  // Assignment
+  status   String @default("open")
+  priority String @default("normal")
+
+
   assignedTo String? @map("assigned_to")
 
-  // Tracking
+
   emailSentAt  DateTime? @map("email_sent_at")
   firstReplyAt DateTime? @map("first_reply_at")
   resolvedAt   DateTime? @map("resolved_at")
@@ -409,7 +409,7 @@ model SupportTicket {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  // Relations
+
   replies SupportReply[]
 
   @@index([email])
@@ -422,58 +422,58 @@ model SupportReply {
   id       String @id @default(cuid())
   ticketId String @map("ticket_id")
 
-  // Reply Details
+
   message     String  @db.Text
-  isStaff     Boolean @default(false) @map("is_staff") // true if from support team
+  isStaff     Boolean @default(false) @map("is_staff")
   authorName  String  @map("author_name")
   authorEmail String  @map("author_email")
 
-  // Email tracking
+
   emailSentAt DateTime? @map("email_sent_at")
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  // Relations
+
   ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@map("support_replies")
 }
 
-// ══════════════════════════════════════════════════════════════
-// VISITOR (Cross-session user identification)
-// ══════════════════════════════════════════════════════════════
+
+
+
 model Visitor {
   id     String @id @default(cuid())
   shopId String @map("shop_id")
 
-  // ─────────────────────────────────────────────────────────────
-  // Identification Fields
-  // ─────────────────────────────────────────────────────────────
-  fingerprint    String? // FingerprintJS hash (null if degraded mode)
-  localStorageId String  @map("local_storage_id") // Client-generated UUID
 
-  // ─────────────────────────────────────────────────────────────
-  // Device Information (first seen values)
-  // ─────────────────────────────────────────────────────────────
-  deviceType       String? @map("device_type") // desktop, mobile, tablet
-  browser          String? // Chrome, Firefox, Safari
+
+
+  fingerprint    String?
+  localStorageId String  @map("local_storage_id")
+
+
+
+
+  deviceType       String? @map("device_type")
+  browser          String?
   browserVersion   String? @map("browser_version")
-  os               String? // Windows, macOS, iOS, Android
+  os               String?
   osVersion        String? @map("os_version")
-  screenResolution String? @map("screen_resolution") // 1920x1080
-  language         String? // navigator.language (en-US)
-  timezone         String? // Intl.DateTimeFormat timezone
+  screenResolution String? @map("screen_resolution")
+  language         String?
+  timezone         String?
 
-  // ─────────────────────────────────────────────────────────────
-  // Geolocation (from Cloudflare/Caddy headers)
-  // ─────────────────────────────────────────────────────────────
-  country String? // ISO 3166-1 alpha-2 (US, TR, DE)
-  region  String? // State/Province
+
+
+
+  country String?
+  region  String?
   city    String?
 
-  // ─────────────────────────────────────────────────────────────
-  // Lifecycle & Metrics (aggregated for quick queries)
-  // ─────────────────────────────────────────────────────────────
+
+
+
   firstSeenAt   DateTime @default(now()) @map("first_seen_at")
   lastSeenAt    DateTime @updatedAt @map("last_seen_at")
   totalSessions Int      @default(1) @map("total_sessions")
@@ -481,29 +481,29 @@ model Visitor {
   totalOrders   Int      @default(0) @map("total_orders")
   totalRevenue  Decimal? @map("total_revenue") @db.Decimal(10, 2)
 
-  // ─────────────────────────────────────────────────────────────
-  // Privacy & Consent
-  // ─────────────────────────────────────────────────────────────
+
+
+
   consentGiven     Boolean   @default(false) @map("consent_given")
   consentTimestamp DateTime? @map("consent_timestamp")
-  degradedMode     Boolean   @default(false) @map("degraded_mode") // No fingerprint consent
+  degradedMode     Boolean   @default(false) @map("degraded_mode")
 
-  // ─────────────────────────────────────────────────────────────
-  // Shopify Customer Link (when customer logs in)
-  // ─────────────────────────────────────────────────────────────
-  shopifyCustomerId String? @map("shopify_customer_id") // Shopify customer GID
+
+
+
+  shopifyCustomerId String? @map("shopify_customer_id")
   customerEmail     String? @map("customer_email")
 
-  // ─────────────────────────────────────────────────────────────
-  // Relationships
-  // ─────────────────────────────────────────────────────────────
+
+
+
   shop     Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
   sessions VisitorSession[]
   uploads  Upload[]
 
-  // ─────────────────────────────────────────────────────────────
-  // Indexes - Tenant-scoped queries
-  // ─────────────────────────────────────────────────────────────
+
+
+
   @@unique([shopId, fingerprint], name: "visitor_shop_fingerprint")
   @@unique([shopId, localStorageId], name: "visitor_shop_localStorage")
   @@index([shopId, firstSeenAt])
@@ -512,68 +512,68 @@ model Visitor {
   @@map("visitors")
 }
 
-// ══════════════════════════════════════════════════════════════
-// VISITOR SESSION (Individual visit tracking with attribution)
-// ══════════════════════════════════════════════════════════════
+
+
+
 model VisitorSession {
   id        String @id @default(cuid())
   shopId    String @map("shop_id")
   visitorId String @map("visitor_id")
 
-  // ─────────────────────────────────────────────────────────────
-  // Session Identification
-  // ─────────────────────────────────────────────────────────────
-  sessionToken String @map("session_token") // Client-generated session ID
 
-  // ─────────────────────────────────────────────────────────────
-  // Attribution (UTM Parameters) - First-touch for this session
-  // ─────────────────────────────────────────────────────────────
-  utmSource   String? @map("utm_source") // google, facebook, newsletter
-  utmMedium   String? @map("utm_medium") // cpc, email, social, organic
-  utmCampaign String? @map("utm_campaign") // spring_sale_2024
-  utmTerm     String? @map("utm_term") // paid keywords
-  utmContent  String? @map("utm_content") // A/B test variant
 
-  // ─────────────────────────────────────────────────────────────
-  // Click IDs (auto-detected from URL)
-  // ─────────────────────────────────────────────────────────────
-  gclid   String? // Google Ads
-  fbclid  String? // Facebook/Meta
-  msclkid String? // Microsoft/Bing
-  ttclid  String? // TikTok
 
-  // ─────────────────────────────────────────────────────────────
-  // Referrer & Landing
-  // ─────────────────────────────────────────────────────────────
-  referrer       String? @db.Text // document.referrer
-  referrerDomain String? @map("referrer_domain") // Parsed domain
-  referrerType   String? @map("referrer_type") // direct, organic_search, paid_search, social, email, referral
-  landingPage    String? @map("landing_page") @db.Text // First page URL
-  landingPath    String? @map("landing_path") // Parsed path (/products/custom-tshirt)
+  sessionToken String @map("session_token")
 
-  // ─────────────────────────────────────────────────────────────
-  // Session Lifecycle
-  // ─────────────────────────────────────────────────────────────
+
+
+
+  utmSource   String? @map("utm_source")
+  utmMedium   String? @map("utm_medium")
+  utmCampaign String? @map("utm_campaign")
+  utmTerm     String? @map("utm_term")
+  utmContent  String? @map("utm_content")
+
+
+
+
+  gclid   String?
+  fbclid  String?
+  msclkid String?
+  ttclid  String?
+
+
+
+
+  referrer       String? @db.Text
+  referrerDomain String? @map("referrer_domain")
+  referrerType   String? @map("referrer_type")
+  landingPage    String? @map("landing_page") @db.Text
+  landingPath    String? @map("landing_path")
+
+
+
+
   startedAt      DateTime @default(now()) @map("started_at")
   lastActivityAt DateTime @updatedAt @map("last_activity_at")
 
-  // ─────────────────────────────────────────────────────────────
-  // Session Metrics (aggregated)
-  // ─────────────────────────────────────────────────────────────
+
+
+
   pageViews        Int @default(1) @map("page_views")
   uploadsInSession Int @default(0) @map("uploads_in_session")
   addToCartCount   Int @default(0) @map("add_to_cart_count")
 
-  // ─────────────────────────────────────────────────────────────
-  // Relationships
-  // ─────────────────────────────────────────────────────────────
+
+
+
   shop    Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
   visitor Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
   uploads Upload[]
 
-  // ─────────────────────────────────────────────────────────────
-  // Indexes
-  // ─────────────────────────────────────────────────────────────
+
+
+
   @@unique([shopId, sessionToken], name: "session_shop_token")
   @@index([shopId, startedAt])
   @@index([shopId, utmSource])
@@ -583,36 +583,36 @@ model VisitorSession {
   @@map("visitor_sessions")
 }
 
-// ══════════════════════════════════════════════════════════════
-// COMMISSIONS (Per-Order Commission Tracking)
-// ══════════════════════════════════════════════════════════════
-// Commission rate: 1.5% of order total
-// Payment method: PayPal (manual)
+
+
+
+
+
 model Commission {
   id            String   @id @default(cuid())
   shopId        String   @map("shop_id")
-  orderId       String   @map("order_id") // Shopify order ID
-  orderNumber   String?  @map("order_number") // Human-readable order number
+  orderId       String   @map("order_id")
+  orderNumber   String?  @map("order_number")
 
-  // Order details
+
   orderTotal    Decimal  @map("order_total") @db.Decimal(10, 2)
   orderCurrency String   @default("USD") @map("order_currency")
 
-  // Commission calculation (1.5% = 0.015)
+
   commissionRate Decimal @default(0.015) @map("commission_rate") @db.Decimal(5, 4)
   commissionAmount Decimal @map("commission_amount") @db.Decimal(10, 2)
 
-  // Payment status
-  status          String   @default("pending") // pending, paid, waived
-  paidAt          DateTime? @map("paid_at")
-  paymentRef      String?  @map("payment_ref")      // PayPal/Stripe transaction ID
-  paymentProvider String?  @map("payment_provider") // paypal, stripe
 
-  // Metadata
+  status          String   @default("pending")
+  paidAt          DateTime? @map("paid_at")
+  paymentRef      String?  @map("payment_ref")
+  paymentProvider String?  @map("payment_provider")
+
+
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  // Relations
+
   shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
 
   @@unique([shopId, orderId], name: "commission_shop_order")
@@ -621,30 +621,30 @@ model Commission {
   @@map("commissions")
 }
 
-// ══════════════════════════════════════════════════════════════
-// UPLOAD LOGS (Error Tracking & Analytics)
-// ══════════════════════════════════════════════════════════════
+
+
+
 model UploadLog {
   id        String   @id @default(cuid())
-  
-  // Event info
-  event     String   // INTENT_CREATED, UPLOAD_STARTED, UPLOAD_RETRY, etc.
-  level     String   // info, warn, error
-  traceId   String?  @map("trace_id") // For tracking request flow
-  
-  // Relations (nullable for flexibility)
+
+
+  event     String
+  level     String
+  traceId   String?  @map("trace_id")
+
+
   uploadId  String?  @map("upload_id")
   itemId    String?  @map("item_id")
   shopId    String?  @map("shop_id")
-  
-  // Storage info
-  provider  String?  // bunny, r2, local
-  
-  // Full context as JSON
+
+
+  provider  String?
+
+
   context   Json?    @map("context_json")
-  
+
   createdAt DateTime @default(now()) @map("created_at")
-  
+
   @@index([uploadId])
   @@index([shopId, createdAt])
   @@index([event, level])

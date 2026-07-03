@@ -1,19 +1,4 @@
-/**
- * T-Shirt Modal - 4-Step Wizard with 3D Preview
- * ==============================================
- * FAZ 2: Complete T-Shirt Designer Modal
- * FAZ 4: Global State Integration
- *
- * Features:
- * - Step 1: Upload (inherited or new design)
- * - Step 2: 3D Preview + Options (color, size, locations)
- * - Step 3: Extra Questions & Quantity
- * - Step 4: Review & Actions
- * - Global state sync (FAZ 4)
- *
- * Version: 4.1.0
- * Architecture: DTF_TSHIRT_MODAL_ARCHITECTURE.md
- */
+
 
 console.log('[ULTShirtModal] Script loading...')
 ;(function () {
@@ -21,15 +6,11 @@ console.log('[ULTShirtModal] Script loading...')
 
   console.log('[ULTShirtModal] IIFE started')
 
-  // ==========================================================================
-  // STATE MANAGEMENT
-  // ==========================================================================
   const ULTShirtModal = {
-    // Modal state
+
     isOpen: false,
     currentStep: 1,
 
-    // Inherited design from DTF uploader
     inheritedDesign: {
       uploadId: null,
       thumbnailUrl: null,
@@ -38,11 +19,10 @@ console.log('[ULTShirtModal] Script loading...')
       dimensions: { width: 0, height: 0, dpi: 0 },
     },
 
-    // Step 1: Upload state
     step1: {
       useInheritedDesign: false,
       newUpload: {
-        status: 'idle', // idle, uploading, complete, error
+        status: 'idle',
         uploadId: null,
         thumbnailUrl: null,
         originalUrl: null,
@@ -51,7 +31,6 @@ console.log('[ULTShirtModal] Script loading...')
       },
     },
 
-    // Step 2: Design state
     step2: {
       tshirtColor: '#FFFFFF',
       tshirtColorName: 'White',
@@ -67,48 +46,41 @@ console.log('[ULTShirtModal] Script loading...')
       calculatedPrice: 19.99,
     },
 
-    // Step 3: Details state
     step3: {
       quantity: 1,
       extraAnswers: {},
       specialInstructions: '',
     },
 
-    // Step 4: Review state
     step4: {
       confirmationChecked: false,
     },
 
-    // 3D Scene
     three: {
       scene: null,
       camera: null,
       renderer: null,
       controls: null,
-      tshirtModel: null, // The whole GLB scene (for transforms)
-      tshirtMesh: null, // The actual mesh (for decal attachment)
+      tshirtModel: null,
+      tshirtMesh: null,
       decals: {},
       animationId: null,
-      // Mouse drag rotation state
+
       isDragging: false,
       previousMouseX: 0,
       targetRotationY: 0,
       currentRotationY: 0,
     },
 
-    // Current loaded texture for decals
     currentTexture: null,
 
-    // Texture Baking - Canvas for UV projection
     textureCanvas: null,
     textureCtx: null,
-    baseTextureSize: 2048, // 2K texture resolution
-    decalImage: null, // Loaded design image
+    baseTextureSize: 2048,
+    decalImage: null,
 
-    // Shop domain for API calls (set from event or Shopify global)
     shopDomain: null,
 
-    // Product data
     product: {
       id: null,
       variants: [],
@@ -116,48 +88,42 @@ console.log('[ULTShirtModal] Script loading...')
       sizes: [],
     },
 
-    // Config from merchant
     config: {
       tshirtProductHandle: null,
       extraQuestions: [],
       sizePricing: { XS: 0, S: 0, M: 0, L: 2, XL: 2, '2XL': 5, '3XL': 5 },
-      allowedPositions: ['front', 'back', 'left_sleeve', 'right_sleeve'], // Default all
+      allowedPositions: ['front', 'back', 'left_sleeve', 'right_sleeve'],
     },
 
-    // DOM elements cache
     el: {},
 
-    // UV Regions for Texture Baking (CORRECTED based on visual debug)
-    // LEFT side of UV = BACK of shirt
-    // RIGHT side of UV = FRONT of shirt
     UV_REGIONS: {
       front: {
-        // LEFT side of UV map = FRONT of shirt (swapped)
+
         bounds: { uMin: 0.05, uMax: 0.45, vMin: 0.1, vMax: 0.5 },
         center: { u: 0.25, v: 0.3 },
         defaultSize: 0.55,
       },
       back: {
-        // RIGHT side of UV map = BACK of shirt (swapped)
+
         bounds: { uMin: 0.5, uMax: 0.95, vMin: 0.1, vMax: 0.5 },
         center: { u: 0.72, v: 0.3 },
         defaultSize: 0.55,
       },
       left_sleeve: {
-        // Upper left corner of UV (sleeve)
+
         bounds: { uMin: 0.0, uMax: 0.15, vMin: 0.0, vMax: 0.25 },
         center: { u: 0.2, v: 0.85 },
         defaultSize: 0.7,
       },
       right_sleeve: {
-        // Right sleeve area of UV
+
         bounds: { uMin: 0.45, uMax: 0.75, vMin: 0.7, vMax: 1.0 },
         center: { u: 0.6, v: 0.85 },
         defaultSize: 0.7,
       },
     },
 
-    // Legacy 3D positions (kept for fallback/camera rotation)
     DECAL_LOCATIONS: {
       front: { position: { x: 0, y: 0.04, z: 0.12 }, rotation: { x: 0, y: 0, z: 0 } },
       back: { position: { x: 0, y: 0.04, z: -0.12 }, rotation: { x: 0, y: Math.PI, z: 0 } },
@@ -165,7 +131,6 @@ console.log('[ULTShirtModal] Script loading...')
       right_sleeve: { position: { x: 0.18, y: 0.12, z: 0.05 }, rotation: { x: 0, y: 0, z: 0 } },
     },
 
-    // Color map
     colorMap: {
       white: '#ffffff',
       black: '#1a1a1a',
@@ -202,9 +167,6 @@ console.log('[ULTShirtModal] Script loading...')
       sand: '#c2b280',
     },
 
-    // ==========================================================================
-    // INITIALIZATION
-    // ==========================================================================
     init() {
       try {
         console.log('[ULTShirtModal] Starting init...')
@@ -220,9 +182,8 @@ console.log('[ULTShirtModal] Script loading...')
       }
     },
 
-    // Create off-screen canvas for texture baking
     createTextureCanvas() {
-      // FAZ 3 - EDGE-004: Dynamic texture size based on file size
+
       const optimalSize = this.getOptimalTextureSize()
       this.baseTextureSize = optimalSize
 
@@ -236,9 +197,8 @@ console.log('[ULTShirtModal] Script loading...')
       )
     },
 
-    // FAZ 3 - EDGE-004: Calculate optimal texture size based on design file size
     getOptimalTextureSize() {
-      // Get file size from current design
+
       const fileSize =
         this.step1.newUpload?.fileSize ||
         this.inheritedDesign?.dimensions?.fileSize ||
@@ -247,7 +207,6 @@ console.log('[ULTShirtModal] Script loading...')
 
       const sizeMB = fileSize / (1024 * 1024)
 
-      // For very large files, reduce texture resolution to prevent memory issues
       if (sizeMB > 30) {
         console.log(
           '[ULTShirtModal] Large file detected (',
@@ -265,7 +224,6 @@ console.log('[ULTShirtModal] Script loading...')
         return 1536
       }
 
-      // Default: 2K texture for good quality
       return 2048
     },
 
@@ -275,14 +233,12 @@ console.log('[ULTShirtModal] Script loading...')
         closeBtn: document.getElementById('ul-tshirt-close'),
         toast: document.getElementById('ul-toast'),
 
-        // Navigation
         navBack: document.getElementById('ul-nav-back'),
         navNext: document.getElementById('ul-nav-next'),
         stepItems: document.querySelectorAll('.ul-step-item'),
         stepConnectors: document.querySelectorAll('.ul-step-connector'),
         stepPanels: document.querySelectorAll('.ul-step-panel'),
 
-        // Step 1
         inheritedSection: document.getElementById('ul-inherited-section'),
         inheritedThumb: document.getElementById('ul-inherited-thumb'),
         inheritedName: document.getElementById('ul-inherited-name'),
@@ -299,7 +255,6 @@ console.log('[ULTShirtModal] Script loading...')
         newUploadName: document.getElementById('ul-new-upload-name'),
         newUploadMeta: document.getElementById('ul-new-upload-meta'),
 
-        // Step 2
         canvas: document.getElementById('ul-3d-canvas'),
         loading3d: document.getElementById('ul-3d-loading'),
         colorGrid: document.getElementById('ul-color-grid'),
@@ -321,7 +276,6 @@ console.log('[ULTShirtModal] Script loading...')
         priceSizeRow: document.getElementById('ul-price-size-row'),
         priceTotal: document.getElementById('ul-price-total'),
 
-        // Step 3
         detailsTitle: document.getElementById('ul-details-title'),
         detailsMeta: document.getElementById('ul-details-meta'),
         detailsThumbs: document.getElementById('ul-details-thumbs'),
@@ -331,7 +285,6 @@ console.log('[ULTShirtModal] Script loading...')
         extraQuestions: document.getElementById('ul-tshirt-extra-questions'),
         specialInstructions: document.getElementById('ul-special-instructions'),
 
-        // Step 4
         reviewColor: document.getElementById('ul-review-color'),
         reviewSize: document.getElementById('ul-review-size'),
         reviewQty: document.getElementById('ul-review-qty'),
@@ -347,13 +300,12 @@ console.log('[ULTShirtModal] Script loading...')
     },
 
     bindEvents() {
-      // Listen for open event from DTF uploader
+
       document.addEventListener('ul:openTShirtModal', (e) => {
         console.log('[ULTShirtModal] Received ul:openTShirtModal event:', e.detail)
         this.open(e.detail)
       })
 
-      // Close
       this.el.closeBtn?.addEventListener('click', () => this.close())
       this.el.overlay?.addEventListener('click', (e) => {
         if (e.target === this.el.overlay) this.close()
@@ -362,11 +314,9 @@ console.log('[ULTShirtModal] Script loading...')
         if (e.key === 'Escape' && this.isOpen) this.close()
       })
 
-      // Navigation
       this.el.navBack?.addEventListener('click', () => this.prevStep())
       this.el.navNext?.addEventListener('click', () => this.nextStep())
 
-      // Step 1: Upload
       this.el.useInheritedBtn?.addEventListener('click', () => this.useInheritedDesign())
       this.el.uploadZone?.addEventListener('click', () => this.el.fileInput?.click())
       this.el.uploadZone?.addEventListener('dragover', (e) => this.handleDragOver(e))
@@ -374,30 +324,25 @@ console.log('[ULTShirtModal] Script loading...')
       this.el.uploadZone?.addEventListener('drop', (e) => this.handleDrop(e))
       this.el.fileInput?.addEventListener('change', (e) => this.handleFileSelect(e))
 
-      // Step 2: Options
       this.el.sizeSelect?.addEventListener('change', (e) => this.setSize(e.target.value))
       this.el.scaleSlider?.addEventListener('input', (e) => this.setLocationScale(e.target.value))
       this.el.posXSlider?.addEventListener('input', (e) => this.setLocationPosX(e.target.value))
       this.el.posYSlider?.addEventListener('input', (e) => this.setLocationPosY(e.target.value))
 
-      // Quick view buttons
       this.el.quickViewBtns?.forEach((btn) => {
         btn.addEventListener('click', () => this.setQuickView(btn.dataset.view))
       })
 
-      // Location checkboxes
       document.querySelectorAll('.ul-location-checkbox').forEach((cb) => {
         cb.addEventListener('change', () => this.toggleLocation(cb.dataset.location))
       })
 
-      // Step 3: Quantity
       this.el.qtyMinus?.addEventListener('click', () => this.adjustQuantity(-1))
       this.el.qtyPlus?.addEventListener('click', () => this.adjustQuantity(1))
       this.el.specialInstructions?.addEventListener('input', (e) => {
         this.step3.specialInstructions = e.target.value
       })
 
-      // Step 4: Confirmation
       this.el.confirmCheckbox?.addEventListener('change', (e) => {
         this.step4.confirmationChecked = e.target.checked
         this.updateActionButtons()
@@ -405,36 +350,30 @@ console.log('[ULTShirtModal] Script loading...')
       this.el.designAnotherBtn?.addEventListener('click', () => this.designAnother())
       this.el.checkoutBtn?.addEventListener('click', () => this.checkout())
 
-      // Window resize
       window.addEventListener('resize', () => this.handleResize())
     },
 
-    // ==========================================================================
-    // MODAL OPEN / CLOSE
-    // ==========================================================================
     open(detail = {}) {
-      // Prevent opening in Shopify theme editor
+
       if (window.Shopify && window.Shopify.designMode) return
 
       const { uploadData, productId, config, shopDomain } = detail
 
       console.log('[ULTShirtModal] Opening with:', detail)
 
-      // Store shopDomain for API calls
       if (shopDomain) {
         this.shopDomain = shopDomain
       }
 
-      // FAZ 3 - EDGE-001: Check for tab session mismatch (multi-tab conflict)
       if (productId && uploadData) {
         try {
           const storedUpload = sessionStorage.getItem(`ul_upload_${productId}`)
           if (storedUpload) {
             const parsed = JSON.parse(storedUpload)
-            // Check if upload is from a different tab
+
             if (parsed.uploadId !== (uploadData.id || uploadData.uploadId)) {
               console.warn('[ULTShirtModal] Upload from different tab detected')
-              // Still proceed but warn user
+
               this.showToast('Using the most recent design from this tab.', 'info')
             }
           }
@@ -443,7 +382,6 @@ console.log('[ULTShirtModal] Script loading...')
         }
       }
 
-      // Store inherited design if provided
       if (uploadData) {
         this.inheritedDesign = {
           uploadId: uploadData.id || uploadData.uploadId,
@@ -454,7 +392,6 @@ console.log('[ULTShirtModal] Script loading...')
           dimensions: uploadData.dimensions || { width: 0, height: 0, dpi: 0 },
         }
 
-        // FAZ 5 FIX: If no blobUrl provided but thumbnailUrl exists, try to fetch and create blobUrl
         if (!this.inheritedDesign.blobUrl && this.inheritedDesign.thumbnailUrl) {
           this.fetchAndCacheThumbnail(this.inheritedDesign.thumbnailUrl)
             .then((blobUrl) => {
@@ -471,18 +408,14 @@ console.log('[ULTShirtModal] Script loading...')
         this.hideInheritedDesign()
       }
 
-      // Store config
       if (config) {
         Object.assign(this.config, config)
       }
 
-      // Store product ID
       this.product.id = productId
 
-      // Reset state
       this.resetState()
 
-      // Sync with global state (FAZ 4)
       if (window.ULState) {
         window.ULState.set('tshirt.isModalOpen', true)
         window.ULState.set('tshirt.currentStep', 1)
@@ -491,7 +424,6 @@ console.log('[ULTShirtModal] Script loading...')
         }
       }
 
-      // Emit global event (FAZ 4)
       if (window.ULEvents) {
         window.ULEvents.emit('modalOpen', {
           source: 'tshirt-modal',
@@ -500,7 +432,6 @@ console.log('[ULTShirtModal] Script loading...')
         })
       }
 
-      // FAZ 8: Track modal opened
       if (window.ULAnalytics) {
         window.ULAnalytics.trackTShirtModalOpened({
           hasInheritedDesign: !!uploadData,
@@ -509,20 +440,16 @@ console.log('[ULTShirtModal] Script loading...')
         })
       }
 
-      // Show modal
       this.el.overlay?.classList.add('active')
       this.isOpen = true
       document.body.style.overflow = 'hidden'
 
-      // FAZ 3 - EDGE-002: Check for saved progress before going to step 1
       const restored = this.checkAndRestoreProgress(productId)
 
-      // Go to step 1 if not restored
       if (!restored) {
         this.goToStep(1)
       }
 
-      // Load product variants (for step 2)
       this.loadProductVariants()
     },
 
@@ -531,7 +458,6 @@ console.log('[ULTShirtModal] Script loading...')
       this.isOpen = false
       document.body.style.overflow = ''
 
-      // FAZ 8: Track modal closed
       if (window.ULAnalytics) {
         window.ULAnalytics.trackTShirtModalClosed({
           stepReached: this.currentStep,
@@ -540,30 +466,22 @@ console.log('[ULTShirtModal] Script loading...')
         })
       }
 
-      // Sync with global state (FAZ 4)
       if (window.ULState) {
         window.ULState.set('tshirt.isModalOpen', false)
       }
 
-      // Emit global event (FAZ 4)
       if (window.ULEvents) {
         window.ULEvents.emit('modalClose', { source: 'tshirt-modal' })
       }
 
-      // FAZ 0 - TSM-006: Cleanup blob URLs to prevent memory leaks
       this.cleanupBlobUrls()
 
-      // Cleanup 3D
       this.cleanup3D()
     },
 
-    /**
-     * FAZ 5 FIX: Fetch thumbnail URL and create a blob URL for CORS-free texture loading
-     * This is needed when blobUrl is not passed from DTF uploader
-     */
     async fetchAndCacheThumbnail(url) {
       if (!url || url.startsWith('blob:')) {
-        return url // Already a blob URL or no URL
+        return url
       }
 
       try {
@@ -587,12 +505,8 @@ console.log('[ULTShirtModal] Script loading...')
       }
     },
 
-    /**
-     * FAZ 0 - TSM-006: Cleanup blob URLs to prevent memory leaks
-     * Called when modal is closed
-     */
     cleanupBlobUrls() {
-      // Revoke inherited design blob URL
+
       if (this.inheritedDesign.blobUrl) {
         try {
           URL.revokeObjectURL(this.inheritedDesign.blobUrl)
@@ -603,7 +517,6 @@ console.log('[ULTShirtModal] Script loading...')
         this.inheritedDesign.blobUrl = null
       }
 
-      // Revoke new upload blob URL
       if (this.step1.newUpload.blobUrl) {
         try {
           URL.revokeObjectURL(this.step1.newUpload.blobUrl)
@@ -614,12 +527,11 @@ console.log('[ULTShirtModal] Script loading...')
         this.step1.newUpload.blobUrl = null
       }
 
-      // Also check thumbnailUrl if it's a blob URL
       if (this.step1.newUpload.thumbnailUrl?.startsWith('blob:')) {
         try {
           URL.revokeObjectURL(this.step1.newUpload.thumbnailUrl)
         } catch (e) {
-          /* ignore */
+
         }
         this.step1.newUpload.thumbnailUrl = null
       }
@@ -628,7 +540,6 @@ console.log('[ULTShirtModal] Script loading...')
     resetState() {
       this.currentStep = 1
 
-      // FAZ 3 - EDGE-003: Reset texture update counter for race condition prevention
       this.textureUpdateId = 0
 
       this.step1 = {
@@ -661,7 +572,6 @@ console.log('[ULTShirtModal] Script loading...')
       this.step3 = { quantity: 1, extraAnswers: {}, specialInstructions: '' }
       this.step4 = { confirmationChecked: false }
 
-      // Reset UI
       if (this.el.confirmCheckbox) this.el.confirmCheckbox.checked = false
       if (this.el.qtyValue) this.el.qtyValue.textContent = '1'
       if (this.el.specialInstructions) this.el.specialInstructions.value = ''
@@ -670,14 +580,10 @@ console.log('[ULTShirtModal] Script loading...')
       this.updateActionButtons()
     },
 
-    // ==========================================================================
-    // STEP NAVIGATION
-    // ==========================================================================
     goToStep(step) {
       const previousStep = this.currentStep
       this.currentStep = step
 
-      // FAZ 8: Track step completion when moving forward
       if (step > previousStep && window.ULAnalytics) {
         window.ULAnalytics.trackTShirtStepCompleted({
           step: previousStep,
@@ -687,20 +593,16 @@ console.log('[ULTShirtModal] Script loading...')
         })
       }
 
-      // Track step start time for duration calculation
       this.stepStartTime = Date.now()
 
-      // Sync with global state (FAZ 4)
       if (window.ULState) {
         window.ULState.set('tshirt.currentStep', step)
       }
 
-      // Emit global event (FAZ 4)
       if (window.ULEvents) {
         window.ULEvents.emit('stepChange', { step, source: 'tshirt-modal' })
       }
 
-      // Update step indicators
       this.el.stepItems?.forEach((item, idx) => {
         const itemStep = idx + 1
         item.classList.remove('active', 'completed')
@@ -711,20 +613,16 @@ console.log('[ULTShirtModal] Script loading...')
         }
       })
 
-      // Update connectors
       this.el.stepConnectors?.forEach((conn, idx) => {
         conn.classList.toggle('completed', idx < step - 1)
       })
 
-      // Show/hide panels
       this.el.stepPanels?.forEach((panel, idx) => {
         panel.classList.toggle('active', idx + 1 === step)
       })
 
-      // Update navigation buttons
       this.updateNavButtons()
 
-      // Step-specific actions
       if (step === 2) {
         this.initStep2()
       } else if (step === 3) {
@@ -733,11 +631,9 @@ console.log('[ULTShirtModal] Script loading...')
         this.initStep4()
       }
 
-      // FAZ 3 - EDGE-002: Save progress to sessionStorage
       this.saveProgress()
     },
 
-    // FAZ 3 - EDGE-002: Save current progress to sessionStorage
     saveProgress() {
       try {
         const progress = {
@@ -767,7 +663,6 @@ console.log('[ULTShirtModal] Script loading...')
       }
     },
 
-    // FAZ 3 - EDGE-002: Check for saved progress and optionally restore
     checkAndRestoreProgress(productId) {
       try {
         const saved = sessionStorage.getItem('ul_tshirt_progress')
@@ -775,7 +670,6 @@ console.log('[ULTShirtModal] Script loading...')
 
         const progress = JSON.parse(saved)
 
-        // Only restore if same product and within 30 minutes
         const isValid =
           progress.productId === productId && Date.now() - progress.timestamp < 30 * 60 * 1000
 
@@ -784,13 +678,12 @@ console.log('[ULTShirtModal] Script loading...')
           return false
         }
 
-        // Ask user if they want to restore
         const restore = confirm(
           'You have a previous design in progress. Would you like to continue where you left off?'
         )
 
         if (restore) {
-          // Restore state
+
           if (progress.inheritedDesign) {
             this.inheritedDesign = progress.inheritedDesign
           }
@@ -804,7 +697,6 @@ console.log('[ULTShirtModal] Script loading...')
             Object.assign(this.step3, progress.step3)
           }
 
-          // Go to saved step
           this.goToStep(progress.currentStep)
           this.showToast('Progress restored!', 'success')
           return true
@@ -819,7 +711,7 @@ console.log('[ULTShirtModal] Script loading...')
     },
 
     nextStep() {
-      // FAZ 7: Validate before proceeding
+
       if (this.currentStep < 4 && this.validateStep() && this.canProceed()) {
         this.goToStep(this.currentStep + 1)
       }
@@ -846,7 +738,6 @@ console.log('[ULTShirtModal] Script loading...')
       }
     },
 
-    // FAZ 7: Validation with error display
     validateStep() {
       const step = this.currentStep
 
@@ -892,7 +783,7 @@ console.log('[ULTShirtModal] Script loading...')
             } else {
               this.showToast('Please confirm your order before proceeding.', 'error')
             }
-            // Add shake animation to checkbox
+
             if (this.el.confirmCheckbox) {
               this.el.confirmCheckbox.closest('.ul-confirmation')?.classList.add('ul-error-shake')
               setTimeout(() => {
@@ -911,17 +802,15 @@ console.log('[ULTShirtModal] Script loading...')
     },
 
     updateNavButtons() {
-      // Back button
+
       if (this.el.navBack) {
         this.el.navBack.classList.toggle('hidden', this.currentStep === 1)
       }
 
-      // Next button
       if (this.el.navNext) {
         const canProceed = this.canProceed()
         this.el.navNext.disabled = !canProceed
 
-        // Update text
         const stepLabels = ['Upload', 'Design', 'Details', 'Review']
         if (this.currentStep < 4) {
           this.el.navNext.innerHTML = `Next: ${stepLabels[this.currentStep]} →`
@@ -932,9 +821,6 @@ console.log('[ULTShirtModal] Script loading...')
       }
     },
 
-    // ==========================================================================
-    // STEP 1: UPLOAD
-    // ==========================================================================
     showInheritedDesign() {
       if (!this.el.inheritedSection) return
 
@@ -965,7 +851,6 @@ console.log('[ULTShirtModal] Script loading...')
     useInheritedDesign() {
       this.step1.useInheritedDesign = true
 
-      // Update UI
       if (this.el.inheritedDesign) {
         this.el.inheritedDesign.classList.add('selected')
       }
@@ -1006,7 +891,7 @@ console.log('[ULTShirtModal] Script loading...')
     },
 
     async uploadFile(file) {
-      // Validate file - Support all professional print formats
+
       const allowedTypes = [
         'image/png',
         'image/jpeg',
@@ -1017,7 +902,7 @@ console.log('[ULTShirtModal] Script loading...')
         'application/pdf',
         'application/postscript',
       ]
-      // 0-byte file protection: Reject empty files immediately
+
       if (!file.size || file.size === 0) {
         this.showToast('The selected file is empty (0 bytes). Please select a valid file.', 'error')
         console.error('[T-Shirt Modal] 0-byte file rejected:', file.name)
@@ -1044,18 +929,15 @@ console.log('[ULTShirtModal] Script loading...')
         return
       }
 
-      // v4.5.0: Enterprise plan - 10GB file support
       if (file.size > 10240 * 1024 * 1024) {
         this.showToast('File size must be less than 10GB', 'error')
         return
       }
 
-      // Update state
       this.step1.newUpload.status = 'uploading'
       this.step1.newUpload.name = file.name
       this.step1.useInheritedDesign = false
 
-      // Reset inherited selection
       if (this.el.inheritedDesign) {
         this.el.inheritedDesign.classList.remove('selected')
       }
@@ -1064,15 +946,12 @@ console.log('[ULTShirtModal] Script loading...')
         this.el.useInheritedBtn.classList.remove('selected')
       }
 
-      // Show progress
       this.el.uploadZone?.classList.add('uploading')
       if (this.el.uploadProgress) this.el.uploadProgress.style.display = 'block'
       this.updateUploadProgress(0)
 
-      // Progress text element
       const progressText = this.el.uploadProgress?.querySelector('.ul-progress-text')
 
-      // Progress callback for detailed tracking
       const progressCallback = (progress) => {
         if (progressText) {
           progressText.textContent = progress.text
@@ -1080,10 +959,9 @@ console.log('[ULTShirtModal] Script loading...')
       }
 
       try {
-        // Use the same upload flow as DTF uploader with progress callback
+
         const uploadResult = await this.performUpload(file, progressCallback)
 
-        // Success - include upload duration
         this.step1.newUpload = {
           status: 'complete',
           uploadId: uploadResult.id,
@@ -1094,7 +972,6 @@ console.log('[ULTShirtModal] Script loading...')
           uploadDuration: uploadResult.uploadDuration,
         }
 
-        // Show preview
         if (this.el.newUploadPreview) {
           this.el.newUploadPreview.style.display = 'block'
         }
@@ -1105,14 +982,12 @@ console.log('[ULTShirtModal] Script loading...')
           this.el.newUploadName.textContent = file.name
         }
 
-        // Show upload duration
         const durationEl = this.el.newUploadPreview?.querySelector('.ul-upload-duration')
         if (durationEl && uploadResult.uploadDuration) {
           durationEl.textContent = `Uploaded in ${uploadResult.uploadDuration}s`
           durationEl.style.display = 'block'
         }
 
-        // Hide progress
         if (this.el.uploadProgress) this.el.uploadProgress.style.display = 'none'
         this.el.uploadZone?.classList.remove('uploading')
 
@@ -1128,17 +1003,14 @@ console.log('[ULTShirtModal] Script loading...')
     },
 
     async performUpload(file, progressCallback) {
-      // API base for Upload Studio app proxy
+
       const apiBase = '/apps/customizer'
 
-      // Track upload start time
       const uploadStartTime = Date.now()
 
-      // Get customer info if logged in
       const customerId = window.ULCustomer?.id || null
       const customerEmail = window.ULCustomer?.email || null
 
-      // FAZ 0 - TSM-003: Robust shopDomain detection with validation
       const shopDomain = this.getShopDomain()
 
       if (!shopDomain) {
@@ -1148,7 +1020,6 @@ console.log('[ULTShirtModal] Script loading...')
 
       console.log('[ULTShirtModal] performUpload - shopDomain:', shopDomain)
 
-      // Step 1: Get signed URL from API (matching dtf-uploader format)
       if (progressCallback) {
         progressCallback({ phase: 'intent', percent: 0, text: 'Preparing...' })
       }
@@ -1187,7 +1058,6 @@ console.log('[ULTShirtModal] Script loading...')
 
       console.log('[ULTShirtModal] Intent response:', { uploadId, itemId, storageProvider })
 
-      // Step 2: Upload file with XHR for progress tracking
       if (progressCallback) {
         progressCallback({ phase: 'upload', percent: 0, text: '0% • Starting...' })
       }
@@ -1195,12 +1065,11 @@ console.log('[ULTShirtModal] Script loading...')
       await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest()
 
-        // Track progress
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) {
             const percent = Math.round((e.loaded / e.total) * 100)
             const elapsed = (Date.now() - uploadStartTime) / 1000
-            const speed = e.loaded / elapsed / 1024 / 1024 // MB/s
+            const speed = e.loaded / elapsed / 1024 / 1024
             const remaining = elapsed > 0 ? (e.total - e.loaded) / (e.loaded / elapsed) : 0
 
             let speedText =
@@ -1208,7 +1077,6 @@ console.log('[ULTShirtModal] Script loading...')
             let remainingText =
               remaining < 60 ? `${Math.ceil(remaining)}s` : `${Math.ceil(remaining / 60)}m`
 
-            // Update internal progress bar
             this.updateUploadProgress(percent)
 
             if (progressCallback) {
@@ -1231,7 +1099,6 @@ console.log('[ULTShirtModal] Script loading...')
 
         xhr.onerror = () => reject(new Error('Network error during upload'))
 
-        // Open and set headers based on provider
         if (storageProvider === 'bunny' || storageProvider === 'r2') {
           xhr.open('PUT', uploadUrl)
           xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
@@ -1240,7 +1107,7 @@ console.log('[ULTShirtModal] Script loading...')
           }
           xhr.send(file)
         } else {
-          // Local storage - POST with FormData
+
           const formData = new FormData()
           formData.append('file', file)
           formData.append('key', key)
@@ -1251,7 +1118,6 @@ console.log('[ULTShirtModal] Script loading...')
         }
       })
 
-      // Step 3: Mark complete (matching dtf-uploader format)
       if (progressCallback) {
         progressCallback({ phase: 'complete', percent: 100, text: 'Finalizing...' })
       }
@@ -1280,25 +1146,22 @@ console.log('[ULTShirtModal] Script loading...')
         throw new Error(err.error || 'Failed to complete upload')
       }
 
-      // Calculate upload duration
       const uploadDuration = (uploadDurationMs / 1000).toFixed(1)
 
-      // v4.3.0: Check if non-browser format (needs server-side thumbnail for 3D texture)
       const NON_BROWSER_EXTENSIONS = ['psd', 'pdf', 'ai', 'eps', 'tiff', 'tif']
       const ext = file.name.split('.').pop()?.toLowerCase() || ''
       const isNonBrowserFormat = NON_BROWSER_EXTENSIONS.includes(ext)
 
       let thumbnailUrl
       if (isNonBrowserFormat) {
-        // Non-browser format: Poll for server-generated thumbnail
+
         console.log('[ULTShirtModal] Non-browser format detected, polling for thumbnail:', ext)
         thumbnailUrl = await this.pollForThumbnail(uploadId, uploadDuration, progressCallback)
       } else {
-        // Browser-supported format: Create object URL for instant preview
+
         thumbnailUrl = URL.createObjectURL(file)
       }
 
-      // Build full public URL with https://
       const fullUrl = `${window.location.origin}${apiBase}/api/upload/file/${uploadId}`
 
       console.log('[ULTShirtModal] Upload complete:', {
@@ -1316,14 +1179,10 @@ console.log('[ULTShirtModal] Script loading...')
       }
     },
 
-    /**
-     * v4.3.0: Poll for server-generated thumbnail (for PSD/PDF/AI/EPS/TIFF)
-     * These formats need preflight processing to generate a browser-viewable thumbnail
-     */
     async pollForThumbnail(uploadId, uploadDuration, progressCallback) {
       const apiBase = '/apps/customizer'
       const shopDomain = this.getShopDomain()
-      const MAX_POLLS = 60 // 60 seconds max
+      const MAX_POLLS = 60
       let pollCount = 0
 
       if (progressCallback) {
@@ -1336,7 +1195,7 @@ console.log('[ULTShirtModal] Script loading...')
 
           if (pollCount > MAX_POLLS) {
             console.log('[ULTShirtModal] Thumbnail polling timeout')
-            // Return placeholder and let user proceed (design will be on 3D model as placeholder)
+
             resolve(
               'data:image/svg+xml,' +
                 encodeURIComponent(`
@@ -1374,7 +1233,6 @@ console.log('[ULTShirtModal] Script loading...')
               }
             }
 
-            // Update progress text
             if (progressCallback && pollCount > 3) {
               progressCallback({
                 phase: 'processing',
@@ -1383,7 +1241,6 @@ console.log('[ULTShirtModal] Script loading...')
               })
             }
 
-            // Continue polling
             setTimeout(doPoll, 1000)
           } catch (error) {
             console.warn('[ULTShirtModal] Thumbnail poll error:', error)
@@ -1391,7 +1248,6 @@ console.log('[ULTShirtModal] Script loading...')
           }
         }
 
-        // Start polling
         setTimeout(doPoll, 500)
       })
     },
@@ -1407,29 +1263,21 @@ console.log('[ULTShirtModal] Script loading...')
       }
     },
 
-    // ==========================================================================
-    // STEP 2: DESIGN (3D + OPTIONS)
-    // ==========================================================================
     initStep2() {
-      // Render color options
+
       this.renderColors()
 
-      // Render size options
       this.renderSizes()
 
-      // Update location settings display
       this.updateLocationSettingsUI()
 
-      // Calculate price
       this.calculatePrice()
 
-      // Wait for Three.js to load, then initialize 3D
       this.waitForThreeJS()
     },
 
-    // Wait for Three.js to be available
     waitForThreeJS(attempts = 0) {
-      const maxAttempts = 20 // 2 seconds max wait
+      const maxAttempts = 20
 
       if (typeof THREE !== 'undefined') {
         console.log('[ULTShirtModal] Three.js loaded, initializing 3D')
@@ -1443,13 +1291,11 @@ console.log('[ULTShirtModal] Script loading...')
         return
       }
 
-      // Wait and retry
       setTimeout(() => this.waitForThreeJS(attempts + 1), 100)
     },
 
-    // FAZ 6: 3D Support Detection
     supports3D() {
-      // Check WebGL support only - be more permissive
+
       const canvas = document.createElement('canvas')
       const gl = canvas.getContext('webgl2') || canvas.getContext('webgl')
 
@@ -1458,7 +1304,6 @@ console.log('[ULTShirtModal] Script loading...')
         return false
       }
 
-      // Check if Three.js is loaded
       if (typeof THREE === 'undefined') {
         console.log('[ULTShirtModal] Three.js not yet loaded')
         return false
@@ -1467,11 +1312,9 @@ console.log('[ULTShirtModal] Script loading...')
       return true
     },
 
-    // FAZ 6: 2D Fallback Mode
     initFallback2D() {
       console.log('[ULTShirtModal] Initializing 2D fallback mode')
 
-      // Hide 3D canvas
       if (this.el.canvas) {
         this.el.canvas.style.display = 'none'
       }
@@ -1479,14 +1322,12 @@ console.log('[ULTShirtModal] Script loading...')
         this.el.loading3d.style.display = 'none'
       }
 
-      // Create or show fallback container
       let fallback = document.getElementById('ul-3d-fallback')
       if (!fallback) {
         fallback = this.createFallbackUI()
       }
       fallback.classList.add('active')
 
-      // Update fallback with current design
       this.updateFallback2D()
     },
 
@@ -1495,7 +1336,6 @@ console.log('[ULTShirtModal] Script loading...')
       container.id = 'ul-3d-fallback'
       container.className = 'ul-3d-fallback'
 
-      // FAZ 2 - TSM-009: View-specific SVG paths for multi-view support
       this.fallbackSvgPaths = {
         front: `<path d="M100 20 L60 20 L40 60 L20 60 L20 100 L50 100 L50 220 L150 220 L150 100 L180 100 L180 60 L160 60 L140 20 L100 20 Z"
                       fill="${this.step2.tshirtColor}" stroke="#ccc" stroke-width="2"/>`,
@@ -1508,7 +1348,6 @@ console.log('[ULTShirtModal] Script loading...')
                        <text x="125" y="115" text-anchor="middle" fill="#999" font-size="10">RIGHT</text>`,
       }
 
-      // FAZ 2 - TSM-009: Design overlay positions per view
       this.fallbackOverlayPositions = {
         front: { top: '28%', left: '50%', width: '55%', maxWidth: '110px' },
         back: { top: '28%', left: '50%', width: '55%', maxWidth: '110px' },
@@ -1532,13 +1371,11 @@ console.log('[ULTShirtModal] Script loading...')
         </div>
       `
 
-      // Insert into 3D container
       const step2_3d = document.querySelector('.ul-step2-3d')
       if (step2_3d) {
         step2_3d.appendChild(container)
       }
 
-      // Bind view tab events
       container.querySelectorAll('.ul-fallback-view-tab').forEach((tab) => {
         tab.addEventListener('click', () => {
           container
@@ -1561,16 +1398,14 @@ console.log('[ULTShirtModal] Script loading...')
 
       const activeView = this.step2.activeLocation || 'front'
 
-      // FAZ 2 - TSM-009: Update SVG for current view
       if (fallbackSvg && this.fallbackSvgPaths) {
-        // Update SVG paths with current color
+
         const coloredPath = (
           this.fallbackSvgPaths[activeView] || this.fallbackSvgPaths.front
         ).replace(/fill="[^"]*"/g, `fill="${this.step2.tshirtColor}"`)
         fallbackSvg.innerHTML = coloredPath
       }
 
-      // Get current design URL - FAZ 1 fix: prefer blobUrl
       const designUrl = this.step1.useInheritedDesign
         ? this.inheritedDesign.blobUrl || this.inheritedDesign.thumbnailUrl
         : this.step1.newUpload?.blobUrl || this.step1.newUpload?.thumbnailUrl || ''
@@ -1579,7 +1414,6 @@ console.log('[ULTShirtModal] Script loading...')
         designEl.style.backgroundImage = `url(${designUrl})`
         designEl.style.display = 'block'
 
-        // FAZ 2 - TSM-009: Apply view-specific positioning
         const positions =
           this.fallbackOverlayPositions?.[activeView] || this.fallbackOverlayPositions?.front
         if (positions) {
@@ -1589,7 +1423,6 @@ console.log('[ULTShirtModal] Script loading...')
           designEl.style.maxWidth = positions.maxWidth
         }
 
-        // Apply scale and position from location settings
         const loc = this.step2.locations[activeView]
         if (loc && loc.enabled) {
           const scale = (loc.scale || 100) / 100
@@ -1605,33 +1438,26 @@ console.log('[ULTShirtModal] Script loading...')
     },
 
     async loadProductVariants() {
-      // Get T-Shirt product info from config (set by merchant in admin panel)
       const tshirtConfig = this.config.tshirtConfig
 
-      // Check if merchant configured a T-Shirt product
       if (tshirtConfig?.tshirtProductHandle) {
         const tshirtHandle = tshirtConfig.tshirtProductHandle
 
         try {
-          // Fetch T-Shirt product by handle
           const response = await fetch(`/products/${tshirtHandle}.js`)
 
           if (response.ok) {
             const product = await response.json()
 
-            // Store product info
             this.product.id = product.id
             this.product.title = product.title
             this.product.handle = product.handle
             this.product.variants = product.variants || []
 
-            // FAZ 1 - TSM-007: Extract colors from AVAILABLE variants only
-            // This ensures customers can only select colors that have stock
             const availableColors = new Set()
             const availableSizes = new Set()
 
             product.variants.forEach((variant) => {
-              // Only include available variants
               if (variant.available !== false) {
                 ;[variant.option1, variant.option2, variant.option3].forEach((opt) => {
                   if (opt) {
@@ -1645,7 +1471,6 @@ console.log('[ULTShirtModal] Script loading...')
               }
             })
 
-            // Use colors from available variants, with fallback to config
             if (availableColors.size > 0) {
               this.product.colors = Array.from(availableColors).map((name) => ({
                 name,
@@ -1653,7 +1478,6 @@ console.log('[ULTShirtModal] Script loading...')
               }))
               console.log('[ULTShirtModal] Colors from available variants:', availableColors.size)
             } else if (tshirtConfig.colorValues?.length > 0) {
-              // Fallback to config colors (but warn - these may be out of stock)
               console.warn(
                 '[ULTShirtModal] Using config colors - no available variants with colors found'
               )
@@ -1663,19 +1487,16 @@ console.log('[ULTShirtModal] Script loading...')
               }))
             }
 
-            // Use sizes from available variants, with fallback to config
             if (availableSizes.size > 0) {
               this.product.sizes = Array.from(availableSizes)
               console.log('[ULTShirtModal] Sizes from available variants:', availableSizes.size)
             } else if (tshirtConfig.sizeValues?.length > 0) {
-              // Fallback to config sizes
               console.warn(
                 '[ULTShirtModal] Using config sizes - no available variants with sizes found'
               )
               this.product.sizes = tshirtConfig.sizeValues
             }
 
-            // Apply allowed positions from config
             if (tshirtConfig.positions?.length > 0) {
               this.config.allowedPositions = tshirtConfig.positions
               this.applyAllowedLocations()
@@ -1700,7 +1521,6 @@ console.log('[ULTShirtModal] Script loading...')
         }
       }
 
-      // Fallback: Try common handles if no config
       const fallbackHandles = ['basic-tshirt', 'tshirt', 't-shirt', 'custom-tshirt', 'blank-tshirt']
 
       for (const handle of fallbackHandles) {
@@ -1713,7 +1533,6 @@ console.log('[ULTShirtModal] Script loading...')
             this.product.handle = product.handle
             this.product.variants = product.variants || []
 
-            // Extract colors and sizes from variants
             const colorSet = new Set()
             const sizeSet = new Set()
 
@@ -1743,37 +1562,26 @@ console.log('[ULTShirtModal] Script loading...')
             return
           }
         } catch (error) {
-          // Continue to next handle
         }
       }
 
-      // FAZ 0 - TSM-001: T-Shirt product not configured - show error screen
-      // Don't use defaults that will fail at checkout!
       console.error(
         '[ULTShirtModal] CRITICAL: No T-Shirt product found! Cannot proceed without product configuration.'
       )
 
-      // Set empty variants to trigger error in addToCart
       this.product.variants = []
 
-      // Show configuration error screen immediately
       this.showConfigurationError()
     },
 
-    /**
-     * FAZ 0 - TSM-001: Show configuration error screen
-     * Called when T-Shirt product is not configured in admin panel
-     */
     showConfigurationError() {
       console.log('[ULTShirtModal] Showing configuration error screen')
 
-      // Add error state class to modal
       const overlay = document.querySelector('.ul-tshirt-modal')
       if (overlay) {
         overlay.classList.add('error-state')
       }
 
-      // Replace modal content with error message
       const content = document.querySelector('.ul-modal-content')
       if (content) {
         content.innerHTML = `
@@ -1835,7 +1643,6 @@ console.log('[ULTShirtModal] Script loading...')
         `
       }
 
-      // Analytics: Track configuration error
       if (window.ULAnalytics) {
         window.ULAnalytics.trackError({
           code: 'TSHIRT_NOT_CONFIGURED',
@@ -1845,11 +1652,9 @@ console.log('[ULTShirtModal] Script loading...')
         })
       }
 
-      // Prevent further step navigation
       this.step1.configurationError = true
     },
 
-    // Helper to check if a value is a size
     isSizeValue(value) {
       const sizes = [
         'xs',
@@ -1870,7 +1675,6 @@ console.log('[ULTShirtModal] Script loading...')
       return sizes.includes(value.toLowerCase().trim())
     },
 
-    // Helper to get hex color from color name
     getColorHex(colorName) {
       const colorMap = {
         white: '#ffffff',
@@ -1908,28 +1712,16 @@ console.log('[ULTShirtModal] Script loading...')
       return colorMap[normalized] || '#cccccc'
     },
 
-    /**
-     * FAZ 0 - TSM-003: Robust shopDomain detection
-     * Tries multiple sources with validation to ensure we have a valid shop domain
-     */
     getShopDomain() {
-      // Priority-ordered sources for shop domain
       const sources = [
-        // 1. Stored value from modal init
         this.shopDomain,
-        // 2. Shopify global object (most reliable in storefront)
         window.Shopify?.shop,
-        // 3. DOM data attribute
         document.querySelector('[data-shop-domain]')?.dataset?.shopDomain,
-        // 4. Meta tag
         document.querySelector('meta[name="shopify-shop"]')?.content,
-        // 5. UL widget config
         window.ulConfig?.shopDomain,
-        // 6. Extract from hostname if on myshopify.com
         window.location.hostname.includes('.myshopify.com') ? window.location.hostname : null,
       ]
 
-      // First pass: Find a valid myshopify.com domain
       for (const source of sources) {
         if (
           source &&
@@ -1942,7 +1734,6 @@ console.log('[ULTShirtModal] Script loading...')
         }
       }
 
-      // Second pass: Accept any non-empty, valid-looking domain
       for (const source of sources) {
         if (
           source &&
@@ -1960,14 +1751,9 @@ console.log('[ULTShirtModal] Script loading...')
       return null
     },
 
-    /**
-     * FAZ 0 - TSM-004: Robust variant matching with normalization
-     * Prevents issues like 'M' matching 'Small' (contains 'm')
-     */
     findMatchingVariant(color, size) {
       const variants = this.product.variants || []
 
-      // Size normalization map - handles abbreviations and variations
       const sizeNormalize = {
         xs: ['xs', 'x-small', 'extra-small', 'extra small', 'xsmall'],
         s: ['s', 'sm', 'small'],
@@ -1977,7 +1763,6 @@ console.log('[ULTShirtModal] Script loading...')
         '2xl': ['2xl', 'xxl', 'xx-large', '2x', '2xlarge'],
         '3xl': ['3xl', 'xxxl', 'xxx-large', '3x', '3xlarge'],
         '4xl': ['4xl', 'xxxxl', '4x', '4xlarge'],
-        // Numeric sizes (for international sizing)
         36: ['36'],
         38: ['38'],
         40: ['40'],
@@ -1993,7 +1778,6 @@ console.log('[ULTShirtModal] Script loading...')
         16: ['16'],
       }
 
-      // Color normalization map - handles multi-language variations
       const colorNormalize = {
         white: ['white', 'beyaz', 'weiß', 'weiss', 'blanco', 'bianco', 'blanc'],
         black: ['black', 'siyah', 'schwarz', 'negro', 'nero', 'noir'],
@@ -2017,7 +1801,6 @@ console.log('[ULTShirtModal] Script loading...')
         charcoal: ['charcoal', 'antrasit', 'anthrazit'],
       }
 
-      // Normalize a value using the map
       const normalizeValue = (value, map) => {
         if (!value) return ''
         const lower = value.toLowerCase().trim()
@@ -2034,7 +1817,6 @@ console.log('[ULTShirtModal] Script loading...')
 
       console.log('[ULTShirtModal] findMatchingVariant - Looking for:', { targetColor, targetSize })
 
-      // EXACT match first (size + color, available)
       let match = variants.find((v) => {
         if (v.available === false) return false
 
@@ -2065,7 +1847,6 @@ console.log('[ULTShirtModal] Script loading...')
         return match
       }
 
-      // SIZE only fallback (available)
       match = variants.find((v) => {
         if (v.available === false) return false
 
@@ -2083,7 +1864,6 @@ console.log('[ULTShirtModal] Script loading...')
         return match
       }
 
-      // FIRST AVAILABLE variant fallback
       match = variants.find((v) => v.available !== false)
 
       if (match) {
@@ -2094,7 +1874,6 @@ console.log('[ULTShirtModal] Script loading...')
         return match
       }
 
-      // ABSOLUTE fallback: first variant regardless of availability
       console.warn(
         '[ULTShirtModal] findMatchingVariant - No available variants, using first:',
         variants[0]?.title
@@ -2114,7 +1893,6 @@ console.log('[ULTShirtModal] Script loading...')
         swatch.style.backgroundColor = color.hex
         swatch.title = color.name
 
-        // Light color detection
         if (this.isLightColor(color.hex)) {
           swatch.classList.add('light')
         }
@@ -2145,17 +1923,14 @@ console.log('[ULTShirtModal] Script loading...')
       this.step2.tshirtColor = hex
       this.step2.tshirtColorName = name
 
-      // Sync with global state (FAZ 4)
       if (window.ULState) {
         window.ULState.set('tshirt.color', { name, hex })
       }
 
-      // Emit global event (FAZ 4)
       if (window.ULEvents) {
         window.ULEvents.emit('colorChange', { name, hex })
       }
 
-      // FAZ 8: Track color change
       if (window.ULAnalytics && previousColor !== name) {
         window.ULAnalytics.trackTShirtColorChanged({
           colorName: name,
@@ -2164,12 +1939,10 @@ console.log('[ULTShirtModal] Script loading...')
         })
       }
 
-      // Update UI
       this.el.colorGrid?.querySelectorAll('.ul-color-swatch').forEach((s) => {
         s.classList.toggle('active', s.title === name)
       })
 
-      // Update 3D or 2D fallback (FAZ 6)
       if (this.supports3D()) {
         this.update3DColor(hex)
       } else {
@@ -2182,19 +1955,16 @@ console.log('[ULTShirtModal] Script loading...')
       const previousPrice = this.step2.calculatedPrice
       this.step2.tshirtSize = size
 
-      // Sync with global state (FAZ 4)
       if (window.ULState) {
         window.ULState.set('tshirt.size', size)
       }
 
-      // Emit global event (FAZ 4)
       if (window.ULEvents) {
         window.ULEvents.emit('sizeChange', { size })
       }
 
       this.calculatePrice()
 
-      // FAZ 8: Track size change
       if (window.ULAnalytics && previousSize !== size) {
         window.ULAnalytics.trackTShirtSizeChanged({
           size,
@@ -2210,17 +1980,14 @@ console.log('[ULTShirtModal] Script loading...')
 
       loc.enabled = !loc.enabled
 
-      // Sync with global state (FAZ 4)
       if (window.ULState) {
         window.ULState.set(`tshirt.locations.${locationId}.enabled`, loc.enabled)
       }
 
-      // Emit global event (FAZ 4)
       if (window.ULEvents) {
         window.ULEvents.emit('locationToggle', { locationId, enabled: loc.enabled })
       }
 
-      // FAZ 8: Track location toggle
       if (window.ULAnalytics) {
         window.ULAnalytics.trackTShirtLocationToggled({
           location: locationId,
@@ -2229,23 +1996,19 @@ console.log('[ULTShirtModal] Script loading...')
         })
       }
 
-      // Update UI
       const item = document.querySelector(`.ul-location-item[data-location="${locationId}"]`)
       item?.classList.toggle('selected', loc.enabled)
 
-      // If enabled, make it active
       if (loc.enabled) {
         this.setActiveLocation(locationId)
       }
 
-      // Update 3D or 2D fallback (FAZ 6)
       if (this.supports3D()) {
         this.update3DDecal(locationId, loc.enabled)
       } else {
         this.updateFallback2D()
       }
 
-      // Recalculate price
       this.calculatePrice()
 
       this.updateNavButtons()
@@ -2254,35 +2017,24 @@ console.log('[ULTShirtModal] Script loading...')
     setActiveLocation(locationId) {
       this.step2.activeLocation = locationId
 
-      // Sync with global state (FAZ 4)
       if (window.ULState) {
         window.ULState.set('tshirt.activeLocation', locationId)
       }
 
-      // Update settings UI
       this.updateLocationSettingsUI()
 
-      // Move camera to this location
       this.setQuickView(
         locationId.replace('_sleeve', '').replace('left', 'left').replace('right', 'right')
       )
     },
 
-    /**
-     * FAZ 0 - TSM-002: selectLocation function
-     * Convenience wrapper that enables the location AND sets it as active
-     * Used by applyAllowedLocations when switching from a disallowed location
-     */
     selectLocation(locationId) {
-      // Enable location if not already enabled
       if (this.step2.locations[locationId] && !this.step2.locations[locationId].enabled) {
         this.step2.locations[locationId].enabled = true
       }
 
-      // Set as active location
       this.setActiveLocation(locationId)
 
-      // Update checkbox UI
       const checkbox = document.querySelector(
         `.ul-location-checkbox[data-location="${locationId}"]`
       )
@@ -2290,13 +2042,11 @@ console.log('[ULTShirtModal] Script loading...')
         checkbox.checked = true
       }
 
-      // Update location item selected state
       const item = document.querySelector(`.ul-location-item[data-location="${locationId}"]`)
       if (item) {
         item.classList.add('selected')
       }
 
-      // Update 3D/2D preview
       if (this.supports3D()) {
         this.update3DDecal(locationId, true)
       } else {
@@ -2331,16 +2081,11 @@ console.log('[ULTShirtModal] Script loading...')
       if (this.el.posYSlider) this.el.posYSlider.value = loc.positionY
       if (this.el.posYValue) this.el.posYValue.textContent = loc.positionY
 
-      // Show/hide settings based on location enabled
       if (this.el.locationSettings) {
         this.el.locationSettings.classList.toggle('visible', loc.enabled)
       }
     },
 
-    /**
-     * Apply allowed locations from admin config
-     * Hide locations that are not in the allowed list
-     */
     applyAllowedLocations() {
       const allowed = this.config.allowedPositions || [
         'front',
@@ -2357,7 +2102,6 @@ console.log('[ULTShirtModal] Script loading...')
             item.style.display = ''
           } else {
             item.style.display = 'none'
-            // Disable this location in state
             if (this.step2.locations[loc]) {
               this.step2.locations[loc].enabled = false
             }
@@ -2365,7 +2109,6 @@ console.log('[ULTShirtModal] Script loading...')
         }
       })
 
-      // Make sure at least one allowed location is active
       const firstAllowed = allowed[0] || 'front'
       if (!allowed.includes(this.step2.activeLocation)) {
         this.step2.activeLocation = firstAllowed
@@ -2383,7 +2126,6 @@ console.log('[ULTShirtModal] Script loading...')
       loc.scale = parseInt(value)
       if (this.el.scaleValue) this.el.scaleValue.textContent = `${value}%`
 
-      // Update 3D or 2D fallback (FAZ 6) - debounced for performance
       if (this.supports3D()) {
         this.debouncedUpdateDecal()
       } else {
@@ -2398,7 +2140,6 @@ console.log('[ULTShirtModal] Script loading...')
       loc.positionX = parseInt(value)
       if (this.el.posXValue) this.el.posXValue.textContent = value
 
-      // Update 3D or 2D fallback (FAZ 6) - debounced for performance
       if (this.supports3D()) {
         this.debouncedUpdateDecal()
       } else {
@@ -2413,7 +2154,6 @@ console.log('[ULTShirtModal] Script loading...')
       loc.positionY = parseInt(value)
       if (this.el.posYValue) this.el.posYValue.textContent = value
 
-      // Update 3D or 2D fallback (FAZ 6) - debounced for performance
       if (this.supports3D()) {
         this.debouncedUpdateDecal()
       } else {
@@ -2421,54 +2161,41 @@ console.log('[ULTShirtModal] Script loading...')
       }
     },
 
-    // Debounced texture update for smooth slider performance
     debouncedUpdateDecal() {
-      // Clear previous timeout
       if (this._decalUpdateTimeout) {
         clearTimeout(this._decalUpdateTimeout)
       }
 
-      // Set new timeout - wait 50ms after last input (faster for texture baking)
       this._decalUpdateTimeout = setTimeout(() => {
         this.updateBakedTexture()
       }, 50)
     },
 
-    // ==========================================================================
-    // TEXTURE BAKING - Core Strategy
-    // ==========================================================================
-
-    // DEBUG MODE - Set to true to see UV grid overlay
     DEBUG_UV_GRID: false, // DISABLED for production
 
-    // Draw debug grid to visualize UV mapping
     drawDebugGrid() {
       if (!this.DEBUG_UV_GRID || !this.textureCtx) return
 
       const ctx = this.textureCtx
       const size = this.baseTextureSize
-      const gridSize = 10 // 10x10 grid
+      const gridSize = 10
       const cellSize = size / gridSize
 
-      // Draw grid lines
       ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)'
       ctx.lineWidth = 4
 
       for (let i = 0; i <= gridSize; i++) {
-        // Vertical lines
         ctx.beginPath()
         ctx.moveTo(i * cellSize, 0)
         ctx.lineTo(i * cellSize, size)
         ctx.stroke()
 
-        // Horizontal lines
         ctx.beginPath()
         ctx.moveTo(0, i * cellSize)
         ctx.lineTo(size, i * cellSize)
         ctx.stroke()
       }
 
-      // Draw cell labels (row-col format)
       ctx.font = 'bold 80px Arial'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
@@ -2478,44 +2205,33 @@ console.log('[ULTShirtModal] Script loading...')
           const x = col * cellSize + cellSize / 2
           const y = row * cellSize + cellSize / 2
 
-          // UV coordinates for this cell center
           const u = (col + 0.5) / gridSize
           const v = (row + 0.5) / gridSize
 
-          // Draw background for readability
           ctx.fillStyle = 'rgba(255, 255, 255, 0.7)'
           ctx.fillRect(x - 60, y - 40, 120, 80)
 
-          // Draw label: "R,C" format
           ctx.fillStyle = 'rgba(0, 0, 0, 0.9)'
           ctx.fillText(`${row},${col}`, x, y)
         }
       }
 
-      // Draw UV coordinate reference in corners
       ctx.font = 'bold 60px Arial'
       ctx.fillStyle = 'blue'
 
-      // Top-left: U=0, V=0
       ctx.fillText('U0,V0', 100, 50)
-      // Top-right: U=1, V=0
       ctx.fillText('U1,V0', size - 100, 50)
-      // Bottom-left: U=0, V=1
       ctx.fillText('U0,V1', 100, size - 50)
-      // Bottom-right: U=1, V=1
       ctx.fillText('U1,V1', size - 100, size - 50)
 
       console.log('[ULTShirtModal] Debug UV grid drawn - look for cell numbers on t-shirt')
       console.log('[ULTShirtModal] Grid format: row,col where row=V*10, col=U*10')
     },
 
-    // Load design image for texture baking
     loadDecalImage(url) {
       return new Promise((resolve, reject) => {
         const img = new Image()
 
-        // FAZ 5 FIX: Only set crossOrigin for non-blob URLs
-        // Blob URLs are local and don't need CORS, setting crossOrigin can cause issues
         if (!url.startsWith('blob:')) {
           img.crossOrigin = 'anonymous'
         }
@@ -2535,10 +2251,7 @@ console.log('[ULTShirtModal] Script loading...')
       })
     },
 
-    // Update the baked texture with all enabled decals
-    // FAZ 3 - EDGE-003: Added race condition prevention
     updateBakedTexture() {
-      // Increment update ID to track this update request
       const updateId = ++this.textureUpdateId
 
       if (!this.textureCtx) {
@@ -2551,14 +2264,11 @@ console.log('[ULTShirtModal] Script loading...')
 
       console.log('[ULTShirtModal] Updating baked texture... (updateId:', updateId, ')')
 
-      // Clear and fill with T-shirt color
       ctx.fillStyle = this.step2.tshirtColor
       ctx.fillRect(0, 0, size, size)
 
-      // Draw debug grid first (if enabled)
       this.drawDebugGrid()
 
-      // Draw decals for each enabled location (if decal image loaded)
       if (this.decalImage) {
         Object.entries(this.step2.locations).forEach(([locationId, loc]) => {
           if (loc.enabled) {
@@ -2567,7 +2277,6 @@ console.log('[ULTShirtModal] Script loading...')
         })
       }
 
-      // FAZ 3 - EDGE-003: Check if a newer update was requested before applying
       if (updateId !== this.textureUpdateId) {
         console.log(
           '[ULTShirtModal] Texture update cancelled - newer update pending (updateId:',
@@ -2579,13 +2288,11 @@ console.log('[ULTShirtModal] Script loading...')
         return
       }
 
-      // Apply texture to 3D mesh
       this.applyBakedTextureToMesh()
 
       console.log('[ULTShirtModal] Baked texture updated')
     },
 
-    // Draw a single decal to the texture canvas at UV coordinates
     drawDecalToTexture(locationId, locSettings) {
       const ctx = this.textureCtx
       const size = this.baseTextureSize
@@ -2596,38 +2303,29 @@ console.log('[ULTShirtModal] Script loading...')
         return
       }
 
-      // Calculate UV region dimensions in pixels
       const regionWidth = (region.bounds.uMax - region.bounds.uMin) * size
       const regionHeight = (region.bounds.vMax - region.bounds.vMin) * size
 
-      // Calculate decal size based on scale setting
       const scaleMultiplier = (locSettings.scale || 100) / 100
       const defaultSize = region.defaultSize * scaleMultiplier
 
-      // Preserve aspect ratio of original image
       const aspectRatio = this.decalImage.width / this.decalImage.height
       let decalWidth, decalHeight
 
       if (aspectRatio > 1) {
-        // Wider than tall
         decalWidth = regionWidth * defaultSize
         decalHeight = decalWidth / aspectRatio
       } else {
-        // Taller than wide
         decalHeight = regionHeight * defaultSize
         decalWidth = decalHeight * aspectRatio
       }
 
-      // Calculate center position in pixels (UV coordinates are 0-1)
-      // Canvas Y is inverted vs UV V: Canvas Y=0 is TOP, UV V=0 is BOTTOM
-      // Apply position offsets from UI (-50 to +50 range)
       const offsetX = ((locSettings.positionX || 0) / 100) * regionWidth * 0.5
       const offsetY = ((locSettings.positionY || 0) / 100) * regionHeight * 0.5
 
       const centerX = region.center.u * size + offsetX
-      const centerY = (1 - region.center.v) * size + offsetY // INVERT V for canvas
+      const centerY = (1 - region.center.v) * size + offsetY
 
-      // Draw decal centered at position with HORIZONTAL FLIP
       const drawX = centerX - decalWidth / 2
       const drawY = centerY - decalHeight / 2
 
@@ -2638,26 +2336,21 @@ console.log('[ULTShirtModal] Script loading...')
         h: Math.round(decalHeight),
       })
 
-      // Save context state
       ctx.save()
 
-      // Move to center of where we want to draw, flip horizontally, then draw
       ctx.translate(centerX, centerY)
-      ctx.scale(-1, -1) // 180 derece döndür (hem yatay hem dikey flip)
+      ctx.scale(-1, -1)
       ctx.drawImage(this.decalImage, -decalWidth / 2, -decalHeight / 2, decalWidth, decalHeight)
 
-      // Restore context state
       ctx.restore()
     },
 
-    // Apply the baked canvas texture to the 3D mesh
     applyBakedTextureToMesh() {
       if (!this.three.tshirtMesh || typeof THREE === 'undefined') {
         console.log('[ULTShirtModal] No mesh or THREE not loaded')
         return
       }
 
-      // Create texture from canvas
       const texture = new THREE.CanvasTexture(this.textureCanvas)
       texture.flipY = true
       texture.needsUpdate = true
@@ -2666,13 +2359,11 @@ console.log('[ULTShirtModal] Script loading...')
         texture.colorSpace = THREE.SRGBColorSpace
       }
 
-      // Apply to mesh material
       const target = this.three.tshirtModel || this.three.tshirtMesh
 
       if (target.traverse) {
         target.traverse((child) => {
           if (child.isMesh && child.material) {
-            // Dispose old map
             if (child.material.map && child.material.map !== texture) {
               child.material.map.dispose()
             }
@@ -2698,23 +2389,19 @@ console.log('[ULTShirtModal] Script loading...')
     calculatePrice() {
       let total = this.step2.basePrice
 
-      // Add location prices (first location is free)
       const enabledLocs = this.getEnabledLocations()
       let locationTotal = 0
       enabledLocs.forEach((locId, idx) => {
         if (idx > 0) {
-          // First is free
           locationTotal += this.step2.locations[locId].price
         }
       })
 
-      // Add size modifier
       const sizeModifier = this.config.sizePricing[this.step2.tshirtSize] || 0
 
       total += locationTotal + sizeModifier
       this.step2.calculatedPrice = total
 
-      // Update UI
       if (this.el.priceBase) this.el.priceBase.textContent = `$${this.step2.basePrice.toFixed(2)}`
 
       if (locationTotal > 0) {
@@ -2736,24 +2423,17 @@ console.log('[ULTShirtModal] Script loading...')
     },
 
     setQuickView(view) {
-      // Update button state
       this.el.quickViewBtns?.forEach((btn) => {
         btn.classList.toggle('active', btn.dataset.view === view)
       })
 
-      // Move camera
       this.moveCamera(view)
     },
-
-    // ==========================================================================
-    // THREE.JS 3D SCENE - v5.0 Texture Baking Strategy
-    // ==========================================================================
 
     async init3D() {
       if (typeof THREE === 'undefined') {
         console.warn('[ULTShirtModal] Three.js not loaded, showing 2D fallback')
 
-        // FAZ 7: Show info toast about 3D unavailable
         if (window.ULErrorHandler) {
           window.ULErrorHandler.show('THREE_WEBGL_NOT_SUPPORTED')
         }
@@ -2770,20 +2450,16 @@ console.log('[ULTShirtModal] Script loading...')
       const height = container.clientHeight
 
       try {
-        // Scene
         this.three.scene = new THREE.Scene()
         this.three.scene.background = new THREE.Color(0xf0f0f0)
 
-        // Camera - adjusted for 2x model scale
         this.three.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000)
         this.three.camera.position.set(0, 0, 3)
 
-        // Renderer
         this.three.renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
         this.three.renderer.setSize(width, height)
         this.three.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
 
-        // Lighting
         const ambient = new THREE.AmbientLight(0xffffff, 0.6)
         this.three.scene.add(ambient)
 
@@ -2795,24 +2471,18 @@ console.log('[ULTShirtModal] Script loading...')
         dir2.position.set(-5, 5, -5)
         this.three.scene.add(dir2)
 
-        // Create T-shirt mesh (simplified plane for now)
         await this.createTShirtMesh()
 
-        // Apply design
         await this.applyDesignTexture()
 
-        // Hide loading
         if (this.el.loading3d) this.el.loading3d.style.display = 'none'
 
-        // Setup mouse drag rotation
         this.setupMouseDragRotation(canvas)
 
-        // Start render loop
         this.animate3D()
       } catch (error) {
         console.error('[ULTShirtModal] 3D init error:', error)
 
-        // FAZ 7: Show 3D error and fallback
         if (window.ULErrorHandler) {
           window.ULErrorHandler.show('THREE_MODEL_LOAD_FAILED')
         }
@@ -2824,7 +2494,6 @@ console.log('[ULTShirtModal] Script loading...')
     async createTShirtMesh() {
       const color = parseInt(this.step2.tshirtColor.replace('#', '0x'))
 
-      // Wait for GLTFLoader to be available (async script loading)
       const waitForGLTFLoader = () => {
         return new Promise((resolve) => {
           let attempts = 0
@@ -2832,7 +2501,6 @@ console.log('[ULTShirtModal] Script loading...')
             if (typeof THREE !== 'undefined' && typeof THREE.GLTFLoader !== 'undefined') {
               resolve(true)
             } else if (attempts < 50) {
-              // Wait up to 2.5 seconds
               attempts++
               setTimeout(check, 50)
             } else {
@@ -2845,11 +2513,9 @@ console.log('[ULTShirtModal] Script loading...')
 
       const glTFLoaderReady = await waitForGLTFLoader()
 
-      // Try to load GLB model
       if (glTFLoaderReady) {
         return new Promise((resolve) => {
           const loader = new THREE.GLTFLoader()
-          // Use app proxy for multi-store support
           const glbUrl = window.UL_TSHIRT_GLB_URL || '/apps/customizer/shirt_baked.glb'
 
           console.log('[ULTShirtModal] Loading GLB model from:', glbUrl)
@@ -2859,10 +2525,8 @@ console.log('[ULTShirtModal] Script loading...')
             (gltf) => {
               console.log('[ULTShirtModal] GLB model loaded successfully')
 
-              // Store the whole scene as tshirtModel
               this.three.tshirtModel = gltf.scene
 
-              // Find and store the actual mesh for decal attachment
               let actualMesh = null
               this.three.tshirtModel.traverse((child) => {
                 if (child.isMesh) {
@@ -2872,7 +2536,6 @@ console.log('[ULTShirtModal] Script loading...')
                     metalness: 0.0,
                     side: THREE.DoubleSide,
                   })
-                  // Store first mesh found (T_Shirt_male)
                   if (!actualMesh) {
                     actualMesh = child
                     console.log('[ULTShirtModal] Found T-shirt mesh:', child.name)
@@ -2880,19 +2543,15 @@ console.log('[ULTShirtModal] Script loading...')
                 }
               })
 
-              // Store reference to actual mesh for decals
               this.three.tshirtMesh = actualMesh || this.three.tshirtModel
 
-              // Scale 2x for better visibility - apply to MODEL
               this.three.tshirtModel.scale.set(2, 2, 2)
-              // Model center is at approximately (0, -0.045, 0.01)
-              this.three.tshirtModel.position.set(0, 0.1, 0) // Slight Y offset to center in view
+              this.three.tshirtModel.position.set(0, 0.1, 0)
 
               this.three.scene.add(this.three.tshirtModel)
               resolve()
             },
             (progress) => {
-              // Loading progress
               if (progress.total) {
                 const pct = Math.round((progress.loaded / progress.total) * 100)
                 console.log('[ULTShirtModal] GLB loading:', pct + '%')
@@ -2912,7 +2571,6 @@ console.log('[ULTShirtModal] Script loading...')
     },
 
     createFallbackPlane(color) {
-      // Fallback plane geometry when GLB loading fails
       const geometry = new THREE.PlaneGeometry(2, 2.8)
       const material = new THREE.MeshStandardMaterial({
         color: color,
@@ -2925,15 +2583,11 @@ console.log('[ULTShirtModal] Script loading...')
     },
 
     async applyDesignTexture() {
-      // FAZ 0 - TSM-006: Prefer blobUrl (local cache) over remote URL
-      // This prevents CORS issues and handles expired signed URLs
       let designUrl
 
       if (this.step1.useInheritedDesign) {
-        // Prefer blobUrl if available (cached version), fallback to original URL
         designUrl = this.inheritedDesign.blobUrl || this.inheritedDesign.thumbnailUrl
       } else {
-        // For new uploads, we already use blob URL from performUpload
         designUrl = this.step1.newUpload.blobUrl || this.step1.newUpload.thumbnailUrl
       }
 
@@ -2944,22 +2598,18 @@ console.log('[ULTShirtModal] Script loading...')
 
       if (!designUrl) {
         console.log('[ULTShirtModal] No design URL available')
-        // Still apply base color texture
         this.updateBakedTexture()
         return
       }
 
       try {
-        // Load decal image for texture baking
         await this.loadDecalImage(designUrl)
         console.log('[ULTShirtModal] Decal image loaded, updating baked texture...')
 
-        // Update baked texture with all enabled decals
         this.updateBakedTexture()
       } catch (error) {
         console.error('[ULTShirtModal] Failed to load decal image:', error)
 
-        // Try fetch fallback for CORS issues
         try {
           const res = await fetch(designUrl, { mode: 'cors', credentials: 'omit' })
           if (!res.ok) throw new Error('Fetch failed: ' + res.status)
@@ -2967,14 +2617,12 @@ console.log('[ULTShirtModal] Script loading...')
           const blob = await res.blob()
           const bitmap = await createImageBitmap(blob)
 
-          // Convert bitmap to img for canvas drawing
           const canvas = document.createElement('canvas')
           canvas.width = bitmap.width
           canvas.height = bitmap.height
           const ctx = canvas.getContext('2d')
           ctx.drawImage(bitmap, 0, 0)
 
-          // Create img from canvas
           const img = new Image()
           img.src = canvas.toDataURL()
           await new Promise((resolve) => (img.onload = resolve))
@@ -2987,50 +2635,35 @@ console.log('[ULTShirtModal] Script loading...')
           if (window.ULErrorHandler) {
             window.ULErrorHandler.show('THREE_TEXTURE_FAILED')
           }
-          // Apply base color only
           this.updateBakedTexture()
         }
       }
     },
 
-    // ==========================================================================
-    // LEGACY DECAL METHODS (Deprecated - kept for reference)
-    // Texture Baking strategy replaces these with updateBakedTexture()
-    // ==========================================================================
-
-    // Legacy: No longer used - Texture Baking handles this
     createDecalFromTexture(texture) {
       console.log('[ULTShirtModal] createDecalFromTexture called - using Texture Baking instead')
-      // Store reference for compatibility
       this.currentTexture = texture
     },
 
-    // Legacy: No longer used - Texture Baking handles this
     createDecalForLocation(texture, locationId, targetMesh) {
       console.log('[ULTShirtModal] createDecalForLocation called - using Texture Baking instead')
     },
 
     update3DColor(hex) {
-      // With Texture Baking, color is part of the baked texture
-      // Just update the baked texture - it will redraw with new color
       this.updateBakedTexture()
     },
 
     update3DDecal(locationId, enabled) {
-      // With Texture Baking, just update the baked texture
-      // Enabled/disabled locations are handled by updateBakedTexture
       this.updateBakedTexture()
     },
 
     update3DDecalTransform() {
-      // With Texture Baking, transform changes are handled by updateBakedTexture
       this.updateBakedTexture()
     },
 
     moveCamera(view) {
       if (!this.three.camera) return
 
-      // Camera positions adjusted for 2x model scale
       const positions = {
         front: { x: 0, y: 0, z: 3 },
         back: { x: 0, y: 0, z: -3 },
@@ -3040,11 +2673,9 @@ console.log('[ULTShirtModal] Script loading...')
 
       const pos = positions[view] || positions.front
 
-      // Animate camera (simplified)
       this.three.camera.position.set(pos.x, pos.y, pos.z)
       this.three.camera.lookAt(0, 0, 0)
 
-      // Reset rotation when changing view
       this.three.targetRotationY = 0
       this.three.currentRotationY = 0
       const target = this.three.tshirtModel || this.three.tshirtMesh
@@ -3053,41 +2684,34 @@ console.log('[ULTShirtModal] Script loading...')
       }
     },
 
-    // Setup mouse drag rotation for T-shirt
     setupMouseDragRotation(canvas) {
       const self = this
 
-      // Mouse down - start dragging
       canvas.addEventListener('mousedown', (e) => {
         self.three.isDragging = true
         self.three.previousMouseX = e.clientX
         canvas.style.cursor = 'grabbing'
       })
 
-      // Mouse move - rotate if dragging
       canvas.addEventListener('mousemove', (e) => {
         if (!self.three.isDragging) return
 
         const deltaX = e.clientX - self.three.previousMouseX
         self.three.previousMouseX = e.clientX
 
-        // Adjust rotation speed
         self.three.targetRotationY += deltaX * 0.01
       })
 
-      // Mouse up - stop dragging
       canvas.addEventListener('mouseup', () => {
         self.three.isDragging = false
         canvas.style.cursor = 'grab'
       })
 
-      // Mouse leave - stop dragging
       canvas.addEventListener('mouseleave', () => {
         self.three.isDragging = false
         canvas.style.cursor = 'grab'
       })
 
-      // Touch support for mobile
       canvas.addEventListener('touchstart', (e) => {
         if (e.touches.length === 1) {
           self.three.isDragging = true
@@ -3104,7 +2728,7 @@ console.log('[ULTShirtModal] Script loading...')
           self.three.previousMouseX = e.touches[0].clientX
 
           self.three.targetRotationY += deltaX * 0.01
-          e.preventDefault() // Prevent scrolling
+          e.preventDefault()
         },
         { passive: false }
       )
@@ -3113,7 +2737,6 @@ console.log('[ULTShirtModal] Script loading...')
         self.three.isDragging = false
       })
 
-      // Set initial cursor
       canvas.style.cursor = 'grab'
 
       console.log('[ULTShirtModal] Mouse drag rotation enabled')
@@ -3124,14 +2747,11 @@ console.log('[ULTShirtModal] Script loading...')
 
       this.three.animationId = requestAnimationFrame(() => this.animate3D())
 
-      // Smooth rotation interpolation
       const target = this.three.tshirtModel || this.three.tshirtMesh
       if (target) {
-        // Lerp current rotation towards target
         this.three.currentRotationY +=
           (this.three.targetRotationY - this.three.currentRotationY) * 0.1
 
-        // Apply rotation to MODEL (decals are children, so they rotate too)
         target.rotation.y = this.three.currentRotationY
       }
 
@@ -3156,7 +2776,6 @@ console.log('[ULTShirtModal] Script loading...')
         this.three.animationId = null
       }
 
-      // Dispose decals
       Object.values(this.three.decals).forEach((decal) => {
         if (decal) {
           decal.geometry?.dispose()
@@ -3201,11 +2820,7 @@ console.log('[ULTShirtModal] Script loading...')
       this.three.renderer.setSize(width, height)
     },
 
-    // ==========================================================================
-    // STEP 3: DETAILS
-    // ==========================================================================
     initStep3() {
-      // Update preview summary
       const enabledLocs = this.getEnabledLocations()
       const locNames = enabledLocs.map((id) => {
         const map = {
@@ -3224,18 +2839,13 @@ console.log('[ULTShirtModal] Script loading...')
         this.el.detailsMeta.textContent = `Locations: ${locNames.join(', ')} • Subtotal: $${this.step2.calculatedPrice.toFixed(2)}`
       }
 
-      // FAZ 1 - TSM-005: Render extra questions
       this.renderTShirtQuestions()
 
-      // Update quantity display
       if (this.el.qtyValue) {
         this.el.qtyValue.textContent = this.step3.quantity.toString()
       }
     },
 
-    /**
-     * FAZ 1 - TSM-005: Render T-Shirt extra questions in Step 3
-     */
     renderTShirtQuestions() {
       const container =
         this.el.extraQuestions ||
@@ -3245,7 +2855,6 @@ console.log('[ULTShirtModal] Script loading...')
         return
       }
 
-      // Get T-Shirt specific questions from config
       const questions = this.config.tshirtExtraQuestions || this.config.extraQuestions || []
 
       if (questions.length === 0) {
@@ -3268,7 +2877,6 @@ console.log('[ULTShirtModal] Script loading...')
         const fieldDiv = document.createElement('div')
         fieldDiv.className = 'ul-question-field'
 
-        // Preserve existing answer if user goes back/forward
         const existingAnswer = this.step3.extraAnswers[q.label] || ''
 
         let inputHtml = ''
@@ -3300,7 +2908,6 @@ console.log('[ULTShirtModal] Script loading...')
           ${inputHtml}
         `
 
-        // Bind change event
         const input = fieldDiv.querySelector('input, textarea, select')
         if (input) {
           const eventType = input.tagName === 'SELECT' ? 'change' : 'input'
@@ -3317,9 +2924,6 @@ console.log('[ULTShirtModal] Script loading...')
       })
     },
 
-    /**
-     * FAZ 1 - TSM-005: HTML escape helper for XSS prevention
-     */
     escapeHtml(text) {
       if (!text) return ''
       const div = document.createElement('div')
@@ -3342,9 +2946,6 @@ console.log('[ULTShirtModal] Script loading...')
       this.updateNavButtons()
     },
 
-    // ==========================================================================
-    // STEP 4: REVIEW
-    // ==========================================================================
     initStep4() {
       const enabledLocs = this.getEnabledLocations()
       const locNames = enabledLocs.map((id) => {
@@ -3357,16 +2958,13 @@ console.log('[ULTShirtModal] Script loading...')
         return map[id] || id
       })
 
-      // Generate location snapshots
       this.generateLocationSnapshots(enabledLocs)
 
-      // Update review details
       if (this.el.reviewColor) this.el.reviewColor.textContent = this.step2.tshirtColorName
       if (this.el.reviewSize) this.el.reviewSize.textContent = this.step2.tshirtSize
       if (this.el.reviewQty) this.el.reviewQty.textContent = this.step3.quantity.toString()
       if (this.el.reviewLocations) this.el.reviewLocations.textContent = locNames.join(', ')
 
-      // Update price
       const total = this.step2.calculatedPrice * this.step3.quantity
       if (this.el.reviewPriceBase) {
         this.el.reviewPriceBase.textContent = `$${this.step2.basePrice.toFixed(2)}`
@@ -3375,7 +2973,6 @@ console.log('[ULTShirtModal] Script loading...')
         this.el.reviewTotal.textContent = `$${total.toFixed(2)}`
       }
 
-      // Update price breakdown
       this.updateReviewPriceBreakdown()
 
       this.updateActionButtons()
@@ -3439,7 +3036,6 @@ console.log('[ULTShirtModal] Script loading...')
       this.el.reviewPriceBreakdown.innerHTML = html
     },
 
-    // Generate snapshots for each enabled location
     async generateLocationSnapshots(enabledLocs) {
       const grid = document.getElementById('ul-review-preview-grid')
       if (!grid) return
@@ -3458,10 +3054,8 @@ console.log('[ULTShirtModal] Script loading...')
         right_sleeve: Math.PI / 2,
       }
 
-      // Clear existing grid
       grid.innerHTML = ''
 
-      // If no 3D renderer, show placeholder
       if (!this.three.renderer || !this.three.scene || !this.three.camera) {
         enabledLocs.forEach((locId) => {
           const item = document.createElement('div')
@@ -3475,9 +3069,7 @@ console.log('[ULTShirtModal] Script loading...')
         return
       }
 
-      // Generate snapshot for each location
       for (const locId of enabledLocs) {
-        // Rotate camera to this location
         const targetRotation = cameraRotations[locId] || 0
 
         if (this.three.tshirtModel) {
@@ -3486,25 +3078,20 @@ console.log('[ULTShirtModal] Script loading...')
           this.three.tshirtMesh.rotation.y = targetRotation
         }
 
-        // FAZ 2 - TSM-010: Wait for GPU to process rotation with double RAF
         await new Promise((resolve) => {
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-              // Double RAF ensures render pass completed
               this.three.renderer.render(this.three.scene, this.three.camera)
               resolve()
             })
           })
         })
 
-        // Capture snapshot
         const dataUrl = this.three.renderer.domElement.toDataURL('image/png')
 
-        // Store snapshot for order note
         this.step4.locationSnapshots = this.step4.locationSnapshots || {}
         this.step4.locationSnapshots[locId] = dataUrl
 
-        // Create preview item with click handler
         const item = document.createElement('div')
         item.className = 'ul-review-preview-item'
 
@@ -3521,7 +3108,6 @@ console.log('[ULTShirtModal] Script loading...')
         img.alt = `${locNames[locId]} preview`
         img.style.cssText = 'width: 100%; height: 100%; object-fit: contain; border-radius: 8px;'
 
-        // Add click-to-zoom handler
         box.addEventListener('click', () => {
           this.showLightbox(dataUrl, locNames[locId])
         })
@@ -3531,11 +3117,9 @@ console.log('[ULTShirtModal] Script loading...')
         item.appendChild(box)
         grid.appendChild(item)
 
-        // Small delay between snapshots
         await new Promise((r) => setTimeout(r, 100))
       }
 
-      // Reset rotation to front
       if (this.three.tshirtModel) {
         this.three.tshirtModel.rotation.y = 0
       } else if (this.three.tshirtMesh) {
@@ -3543,12 +3127,9 @@ console.log('[ULTShirtModal] Script loading...')
       }
     },
 
-    // Show lightbox with zoomed image
     showLightbox(imageUrl, label) {
-      // Remove existing lightbox if any
       this.closeLightbox()
 
-      // Create lightbox overlay
       const overlay = document.createElement('div')
       overlay.className = 'ul-lightbox-overlay'
       overlay.id = 'ul-lightbox-overlay'
@@ -3581,14 +3162,12 @@ console.log('[ULTShirtModal] Script loading...')
       content.appendChild(hint)
       overlay.appendChild(content)
 
-      // Close on overlay click (not content)
       overlay.addEventListener('click', (e) => {
         if (e.target === overlay) {
           this.closeLightbox()
         }
       })
 
-      // Close on ESC key
       this._lightboxKeyHandler = (e) => {
         if (e.key === 'Escape') {
           this.closeLightbox()
@@ -3598,13 +3177,11 @@ console.log('[ULTShirtModal] Script loading...')
 
       document.body.appendChild(overlay)
 
-      // Trigger animation
       requestAnimationFrame(() => {
         overlay.classList.add('active')
       })
     },
 
-    // Close lightbox
     closeLightbox() {
       const overlay = document.getElementById('ul-lightbox-overlay')
       if (overlay) {
@@ -3628,23 +3205,15 @@ console.log('[ULTShirtModal] Script loading...')
       }
     },
 
-    // ==========================================================================
-    // CART ACTIONS
-    // ==========================================================================
     async addToCart() {
-      // Get design data
       const designData = this.step1.useInheritedDesign ? this.inheritedDesign : this.step1.newUpload
 
-      // FAZ 0 - TSM-004: Use robust variant matching instead of weak includes() logic
       const selectedSize = this.step2.tshirtSize
       const selectedColor = this.step2.tshirtColorName
       let variantId = null
       let selectedVariant = null
 
-      // IMPORTANT: We must use variants from the T-Shirt product we loaded
-      // NOT from the current page product (which is DTF Gang Sheets)
       if (this.product.variants && this.product.variants.length > 0) {
-        // Use robust matching with normalization
         selectedVariant = this.findMatchingVariant(selectedColor, selectedSize)
         variantId = selectedVariant?.id
         console.log(
@@ -3655,7 +3224,6 @@ console.log('[ULTShirtModal] Script loading...')
         )
       }
 
-      // If T-Shirt product wasn't loaded, show error
       if (!variantId) {
         console.error(
           '[ULTShirtModal] No T-Shirt variant found. Product variants:',
@@ -3674,15 +3242,12 @@ console.log('[ULTShirtModal] Script loading...')
         selectedColor
       )
 
-      // Prepare line item properties
       const properties = {
-        // Hidden keys (internal use)
         _ul_upload_id: designData.uploadId,
         _ul_tshirt_color: this.step2.tshirtColorName,
         _ul_tshirt_size: this.step2.tshirtSize,
         _ul_locations: this.getEnabledLocations().join(','),
         _ul_is_tshirt: 'true',
-        // Visible keys (shown in checkout)
         'Uploaded File': designData.originalUrl || designData.thumbnailUrl,
         'Design Name': designData.name,
         'T-Shirt Color': this.step2.tshirtColorName,
@@ -3690,7 +3255,6 @@ console.log('[ULTShirtModal] Script loading...')
         'Print Locations': this.getEnabledLocations().join(', '),
       }
 
-      // Add location settings
       this.getEnabledLocations().forEach((locId) => {
         const loc = this.step2.locations[locId]
         properties[`_ul_${locId}_scale`] = loc.scale.toString()
@@ -3698,15 +3262,12 @@ console.log('[ULTShirtModal] Script loading...')
         properties[`_ul_${locId}_pos_y`] = loc.positionY.toString()
       })
 
-      // Add special instructions
       if (this.step3.specialInstructions) {
         properties['_ul_special_instructions'] = this.step3.specialInstructions
       }
 
-      // Generate detailed order note for production
       const orderNote = this.generateOrderNote()
 
-      // Add to cart via Shopify AJAX API
       const cartData = {
         items: [
           {
@@ -3718,7 +3279,6 @@ console.log('[ULTShirtModal] Script loading...')
       }
 
       try {
-        // First add item to cart
         const response = await fetch('/cart/add.js', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -3726,10 +3286,8 @@ console.log('[ULTShirtModal] Script loading...')
         })
 
         if (!response.ok) {
-          // FAZ 7: Parse error response for better handling
           const errorData = await response.json().catch(() => ({}))
 
-          // Check for specific errors
           if (errorData.description?.includes('not available') || errorData.status === 422) {
             if (window.ULErrorHandler) {
               window.ULErrorHandler.show('CART_VARIANT_OUT_OF_STOCK')
@@ -3740,14 +3298,11 @@ console.log('[ULTShirtModal] Script loading...')
           throw new Error(errorData.description || 'Failed to add to cart')
         }
 
-        // Update cart note with order details
         await this.updateCartNote(orderNote)
 
-        // Dispatch cart update event
         document.dispatchEvent(new CustomEvent('ul:cartUpdated'))
         document.dispatchEvent(new CustomEvent('cart:updated'))
 
-        // FAZ 8: Track add to cart from T-Shirt modal
         if (window.ULAnalytics) {
           const enabledLocations = Object.keys(this.step2.locations).filter(
             (k) => this.step2.locations[k].enabled
@@ -3769,7 +3324,6 @@ console.log('[ULTShirtModal] Script loading...')
       } catch (error) {
         console.error('[ULTShirtModal] Add to cart error:', error)
 
-        // FAZ 7: Enhanced cart error handling
         if (window.ULErrorHandler) {
           const errorMsg = error.message || ''
           let errorCode = 'CART_ADD_FAILED'
@@ -3795,7 +3349,6 @@ console.log('[ULTShirtModal] Script loading...')
       }
     },
 
-    // Generate detailed order note for production team
     generateOrderNote() {
       const designData = this.step1.useInheritedDesign ? this.inheritedDesign : this.step1.newUpload
       const enabledLocs = this.getEnabledLocations()
@@ -3805,7 +3358,6 @@ console.log('[ULTShirtModal] Script loading...')
       note += `🎨 T-SHIRT CUSTOMIZER ORDER\n`
       note += `═══════════════════════════════════════\n\n`
 
-      // Basic Info
       note += `📋 ORDER DETAILS:\n`
       note += `─────────────────────────────────────\n`
       note += `• Size: ${this.step2.tshirtSize}\n`
@@ -3813,7 +3365,6 @@ console.log('[ULTShirtModal] Script loading...')
       note += `• Quantity: ${this.step3.quantity}\n`
       note += `• Timestamp: ${now}\n\n`
 
-      // Design Info
       note += `🖼️ DESIGN FILE:\n`
       note += `─────────────────────────────────────\n`
       note += `• Name: ${designData.name || 'Custom Design'}\n`
@@ -3823,7 +3374,6 @@ console.log('[ULTShirtModal] Script loading...')
       }
       note += `\n`
 
-      // Print Locations
       note += `📍 PRINT LOCATIONS (${enabledLocs.length}):\n`
       note += `─────────────────────────────────────\n`
 
@@ -3853,14 +3403,12 @@ console.log('[ULTShirtModal] Script loading...')
 
       note += `\n`
 
-      // Special Instructions
       if (this.step3.specialInstructions) {
         note += `📝 SPECIAL INSTRUCTIONS:\n`
         note += `─────────────────────────────────────\n`
         note += `${this.step3.specialInstructions}\n\n`
       }
 
-      // Technical Info
       note += `⚙️ TECHNICAL INFO:\n`
       note += `─────────────────────────────────────\n`
       note += `• Canvas Size: 2048x2048px\n`
@@ -3871,45 +3419,36 @@ console.log('[ULTShirtModal] Script loading...')
       return note
     },
 
-    // Update cart note with order details
-    // FAZ 2 - TSM-008: Added truncation logic for Shopify's 5000 char limit
     async updateCartNote(note) {
-      const MAX_NOTE_LENGTH = 4800 // 200 char safety margin
+      const MAX_NOTE_LENGTH = 4800
 
       try {
-        // First get existing cart to preserve any existing notes
         const cartResponse = await fetch('/cart.js')
         const cart = await cartResponse.json()
 
-        // Append to existing note if any
         let fullNote = cart.note || ''
         if (fullNote) {
           fullNote += '\n\n'
         }
         fullNote += note
 
-        // FAZ 2 - TSM-008: Truncate if too long
         if (fullNote.length > MAX_NOTE_LENGTH) {
           console.warn('[ULTShirtModal] Cart note exceeds limit:', fullNote.length, 'chars')
 
-          // Split by separator and keep most recent notes
           const separator = '═══════════════════════════════════════'
           const notes = fullNote.split(separator)
           let truncated = ''
 
-          // Add notes from end (newest first)
           for (let i = notes.length - 1; i >= 0; i--) {
             const testNote =
               notes[i].trim() + (truncated ? '\n' + separator + '\n' + truncated : '')
             if (testNote.length <= MAX_NOTE_LENGTH) {
               truncated = testNote
             } else if (truncated) {
-              // We have some notes, stop adding more
               break
             }
           }
 
-          // Fallback: if still too long, just truncate
           if (!truncated || truncated.length > MAX_NOTE_LENGTH) {
             truncated =
               note.substring(0, MAX_NOTE_LENGTH - 50) + '\n[Note truncated due to length limit]'
@@ -3919,7 +3458,6 @@ console.log('[ULTShirtModal] Script loading...')
           console.log('[ULTShirtModal] Cart note truncated to:', fullNote.length, 'chars')
         }
 
-        // Update cart note
         await fetch('/cart/update.js', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -3929,7 +3467,6 @@ console.log('[ULTShirtModal] Script loading...')
         console.log('[ULTShirtModal] Order note added to cart')
       } catch (error) {
         console.warn('[ULTShirtModal] Failed to update cart note:', error)
-        // Non-blocking - continue even if note update fails
       }
     },
 
@@ -3939,7 +3476,6 @@ console.log('[ULTShirtModal] Script loading...')
       if (success) {
         this.showToast('✓ Added to cart! Design another item.', 'success')
 
-        // FAZ 8: Track design another action
         if (window.ULAnalytics) {
           window.ULAnalytics.trackTShirtDesignAnother({
             previousColor: this.step2.tshirtColorName,
@@ -3950,10 +3486,8 @@ console.log('[ULTShirtModal] Script loading...')
           })
         }
 
-        // Reset and go to step 1
         this.resetState()
 
-        // Keep inherited design available
         if (this.inheritedDesign.uploadId) {
           this.showInheritedDesign()
         }
@@ -3968,7 +3502,6 @@ console.log('[ULTShirtModal] Script loading...')
       if (success) {
         this.showToast('✓ Added to cart!', 'success')
 
-        // Emit global event (FAZ 4)
         if (window.ULEvents) {
           window.ULEvents.emit('addToCart', {
             source: 'tshirt-modal',
@@ -3981,7 +3514,6 @@ console.log('[ULTShirtModal] Script loading...')
           })
         }
 
-        // FAZ 8: Track checkout action from T-Shirt modal
         if (window.ULAnalytics) {
           const enabledLocations = Object.keys(this.step2.locations).filter(
             (k) => this.step2.locations[k].enabled
@@ -3998,21 +3530,14 @@ console.log('[ULTShirtModal] Script loading...')
           })
         }
 
-        // Close modal
         this.close()
 
-        // Redirect to Shopify cart page
         setTimeout(() => {
           window.location.href = '/cart'
         }, 300)
       }
     },
 
-    // ==========================================================================
-    // UTILITIES
-    // ==========================================================================
-
-    // FAZ 8: Get step name for analytics
     getStepName(step) {
       const stepNames = {
         1: 'design',
@@ -4038,25 +3563,19 @@ console.log('[ULTShirtModal] Script loading...')
       this.el.toast.textContent = message
       this.el.toast.className = 'ul-toast ' + type
 
-      // Show
       setTimeout(() => this.el.toast.classList.add('show'), 10)
 
-      // Hide after 3s
       setTimeout(() => {
         this.el.toast.classList.remove('show')
       }, 3000)
     },
   }
 
-  // ==========================================================================
-  // INITIALIZE
-  // ==========================================================================
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => ULTShirtModal.init())
   } else {
     ULTShirtModal.init()
   }
 
-  // Expose globally
   window.ULTShirtModal = ULTShirtModal
 })()

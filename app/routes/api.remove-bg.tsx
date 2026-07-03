@@ -1,17 +1,17 @@
-/**
- * Remove Background API Proxy
- * ============================
- * POST /api/remove-bg
- * 
- * Proxies requests to remove.bg API.
- * API key is read from REMOVE_BG_API_KEY env variable.
- * Never exposes the API key to the client.
- */
+
+
+
+
+
+
+
+
+
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, corsJson } from "~/lib/cors.server";
 
 export async function action({ request }: ActionFunctionArgs) {
-  // Handle CORS preflight
+
   if (request.method === "OPTIONS") {
     return handleCorsOptions(request);
   }
@@ -34,7 +34,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return corsJson({ error: "Missing imageUrl" }, request, { status: 400 });
     }
 
-    // Call remove.bg API
+
     const response = await fetch("https://api.remove.bg/v1.0/removebg", {
       method: "POST",
       headers: {
@@ -59,7 +59,7 @@ export async function action({ request }: ActionFunctionArgs) {
       );
     }
 
-    // remove.bg returns base64 in JSON response with Accept: application/json
+
     const result = await response.json();
 
     return corsJson({
@@ -76,7 +76,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 }
 
-// Loader for CORS preflight
+
 export async function loader({ request }: ActionFunctionArgs) {
   if (request.method === "OPTIONS") {
     return handleCorsOptions(request);

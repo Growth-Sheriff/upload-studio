@@ -3,21 +3,21 @@ import { isBunnyUrl, readLocalFile } from '~/lib/storage.server'
 import { authenticate } from '~/shopify.server'
 import prisma from '~/lib/prisma.server'
 
-/**
- * GET /api/storage/preview/:key
- *
- * Protected endpoint - requires admin authentication
- * Serves files from local storage with proper caching headers.
- * For thumbnails and preview images in the admin panel.
- *
- * For Bunny storage: Redirects to CDN
- * For Local storage: Serves from filesystem
- *
- * The key is URL-encoded and can contain slashes.
- */
+
+
+
+
+
+
+
+
+
+
+
+
 export async function loader({ params, request }: LoaderFunctionArgs) {
   try {
-    // Require admin authentication for storage preview
+
     let session: { shop: string }
     try {
       const auth = await authenticate.admin(request)
@@ -35,7 +35,7 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
       return new Response('Shop not found', { status: 404 })
     }
 
-    // Get the full key from params - Remix handles the splat
+
     const url = new URL(request.url)
     const pathAfterPreview = url.pathname.replace('/api/storage/preview/', '')
     const key = decodeURIComponent(pathAfterPreview)
@@ -44,7 +44,7 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
       return new Response('Missing key', { status: 400 })
     }
 
-    // Verify the storage key belongs to this shop
+
     const ownsKey = await prisma.upload.findFirst({
       where: {
         shopId: shop.id,
@@ -61,7 +61,7 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
       return new Response('Forbidden', { status: 403 })
     }
 
-    // If key is a Bunny URL or bunny: prefixed, redirect to CDN
+
     if (isBunnyUrl(key) || key.startsWith('bunny:')) {
       const cdnUrl = process.env.BUNNY_CDN_URL || 'https://customizerappdev.b-cdn.net'
       let redirectUrl: string
@@ -76,7 +76,7 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
       return Response.redirect(redirectUrl, 302)
     }
 
-    // Local storage
+
     try {
       const data = await readLocalFile(key)
       const contentType = getContentType(key)

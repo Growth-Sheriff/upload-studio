@@ -3,8 +3,8 @@ import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 
-// Related: https://github.com/remix-run/remix/issues/2835#issuecomment-1144102176
-// Replace the HOST env var with SHOPIFY_APP_URL so that it doesn't break the remix server.
+
+
 if (
   process.env.HOST &&
   (!process.env.SHOPIFY_APP_URL ||
@@ -25,7 +25,7 @@ export default defineConfig({
         v3_fetcherPersist: true,
         v3_relativeSplatPath: true,
         v3_throwAbortReason: true,
-        v3_singleFetch: false, // IMPORTANT: Must be false for Shopify embedded apps
+        v3_singleFetch: false,
         v3_lazyRouteDiscovery: true,
       },
     }),

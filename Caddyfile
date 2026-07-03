@@ -3,37 +3,37 @@ customizerapp.dev {
 
     encode gzip
 
-    # 🆕 Request body limit for 1.4GB uploads (Pro plan max)
-    # Plus buffer for multipart overhead
+
+
     request_body {
         max_size 1500MB
     }
 
-    # Remove X-Frame-Options for Shopify embedded app
+
     header -X-Frame-Options
 
-    # Content Security Policy for Shopify
+
     header Content-Security-Policy "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com;"
 
-    # Security headers
+
     header X-Content-Type-Options nosniff
     header X-XSS-Protection "1; mode=block"
     header Referrer-Policy strict-origin-when-cross-origin
 
-    # Logging
+
     log {
         output file /var/log/caddy/upload-lift.log
         format json
     }
 }
 
-# 🆕 Upload Proxy for BunnyCDN (Bypass Firewall Blocks)
+
 upload.customizerapp.dev {
     reverse_proxy https://storage.bunnycdn.com {
         header_up Host {upstream_hostport}
     }
 
-    # High timeout for large uploads
+
     request_body {
         max_size 1500MB
     }

@@ -1,31 +1,31 @@
-/**
- * Public API v1 - Single Upload Endpoints
- * GET /api/v1/uploads/:id - Get upload details
- * POST /api/v1/uploads/:id/approve - Approve upload
- * POST /api/v1/uploads/:id/reject - Reject upload
- */
+
+
+
+
+
+
 
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { authenticateApiRequest, requireApiPermission } from "~/lib/api.server";
 import prisma from "~/lib/prisma.server";
 
-// GET /api/v1/uploads/:id
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const { id } = params;
 
-  // Authenticate
+
   const authResult = await authenticateApiRequest(request);
   if (authResult instanceof Response) {
     return authResult;
   }
   const ctx = authResult;
 
-  // Check permission
+
   const permError = requireApiPermission(ctx, "uploads:read");
   if (permError) return permError;
 
-  // Get upload
+
   const upload = await prisma.upload.findFirst({
     where: { id, shopId: ctx.shopId },
     include: {
@@ -77,7 +77,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   });
 }
 
-// POST /api/v1/uploads/:id/approve or /reject
+
 export async function action({ request, params }: ActionFunctionArgs) {
   const { id } = params;
   const url = new URL(request.url);
@@ -92,18 +92,18 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return json({ error: "Invalid action" }, { status: 400 });
   }
 
-  // Authenticate
+
   const authResult = await authenticateApiRequest(request);
   if (authResult instanceof Response) {
     return authResult;
   }
   const ctx = authResult;
 
-  // Check permission
+
   const permError = requireApiPermission(ctx, "uploads:write");
   if (permError) return permError;
 
-  // Get upload
+
   const upload = await prisma.upload.findFirst({
     where: { id, shopId: ctx.shopId },
   });
@@ -112,15 +112,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return json({ error: "Upload not found", code: "NOT_FOUND" }, { status: 404 });
   }
 
-  // Parse body
+
   let body: { notes?: string; reason?: string } = {};
   try {
     body = await request.json();
   } catch {
-    // No body is fine
+
   }
 
-  // Update status
+
   const updateData: any = {};
 
   if (actionType === "approve") {
@@ -131,17 +131,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
     updateData.rejectedAt = new Date();
   }
 
-  // SECURITY: Update with compound where to enforce ownership
-  // This prevents TOCTOU race conditions
+
+
   await prisma.upload.update({
-    where: { 
+    where: {
       id,
-      shopId: ctx.shopId, // Compound where enforces ownership at DB level
+      shopId: ctx.shopId,
     },
     data: updateData,
   });
 
-  // Audit log
+
   await prisma.auditLog.create({
     data: {
       shopId: ctx.shopId,
@@ -156,7 +156,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     },
   });
 
-  // Trigger Flow event
+
   await prisma.flowTrigger.create({
     data: {
       shopId: ctx.shopId,

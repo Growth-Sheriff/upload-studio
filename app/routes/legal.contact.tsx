@@ -4,9 +4,9 @@ import { useState } from "react";
 import prisma from "~/lib/prisma.server";
 import { sendTicketConfirmation, sendTicketNotification } from "~/lib/email.server";
 
-// Generate ticket number: UL-XXXXX
+
 function generateTicketNumber(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Exclude confusing chars
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let result = "UL-";
   for (let i = 0; i < 5; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -26,14 +26,14 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ success: false, error: "All fields are required", ticketId: null });
   }
 
-  // Email validation
+
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
     return json({ success: false, error: "Please enter a valid email address", ticketId: null });
   }
 
   try {
-    // Generate unique ticket number
+
     let ticketNumber = generateTicketNumber();
     let attempts = 0;
     while (attempts < 5) {
@@ -43,7 +43,7 @@ export async function action({ request }: ActionFunctionArgs) {
       attempts++;
     }
 
-    // Create support ticket
+
     const ticket = await prisma.supportTicket.create({
       data: {
         ticketNumber,
@@ -56,7 +56,7 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     });
 
-    // Send confirmation email to customer
+
     const confirmResult = await sendTicketConfirmation({
       ticketId: ticket.ticketNumber,
       name,
@@ -66,7 +66,7 @@ export async function action({ request }: ActionFunctionArgs) {
       message,
     });
 
-    // Send notification to support team
+
     await sendTicketNotification({
       ticketId: ticket.ticketNumber,
       name,
@@ -76,7 +76,7 @@ export async function action({ request }: ActionFunctionArgs) {
       message,
     });
 
-    // Update email sent timestamp
+
     if (confirmResult.success) {
       await prisma.supportTicket.update({
         where: { id: ticket.id },
@@ -97,9 +97,9 @@ const styles = {
   subtitle: { fontSize: "0.875rem", color: "#6b7280", marginBottom: "2rem" },
   divider: { height: "1px", background: "#e5e7eb", margin: "1.5rem 0" },
   grid: { display: "grid", gridTemplateColumns: "2fr 1fr", gap: "2rem" },
-  card: { 
-    background: "#f9fafb", 
-    borderRadius: "8px", 
+  card: {
+    background: "#f9fafb",
+    borderRadius: "8px",
     padding: "1.5rem",
     border: "1px solid #e5e7eb",
     marginBottom: "1rem"
@@ -107,44 +107,44 @@ const styles = {
   cardTitle: { fontSize: "1rem", fontWeight: 600, color: "#1f2937", marginBottom: "1rem" },
   formGroup: { marginBottom: "1rem" },
   label: { display: "block", fontWeight: 500, color: "#374151", marginBottom: "0.5rem", fontSize: "0.875rem" },
-  input: { 
-    width: "100%", 
-    padding: "10px 14px", 
-    border: "1px solid #d1d5db", 
-    borderRadius: "6px", 
+  input: {
+    width: "100%",
+    padding: "10px 14px",
+    border: "1px solid #d1d5db",
+    borderRadius: "6px",
     fontSize: "0.9rem",
     outline: "none",
     transition: "border-color 0.2s",
     boxSizing: "border-box" as const
   },
   select: {
-    width: "100%", 
-    padding: "10px 14px", 
-    border: "1px solid #d1d5db", 
-    borderRadius: "6px", 
+    width: "100%",
+    padding: "10px 14px",
+    border: "1px solid #d1d5db",
+    borderRadius: "6px",
     fontSize: "0.9rem",
     background: "white",
     cursor: "pointer",
     boxSizing: "border-box" as const
   },
-  textarea: { 
-    width: "100%", 
-    padding: "10px 14px", 
-    border: "1px solid #d1d5db", 
-    borderRadius: "6px", 
+  textarea: {
+    width: "100%",
+    padding: "10px 14px",
+    border: "1px solid #d1d5db",
+    borderRadius: "6px",
     fontSize: "0.9rem",
     minHeight: "120px",
     resize: "vertical" as const,
     fontFamily: "inherit",
     boxSizing: "border-box" as const
   },
-  btn: { 
-    background: "#667eea", 
-    color: "white", 
-    padding: "12px 24px", 
-    border: "none", 
-    borderRadius: "6px", 
-    fontWeight: 600, 
+  btn: {
+    background: "#667eea",
+    color: "white",
+    padding: "12px 24px",
+    border: "none",
+    borderRadius: "6px",
+    fontWeight: 600,
     cursor: "pointer",
     fontSize: "0.9rem",
     width: "100%"
@@ -178,7 +178,7 @@ export default function Contact() {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
 
-  // Reset form on successful submission
+
   const formReset = actionData?.success ? true : false;
 
   return (

@@ -1,7 +1,7 @@
-/**
- * Redis connection — isolated from GSB Engine
- * Uses different DB index (5 vs GSB's 3)
- */
+
+
+
+
 
 import Redis, { type RedisOptions } from "ioredis";
 
@@ -11,7 +11,7 @@ export function getRedisConnection(): Redis {
   if (!connection) {
     const url = process.env.REDIS_URL || "redis://localhost:6379/5";
     const opts: RedisOptions = {
-      maxRetriesPerRequest: null, // Required by BullMQ
+      maxRetriesPerRequest: null,
       lazyConnect: false,
     };
 

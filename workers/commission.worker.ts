@@ -1,18 +1,18 @@
-/**
- * Commission Auto-Charge Worker
- *
- * Runs every 6 hours, checks all shops with vaulted PayPal payment methods.
- * If pending commission >= $49.99, charges automatically via PayPal Vault API.
- *
- * Usage:
- *   npx tsx workers/commission.worker.ts
- *
- * Systemd service: upload-studio-commission.service
- */
+
+
+
+
+
+
+
+
+
+
+
 
 const CRON_SECRET = process.env.CRON_SECRET || 'upload-studio-cron-secret';
 const APP_URL = process.env.APP_URL || process.env.SHOPIFY_APP_URL!;
-const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 let isShuttingDown = false;
 
@@ -67,16 +67,16 @@ async function main(): Promise<void> {
   console.log(`[CommissionWorker] App URL: ${APP_URL}`);
   console.log(`[CommissionWorker] Threshold: $49.99`);
 
-  // Run immediately on startup
+
   await runAutoCharge();
 
-  // Then run every 6 hours
+
   const interval = setInterval(async () => {
     if (isShuttingDown) return;
     await runAutoCharge();
   }, CHECK_INTERVAL_MS);
 
-  // Graceful shutdown
+
   const shutdown = () => {
     if (isShuttingDown) return;
     isShuttingDown = true;

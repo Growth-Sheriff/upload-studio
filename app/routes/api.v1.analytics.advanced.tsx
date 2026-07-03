@@ -1,10 +1,10 @@
-/**
- * Advanced Analytics API v1
- * Revenue attribution, cohorts, AI insights
- *
- * @route /api/v1/analytics/advanced
- * @version 2.0.0
- */
+
+
+
+
+
+
+
 
 import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from '@remix-run/node'
 import { createHash } from 'crypto'
@@ -20,15 +20,15 @@ import {
 } from '~/lib/analytics.server'
 import prisma from '~/lib/prisma.server'
 
-// Types
+
 interface TimeRange {
   start: Date
   end: Date
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 function hashApiKey(key: string): string {
   return createHash('sha256').update(key).digest('hex')
@@ -66,13 +66,13 @@ async function authenticateRequest(request: Request) {
 
   if (!keyRecord) return null
 
-  // Update last used
+
   await prisma.apiKey.update({
     where: { id: keyRecord.id },
     data: { lastUsedAt: new Date(), usageCount: { increment: 1 } },
   })
 
-  // Get shop
+
   const shop = await prisma.shop.findUnique({
     where: { id: keyRecord.shopId },
   })
@@ -80,9 +80,9 @@ async function authenticateRequest(request: Request) {
   return shop
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// LOADER - GET endpoints
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const shop = await authenticateRequest(request)
@@ -97,67 +97,67 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   try {
     switch (endpoint) {
-      // ═════════════════════════════════════════════════════════════════════
-      // Visitor Stats
-      // ═════════════════════════════════════════════════════════════════════
+
+
+
       case 'visitors': {
         const stats = await getVisitorStats(shop.id, range.start, range.end)
         return json({ success: true, data: stats })
       }
 
-      // ═════════════════════════════════════════════════════════════════════
-      // Attribution Stats
-      // ═════════════════════════════════════════════════════════════════════
+
+
+
       case 'attribution': {
         const stats = await getAttributionStats(shop.id, range.start, range.end)
         const sources = await getSourceBreakdown(shop.id, range.start, range.end)
         return json({ success: true, data: { stats, sources } })
       }
 
-      // ═════════════════════════════════════════════════════════════════════
-      // Cohort Analysis
-      // ═════════════════════════════════════════════════════════════════════
+
+
+
       case 'cohorts': {
         const weeks = parseInt(url.searchParams.get('weeks') || '8', 10)
         const data = await getWeeklyCohorts(shop.id, weeks)
         return json({ success: true, data })
       }
 
-      // ═════════════════════════════════════════════════════════════════════
-      // Device Performance
-      // ═════════════════════════════════════════════════════════════════════
+
+
+
       case 'devices': {
         const data = await getVisitorsByDevice(shop.id)
         return json({ success: true, data })
       }
 
-      // ═════════════════════════════════════════════════════════════════════
-      // Geo Analytics
-      // ═════════════════════════════════════════════════════════════════════
+
+
+
       case 'geo': {
         const data = await getVisitorsByCountry(shop.id)
         return json({ success: true, data })
       }
 
-      // ═════════════════════════════════════════════════════════════════════
-      // AI Insights
-      // ═════════════════════════════════════════════════════════════════════
+
+
+
       case 'insights': {
         const insights = await generateAIInsights(shop.id, range.start, range.end)
         return json({ success: true, data: insights })
       }
 
-      // ═════════════════════════════════════════════════════════════════════
-      // Upload Stats
-      // ═════════════════════════════════════════════════════════════════════
+
+
+
       case 'uploads': {
         const data = await getUploadStats(shop.id, range.start, range.end)
         return json({ success: true, data })
       }
 
-      // ═════════════════════════════════════════════════════════════════════
-      // Overview (All metrics combined)
-      // ═════════════════════════════════════════════════════════════════════
+
+
+
       case 'overview': {
         const [visitors, attribution, devices, geoData, insights, uploads] = await Promise.all([
           getVisitorStats(shop.id, range.start, range.end),
@@ -190,9 +190,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// ACTION - POST endpoints
-// ═══════════════════════════════════════════════════════════════════════════
+
+
+
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
@@ -210,9 +210,9 @@ export async function action({ request }: ActionFunctionArgs) {
 
   try {
     switch (endpoint) {
-      // ═════════════════════════════════════════════════════════════════════
-      // Track cart addition
-      // ═════════════════════════════════════════════════════════════════════
+
+
+
       case 'track-cart': {
         const body = await request.json()
         const { uploadId } = body
@@ -221,7 +221,7 @@ export async function action({ request }: ActionFunctionArgs) {
           return json({ error: 'uploadId is required' }, { status: 400 })
         }
 
-        // Verify upload belongs to shop
+
         const upload = await prisma.upload.findFirst({
           where: { id: uploadId, shopId: shop.id },
         })
@@ -230,7 +230,7 @@ export async function action({ request }: ActionFunctionArgs) {
           return json({ error: 'Upload not found' }, { status: 404 })
         }
 
-        // Mark upload as added to cart
+
         await prisma.upload.updateMany({
           where: { id: uploadId, shopId: shop.id },
           data: { addedToCartAt: new Date() },

@@ -1,12 +1,12 @@
 #!/bin/bash
-# ═══════════════════════════════════════════════════════
-# Upload Studio — Mockup Worker Deploy Script
-# ═══════════════════════════════════════════════════════
-# Deploys the worker to gsb-render-worker-1 VM
-# GSB Engine'a DOKUNMAZ — tamamen izole dizin
-#
-# Usage: bash us-mockup-worker/deploy.sh
-# ═══════════════════════════════════════════════════════
+
+
+
+
+
+
+
+
 
 set -e
 
@@ -21,7 +21,7 @@ echo " Upload Studio — Mockup Worker Deploy"
 echo "═══════════════════════════════════════════"
 echo ""
 
-# 1. Sync files to VM
+
 echo "[1/5] Syncing files to ${VM_NAME}..."
 gcloud compute scp --zone=${VM_ZONE} --recurse \
   ${LOCAL_DIR}/package.json \
@@ -35,7 +35,7 @@ gcloud compute ssh ${VM_NAME} --zone=${VM_ZONE} --command="\
   npm install --production 2>&1 | tail -5
 "
 
-# 3. Copy .env if not exists
+
 echo "[3/5] Checking .env..."
 gcloud compute ssh ${VM_NAME} --zone=${VM_ZONE} --command="\
   if [ ! -f ${REMOTE_DIR}/.env ]; then \
@@ -46,7 +46,7 @@ gcloud compute ssh ${VM_NAME} --zone=${VM_ZONE} --command="\
   fi
 "
 
-# 4. Install systemd service
+
 echo "[4/5] Installing systemd service..."
 gcloud compute scp --zone=${VM_ZONE} \
   ${LOCAL_DIR}/us-mockup-worker.service \
@@ -60,7 +60,7 @@ gcloud compute ssh ${VM_NAME} --zone=${VM_ZONE} --command="\
   echo 'Service installed and started'
 "
 
-# 5. Verify
+
 echo "[5/5] Verifying..."
 sleep 2
 gcloud compute ssh ${VM_NAME} --zone=${VM_ZONE} --command="\
