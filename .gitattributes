@@ -1,0 +1,33 @@
+# Normalize text files to LF so a Windows editor cannot reintroduce the
+# CRLF+cp1254 mojibake that corrupted the theme-extension snippets.
+# Files are stored UTF-8 (git default); .editorconfig enforces the editor charset.
+
+*.liquid  text eol=lf
+*.js      text eol=lf
+*.jsx     text eol=lf
+*.mjs     text eol=lf
+*.cjs     text eol=lf
+*.ts      text eol=lf
+*.tsx     text eol=lf
+*.css     text eol=lf
+*.scss    text eol=lf
+*.json    text eol=lf
+*.md      text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.html    text eol=lf
+
+# Binary assets — never normalize or diff
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.gif   binary
+*.ico   binary
+*.glb   binary
+*.gltf  binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
+*.pdf   binary

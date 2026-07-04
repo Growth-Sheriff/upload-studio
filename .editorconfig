@@ -1,0 +1,14 @@
+root = true
+
+# Prevent mojibake: force editors to save as UTF-8 (a cp1254 save once
+# double-encoded the theme-extension files). LF line endings for consistency.
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = false
+
+[*.{liquid,js,jsx,ts,tsx,css,scss,json,md,yml,yaml,html}]
+charset = utf-8
+indent_style = space
+indent_size = 2
