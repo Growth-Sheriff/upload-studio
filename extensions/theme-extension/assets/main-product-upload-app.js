@@ -2093,9 +2093,13 @@
 
   MainProductUpload.prototype.fallbackCartProperties = function(item) {
     // Degraded mode when the app API is unreachable: same carriers, built
-    // from data the widget already holds. The identity link is proxy-relative
-    // but still contains /i/<uploadId>, so server-side matching keeps working.
-    var identityUrl = this.apiBase + '/i/' + item.uploadId;
+    // from data the widget already holds. Build the identity link as an
+    // absolute proxy URL (https://<shop>/apps/customizer/i/<id>) so it stays
+    // clickable from the order admin, not just from the storefront.
+    var base = /^https?:/i.test(this.apiBase || '')
+      ? this.apiBase
+      : (this.shopDomain ? 'https://' + this.shopDomain : '') + (this.apiBase || '/apps/customizer');
+    var identityUrl = base + '/i/' + item.uploadId;
     var properties = {
       'Design Identity': identityUrl,
       '_ul_upload_id': item.uploadId

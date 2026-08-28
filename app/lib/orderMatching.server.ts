@@ -81,6 +81,43 @@ export function extractUploadIdFromFileUrl(url: unknown): string | null {
   return null
 }
 
+// Signatures observed in DripApps' storefront bundle (gang-sheet-edit.js):
+// it writes `_Print Ready File` / `_Print Ready` / `_Admin Edit` keys and
+// identifies its own cart lines by property values containing
+// `dripappsserver.`. Lines carrying these marks belong to that app — they
+// must not produce ghost uploads or commissions on shared products.
+const FOREIGN_APP_PROPERTY_NAMES = new Set([
+  '_Print Ready File',
+  '_Print Ready',
+  '_Admin Edit',
+])
+const FOREIGN_APP_VALUE_MARKER = 'dripappsserver.'
+
+/** True when a line item demonstrably belongs to another gang-sheet app. */
+export function isForeignAppLine(lineItem: {
+  properties?: LineItemProperty[] | Record<string, unknown> | null
+}): boolean {
+  for (const { name, value } of normalizeProperties(lineItem)) {
+    if (FOREIGN_APP_PROPERTY_NAMES.has(name)) return true
+    if (typeof value === 'string' && value.includes(FOREIGN_APP_VALUE_MARKER)) return true
+  }
+  return false
+}
+
+/** Parse every upload id from a VIP/measured-checkout order note of the form
+ *  "Custom pricing checkout for upload <id1>, <id2>". The old single-id
+ *  regex silently dropped all but the first upload on multi-item orders. */
+export function extractVipUploadIdsFromOrderNote(note: unknown): string[] {
+  const match = String(note || '').match(
+    /(?:VIP|Custom pricing) checkout for upload ([a-z0-9 ,_-]+)/i
+  )
+  if (!match) return []
+  return match[1]
+    .split(/[,\s]+/)
+    .map((token) => token.trim())
+    .filter((token) => UPLOAD_ID_PATTERN.test(token))
+}
+
 function normalizeProperties(lineItem: {
   properties?: LineItemProperty[] | Record<string, unknown> | null
 }): Array<{ name: string; value: unknown }> {

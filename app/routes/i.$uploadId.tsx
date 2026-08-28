@@ -109,6 +109,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     productId: upload.productId,
     variantId: upload.variantId,
     orderId: upload.orderId,
+    orderName: upload.orderName,
     createdAt: upload.createdAt,
     items,
   }
@@ -177,7 +178,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     <h1>Design identity</h1>
     <p>Reference: ${escapeHtml(upload.id)}</p>
     <span class="badge">${escapeHtml(upload.mode)} · ${escapeHtml(upload.status)}</span>
-    ${upload.orderId ? `<span class="badge">Order #${escapeHtml(upload.orderId)}</span>` : ''}
+    ${
+      upload.orderName
+        ? `<span class="badge">Order ${escapeHtml(upload.orderName)}</span>`
+        : upload.orderId
+          ? '<span class="badge">Linked to an order</span>'
+          : ''
+    }
   </header>
   ${rows || '<p>No files attached to this design yet.</p>'}
   <footer>Created ${escapeHtml(upload.createdAt.toISOString().slice(0, 10))} · ${escapeHtml(upload.shop.shopDomain)} · <a href="${escapeHtml(buildIdentityUrl(upload.id))}.json">JSON</a></footer>

@@ -4,17 +4,16 @@ import crypto from 'crypto'
 import prisma from '~/lib/prisma.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
 import { recordOrderForVisitor } from '~/lib/visitor.server'
+import {
+  extractVipUploadIdsFromOrderNote,
+  matchUploadFromLineItem,
+} from '~/lib/orderMatching.server'
 
 
 function verifyWebhookSignature(body: string, hmac: string, secret: string): boolean {
   const hash = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('base64')
 
   return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(hmac))
-}
-
-function extractVipUploadIdFromOrderNote(note: unknown): string | null {
-  const match = String(note || '').match(/(?:VIP|Custom pricing) checkout for upload ([A-Za-z0-9_-]+)/i)
-  return match?.[1] || null
 }
 
 
@@ -66,6 +65,8 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ success: true })
     }
 
+    const orderTotal = parseFloat(order.total_price) || 0
+    const orderCurrency = order.currency || 'USD'
 
     const uploadDesigns: Array<{
       lineItemId: string
@@ -76,107 +77,19 @@ export async function action({ request }: ActionFunctionArgs) {
       transform: unknown
       preflightStatus: string
     }> = []
+    const processedUploadIds = new Set<string>()
 
-    for (const lineItem of order.line_items || []) {
-      const uploadId = lineItem.properties?.find(
-        (p: { name: string }) => p.name === '_ul_upload_id'
-      )?.value
+    // Marks one upload paid: OrderLink upsert, order data + approved status,
+    // design manifest rows, visitor revenue. Idempotent per upload.
+    const processPaidUpload = async (
+      uploadId: string,
+      lineItemId: string | null,
+      matchSource: string
+    ): Promise<void> => {
+      if (processedUploadIds.has(uploadId)) return
 
-      if (uploadId) {
-
-        const upload = await prisma.upload.findFirst({
-          where: { id: uploadId, shopId: shop.id },
-          include: {
-            items: {
-              select: {
-                location: true,
-                originalName: true,
-                previewKey: true,
-                thumbnailKey: true,
-                transform: true,
-                preflightStatus: true,
-              },
-            },
-          },
-        })
-
-        if (upload) {
-
-          await prisma.orderLink.upsert({
-            where: {
-
-              orderId_uploadId: {
-                orderId: String(order.id),
-                uploadId: upload.id,
-              },
-            },
-            update: {
-              lineItemId: String(lineItem.id),
-            },
-            create: {
-              shopId: shop.id,
-              orderId: String(order.id),
-              uploadId: upload.id,
-              lineItemId: String(lineItem.id),
-            },
-          })
-
-
-          const orderTotal = parseFloat(order.total_price) || 0
-          const orderCurrency = order.currency || 'USD'
-
-          await prisma.upload.updateMany({
-            where: { id: upload.id, shopId: shop.id },
-            data: {
-              status: 'approved',
-              orderId: String(order.id),
-              orderTotal: orderTotal,
-              orderCurrency: orderCurrency,
-              orderPaidAt: new Date(),
-            },
-          })
-
-          console.log(
-            `[Webhook] Upload ${upload.id} updated with order data: ${orderTotal} ${orderCurrency}`
-          )
-
-
-          for (const item of upload.items) {
-            uploadDesigns.push({
-              lineItemId: String(lineItem.id),
-              uploadId: upload.id,
-              location: item.location,
-              originalFile: item.originalName || '',
-              previewUrl: item.thumbnailKey || item.previewKey || '',
-              transform: item.transform,
-              preflightStatus: item.preflightStatus,
-            })
-          }
-
-
-          if (upload.visitorId) {
-            try {
-              const orderTotal = parseFloat(order.total_price) || 0
-              await recordOrderForVisitor(shop.id, upload.visitorId, orderTotal)
-              console.log(
-                `[Webhook] Revenue recorded for visitor ${upload.visitorId}: $${orderTotal}`
-              )
-            } catch (visitorErr) {
-
-              console.warn(`[Webhook] Visitor revenue tracking failed:`, visitorErr)
-            }
-          }
-
-          console.log(`[Webhook] Linked upload ${uploadId} to order ${order.id}`)
-        }
-      }
-    }
-
-    const vipNoteUploadId = extractVipUploadIdFromOrderNote(order.note)
-    if (vipNoteUploadId && !uploadDesigns.some((entry) => entry.uploadId === vipNoteUploadId)) {
-      const fallbackLineItem = order.line_items?.[0] || null
       const upload = await prisma.upload.findFirst({
-        where: { id: vipNoteUploadId, shopId: shop.id },
+        where: { id: uploadId, shopId: shop.id },
         include: {
           items: {
             select: {
@@ -191,53 +104,97 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       })
 
-      if (upload) {
-        const orderTotal = parseFloat(order.total_price) || 0
-        const orderCurrency = order.currency || 'USD'
-
-        await prisma.orderLink.upsert({
-          where: {
-            orderId_uploadId: {
-              orderId: String(order.id),
-              uploadId: upload.id,
-            },
-          },
-          update: {
-            lineItemId: fallbackLineItem?.id ? String(fallbackLineItem.id) : null,
-          },
-          create: {
-            shopId: shop.id,
-            orderId: String(order.id),
-            uploadId: upload.id,
-            lineItemId: fallbackLineItem?.id ? String(fallbackLineItem.id) : null,
-          },
-        })
-
-        await prisma.upload.updateMany({
-          where: { id: upload.id, shopId: shop.id },
-          data: {
-            status: 'approved',
-            orderId: String(order.id),
-            orderTotal,
-            orderCurrency,
-            orderPaidAt: new Date(),
-          },
-        })
-
-        for (const item of upload.items) {
-          uploadDesigns.push({
-            lineItemId: fallbackLineItem?.id ? String(fallbackLineItem.id) : 'vip-note-fallback',
-            uploadId: upload.id,
-            location: item.location,
-            originalFile: item.originalName || '',
-            previewUrl: item.thumbnailKey || item.previewKey || '',
-            transform: item.transform,
-            preflightStatus: item.preflightStatus,
-          })
-        }
-
-        console.log(`[Webhook] Linked VIP upload ${vipNoteUploadId} to paid order ${order.id} via note fallback`)
+      if (!upload) {
+        console.warn(
+          `[Webhook] Paid upload ${uploadId} not found for shop ${shopDomain} (source=${matchSource})`
+        )
+        return
       }
+
+      await prisma.orderLink.upsert({
+        where: {
+          orderId_uploadId: {
+            orderId: String(order.id),
+            uploadId: upload.id,
+          },
+        },
+        update: lineItemId ? { lineItemId } : {},
+        create: {
+          shopId: shop.id,
+          orderId: String(order.id),
+          uploadId: upload.id,
+          lineItemId,
+        },
+      })
+
+      await prisma.upload.updateMany({
+        where: { id: upload.id, shopId: shop.id },
+        data: {
+          status: 'approved',
+          orderId: String(order.id),
+          orderName: order.name ? String(order.name) : null,
+          orderTotal: orderTotal,
+          orderCurrency: orderCurrency,
+          orderPaidAt: new Date(),
+        },
+      })
+
+      console.log(
+        `[Webhook] Upload ${upload.id} marked paid (${orderTotal} ${orderCurrency}, source=${matchSource})`
+      )
+
+      for (const item of upload.items) {
+        uploadDesigns.push({
+          lineItemId: lineItemId || `order-${order.id}`,
+          uploadId: upload.id,
+          location: item.location,
+          originalFile: item.originalName || '',
+          previewUrl: item.thumbnailKey || item.previewKey || '',
+          transform: item.transform,
+          preflightStatus: item.preflightStatus,
+        })
+      }
+
+      if (upload.visitorId) {
+        try {
+          await recordOrderForVisitor(shop.id, upload.visitorId, orderTotal)
+          console.log(`[Webhook] Revenue recorded for visitor ${upload.visitorId}: $${orderTotal}`)
+        } catch (visitorErr) {
+          console.warn(`[Webhook] Visitor revenue tracking failed:`, visitorErr)
+        }
+      }
+
+      processedUploadIds.add(upload.id)
+    }
+
+    // Source 1: line item carriers (legacy ids, Design Identity/File URLs).
+    for (const lineItem of order.line_items || []) {
+      const match = matchUploadFromLineItem(lineItem)
+      if (match) {
+        await processPaidUpload(match.uploadId, String(lineItem.id), match.source)
+      }
+    }
+
+    // Source 2: OrderLink rows already resolved by orders/create — this is
+    // what recovers lines whose properties a third-party cart app stripped
+    // (orders/create matched them via cart_token; the paid payload alone
+    // cannot).
+    const existingLinks = await prisma.orderLink.findMany({
+      where: { shopId: shop.id, orderId: String(order.id) },
+      select: { uploadId: true, lineItemId: true },
+    })
+    for (const link of existingLinks) {
+      await processPaidUpload(link.uploadId, link.lineItemId, 'order_link')
+    }
+
+    // Source 3: VIP/measured-checkout note ids (multi-upload aware).
+    for (const vipNoteUploadId of extractVipUploadIdsFromOrderNote(order.note)) {
+      const fallbackLineItem = order.line_items?.[0] || null
+      await processPaidUpload(
+        vipNoteUploadId,
+        fallbackLineItem?.id ? String(fallbackLineItem.id) : null,
+        'order_note'
+      )
     }
 
 

@@ -6,6 +6,7 @@
 -- schema, matching the repo's other ad-hoc migration files.
 
 ALTER TABLE uploads ADD COLUMN IF NOT EXISTS cart_token TEXT;
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS order_name TEXT;
 
 CREATE INDEX IF NOT EXISTS "uploads_shop_id_cart_token_idx"
   ON uploads (shop_id, cart_token);

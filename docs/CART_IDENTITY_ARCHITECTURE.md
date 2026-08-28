@@ -76,6 +76,30 @@ Still writing legacy-heavy attributes by design: the VIP/draft-order flow
 (`api.vip.checkout.tsx` + `api.customer-pricing.workspace.tsx`) — draft-order
 custom attributes are server-owned and have their own readers.
 
+## Hardening round (2026-08-28, second pass)
+
+- `webhooks/orders-paid` now resolves uploads through the same multi-source
+  matcher, PLUS the OrderLink rows orders/create already resolved (covers
+  cart_token-recovered lines the paid payload alone cannot see), PLUS
+  multi-id VIP notes. Never downgrades: orders/create preserves an
+  `approved` status when paid arrived first.
+- **Foreign-app guard**: `isForeignAppLine` recognizes DripApps signatures
+  (`_Print Ready File` / `_Print Ready` / `_Admin Edit` keys, values
+  containing `dripappsserver.`). On shared products those order lines no
+  longer create ghost "missing upload" records or charge commission; they
+  are audited as `foreign_app_line_skipped`.
+- VIP note parsing extracts EVERY upload id ("... for upload a, b"), not
+  just the first.
+- `Upload.orderName` stores the human order number (#1234); the identity
+  page shows it instead of the internal numeric id.
+- Checkout extension renders inline previews only for raster URLs
+  (png/jpg/webp/gif) — PDF/PSD lines show name + links, no broken image.
+- Widget fallback identity links are absolute
+  (`https://<shop>/apps/customizer/i/<id>`), clickable from order admin.
+- The Quick Upload modal snippet (app.settings generated) also writes an
+  absolute `Design Identity` property. Note: merchants must re-copy the
+  snippet into their theme to pick this up.
+
 ## Deletion checklist (later)
 
 Remove `_ul_upload_id` from `api.cart.prepare` / `api.cart.add-custom` only

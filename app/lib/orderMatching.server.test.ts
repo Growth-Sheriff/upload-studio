@@ -2,12 +2,70 @@ import { describe, expect, it } from 'vitest'
 import {
   extractUploadIdFromFileUrl,
   extractUploadIdFromIdentityUrl,
+  extractVipUploadIdsFromOrderNote,
+  isForeignAppLine,
   matchUploadFromLineItem,
   normalizeCartToken,
 } from './orderMatching.server'
 
 const UPLOAD_ID = 'cmsyu40ee0lsuiy654lp88k2l'
 const ITEM_ID = 'cmsyu41xy9abcd1234efgh567'
+
+describe('isForeignAppLine', () => {
+  it('flags DripApps property keys', () => {
+    expect(
+      isForeignAppLine({
+        properties: [{ name: '_Print Ready File', value: 'https://x.com/u/abc' }],
+      })
+    ).toBe(true)
+    expect(isForeignAppLine({ properties: [{ name: '_Admin Edit', value: 'x' }] })).toBe(true)
+  })
+
+  it('flags dripappsserver URLs under any key', () => {
+    expect(
+      isForeignAppLine({
+        properties: [{ name: 'Edit', value: 'https://app.dripappsserver.com/edit/1' }],
+      })
+    ).toBe(true)
+  })
+
+  it('does not flag our own lines', () => {
+    expect(
+      isForeignAppLine({
+        properties: [
+          { name: '_ul_upload_id', value: UPLOAD_ID },
+          { name: 'Design Identity', value: `https://x.com/i/${UPLOAD_ID}` },
+          { name: 'Design File', value: 'https://cdn.b-cdn.net/shop/prod/a/b/c.png' },
+        ],
+      })
+    ).toBe(false)
+    expect(isForeignAppLine({ properties: null })).toBe(false)
+  })
+})
+
+describe('extractVipUploadIdsFromOrderNote', () => {
+  it('extracts a single id', () => {
+    expect(
+      extractVipUploadIdsFromOrderNote(`Custom pricing checkout for upload ${UPLOAD_ID}`)
+    ).toEqual([UPLOAD_ID])
+  })
+
+  it('extracts every id from a multi-upload note', () => {
+    expect(
+      extractVipUploadIdsFromOrderNote(
+        `Custom pricing checkout for upload ${UPLOAD_ID}, ${ITEM_ID}\nCustomer note: rush please`
+      )
+    ).toEqual([UPLOAD_ID, ITEM_ID])
+  })
+
+  it('supports the legacy VIP wording and rejects junk tokens', () => {
+    expect(
+      extractVipUploadIdsFromOrderNote(`VIP checkout for upload ${UPLOAD_ID}, not-an-id`)
+    ).toEqual([UPLOAD_ID])
+    expect(extractVipUploadIdsFromOrderNote('no marker here')).toEqual([])
+    expect(extractVipUploadIdsFromOrderNote(null)).toEqual([])
+  })
+})
 
 describe('normalizeCartToken', () => {
   it('strips the /cart.js ?key= suffix so it equals order.cart_token', () => {

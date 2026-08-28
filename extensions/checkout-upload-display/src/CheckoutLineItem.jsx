@@ -49,7 +49,9 @@ function UploadLineDisplay() {
     'Custom Design'
   const designType = findAttr(attrs, '_ul_design_type') || 'DTF'
 
-  const imageUrl = thumbnail || uploadUrl
+  // Only render an inline preview for raster formats; a PDF/PSD/AI download
+  // URL inside <s-image> would render blank. The link still works for all.
+  const imageUrl = thumbnail || (isRasterImageUrl(uploadUrl) ? uploadUrl : null)
   const linkUrl = identityUrl || uploadUrl || thumbnail
 
   console.log('[UL-Checkout] Rendering upload info:', { uploadId, fileName, designType })
@@ -97,6 +99,16 @@ function extractUploadId(attrs) {
     if (match) return match[1]
   }
   return null
+}
+
+function isRasterImageUrl(value) {
+  if (typeof value !== 'string') return false
+  try {
+    const path = /^https?:\/\//.test(value) ? new URL(value).pathname : value.split('?')[0]
+    return /\.(png|jpe?g|webp|gif)$/i.test(path)
+  } catch (_e) {
+    return false
+  }
 }
 
 function fileNameFromUrl(value) {

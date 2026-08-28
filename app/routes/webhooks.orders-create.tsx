@@ -4,7 +4,12 @@ import { json } from '@remix-run/node'
 import crypto from 'crypto'
 import prisma from '~/lib/prisma.server'
 import { getCommissionRate } from '~/lib/billing.server'
-import { matchUploadFromLineItem, normalizeCartToken } from '~/lib/orderMatching.server'
+import {
+  extractVipUploadIdsFromOrderNote,
+  isForeignAppLine,
+  matchUploadFromLineItem,
+  normalizeCartToken,
+} from '~/lib/orderMatching.server'
 import { buildIdentityUrl } from '~/lib/uploadUrls.server'
 
 
@@ -14,10 +19,6 @@ function verifyWebhookSignature(body: string, hmac: string, secret: string): boo
   return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(hmac))
 }
 
-function extractVipUploadIdFromOrderNote(note: unknown): string | null {
-  const match = String(note || '').match(/(?:VIP|Custom pricing) checkout for upload ([A-Za-z0-9_-]+)/i)
-  return match?.[1] || null
-}
 
 // Best-effort: mirror the linked uploads onto the order as a metafield so the
 // upload<->order relation survives on Shopify's side even if this DB is lost.
@@ -169,11 +170,19 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       })
 
+      // orders/paid can arrive before orders/create: never downgrade a
+      // status the paid handler already set.
       await prisma.upload.updateMany({
         where: { id: uploadId, shopId: shop.id },
         data: {
           orderId: String(order.id),
-          status: upload.status === 'blocked' ? 'blocked' : 'needs_review',
+          orderName: order.name ? String(order.name) : null,
+          status:
+            upload.status === 'blocked'
+              ? 'blocked'
+              : upload.status === 'approved'
+                ? 'approved'
+                : 'needs_review',
         },
       })
 
@@ -208,6 +217,32 @@ export async function action({ request }: ActionFunctionArgs) {
         console.log(`[Webhook] Found upload ${match.uploadId} in order ${order.id} via ${match.source}`)
         await linkUpload(match.uploadId, String(lineItem.id), match.source)
       } else if (!match && configuredProductIds.has(String(lineItem.product_id))) {
+        // Shared-product guard: on stores running a second gang-sheet app
+        // (DripApps) on the same product, that app's order lines carry its
+        // own signatures and are NOT missing uploads. Creating a ghost here
+        // used to flag them "blocked" AND charge our commission for orders
+        // we never served.
+        if (isForeignAppLine(lineItem)) {
+          console.log(
+            `[Webhook] Line ${lineItem.id} belongs to another gang-sheet app; skipping ghost/commission`
+          )
+          await prisma.auditLog.create({
+            data: {
+              shopId: shop.id,
+              action: 'foreign_app_line_skipped',
+              resourceType: 'order',
+              resourceId: String(order.id),
+              metadata: {
+                orderId: order.id,
+                orderName: order.name,
+                lineItemId: lineItem.id,
+                productId: lineItem.product_id,
+              },
+            },
+          })
+          continue
+        }
+
         hasUploadLiftItems = true
 
         // Properties were stripped: try the cart-token carrier before
@@ -314,8 +349,11 @@ export async function action({ request }: ActionFunctionArgs) {
       )
     }
 
-    const vipNoteUploadId = extractVipUploadIdFromOrderNote(order.note)
-    if (vipNoteUploadId && !processedUploads.includes(vipNoteUploadId)) {
+    // VIP/measured checkout notes can carry SEVERAL upload ids
+    // ("Custom pricing checkout for upload a, b"); link each one.
+    const vipNoteUploadIds = extractVipUploadIdsFromOrderNote(order.note)
+    for (const vipNoteUploadId of vipNoteUploadIds) {
+      if (processedUploads.includes(vipNoteUploadId)) continue
       const fallbackLineItem = order.line_items?.[0] || null
       const upload = await prisma.upload.findFirst({
         where: {
@@ -349,7 +387,13 @@ export async function action({ request }: ActionFunctionArgs) {
           where: { id: vipNoteUploadId, shopId: shop.id },
           data: {
             orderId: String(order.id),
-            status: upload.status === 'blocked' ? 'blocked' : 'needs_review',
+            orderName: order.name ? String(order.name) : null,
+            status:
+              upload.status === 'blocked'
+                ? 'blocked'
+                : upload.status === 'approved'
+                  ? 'approved'
+                  : 'needs_review',
           },
         })
 
