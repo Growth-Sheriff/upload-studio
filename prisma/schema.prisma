@@ -181,6 +181,7 @@ model Upload {
 
 
   cartAddedAt   DateTime? @map("cart_added_at")
+  cartToken     String?   @map("cart_token")
   orderPaidAt   DateTime? @map("order_paid_at")
   orderTotal    Decimal?  @map("order_total") @db.Decimal(10, 2)
   orderCurrency String?   @map("order_currency")
@@ -194,6 +195,7 @@ model Upload {
 
   @@index([shopId, status])
   @@index([shopId, createdAt])
+  @@index([shopId, cartToken])
   @@index([visitorId])
   @@index([sessionId])
   @@index([orderPaidAt])

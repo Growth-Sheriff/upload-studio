@@ -111,6 +111,32 @@
     document.head.appendChild(style);
   }
 
+  // Upload id carriers, most direct first: hidden legacy property, then the
+  // Design Identity link (/i/<uploadId>), then any property value holding an
+  // identity URL (survives property-key rewrites by third-party cart apps).
+  function extractUploadId(properties) {
+    if (!properties) return null;
+    const direct = properties[CONFIG.propertyKey] || properties['_ul_upload_id'];
+    if (typeof direct === 'string' && /^[a-z0-9]{16,40}$/.test(direct)) return direct;
+    for (const value of Object.values(properties)) {
+      if (typeof value !== 'string') continue;
+      const match = value.match(/\/i\/([a-z0-9]{16,40})(?:\.json)?(?:[?#]|$)/);
+      if (match) return match[1];
+    }
+    return null;
+  }
+
+  function fileNameFromUrl(value) {
+    if (typeof value !== 'string' || value.indexOf('/') === -1) return null;
+    try {
+      const path = /^https?:\/\//.test(value) ? new URL(value).pathname : value.split('?')[0];
+      const segment = decodeURIComponent(path.split('/').filter(Boolean).pop() || '');
+      return segment && segment.indexOf('.') > 0 ? segment : null;
+    } catch (_e) {
+      return null;
+    }
+  }
+
   async function getCartData() {
     try {
       const response = await fetch('/cart.js');
@@ -347,8 +373,7 @@
     const uploadsByKey = new Map();
 
     cart.items.forEach((item, index) => {
-      const uploadId = item.properties?.[CONFIG.propertyKey] ||
-                       item.properties?.['_ul_upload_id'];
+      const uploadId = extractUploadId(item.properties);
 
       if (!uploadId) return;
 
@@ -356,7 +381,8 @@
                          item.properties?.['_ul_design_file'] ||
                          item.properties?.['_ul_file_name'] ||
                          item.properties?.['File Name'] ||
-                         item.properties?.['Design Name'];
+                         item.properties?.['Design Name'] ||
+                         fileNameFromUrl(item.properties?.['Design File']);
 
       const thumbnail = item.properties?.['_ul_thumbnail'] ||
                         item.properties?.['_ul_upload_url'] ||

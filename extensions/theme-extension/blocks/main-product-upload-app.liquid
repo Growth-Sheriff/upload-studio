@@ -128,11 +128,12 @@
       </div>
       <div class="ump__price-strip" data-ump-price-strip hidden></div>
       <div class="ump__actions">
-        <button class="ump__cart" type="button" data-ump-add data-default-label="{{ block.settings.add_to_cart_label | default: 'Add to cart' | escape }}" disabled>
+        {%- comment -%} data-gs-event keeps third-party gang-sheet scripts (DripApps) from hijacking these buttons {%- endcomment -%}
+        <button class="ump__cart" type="button" data-ump-add data-gs-event="click" data-default-label="{{ block.settings.add_to_cart_label | default: 'Add to cart' | escape }}" disabled>
           <span>{{ block.settings.add_to_cart_label | default: 'Add to cart' }}</span>
         </button>
         {%- if block.settings.enable_checkout_button -%}
-          <button class="ump__checkout" type="button" data-ump-checkout data-default-label="{{ block.settings.checkout_label | default: 'Checkout' | escape }}" disabled>
+          <button class="ump__checkout" type="button" data-ump-checkout data-gs-event="click" data-default-label="{{ block.settings.checkout_label | default: 'Checkout' | escape }}" disabled>
             <span>{{ block.settings.checkout_label | default: 'Checkout' }}</span>
           </button>
         {%- endif -%}

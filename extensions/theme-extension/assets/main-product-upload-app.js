@@ -995,6 +995,12 @@
 
   MainProductUpload.prototype.bindEvents = function() {
     var self = this;
+    // Third-party gang-sheet apps (e.g. DripApps) overwrite onclick on cart
+    // buttons they think they own, but skip elements marked data-gs-event.
+    // Our buttons are ours; make that explicit.
+    [this.addButton, this.checkoutButton, this.trigger, this.replace].forEach(function(button) {
+      if (button && button.dataset) button.dataset.gsEvent = 'click';
+    });
     this.trigger.addEventListener('click', function(event) {
       event.preventDefault();
       self.input.click();
@@ -2058,6 +2064,129 @@
     if (!this.state.selectedVariantId && !this.isExactMeasuredMode()) throw new Error('No product variant can fit this upload.');
   };
 
+  // ── Verified cart mutations ─────────────────────────────────────────────
+  // Line properties are built by the server (/api/cart/prepare): two visible
+  // links (Design File, Design Identity) plus a transitional hidden id. The
+  // add itself is idempotent and verified: read the cart, add only the
+  // missing quantity, then re-read to confirm the line is really there.
+
+  MainProductUpload.prototype.prepareCartProperties = async function(uploadIds) {
+    try {
+      var response = await fetch(this.apiBase + '/api/cart/prepare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shopDomain: this.shopDomain, uploadIds: uploadIds })
+      });
+      if (!response.ok) throw new Error('prepare failed: ' + response.status);
+      var data = await response.json();
+      if (!data || !data.success || !Array.isArray(data.items)) throw new Error('prepare payload invalid');
+      var map = {};
+      data.items.forEach(function(entry) {
+        if (entry && entry.found && entry.properties) map[entry.uploadId] = entry.properties;
+      });
+      return map;
+    } catch (error) {
+      console.warn('[UMP] cart/prepare unavailable, using client-side fallback properties:', error);
+      return null;
+    }
+  };
+
+  MainProductUpload.prototype.fallbackCartProperties = function(item) {
+    // Degraded mode when the app API is unreachable: same carriers, built
+    // from data the widget already holds. The identity link is proxy-relative
+    // but still contains /i/<uploadId>, so server-side matching keeps working.
+    var identityUrl = this.apiBase + '/i/' + item.uploadId;
+    var properties = {
+      'Design Identity': identityUrl,
+      '_ul_upload_id': item.uploadId
+    };
+    properties['Design File'] = item.originalUrl || identityUrl;
+    return properties;
+  };
+
+  MainProductUpload.prototype.readCart = async function() {
+    var response = await fetch('/cart.js', {
+      headers: { 'Accept': 'application/json' },
+      cache: 'no-store'
+    });
+    if (!response.ok) throw new Error('Cart read failed with status ' + response.status);
+    return response.json();
+  };
+
+  function cartLineMatchesUpload(line, uploadId) {
+    var props = (line && line.properties) || {};
+    if (props['_ul_upload_id'] === uploadId) return true;
+    var identity = String(props['Design Identity'] || '');
+    return identity.indexOf('/i/' + uploadId) !== -1;
+  }
+
+  function countCartQuantityForUpload(cart, variantId, uploadId) {
+    var items = (cart && cart.items) || [];
+    return items.reduce(function(total, line) {
+      var lineVariant = Number(line.variant_id || line.id);
+      if (lineVariant !== variantId) return total;
+      if (!cartLineMatchesUpload(line, uploadId)) return total;
+      return total + (Number(line.quantity) || 0);
+    }, 0);
+  }
+
+  MainProductUpload.prototype.ensureCartLine = async function(cartItem, uploadId) {
+    var attempts = 0;
+    var maxAttempts = 3;
+    while (true) {
+      attempts += 1;
+      try {
+        var cart = await this.readCart();
+        var current = countCartQuantityForUpload(cart, cartItem.id, uploadId);
+        if (current >= cartItem.quantity) return cart;
+        var response = await fetch('/cart/add.js', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({
+            items: [{
+              id: cartItem.id,
+              quantity: cartItem.quantity - current,
+              properties: cartItem.properties
+            }]
+          })
+        });
+        if (!response.ok) {
+          var payload = await response.json().catch(function() { return {}; });
+          var error = new Error(payload.description || payload.message || ('Cart add failed with status ' + response.status));
+          error.status = response.status;
+          throw error;
+        }
+        var after = await this.readCart();
+        if (countCartQuantityForUpload(after, cartItem.id, uploadId) >= cartItem.quantity) return after;
+        throw new Error('Cart line not visible after add.');
+      } catch (error) {
+        var status = Number(error && error.status);
+        var terminal = status >= 400 && status < 500 && status !== 408 && status !== 429;
+        if (terminal || attempts >= maxAttempts) throw error;
+        await new Promise(function(resolve) { setTimeout(resolve, 400 * Math.pow(2, attempts - 1)); });
+      }
+    }
+  };
+
+  MainProductUpload.prototype.bindCartToken = async function(cart, uploadIds) {
+    try {
+      var token = cart && cart.token ? String(cart.token) : '';
+      if (!token) {
+        var fresh = await this.readCart();
+        token = fresh && fresh.token ? String(fresh.token) : '';
+      }
+      if (!token) return;
+      await fetch(this.apiBase + '/api/cart/bind', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shopDomain: this.shopDomain, cartToken: token, uploadIds: uploadIds })
+      });
+    } catch (error) {
+      // Binding is a redundancy layer; never block checkout on it.
+      console.warn('[UMP] cart token bind failed (non-fatal):', error);
+    }
+  };
+
   MainProductUpload.prototype.addToCart = async function(redirectTo) {
     var readyItems = this.getReadyItems();
     if (!readyItems.length) {
@@ -2073,65 +2202,37 @@
     if (this.checkoutButton) this.checkoutButton.disabled = true;
 
     try {
-      var linearOffer = this.getLinearCustomerOffer();
-      var linearSummary = this.isLinearInchPricing() ? this.getLinearSummary(readyItems) : null;
-      var linearTier = linearSummary ? this.getActiveLinearTier(linearSummary.billable || 1) : null;
-      var linearOfferRate = linearOffer ? getTierUnitPrice(linearTier) : 0;
-      var cartItems = readyItems.map(function(item, index) {
+      var self = this;
+      var uploadIds = readyItems.map(function(item) { return item.uploadId; });
+      var serverProperties = await this.prepareCartProperties(uploadIds);
+
+      var cartItems = readyItems.map(function(item) {
         var result = item.selectedResult || {};
         var variantId = parseInt(item.selectedVariantId, 10);
         if (!(variantId > 0)) throw new Error('A measured gang sheet has no matching variant.');
         var quantity = Math.max(1, Number(result.cartQuantity || result.sheetsNeeded) || 1);
-        var sheetLabel = result.selectedSheetLabel || result.selectedVariantTitle || '';
-        var lineRate = linearOfferRate || toNumber(result.pricePerInch || result.unitPrice);
+        var properties = (serverProperties && serverProperties[item.uploadId]) ||
+          self.fallbackCartProperties(item);
         return {
           id: variantId,
           quantity: quantity,
-          properties: {
-            _ul_upload_id: item.uploadId,
-            _ul_uploaded: 'true',
-            'Print READY': item.originalUrl || '',
-            'Design File': item.fileName || '',
-            _ul_width_in: String(item.widthIn || 0),
-            _ul_height_in: String(item.heightIn || 0),
-            _ul_page_width_in: String(item.widthIn || 0),
-            _ul_page_length_in: String(item.heightIn || 0),
-            _ul_resolution_dpi: String(item.documentDpi || 0),
-            _ul_effective_dpi: String(item.effectiveDpi || 0),
-            _ul_sizing_source: String(item.sizingSource || ''),
-            _ul_measurement_mode: 'full',
-            _ul_mode: result.pricingMode === 'linear_inches'
-              ? 'main_product_linear_inches_app_extension'
-              : 'main_product_sheet_app_extension',
-            _ul_pricing_mode: String(result.pricingMode || ''),
-            _ul_billable_length_in: result.billableLengthIn != null ? String(result.billableLengthIn) : '',
-            _ul_cart_quantity: String(quantity),
-            _ul_price_per_inch: lineRate ? String(lineRate) : '',
-            _ul_discounted_price_per_inch: linearOfferRate ? String(linearOfferRate) : '',
-            _ul_customer_offer: linearOffer ? 'returning_customer_inch_pricing' : '',
-            _ul_customer_offer_name: linearOffer ? String(linearOffer.customerName || '') : '',
-            _ul_customer_offer_tier: linearTier ? getTierLabel(linearTier) : '',
-            _ul_selected_variant_id: String(item.selectedVariantId || ''),
-            _ul_selected_variant_title: result.selectedVariantTitle || '',
-            _ul_selected_sheet_label: sheetLabel,
-            _ul_sheet_name: sheetLabel,
-            _ul_designs_per_sheet: String(result.designsPerSheet || ''),
-            _ul_sheets_needed: String(result.sheetsNeeded || ''),
-            _ul_multi_index: String(index + 1),
-            _ul_multi_count: String(readyItems.length)
-          }
+          properties: properties,
+          uploadId: item.uploadId
         };
       });
-      var response = await fetch('/cart/add.js', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: cartItems })
-      });
-      var data = await response.json().catch(function() { return {}; });
-      if (!response.ok) throw new Error(data.description || 'Failed to add to cart.');
+
+      var lastCart = null;
+      for (var i = 0; i < cartItems.length; i++) {
+        lastCart = await this.ensureCartLine(cartItems[i], cartItems[i].uploadId);
+      }
+
+      await this.bindCartToken(lastCart, uploadIds);
+
       window.location.href = discountRedirect(redirectTo || '/cart', this.getDiscountCode());
     } catch (error) {
       this.setError(error && error.message ? error.message : 'Failed to add to cart.');
+      this.addButton.disabled = false;
+      if (this.checkoutButton) this.checkoutButton.disabled = false;
       this.render();
     }
   };

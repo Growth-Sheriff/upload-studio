@@ -7,6 +7,7 @@ import {
   BillingInterval,
 } from "@shopify/shopify-app-remix/server";
 import { RedisSessionStorage } from "@shopify/shopify-app-session-storage-redis";
+import type { Prisma } from "@prisma/client";
 import prisma from "~/lib/prisma.server";
 
 
@@ -89,11 +90,30 @@ const shopify = shopifyApp({
       shopify.registerWebhooks({ session });
 
 
+      // Reinstall must reactivate a shop that webhooks.app-uninstalled
+      // deactivated (data is retained through uninstall; see that handler).
+      const existing = await prisma.shop.findUnique({
+        where: { shopDomain: session.shop },
+        select: { billingStatus: true, settings: true },
+      });
+      const reactivating = existing?.billingStatus === "uninstalled";
+      const cleanedSettings =
+        reactivating && existing?.settings && typeof existing.settings === "object"
+          ? (Object.fromEntries(
+              Object.entries(existing.settings as Record<string, unknown>).filter(
+                ([key]) => key !== "uninstalledAt"
+              )
+            ) as Prisma.InputJsonObject)
+          : undefined;
+
       await prisma.shop.upsert({
         where: { shopDomain: session.shop },
         update: {
           accessToken: session.accessToken,
           updatedAt: new Date(),
+          ...(reactivating
+            ? { billingStatus: "active", ...(cleanedSettings ? { settings: cleanedSettings } : {}) }
+            : {}),
         },
         create: {
           shopDomain: session.shop,

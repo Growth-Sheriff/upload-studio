@@ -30,6 +30,11 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, getCorsHeaders } from "~/lib/cors.server";
 import prisma from "~/lib/prisma.server";
+import {
+  buildFileUrl,
+  buildIdentityUrl,
+  storageConfigForShop,
+} from "~/lib/uploadUrls.server";
 
 
 function corsJson<T>(data: T, request: Request, options: { status?: number } = {}) {
@@ -112,11 +117,15 @@ export async function action({ request }: ActionFunctionArgs) {
       select: {
         id: true,
         status: true,
+        shop: {
+          select: { storageProvider: true, storageConfig: true }
+        },
         items: {
           take: 1,
           select: {
             id: true,
-            thumbnailKey: true
+            thumbnailKey: true,
+            storageKey: true
           }
         }
       }
@@ -133,9 +142,16 @@ export async function action({ request }: ActionFunctionArgs) {
     const firstItem = upload.items[0];
     const thumbnailUrl = firstItem?.thumbnailKey || customizations.thumbnailUrl || '';
 
-
+    // Durable reference carriers (see app/lib/orderMatching.server.ts): the
+    // identity link plus the file link let order matching survive property
+    // rewrites by third-party cart apps.
+    const storageConfig = storageConfigForShop(upload.shop);
+    const identityUrl = buildIdentityUrl(upload.id);
+    const fileUrl = firstItem ? buildFileUrl(storageConfig, firstItem.storageKey) : null;
 
     const properties: Record<string, string> = {
+      'Design File': fileUrl || identityUrl,
+      'Design Identity': identityUrl,
       '_ul_upload_id': upload.id,
       '_ul_thumbnail': thumbnailUrl,
     };
