@@ -105,9 +105,16 @@ export async function action({ request }: ActionFunctionArgs) {
     const identityUrl = buildIdentityUrl(upload.id)
     const fileUrl = firstItem ? buildFileUrl(storageConfig, firstItem.storageKey) : null
 
+    // All carriers are underscore-prefixed: hidden from the customer's
+    // cart/checkout summary (GSB pattern), visible to merchants in order
+    // admin. `_Print Ready File` doubles as DripApps checkout-rule compat:
+    // its "No gang sheet uploaded" validation looks for that key on shared
+    // gang-sheet products; a priced line with a non-dripapps URL matches
+    // none of its other scanners (zero-price poll, dripappsserver rewrite).
     const properties: Record<string, string> = {
       [FILE_PROPERTY]: fileUrl || identityUrl,
       [IDENTITY_PROPERTY]: identityUrl,
+      '_Print Ready File': fileUrl || identityUrl,
       // Transition carrier: webhook's primary key until all readers migrate.
       [LEGACY_ID_PROPERTY]: upload.id,
     }

@@ -39,8 +39,8 @@ function UploadLineDisplay() {
   }
 
 
-  const designFileUrl = findAttr(attrs, 'Design File')
-  const identityUrl = findAttr(attrs, 'Design Identity')
+  const designFileUrl = findAttr(attrs, '_ul_design_file') || findAttr(attrs, 'Design File')
+  const identityUrl = findAttr(attrs, '_ul_identity') || findAttr(attrs, 'Design Identity')
   const uploadUrl = designFileUrl || findAttr(attrs, '_ul_upload_url')
   const thumbnail = findAttr(attrs, '_ul_thumbnail')
   const fileName =

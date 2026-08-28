@@ -2101,10 +2101,11 @@
       : (this.shopDomain ? 'https://' + this.shopDomain : '') + (this.apiBase || '/apps/customizer');
     var identityUrl = base + '/i/' + item.uploadId;
     var properties = {
-      'Design Identity': identityUrl,
+      '_ul_identity': identityUrl,
       '_ul_upload_id': item.uploadId
     };
-    properties['Design File'] = item.originalUrl || identityUrl;
+    properties['_ul_design_file'] = item.originalUrl || identityUrl;
+    properties['_Print Ready File'] = item.originalUrl || identityUrl;
     return properties;
   };
 
@@ -2120,7 +2121,7 @@
   function cartLineMatchesUpload(line, uploadId) {
     var props = (line && line.properties) || {};
     if (props['_ul_upload_id'] === uploadId) return true;
-    var identity = String(props['Design Identity'] || '');
+    var identity = String(props['_ul_identity'] || props['Design Identity'] || '');
     return identity.indexOf('/i/' + uploadId) !== -1;
   }
 

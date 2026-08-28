@@ -22,8 +22,14 @@ export type UploadMatch = {
   source: 'property' | 'identity_url' | 'file_url'
 }
 
-export const IDENTITY_PROPERTY = 'Design Identity'
-export const FILE_PROPERTY = 'Design File'
+// Underscore prefix = hidden from customer-facing cart/checkout summaries
+// (exactly how the GSB app ships its carriers). The first canary exposed
+// raw URLs on the checkout page; carriers are ops/machine data, not UI.
+export const IDENTITY_PROPERTY = '_ul_identity'
+export const FILE_PROPERTY = '_ul_design_file'
+// Written by the first canary day's carts; keep matching them.
+export const LEGACY_VISIBLE_IDENTITY_PROPERTY = 'Design Identity'
+export const LEGACY_VISIBLE_FILE_PROPERTY = 'Design File'
 export const LEGACY_ID_PROPERTY = '_ul_upload_id'
 // dtf-upload.js sheet-pricing lines historically wrote `_upload_id` instead
 // of `_ul_upload_id`; the webhook never read it, so those orders fell through
@@ -150,14 +156,18 @@ export function matchUploadFromLineItem(lineItem: {
     }
   }
 
-  const identityId = extractUploadIdFromIdentityUrl(byName.get(IDENTITY_PROPERTY))
-  if (identityId) {
-    return { uploadId: identityId, source: 'identity_url' }
+  for (const key of [IDENTITY_PROPERTY, LEGACY_VISIBLE_IDENTITY_PROPERTY]) {
+    const identityId = extractUploadIdFromIdentityUrl(byName.get(key))
+    if (identityId) {
+      return { uploadId: identityId, source: 'identity_url' }
+    }
   }
 
-  const fileId = extractUploadIdFromFileUrl(byName.get(FILE_PROPERTY))
-  if (fileId) {
-    return { uploadId: fileId, source: 'file_url' }
+  for (const key of [FILE_PROPERTY, LEGACY_VISIBLE_FILE_PROPERTY]) {
+    const fileId = extractUploadIdFromFileUrl(byName.get(key))
+    if (fileId) {
+      return { uploadId: fileId, source: 'file_url' }
+    }
   }
 
   // Last resort: scan every property value for an identity URL, so a renamed

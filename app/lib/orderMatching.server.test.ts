@@ -146,11 +146,24 @@ describe('matchUploadFromLineItem', () => {
     expect(match).toEqual({ uploadId: UPLOAD_ID, source: 'property' })
   })
 
-  it('falls back to the Design Identity URL when the hidden property is stripped', () => {
+  it('falls back to the hidden _ul_identity URL when the id property is stripped', () => {
+    const match = matchUploadFromLineItem({
+      properties: [{ name: '_ul_identity', value: `https://x.com/i/${UPLOAD_ID}` }],
+    })
+    expect(match).toEqual({ uploadId: UPLOAD_ID, source: 'identity_url' })
+  })
+
+  it('still matches first-canary-day visible property names', () => {
     const match = matchUploadFromLineItem({
       properties: [{ name: 'Design Identity', value: `https://x.com/i/${UPLOAD_ID}` }],
     })
     expect(match).toEqual({ uploadId: UPLOAD_ID, source: 'identity_url' })
+    const fileMatch = matchUploadFromLineItem({
+      properties: [
+        { name: '_ul_design_file', value: `https://cdn.x.com/shop/prod/${NANO_UPLOAD_ID}/${NANO_ITEM_ID}/a.png` },
+      ],
+    })
+    expect(fileMatch).toEqual({ uploadId: NANO_UPLOAD_ID, source: 'file_url' })
   })
 
   it('falls back to the Design File URL path', () => {

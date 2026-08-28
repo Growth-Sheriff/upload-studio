@@ -377,12 +377,15 @@
 
       if (!uploadId) return;
 
-      const designFile = item.properties?.[CONFIG.designFileKey] ||
-                         item.properties?.['_ul_design_file'] ||
-                         item.properties?.['_ul_file_name'] ||
-                         item.properties?.['File Name'] ||
-                         item.properties?.['Design Name'] ||
-                         fileNameFromUrl(item.properties?.['Design File']);
+      const rawDesignFile = item.properties?.[CONFIG.designFileKey] ||
+                            item.properties?.['_ul_design_file'] ||
+                            item.properties?.['_ul_file_name'] ||
+                            item.properties?.['File Name'] ||
+                            item.properties?.['Design Name'];
+      // _ul_design_file now carries a URL; show the filename, not the URL.
+      const designFile = (typeof rawDesignFile === 'string' && rawDesignFile.indexOf('/') !== -1)
+        ? (fileNameFromUrl(rawDesignFile) || fileNameFromUrl(item.properties?.['Design File']))
+        : (rawDesignFile || fileNameFromUrl(item.properties?.['Design File']));
 
       const thumbnail = item.properties?.['_ul_thumbnail'] ||
                         item.properties?.['_ul_upload_url'] ||
