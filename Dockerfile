@@ -105,7 +105,9 @@ COPY --from=build /app/extensions/theme-extension/assets ./extensions/theme-exte
 
 
 COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
+# Strip CRLF defensively: a Windows-side archive/checkout once shipped this
+# file with \r line endings, which breaks `exec` (shebang\r -> ENOENT).
+RUN sed -i 's/\r$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh
 
 
 ENV PORT=3000

@@ -31,3 +31,12 @@
 *.ttf   binary
 *.eot   binary
 *.pdf   binary
+
+# Executable/config files consumed inside Linux containers — CRLF here breaks
+# `exec` (shebang\r). git archive obeys these in Depot build contexts.
+*.sh              text eol=lf
+docker-entrypoint.sh text eol=lf
+Dockerfile        text eol=lf
+*.prisma          text eol=lf
+*.sql             text eol=lf
+*.toml            text eol=lf

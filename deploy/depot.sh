@@ -77,7 +77,7 @@ cmd_build() {
     args+=(--push)
   fi
   # Build context from git archive: only committed content, no local litter.
-  git archive "$REF" | depot "${args[@]}"
+   git -c core.autocrlf=false -c core.eol=lf archive "$REF" | depot "${args[@]}"
   echo "✔ Build finished ($IMAGE:$SHA)"
   [ "$PUSH" = "1" ] && echo "✔ Pushed :$SHA and :latest to $REGISTRY" || echo "ℹ Not pushed (set PUSH=1 to push)"
 }
