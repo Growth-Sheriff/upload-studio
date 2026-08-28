@@ -157,6 +157,7 @@ const BuilderConfigSchema = z.object({
   maxHeightIn: z.number().min(0.1).max(999).default(DEFAULT_BUILDER_CONFIG.maxHeightIn),
   minWidthIn: z.number().min(0.1).max(999).default(DEFAULT_BUILDER_CONFIG.minWidthIn),
   minHeightIn: z.number().min(0.1).max(999).default(DEFAULT_BUILDER_CONFIG.minHeightIn),
+  cartProductHandle: z.string().max(200).nullable().optional(),
   colorProfile: z.string().max(50).default(DEFAULT_BUILDER_CONFIG.colorProfile),
   maxFileSizeMb: z.number().min(1).max(10240).default(DEFAULT_BUILDER_CONFIG.maxFileSizeMb),
   supportedFormats: z.array(z.string().max(20)).max(20).default(DEFAULT_BUILDER_CONFIG.supportedFormats),

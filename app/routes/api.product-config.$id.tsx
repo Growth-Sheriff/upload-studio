@@ -161,6 +161,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       colorProfile: builderConfig.colorProfile ?? "CMYK",
       maxFileSizeMb: builderConfig.maxFileSizeMb ?? 500,
       supportedFormats: builderConfig.supportedFormats ?? ["PNG","JPG","JPEG","SVG","PSD","AI","EPS","PDF"],
+      // Twin-product override: cart lines resolve variants from this handle
+      // so a second gang-sheet app that owns the PAGE product never sees our
+      // lines at checkout (its "no gang sheet uploaded" rule is scoped to
+      // its own registered product ids).
+      cartProductHandle: builderConfig.cartProductHandle ?? null,
       volumeDiscountTiers: builderConfig.volumeDiscountTiers ?? [
         { min_qty: 1, max_qty: 9, price_per_sqin: 0.06 },
         { min_qty: 10, max_qty: 49, price_per_sqin: 0.054 },

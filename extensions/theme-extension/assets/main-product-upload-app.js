@@ -2070,6 +2070,33 @@
   // add itself is idempotent and verified: read the cart, add only the
   // missing quantity, then re-read to confirm the line is really there.
 
+  // Twin-product override (builderConfig.cartProductHandle): resolve cart
+  // variants from a hidden duplicate product so third-party gang-sheet apps
+  // that own the PAGE product never see our lines in their checkout rules.
+  // Mapping is by variant title (the twin is a duplicate: titles identical).
+  MainProductUpload.prototype.resolveCartProductVariants = async function() {
+    var config = (this.productConfig && this.productConfig.builderConfig) || {};
+    var handle = String(config.cartProductHandle || '').trim();
+    if (!handle) return null;
+    if (this.cartProductCache && this.cartProductCache.handle === handle) return this.cartProductCache;
+    try {
+      var response = await fetch('/products/' + encodeURIComponent(handle) + '.js', {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!response.ok) throw new Error('cart product fetch failed: ' + response.status);
+      var product = await response.json();
+      var byTitle = {};
+      (product.variants || []).forEach(function(variant) {
+        byTitle[String(variant.title || '').trim().toLowerCase()] = variant.id;
+      });
+      this.cartProductCache = { handle: handle, byTitle: byTitle, productId: product.id };
+      return this.cartProductCache;
+    } catch (error) {
+      console.warn('[UMP] cart product override unavailable, using page product:', error);
+      return null;
+    }
+  };
+
   MainProductUpload.prototype.prepareCartProperties = async function(uploadIds) {
     try {
       var response = await fetch(this.apiBase + '/api/cart/prepare', {
@@ -2218,13 +2245,30 @@
         var quantity = Math.max(1, Number(result.cartQuantity || result.sheetsNeeded) || 1);
         var properties = (serverProperties && serverProperties[item.uploadId]) ||
           self.fallbackCartProperties(item);
+        var pageVariant = (self.variants || []).find(function(v) {
+          return Number(v && v.id) === variantId;
+        });
         return {
           id: variantId,
           quantity: quantity,
           properties: properties,
-          uploadId: item.uploadId
+          uploadId: item.uploadId,
+          variantTitle: String(result.selectedVariantTitle || (pageVariant && pageVariant.title) || '')
         };
       });
+
+      var twin = await this.resolveCartProductVariants();
+      if (twin) {
+        cartItems.forEach(function(cartItem) {
+          var key = cartItem.variantTitle.trim().toLowerCase();
+          var mapped = key && twin.byTitle[key];
+          if (mapped) {
+            cartItem.id = Number(mapped);
+          } else {
+            console.warn('[UMP] twin variant not found for "' + cartItem.variantTitle + '"; keeping page product variant');
+          }
+        });
+      }
 
       var lastCart = null;
       for (var i = 0; i < cartItems.length; i++) {

@@ -152,6 +152,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         minWidthIn: builderConfigRaw.minWidthIn ?? 1,
         minHeightIn: builderConfigRaw.minHeightIn ?? 1,
         colorProfile: builderConfigRaw.colorProfile ?? "CMYK",
+        cartProductHandle: builderConfigRaw.cartProductHandle ?? null,
         maxFileSizeMb: builderConfigRaw.maxFileSizeMb ?? 500,
         supportedFormats: builderConfigRaw.supportedFormats ?? ["PNG","JPG","JPEG","SVG","PSD","AI","EPS","PDF"],
         volumeDiscountTiers: builderConfigRaw.volumeDiscountTiers ?? [
