@@ -2,6 +2,7 @@ import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import crypto from "crypto";
 import prisma from "~/lib/prisma.server";
+import { syncTwinPrices } from "~/lib/compatibilityTwin.server";
 
 
 function verifyWebhookSignature(body: string, hmac: string, secret: string): boolean {
@@ -72,6 +73,46 @@ export async function action({ request }: ActionFunctionArgs) {
       });
 
       console.log(`[Webhook] Logged product update for ${product.id}`);
+    }
+
+    // Compatibility-mode auto sync: when the PAGE product changes and it has
+    // a cart twin with auto-sync on, mirror variant prices onto the twin.
+    // Twin rows carry builderConfig.compatibilityTwinOf and are skipped here,
+    // which also breaks the update->sync->update loop (our own bulk update
+    // fires this webhook again for the twin, not for the page product).
+    try {
+      const pageGid = `gid://shopify/Product/${product.id}`;
+      const pageConfig = await prisma.productConfig.findFirst({
+        where: { shopId: shop.id, productId: pageGid },
+        select: { builderConfig: true },
+      });
+      const builderConfig = (pageConfig?.builderConfig as Record<string, unknown> | null) || {};
+      const twinGid = typeof builderConfig.cartProductId === "string" ? builderConfig.cartProductId : null;
+      const isTwinItself = Boolean(builderConfig.compatibilityTwinOf);
+      const autoSync = builderConfig.cartAutoSync !== false;
+
+      if (twinGid && !isTwinItself && autoSync) {
+        const updated = await syncTwinPrices(
+          { shopDomain, accessToken: shop.accessToken },
+          pageGid,
+          twinGid
+        );
+        if (updated > 0) {
+          console.log(`[Webhook] Compatibility twin price sync: ${updated} variant(s) for ${product.id}`);
+          await prisma.auditLog.create({
+            data: {
+              shopId: shop.id,
+              action: "compatibility_twin_synced",
+              resourceType: "product",
+              resourceId: String(product.id),
+              metadata: { twinGid, variantsUpdated: updated },
+            },
+          });
+        }
+      }
+    } catch (syncError) {
+      // Sync is a convenience layer; never fail the webhook over it.
+      console.warn("[Webhook] Compatibility twin sync failed (non-fatal):", syncError);
     }
 
     return json({ success: true });

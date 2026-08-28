@@ -17,6 +17,13 @@ import { authenticate } from "~/shopify.server";
 import prisma from "~/lib/prisma.server";
 import { z } from "zod";
 import {
+  countForeignLineSignals,
+  createTwin,
+  getTwinStatus,
+  syncTwinPrices,
+  type TwinStatus,
+} from "~/lib/compatibilityTwin.server";
+import {
   ALPHA_PRO_DISCOUNT_TIERS,
   applyAlphaProBuilderDefaults,
   isAlphaPrintShop,
@@ -330,6 +337,41 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     o.name.toLowerCase().includes("size") || o.name.toLowerCase().includes("beden")
   );
 
+  // Compatibility mode state: is a cart twin wired up, is it healthy, and is
+  // there evidence of a second app selling this product (generic signal —
+  // never names any vendor).
+  const storedBuilderConfig = (config?.builderConfig as Record<string, unknown> | null) || {};
+  const twinGid =
+    typeof storedBuilderConfig.cartProductId === "string" ? storedBuilderConfig.cartProductId : null;
+  let twinStatus: TwinStatus | null = null;
+  if (twinGid) {
+    try {
+      twinStatus = await getTwinStatus(
+        { shopDomain, accessToken: shop.accessToken },
+        productGid,
+        twinGid
+      );
+    } catch (twinErr) {
+      console.warn("[Configure] Twin status lookup failed:", twinErr);
+    }
+  }
+  let conflictSignals = 0;
+  try {
+    conflictSignals = await countForeignLineSignals(shop.id, productId);
+  } catch (_) {}
+
+  const compat = {
+    enabled: Boolean(twinGid),
+    twinGid,
+    twinHandle:
+      typeof storedBuilderConfig.cartProductHandle === "string"
+        ? storedBuilderConfig.cartProductHandle
+        : null,
+    autoSync: storedBuilderConfig.cartAutoSync !== false,
+    twin: twinStatus,
+    conflictSignals,
+  };
+
   const alphaProDiscountProduct = isAlphaPrintShop(shopDomain) && isAlphaProProduct(product.id);
   const existingBuilderConfig = config
     ? {
@@ -353,6 +395,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   return json({
     shop: { domain: shopDomain },
+    compat,
     alphaProDiscountProduct,
     product: {
       id: product.id,
@@ -410,6 +453,85 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const productGid = productId.startsWith("gid://")
     ? productId
     : `gid://shopify/Product/${productId}`;
+
+  // ── Compatibility mode (cart twin) intents ─────────────────────────────
+  const adminShop = { id: shop.id, shopDomain, accessToken: shop.accessToken };
+
+  if (action === "compat-enable" || action === "compat-recreate") {
+    try {
+      const twin = await createTwin(adminShop, productGid);
+      return json({
+        success: true,
+        message: `Compatibility mode enabled. Cart lines now use "${twin.title}" (${twin.handle}).`,
+      });
+    } catch (error) {
+      console.error("[Configure] compat-enable failed:", error);
+      return json(
+        { error: error instanceof Error ? error.message : "Could not enable compatibility mode" },
+        { status: 500 }
+      );
+    }
+  }
+
+  if (action === "compat-disable") {
+    const existing = await prisma.productConfig.findUnique({
+      where: { shopId_productId: { shopId: shop.id, productId: productGid } },
+    });
+    if (existing) {
+      const builderConfig = { ...((existing.builderConfig as Record<string, unknown> | null) || {}) };
+      delete builderConfig.cartProductHandle;
+      delete builderConfig.cartProductId;
+      delete builderConfig.cartAutoSync;
+      await prisma.productConfig.update({
+        where: { shopId_productId: { shopId: shop.id, productId: productGid } },
+        data: { builderConfig: builderConfig as any },
+      });
+    }
+    return json({
+      success: true,
+      message: "Compatibility mode disabled. The duplicate product stays in your store; delete it manually if you no longer need it.",
+    });
+  }
+
+  if (action === "compat-sync") {
+    const existing = await prisma.productConfig.findUnique({
+      where: { shopId_productId: { shopId: shop.id, productId: productGid } },
+    });
+    const builderConfig = (existing?.builderConfig as Record<string, unknown> | null) || {};
+    const twinGid = typeof builderConfig.cartProductId === "string" ? builderConfig.cartProductId : null;
+    if (!twinGid) {
+      return json({ error: "Compatibility mode is not enabled" }, { status: 400 });
+    }
+    try {
+      const updated = await syncTwinPrices(adminShop, productGid, twinGid);
+      return json({
+        success: true,
+        message: updated > 0 ? `Prices synced (${updated} variant${updated === 1 ? "" : "s"} updated).` : "Prices already in sync.",
+      });
+    } catch (error) {
+      console.error("[Configure] compat-sync failed:", error);
+      return json(
+        { error: error instanceof Error ? error.message : "Price sync failed" },
+        { status: 500 }
+      );
+    }
+  }
+
+  if (action === "compat-autosync") {
+    const autoSync = formData.get("autoSync") === "true";
+    const existing = await prisma.productConfig.findUnique({
+      where: { shopId_productId: { shopId: shop.id, productId: productGid } },
+    });
+    if (existing) {
+      const builderConfig = { ...((existing.builderConfig as Record<string, unknown> | null) || {}) };
+      builderConfig.cartAutoSync = autoSync;
+      await prisma.productConfig.update({
+        where: { shopId_productId: { shopId: shop.id, productId: productGid } },
+        data: { builderConfig: builderConfig as any },
+      });
+    }
+    return json({ success: true, message: autoSync ? "Automatic price sync enabled." : "Automatic price sync disabled." });
+  }
 
   if (action === "save") {
     const mode = formData.get("mode") as string || "dtf";
@@ -484,6 +606,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
       builderConfig as unknown as Record<string, unknown>
     ) as unknown as BuilderConfig;
 
+    // Compatibility-mode keys are server-managed (set only via the compat-*
+    // intents); never let a stale client form clear or tamper with them.
+    const existingForCompat = await prisma.productConfig.findUnique({
+      where: { shopId_productId: { shopId: shop.id, productId: productGid } },
+      select: { builderConfig: true },
+    });
+    const storedCompat = (existingForCompat?.builderConfig as Record<string, unknown> | null) || {};
+    for (const key of ["cartProductHandle", "cartProductId", "cartAutoSync"]) {
+      if (storedCompat[key] !== undefined) {
+        (builderConfig as unknown as Record<string, unknown>)[key] = storedCompat[key];
+      } else {
+        delete (builderConfig as unknown as Record<string, unknown>)[key];
+      }
+    }
+
 
     const updateData = {
       mode,
@@ -526,7 +663,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function ProductConfigurePage() {
-  const { shop, product, allProducts, config, alphaProDiscountProduct } = useLoaderData<typeof loader>();
+  const { shop, product, allProducts, config, compat, alphaProDiscountProduct } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>() as { success?: boolean; message?: string; error?: string } | null;
   const navigation = useNavigation();
   const navigate = useNavigate();
@@ -1225,6 +1362,110 @@ export default function ProductConfigurePage() {
           </Layout.Section>
         </Form>
 
+
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="400">
+              <InlineStack align="space-between" blockAlign="center">
+                <Text as="h2" variant="headingMd">🧩 Checkout Compatibility Mode</Text>
+                {compat.enabled ? (
+                  compat.twin?.exists ? (
+                    <Badge tone={compat.twin.pricesInSync ? "success" : "attention"}>
+                      {compat.twin.pricesInSync ? "Active · Prices in sync" : "Active · Price mismatch"}
+                    </Badge>
+                  ) : (
+                    <Badge tone="critical">Cart product missing</Badge>
+                  )
+                ) : (
+                  <Badge>Off</Badge>
+                )}
+              </InlineStack>
+
+              <Text as="p" tone="subdued">
+                Use this when a second app also runs on this product page. Cart lines are placed on a
+                hidden duplicate of this product, so the other app&apos;s checkout rules never flag orders
+                created by this upload widget. Customers see the same name and prices.
+              </Text>
+
+              {!compat.enabled && compat.conflictSignals > 0 && (
+                <Banner tone="warning" title="Another app is selling this product">
+                  <p>
+                    We detected {compat.conflictSignals} recent order line{compat.conflictSignals === 1 ? "" : "s"} on this
+                    product placed by a different app. If both apps stay on the same page, enable
+                    compatibility mode so its checkout validation does not warn your customers.
+                  </p>
+                </Banner>
+              )}
+
+              {compat.enabled && compat.twin && !compat.twin.exists && (
+                <Banner tone="critical" title="The cart product was deleted">
+                  <p>
+                    Orders still work — cart lines fall back to this product — but the other
+                    app&apos;s checkout warning may be showing again. Recreate the cart product to fix it.
+                  </p>
+                </Banner>
+              )}
+
+              {compat.enabled && compat.twin?.exists && (
+                <BlockStack gap="200">
+                  <InlineStack gap="300" blockAlign="center">
+                    <Text as="p">
+                      Cart product: <strong>{compat.twin.title}</strong>
+                    </Text>
+                    <Badge tone="info">{`${compat.twin.matchedVariants}/${compat.twin.totalPageVariants} variants matched`}</Badge>
+                  </InlineStack>
+                  {!compat.twin.pricesInSync && (
+                    <Banner tone="warning">
+                      <p>
+                        Prices differ between this product and its cart product. Customers are charged the
+                        cart product&apos;s price — sync now, or leave automatic sync on to prevent this.
+                      </p>
+                    </Banner>
+                  )}
+                  <Form method="post" id="compat-autosync-form">
+                    <input type="hidden" name="_action" value="compat-autosync" />
+                    <input type="hidden" name="autoSync" value={compat.autoSync ? "false" : "true"} />
+                    <Checkbox
+                      label="Keep prices in sync automatically"
+                      helpText="When this product's prices change, the cart product is updated to match."
+                      checked={compat.autoSync}
+                      onChange={() => {
+                        (document.getElementById("compat-autosync-form") as HTMLFormElement | null)?.requestSubmit();
+                      }}
+                    />
+                  </Form>
+                </BlockStack>
+              )}
+
+              <InlineStack gap="300">
+                {!compat.enabled && (
+                  <Form method="post">
+                    <input type="hidden" name="_action" value="compat-enable" />
+                    <Button submit variant="primary">Enable compatibility mode</Button>
+                  </Form>
+                )}
+                {compat.enabled && compat.twin && !compat.twin.exists && (
+                  <Form method="post">
+                    <input type="hidden" name="_action" value="compat-recreate" />
+                    <Button submit variant="primary">Recreate cart product</Button>
+                  </Form>
+                )}
+                {compat.enabled && compat.twin?.exists && !compat.twin.pricesInSync && (
+                  <Form method="post">
+                    <input type="hidden" name="_action" value="compat-sync" />
+                    <Button submit>Sync prices now</Button>
+                  </Form>
+                )}
+                {compat.enabled && (
+                  <Form method="post">
+                    <input type="hidden" name="_action" value="compat-disable" />
+                    <Button submit variant="plain" tone="critical">Disable</Button>
+                  </Form>
+                )}
+              </InlineStack>
+            </BlockStack>
+          </Card>
+        </Layout.Section>
 
         <Layout.Section>
           <Card>
