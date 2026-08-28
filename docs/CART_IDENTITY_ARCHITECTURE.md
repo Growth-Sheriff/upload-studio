@@ -100,6 +100,33 @@ custom attributes are server-owned and have their own readers.
   absolute `Design Identity` property. Note: merchants must re-copy the
   snippet into their theme to pick this up.
 
+## Convergent order reconciliation (2026-08-28, third pass)
+
+All four order webhooks (create/paid/cancelled/fulfilled) are now thin
+adapters (verify HMAC → parse → `reconcileOrder()`); the single reconciler
+lives in `app/lib/orderReconciler.server.ts`. Rationale: every Shopify order
+webhook carries the FULL order state (`financial_status`, `cancelled_at`,
+`fulfillment_status`, lines, note, cart_token), so state is derived from
+payload FACTS, not from which event arrived. Delivery order and retries
+cannot produce divergent state — the paid-before-create race class is gone.
+
+Status lattice (`deriveUploadStatusTransition`, unit-tested):
+
+```
+draft/ready -> needs_review -> approved -> printed -> shipped
+blocked: sticky at link time; payment unblocks (historical behavior)
+archived: on cancellation, unless already archived/shipped
+```
+
+Webhook-driven transitions only move forward; merchant-driven statuses
+(printed/shipped) are never downgraded — this also fixes pre-existing retry
+bugs (a replayed orders/create used to reset printed work to needs_review).
+Additional invariants: ghost creation is idempotent (existing OrderLink for
+the line short-circuits it) and skipped on cancelled orders; visitor revenue
+records exactly once (first paid transition); commissions are idempotent
+upserts; both metafield mirrors are best-effort. HMAC verification is
+unified on a constant-time comparison for all four webhooks.
+
 ## Deletion checklist (later)
 
 Remove `_ul_upload_id` from `api.cart.prepare` / `api.cart.add-custom` only

@@ -1,15 +1,16 @@
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import prisma from "~/lib/prisma.server";
-import crypto from "crypto";
+import { reconcileOrder, verifyShopifyWebhookHmac } from "~/lib/orderReconciler.server";
 
-
+// Thin adapter: verify -> parse -> reconcile. fulfillment_status in the
+// payload drives the printed -> shipped transition inside the convergent
+// reconciler (only printed advances, exactly as before).
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== "POST") {
     return json({ error: "Method not allowed" }, { status: 405 });
   }
-
 
   const hmacHeader = request.headers.get("x-shopify-hmac-sha256");
   const shopDomain = request.headers.get("x-shopify-shop-domain");
@@ -19,10 +20,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const body = await request.text();
-  const secret = process.env.SHOPIFY_API_SECRET || "";
-  const hmac = crypto.createHmac("sha256", secret).update(body).digest("base64");
-
-  if (hmac !== hmacHeader) {
+  if (!verifyShopifyWebhookHmac(body, hmacHeader, process.env.SHOPIFY_API_SECRET || "")) {
     console.error("[Webhook] HMAC verification failed");
     return json({ error: "Invalid HMAC" }, { status: 401 });
   }
@@ -33,34 +31,13 @@ export async function action({ request }: ActionFunctionArgs) {
 
     console.log(`[Webhook] Order fulfilled: ${orderId} from ${shopDomain}`);
 
-
-    const shop = await prisma.shop.findUnique({
-      where: { shopDomain },
-    });
-
+    const shop = await prisma.shop.findUnique({ where: { shopDomain } });
     if (!shop) {
       console.warn(`[Webhook] Shop not found: ${shopDomain}`);
       return json({ received: true });
     }
 
-
-    const orderLinks = await prisma.orderLink.findMany({
-      where: { shopId: shop.id, orderId },
-      include: { upload: true },
-    });
-
-
-    for (const link of orderLinks) {
-      if (link.upload && link.upload.status === "printed") {
-        await prisma.upload.updateMany({
-          where: { id: link.uploadId, shopId: shop.id },
-          data: { status: "shipped" },
-        });
-
-        console.log(`[Webhook] Upload ${link.uploadId} marked as shipped`);
-      }
-    }
-
+    const summary = await reconcileOrder(shop, payload, "orders/fulfilled");
 
     await prisma.auditLog.create({
       data: {
@@ -69,17 +46,16 @@ export async function action({ request }: ActionFunctionArgs) {
         resourceType: "order",
         resourceId: orderId,
         metadata: {
-          affectedUploads: orderLinks.map(l => l.uploadId),
+          affectedUploads: summary.affectedUploadIds,
           fulfillmentStatus: payload.fulfillment_status || "fulfilled",
           trackingNumbers: payload.fulfillments?.map((f: any) => f.tracking_number).filter(Boolean) || [],
         },
       },
     });
 
-    return json({ received: true, processed: orderLinks.length });
+    return json({ received: true, processed: summary.affectedUploadIds.length });
   } catch (error) {
     console.error("[Webhook] Error processing orders/fulfilled:", error);
     return json({ error: "Processing failed" }, { status: 500 });
   }
 }
-
