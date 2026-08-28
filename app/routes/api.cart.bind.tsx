@@ -43,7 +43,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const shopDomain = String(body.shopDomain || '').trim()
   const cartToken = normalizeCartToken(body.cartToken)
   const uploadIds = Array.isArray(body.uploadIds)
-    ? body.uploadIds.filter((id): id is string => typeof id === 'string' && /^[a-z0-9]{16,40}$/.test(id))
+    ? body.uploadIds.filter((id): id is string => typeof id === 'string' && /^[A-Za-z0-9_-]{8,40}$/.test(id))
     : []
 
   if (!shopDomain || !cartToken || !uploadIds.length || uploadIds.length > MAX_UPLOADS_PER_REQUEST) {

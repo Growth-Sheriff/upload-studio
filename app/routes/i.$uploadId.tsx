@@ -46,7 +46,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const wantsJson = rawId.endsWith('.json')
   const uploadId = wantsJson ? rawId.slice(0, -'.json'.length) : rawId
 
-  if (!uploadId || !/^[a-z0-9]{16,40}$/.test(uploadId)) {
+  if (!uploadId || !/^[A-Za-z0-9_-]{8,40}$/.test(uploadId)) {
     return new Response('Not found', { status: 404 })
   }
 

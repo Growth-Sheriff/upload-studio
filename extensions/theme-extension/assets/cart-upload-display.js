@@ -117,10 +117,10 @@
   function extractUploadId(properties) {
     if (!properties) return null;
     const direct = properties[CONFIG.propertyKey] || properties['_ul_upload_id'];
-    if (typeof direct === 'string' && /^[a-z0-9]{16,40}$/.test(direct)) return direct;
+    if (typeof direct === 'string' && /^[A-Za-z0-9_-]{8,40}$/.test(direct)) return direct;
     for (const value of Object.values(properties)) {
       if (typeof value !== 'string') continue;
-      const match = value.match(/\/i\/([a-z0-9]{16,40})(?:\.json)?(?:[?#]|$)/);
+      const match = value.match(/\/i\/([A-Za-z0-9_-]{8,40})(?:\.json)?(?:[?#]|$)/);
       if (match) return match[1];
     }
     return null;

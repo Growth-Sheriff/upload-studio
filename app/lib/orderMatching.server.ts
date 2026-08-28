@@ -30,8 +30,11 @@ export const LEGACY_ID_PROPERTY = '_ul_upload_id'
 // to ghost uploads. Honor it as an additional legacy carrier.
 const LEGACY_ID_PROPERTIES = [LEGACY_ID_PROPERTY, '_upload_id']
 
-// cuid()/cuid2 ids: lowercase alphanumeric, generously bounded.
-const UPLOAD_ID_PATTERN = /^[a-z0-9]{16,40}$/
+// Verified against production data (2026-08-28): live uploads use
+// nanoid(12) ids (mixed-case, url-safe: [A-Za-z0-9_-]), ghost uploads use
+// prisma cuid() (25-char lowercase), and item ids are nanoid(8). One
+// pattern covers all three; DB lookups reject any residual false positive.
+const UPLOAD_ID_PATTERN = /^[A-Za-z0-9_-]{8,40}$/
 
 function isPlausibleUploadId(value: unknown): value is string {
   return typeof value === 'string' && UPLOAD_ID_PATTERN.test(value)
@@ -48,7 +51,7 @@ export function normalizeCartToken(raw: unknown): string {
  *  or /apps/customizer/i/<uploadId>(.json). Returns null when not matching. */
 export function extractUploadIdFromIdentityUrl(url: unknown): string | null {
   if (typeof url !== 'string' || !url) return null
-  const match = url.match(/\/i\/([a-z0-9]{16,40})(?:\.json)?(?:[?#]|$)/)
+  const match = url.match(/\/i\/([A-Za-z0-9_-]{8,40})(?:\.json)?(?:[?#]|$)/)
   return match ? match[1] : null
 }
 
@@ -71,8 +74,9 @@ export function extractUploadIdFromFileUrl(url: unknown): string | null {
       return s
     }
   })
-  // Expect .../<uploadId>/<itemId>/<filename>; both ids are cuid-shaped, so
-  // require the trailing filename segment and take the first of the pair.
+  // Expect .../<uploadId>/<itemId>/<filename>; both ids are nanoid/cuid
+  // shaped, so require the trailing filename segment and take the first of
+  // the pair. (Shop/env segments break adjacency: 'prod'/'dev' are too short.)
   for (let i = 0; i < segments.length - 2; i++) {
     if (isPlausibleUploadId(segments[i]) && isPlausibleUploadId(segments[i + 1])) {
       return segments[i]

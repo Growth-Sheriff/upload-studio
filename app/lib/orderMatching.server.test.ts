@@ -8,7 +8,11 @@ import {
   normalizeCartToken,
 } from './orderMatching.server'
 
-const UPLOAD_ID = 'cmsyu40ee0lsuiy654lp88k2l'
+// Production id shapes (verified 2026-08-28): live uploads are nanoid(12)
+// mixed-case, items are nanoid(8), ghost uploads are prisma cuid (25 lower).
+const UPLOAD_ID = 'cmsyu40ee0lsuiy654lp88k2l' // cuid (ghost uploads)
+const NANO_UPLOAD_ID = 'jofMq71pYzSK' // nanoid(12) (live uploads)
+const NANO_ITEM_ID = 'aB3xY9_k' // nanoid(8)
 const ITEM_ID = 'cmsyu41xy9abcd1234efgh567'
 
 describe('isForeignAppLine', () => {
@@ -58,10 +62,10 @@ describe('extractVipUploadIdsFromOrderNote', () => {
     ).toEqual([UPLOAD_ID, ITEM_ID])
   })
 
-  it('supports the legacy VIP wording and rejects junk tokens', () => {
+  it('supports the legacy VIP wording, nanoid ids, and rejects junk tokens', () => {
     expect(
-      extractVipUploadIdsFromOrderNote(`VIP checkout for upload ${UPLOAD_ID}, not-an-id`)
-    ).toEqual([UPLOAD_ID])
+      extractVipUploadIdsFromOrderNote(`VIP checkout for upload ${NANO_UPLOAD_ID}, x!`)
+    ).toEqual([NANO_UPLOAD_ID])
     expect(extractVipUploadIdsFromOrderNote('no marker here')).toEqual([])
     expect(extractVipUploadIdsFromOrderNote(null)).toEqual([])
   })
@@ -93,9 +97,17 @@ describe('extractUploadIdFromIdentityUrl', () => {
     expect(extractUploadIdFromIdentityUrl(`https://x.com/i/${UPLOAD_ID}.json`)).toBe(UPLOAD_ID)
   })
 
+  it('parses nanoid(12) production ids', () => {
+    expect(extractUploadIdFromIdentityUrl(`https://x.com/i/${NANO_UPLOAD_ID}`)).toBe(NANO_UPLOAD_ID)
+    expect(
+      extractUploadIdFromIdentityUrl(`https://shop.com/apps/customizer/i/${NANO_UPLOAD_ID}.json`)
+    ).toBe(NANO_UPLOAD_ID)
+  })
+
   it('ignores URLs without an identity segment', () => {
     expect(extractUploadIdFromIdentityUrl('https://x.com/products/foo')).toBeNull()
-    expect(extractUploadIdFromIdentityUrl('https://x.com/i/UPPERCASE-NOT-ID')).toBeNull()
+    expect(extractUploadIdFromIdentityUrl('https://x.com/i/x')).toBeNull() // too short
+    expect(extractUploadIdFromIdentityUrl('https://x.com/i/has%20space!')).toBeNull()
     expect(extractUploadIdFromIdentityUrl(null)).toBeNull()
     expect(extractUploadIdFromIdentityUrl(42)).toBeNull()
   })
@@ -105,6 +117,11 @@ describe('extractUploadIdFromFileUrl', () => {
   it('parses bunny CDN storage paths (uploadId precedes itemId)', () => {
     const url = `https://cdn.example.b-cdn.net/fast-dtf-transfer_myshopify_com/prod/${UPLOAD_ID}/${ITEM_ID}/design%20file.png`
     expect(extractUploadIdFromFileUrl(url)).toBe(UPLOAD_ID)
+  })
+
+  it('parses production nanoid(12)/nanoid(8) storage paths', () => {
+    const url = `https://cdn.example.b-cdn.net/fast-dtf-transfer_myshopify_com/prod/${NANO_UPLOAD_ID}/${NANO_ITEM_ID}/art.png`
+    expect(extractUploadIdFromFileUrl(url)).toBe(NANO_UPLOAD_ID)
   })
 
   it('parses app-served file URLs', () => {
@@ -160,6 +177,13 @@ describe('matchUploadFromLineItem', () => {
       properties: { 'Design Identity': `/apps/customizer/i/${UPLOAD_ID}` },
     })
     expect(match).toEqual({ uploadId: UPLOAD_ID, source: 'identity_url' })
+  })
+
+  it('matches production nanoid(12) ids in the hidden property', () => {
+    const match = matchUploadFromLineItem({
+      properties: [{ name: '_ul_upload_id', value: NANO_UPLOAD_ID }],
+    })
+    expect(match).toEqual({ uploadId: NANO_UPLOAD_ID, source: 'property' })
   })
 
   it('honors the dtf-upload sheet flow `_upload_id` carrier', () => {
