@@ -22,3 +22,6 @@ tmp/
 app/components/main.kcl
 .playwright-mcp/
 .shopify/
+
+# pnpm 10 local artifact (build scripts approval) - not part of the Docker build
+pnpm-workspace.yaml
