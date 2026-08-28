@@ -1,46 +1,99 @@
-name: Build & Deploy Upload Studio
+# Upload Studio CI — Depot build pipeline
+#
+# DOCTRINE:
+#   GitHub        = source of truth
+#   Depot         = build machine (project tq9pqdq9xh)
+#   GHCR          = image registry (ghcr.io/jesuisfatih/upload-studio)
+#   DigitalOcean  = runtime host (`upload-studio` -> 64.227.108.45; NEVER builds)
+#
+# Pushing to main only BUILDS and PUSHES the image. Deploying to production is
+# a separate, manually dispatched job that requires typing "deploy" — the old
+# workflow auto-deployed on every main push (and still pointed at the retired
+# Vultr host path), which is exactly the accident this layout prevents.
+#
+# Required repo secrets:
+#   DEPOT_TOKEN   — Depot project/org API token (depot.dev -> settings)
+#   DO_SSH_KEY    — private key for root@64.227.108.45 (deploy job only)
+#   DO_HOST       — 64.227.108.45 (deploy job only)
+
+name: Build (Depot) & Manual Deploy
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      confirm_deploy:
+        description: 'Type "deploy" to deploy the built image to production'
+        required: false
+        default: ''
+
+env:
+  IMAGE: ghcr.io/jesuisfatih/upload-studio
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # Depot OIDC (if project trust is configured)
     steps:
-      - name: Pull, Build & Deploy
+      - uses: actions/checkout@v4
+
+      - uses: depot/setup-action@v1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Depot build & push
+        env:
+          DEPOT_TOKEN: ${{ secrets.DEPOT_TOKEN }}
+        run: |
+          depot build . \
+            --project tq9pqdq9xh \
+            --platform linux/amd64 \
+            -t "$IMAGE:${GITHUB_SHA::12}" \
+            -t "$IMAGE:latest" \
+            --push
+          echo "Pushed $IMAGE:${GITHUB_SHA::12}"
+
+  deploy:
+    # Manual only, and only when the operator literally typed "deploy".
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.confirm_deploy == 'deploy'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull image & restart tenants (DigitalOcean)
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ secrets.DO_HOST }}
+          username: root
+          key: ${{ secrets.DO_SSH_KEY }}
           command_timeout: 30m
           script: |
             set -e
-            echo "=== [1/4] Sync Git Checkout ==="
-            cd /opt/apps/custom/customizerapp/upload-studio/src
-            git fetch --prune origin main
-            git checkout -f main
-            git reset --hard origin/main
-            echo "Deployed commit: $(git rev-parse HEAD)"
+            SHA="${{ github.sha }}"
+            SHORT="${SHA:0:12}"
+            echo "=== [1/3] Pull ghcr.io/jesuisfatih/upload-studio:$SHORT ==="
+            docker pull "ghcr.io/jesuisfatih/upload-studio:$SHORT"
+            docker tag "ghcr.io/jesuisfatih/upload-studio:$SHORT" upload-studio:latest
 
-            echo "=== [2/4] Docker Build ==="
-            sudo docker build -t upload-studio:latest .
+            echo "=== [2/3] Restart Containers ==="
+            cd /opt/apps/public/upload-studio
+            docker compose up -d --remove-orphans
 
-            echo "=== [3/4] Restart Containers ==="
-            cd /opt/apps/custom/customizerapp/upload-studio
-            sudo docker compose down
-            sudo docker compose up -d
-
-            echo "=== [4/4] Health Check (retry 3x) ==="
+            echo "=== [3/3] Health Check (retry 3x) ==="
             for attempt in 1 2 3; do
               echo "Attempt $attempt - waiting 90s..."
               sleep 90
               FAILED=0
               for name in fastdtftransfer everydaycustomprint dtftransferohio dtfprinthouse dtfprintdepot eagledtfprint alphaprint gangsheet legendtransfers customprintaz; do
-                port=$(sudo docker port us-$name 3000/tcp 2>/dev/null | cut -d: -f2)
+                port=$(docker port us-$name 3000/tcp 2>/dev/null | cut -d: -f2)
                 code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 http://127.0.0.1:$port/health 2>/dev/null)
                 echo "$name (:$port): $code"
                 if [ "$code" != "200" ]; then
@@ -55,4 +108,3 @@ jobs:
             done
             echo "Some tenants failed after 3 attempts"
             exit 1
-
