@@ -14,3 +14,11 @@ envs/
 
 # Sentry Config File
 .env.sentry-build-plugin
+
+# Local scratch / exports (never commit customer data or renders)
+tmp/
+*_render.png
+*_customers_*.txt
+app/components/main.kcl
+.playwright-mcp/
+.shopify/

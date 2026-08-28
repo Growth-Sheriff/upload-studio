@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk '/===== DEPLOYING dtfprintarizona/,/===== DONE dtfprintarizona/' \"C:\\\\Users\\\\mhmmd\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-mhmmd-Desktop-customizer-app-new\\\\a9f936ac-2010-445a-914d-083b64ac298d\\\\tasks\\\\b9b2m7wah.output\")",
+      "Bash(ssh new-mothership *)",
+      "Bash(command -v identify magick convert exiftool file)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\mhmmd\\\\Downloads\\\\\" -File | Where-Object { $_.Name -match \"Genuity|GenJPG|metreicin\" } | Select-Object Name, Length, LastWriteTime | Format-Table -AutoSize)",
+      "Bash(cd extensions/theme-extension/snippets *)",
+      "Read(//c/Users/mhmmd/Desktop/assets/**)"
+    ]
+  }
+}
