@@ -435,10 +435,15 @@ export async function reconcileOrder(
     )
   }
 
-  // ── Commission (idempotent upsert; foreign-only orders never reach here) ─
-  if (summary.affectedUploadIds.length > 0) {
+  // ── Commission ───────────────────────────────────────────────────────────
+  // Charged ONLY when a real upload flowed through this app (summary.linked).
+  // Ghost records — customer bypassed the upload, or historical foreign-app
+  // lines — are operational warnings, never billable events: billing an
+  // order this app did not serve is wrong revenue.
+  if (summary.linked.length > 0) {
+    const linkedIds = summary.linked.map((l) => l.uploadId)
     const uploads = await prisma.upload.findMany({
-      where: { id: { in: summary.affectedUploadIds }, shopId: shop.id },
+      where: { id: { in: linkedIds }, shopId: shop.id },
       select: { mode: true },
     })
     let maxRate = 0

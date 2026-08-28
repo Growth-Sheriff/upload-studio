@@ -64,21 +64,39 @@ export async function loader({ request }: LoaderFunctionArgs) {
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
 
-  const [totalUploads, monthlyUploads, productsConfigured, pendingQueue, totalOrders, monthlyOrders] = await Promise.all([
-    prisma.upload.count({ where: { shopId: shop.id } }),
-    prisma.upload.count({ where: { shopId: shop.id, createdAt: { gte: startOfMonth } } }),
-    prisma.productConfig.count({ where: { shopId: shop.id, enabled: true } }),
-    prisma.upload.count({ where: { shopId: shop.id, status: "needs_review" } }),
+  // Ghost records (preflightSummary.errorType = missing_upload) are
+  // operational warnings — a bypassed upload or, historically, another
+  // app's order lines. They are excluded from every primary stat so the
+  // panel only reads orders that actually flowed through this app.
+  const notGhost = {
+    NOT: { preflightSummary: { path: ["errorType"], equals: "missing_upload" } },
+  } as const;
 
-    prisma.orderLink.groupBy({
-      by: ["orderId"],
-      where: { shopId: shop.id },
-    }).then(groups => groups.length),
-    prisma.orderLink.groupBy({
-      by: ["orderId"],
-      where: { shopId: shop.id, createdAt: { gte: startOfMonth } },
-    }).then(groups => groups.length),
+  const [totalUploads, monthlyUploads, productsConfigured, pendingQueue, missingFileCount, realOrderIds, monthlyRealOrderIds] = await Promise.all([
+    prisma.upload.count({ where: { shopId: shop.id, ...notGhost } }),
+    prisma.upload.count({ where: { shopId: shop.id, createdAt: { gte: startOfMonth }, ...notGhost } }),
+    prisma.productConfig.count({ where: { shopId: shop.id, enabled: true } }),
+    prisma.upload.count({ where: { shopId: shop.id, status: "needs_review", ...notGhost } }),
+    prisma.upload.count({
+      where: {
+        shopId: shop.id,
+        preflightSummary: { path: ["errorType"], equals: "missing_upload" },
+      },
+    }),
+
+    prisma.upload.findMany({
+      where: { shopId: shop.id, orderId: { not: null }, ...notGhost },
+      select: { orderId: true },
+      distinct: ["orderId"],
+    }).then(rows => rows.length),
+    prisma.upload.findMany({
+      where: { shopId: shop.id, orderId: { not: null }, createdAt: { gte: startOfMonth }, ...notGhost },
+      select: { orderId: true },
+      distinct: ["orderId"],
+    }).then(rows => rows.length),
   ]);
+  const totalOrders = realOrderIds;
+  const monthlyOrders = monthlyRealOrderIds;
 
 
   const monthlyLimit = -1;
@@ -103,6 +121,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       monthlyLimit,
       productsConfigured,
       pendingQueue,
+      missingFileCount,
       totalOrders,
       monthlyOrders,
       conversionRate: monthlyUploads > 0 ? Math.round((monthlyOrders / monthlyUploads) * 100) : 0,
