@@ -150,6 +150,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const fileUrl = firstItem ? buildFileUrl(storageConfig, firstItem.storageKey) : null;
 
     const properties: Record<string, string> = {
+      'Uploaded File': fileUrl || identityUrl,
       '_ul_design_file': fileUrl || identityUrl,
       '_ul_identity': identityUrl,
       '_Print Ready File': fileUrl || identityUrl,

@@ -112,6 +112,11 @@ export async function action({ request }: ActionFunctionArgs) {
     // gang-sheet products; a priced line with a non-dripapps URL matches
     // none of its other scanners (zero-price poll, dripappsserver rewrite).
     const properties: Record<string, string> = {
+      // Customer-visible (Shopify renders non-underscore properties in cart,
+      // checkout and order confirmation; universal theme snippets shorten
+      // URL values to a clickable filename link).
+      'Uploaded File': fileUrl || identityUrl,
+      // Hidden carriers (underscore = never shown to the customer).
       [FILE_PROPERTY]: fileUrl || identityUrl,
       [IDENTITY_PROPERTY]: identityUrl,
       '_Print Ready File': fileUrl || identityUrl,

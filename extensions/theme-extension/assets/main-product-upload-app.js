@@ -2133,6 +2133,8 @@
     };
     properties['_ul_design_file'] = item.originalUrl || identityUrl;
     properties['_Print Ready File'] = item.originalUrl || identityUrl;
+    // Customer-visible line (themes render non-underscore properties).
+    properties['Uploaded File'] = item.originalUrl || identityUrl;
     return properties;
   };
 
