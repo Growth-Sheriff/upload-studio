@@ -674,6 +674,9 @@ async function getImageInfoWithoutImagemagick(filePath: string, mimeType: string
 
   if (mimeType === 'application/postscript') {
     try {
+      // DOS EPS wrapper: measure the extracted pure PostScript instead.
+      const extractedForBbox = await extractDosEpsPostScript(filePath).catch(() => null)
+      if (extractedForBbox) filePath = extractedForBbox
       const { stdout, stderr } = await execAsync(`gs -q -dNOPAUSE -dBATCH -sDEVICE=bbox "${filePath}"`)
       const output = `${stdout}\n${stderr}`
       const match =
@@ -918,7 +921,50 @@ export async function detectFileType(filePath: string): Promise<string | null> {
     return 'application/postscript'
   }
 
+  // DOS EPS binary header (EPS saved with a TIFF/WMF preview — Illustrator's
+  // "save with preview"): C5 D0 D3 C6, then little-endian offsets to the
+  // embedded PostScript. Live incident 2026-09-03: these were rejected as
+  // "unknown" and blocked paying customers.
+  if (
+    buffer[0] === 0xc5 &&
+    buffer[1] === 0xd0 &&
+    buffer[2] === 0xd3 &&
+    buffer[3] === 0xc6
+  ) {
+    return 'application/postscript'
+  }
+
   return null
+}
+
+/** If the file is a DOS EPS (binary preview header), extract the embedded
+ *  PostScript segment to a sibling file and return its path; otherwise null.
+ *  Ghostscript builds vary in how they treat the binary wrapper, so feeding
+ *  the extracted pure PostScript is the deterministic path. */
+export async function extractDosEpsPostScript(inputPath: string): Promise<string | null> {
+  const header = Buffer.alloc(12)
+  const fd = await fs.open(inputPath, 'r')
+  try {
+    await fd.read(header, 0, 12, 0)
+    if (!(header[0] === 0xc5 && header[1] === 0xd0 && header[2] === 0xd3 && header[3] === 0xc6)) {
+      return null
+    }
+    const psOffset = header.readUInt32LE(4)
+    const psLength = header.readUInt32LE(8)
+    const stats = await fs.stat(inputPath)
+    if (psOffset <= 0 || psLength <= 0 || psOffset + psLength > stats.size) {
+      console.warn('[Preflight] DOS EPS header offsets out of range; using file as-is')
+      return null
+    }
+    const psBuffer = Buffer.alloc(psLength)
+    await fd.read(psBuffer, 0, psLength, psOffset)
+    const extractedPath = `${inputPath}.extracted.eps`
+    await fs.writeFile(extractedPath, psBuffer)
+    console.log(`[Preflight] DOS EPS detected; extracted ${psLength} bytes of PostScript`)
+    return extractedPath
+  } finally {
+    await fd.close()
+  }
 }
 
 
@@ -1156,6 +1202,12 @@ export async function convertEpsToPng(
   outputPath: string,
   dpi: number = 300
 ): Promise<void> {
+  // DOS EPS (binary preview wrapper): hand ghostscript the pure PostScript.
+  const extracted = await extractDosEpsPostScript(inputPath).catch((err) => {
+    console.warn('[Preflight] DOS EPS extraction failed, using original file:', err)
+    return null
+  })
+  if (extracted) inputPath = extracted
 
   const commands = [
 

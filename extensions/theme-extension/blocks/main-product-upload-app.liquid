@@ -43,6 +43,9 @@
             </svg>
           </div>
           <div>
+            {%- if block.settings.show_product_title -%}
+              <p class="ump__product-name">{{ product.title | escape }}</p>
+            {%- endif -%}
             <p class="ump__eyebrow">{{ block.settings.eyebrow | default: 'Print-ready upload' }}</p>
             <h2 class="ump__title">{{ block.settings.heading | default: 'Upload your gang sheet' }}</h2>
             <p class="ump__copy">{{ block.settings.subheading | default: 'We measure each file, select the right sheet, and unlock checkout when every gang sheet is ready.' }}</p>
@@ -210,6 +213,12 @@
       "type": "checkbox",
       "id": "enable_checkout_button",
       "label": "Show checkout button",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_product_title",
+      "label": "Show product name above the uploader",
       "default": true
     },
     {
