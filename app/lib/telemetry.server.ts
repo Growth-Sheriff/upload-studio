@@ -269,11 +269,7 @@ async function collectUsageMetrics(
     prisma.visitorSession.count(),
     prisma.visitorSession.count({ where: { startedAt: { gte: monthStart } } }),
 
-    prisma.apiKey.aggregate({
-      _count: true,
-      _sum: { usageCount: true },
-      where: { status: 'active' },
-    }),
+    Promise.resolve({ _count: 0, _sum: { usageCount: 0 } }),
 
     prisma.flowTrigger.count(),
     prisma.flowTrigger.count({ where: { createdAt: { gte: monthStart } } }),
@@ -408,7 +404,7 @@ async function collectConfigSummary(prisma: PrismaClient): Promise<ConfigSummary
     prisma.assetSet.count({ where: { status: 'active' } }),
     prisma.teamMember.groupBy({ by: ['role'], _count: true, where: { status: 'active' } }),
     prisma.whiteLabelConfig.findFirst({ select: { enabled: true } }),
-    prisma.apiKey.count({ where: { status: 'active' } }),
+    Promise.resolve(0),
   ])
 
   const byRole: Record<string, number> = {}

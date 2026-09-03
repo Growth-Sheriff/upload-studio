@@ -25,7 +25,7 @@ import prisma from '~/lib/prisma.server'
 import { isPayPalConfigured } from '~/lib/paypal.server'
 import { isStripeConfigured } from '~/lib/stripe.server'
 import { authenticate } from '~/shopify.server'
-import { COMMISSION_RATES, getOutstandingFeeSelection } from '~/lib/billing.server'
+import { COMMISSION_PERCENT, getOutstandingFeeSelection } from '~/lib/billing.server'
 
 const PAYPAL_EMAIL = process.env.PAYPAL_EMAIL || 'billing@techifyboost.com'
 
@@ -205,7 +205,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     monthlyBreakdowns,
     totalTransferGB,
     totalFiles: uploadStats._count,
-    commissionRates: COMMISSION_RATES,
+    commissionPercent: COMMISSION_PERCENT,
     paypalEmail: PAYPAL_EMAIL,
     paypalEnabled: isPayPalConfigured(),
     paypalClientId: process.env.PAYPAL_CLIENT_ID || '',
@@ -321,7 +321,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
 
     for (const orderId of outstandingSelection.orderIds) {
-      const rate = outstandingSelection.feeByOrderId.get(orderId) || COMMISSION_RATES.default
+      const rate = outstandingSelection.feeByOrderId.get(orderId) || 0
       await prisma.commission.upsert({
         where: {
           commission_shop_order: {
@@ -396,7 +396,7 @@ export default function BillingPage() {
     monthlyBreakdowns,
     totalTransferGB,
     totalFiles,
-    commissionRates,
+    commissionPercent,
     paypalEmail,
     paypalEnabled,
     autoChargeEnabled,
@@ -703,7 +703,7 @@ export default function BillingPage() {
           <Banner tone="info">
             <p>
               <strong>App-linked orders only.</strong> This page uses Upload Studio billing records, not your store's full Shopify order count.
-              Standard order fee is ${commissionRates.default.toFixed(2)} per order (${commissionRates.builder.toFixed(2)} for Builder mode).
+              Each app-served order is billed {Math.round(commissionPercent * 100)}% of the app's own line items.
             </p>
           </Banner>
         </Layout.Section>
@@ -1276,7 +1276,7 @@ export default function BillingPage() {
                   1. <strong>App-Linked Order Created</strong> - A Shopify order appears here only when it is linked to Upload Studio.
                 </Text>
                 <Text as="p" variant="bodyMd">
-                  2. <strong>Order Fee Recorded</strong> - Standard fee is ${commissionRates.default.toFixed(2)} per order (${commissionRates.builder.toFixed(2)} for Builder mode).
+                  2. <strong>Commission Recorded</strong> - {Math.round(commissionPercent * 100)}% of the line items this app served in the order (net of line discounts). Orders without an app upload are never billed.
                 </Text>
                 <Text as="p" variant="bodyMd">
                   3. <strong>Pay with Stripe or PayPal</strong> - Use the payment buttons to settle only the currently outstanding order fees.

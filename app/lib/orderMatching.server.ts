@@ -22,9 +22,15 @@ export type UploadMatch = {
   source: 'property' | 'identity_url' | 'file_url'
 }
 
-// Underscore prefix = hidden from customer-facing cart/checkout summaries
-// (exactly how the GSB app ships its carriers). The first canary exposed
-// raw URLs on the checkout page; carriers are ops/machine data, not UI.
+// Current carriers (2026-09): exactly three customer-visible properties per
+// line — Print Ready (file URL), Sheet Identity (our /i/<uploadId> page) and
+// DPI. The Sheet Identity URL is the marker only this app writes and
+// understands: an order counts as ours only when that URL resolves to an
+// upload row in this tenant's database.
+export const PRINT_READY_PROPERTY = 'Print Ready'
+export const SHEET_IDENTITY_PROPERTY = 'Sheet Identity'
+export const DPI_PROPERTY = 'DPI'
+// Legacy hidden carriers (written until 2026-09); still matched for old orders.
 export const IDENTITY_PROPERTY = '_ul_identity'
 export const FILE_PROPERTY = '_ul_design_file'
 // Written by the first canary day's carts; keep matching them.
@@ -156,14 +162,14 @@ export function matchUploadFromLineItem(lineItem: {
     }
   }
 
-  for (const key of [IDENTITY_PROPERTY, LEGACY_VISIBLE_IDENTITY_PROPERTY]) {
+  for (const key of [SHEET_IDENTITY_PROPERTY, IDENTITY_PROPERTY, LEGACY_VISIBLE_IDENTITY_PROPERTY]) {
     const identityId = extractUploadIdFromIdentityUrl(byName.get(key))
     if (identityId) {
       return { uploadId: identityId, source: 'identity_url' }
     }
   }
 
-  for (const key of [FILE_PROPERTY, LEGACY_VISIBLE_FILE_PROPERTY]) {
+  for (const key of [PRINT_READY_PROPERTY, FILE_PROPERTY, LEGACY_VISIBLE_FILE_PROPERTY]) {
     const fileId = extractUploadIdFromFileUrl(byName.get(key))
     if (fileId) {
       return { uploadId: fileId, source: 'file_url' }

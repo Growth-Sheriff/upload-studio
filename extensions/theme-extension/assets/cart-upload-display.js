@@ -116,6 +116,11 @@
   // identity URL (survives property-key rewrites by third-party cart apps).
   function extractUploadId(properties) {
     if (!properties) return null;
+    const identity = properties['Sheet Identity'];
+    if (typeof identity === 'string') {
+      const m = identity.match(/\/i\/([A-Za-z0-9_-]{8,40})(?:\.json)?(?:[?#]|$)/);
+      if (m) return m[1];
+    }
     const direct = properties[CONFIG.propertyKey] || properties['_ul_upload_id'];
     if (typeof direct === 'string' && /^[A-Za-z0-9_-]{8,40}$/.test(direct)) return direct;
     for (const value of Object.values(properties)) {
@@ -377,7 +382,8 @@
 
       if (!uploadId) return;
 
-      const rawDesignFile = item.properties?.[CONFIG.designFileKey] ||
+      const rawDesignFile = item.properties?.['Print Ready'] ||
+                            item.properties?.[CONFIG.designFileKey] ||
                             item.properties?.['_ul_design_file'] ||
                             item.properties?.['_ul_file_name'] ||
                             item.properties?.['File Name'] ||

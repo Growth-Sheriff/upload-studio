@@ -17,25 +17,6 @@ const redisSessionStorage = new RedisSessionStorage(
 
 
 
-const BILLING_PLANS = {
-  STARTER: {
-    amount: 9,
-    currencyCode: "USD",
-    interval: BillingInterval.Every30Days,
-    trialDays: 7,
-
-
-  },
-  PRO: {
-    amount: 19,
-    currencyCode: "USD",
-    interval: BillingInterval.Every30Days,
-    trialDays: 7,
-
-
-  },
-};
-
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY || "",
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
@@ -53,7 +34,6 @@ const shopify = shopifyApp({
   sessionStorage: redisSessionStorage,
   distribution: AppDistribution.AppStore,
   isEmbeddedApp: true,
-  billing: BILLING_PLANS,
   webhooks: {
     APP_UNINSTALLED: {
       deliveryMethod: DeliveryMethod.Http,

@@ -39,8 +39,8 @@ function UploadLineDisplay() {
   }
 
 
-  const designFileUrl = findAttr(attrs, '_ul_design_file') || findAttr(attrs, 'Design File')
-  const identityUrl = findAttr(attrs, '_ul_identity') || findAttr(attrs, 'Design Identity')
+  const designFileUrl = findAttr(attrs, 'Print Ready') || findAttr(attrs, '_ul_design_file') || findAttr(attrs, 'Design File')
+  const identityUrl = findAttr(attrs, 'Sheet Identity') || findAttr(attrs, '_ul_identity') || findAttr(attrs, 'Design Identity')
   const uploadUrl = designFileUrl || findAttr(attrs, '_ul_upload_url')
   const thumbnail = findAttr(attrs, '_ul_thumbnail')
   const fileName =
@@ -89,6 +89,11 @@ function findAttr(attrs, key) {
 // Design Identity link (/i/<uploadId>), then any attribute value holding an
 // identity URL (survives attribute-key rewrites by third-party cart apps).
 function extractUploadId(attrs) {
+  const identity = findAttr(attrs, 'Sheet Identity')
+  if (typeof identity === 'string') {
+    const m = identity.match(/\/i\/([A-Za-z0-9_-]{8,40})(?:\.json)?(?:[?#]|$)/)
+    if (m) return m[1]
+  }
   const direct = findAttr(attrs, '_ul_upload_id')
   if (typeof direct === 'string' && /^[A-Za-z0-9_-]{8,40}$/.test(direct)) return direct
   if (!Array.isArray(attrs)) return null

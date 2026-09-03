@@ -514,7 +514,6 @@ export default function ProductionQueuePage() {
             if (form) form.submit()
           },
         },
-        { content: 'View Exports', url: '/app/exports' },
         { content: 'Analytics', url: '/app/analytics' },
       ]}
     >

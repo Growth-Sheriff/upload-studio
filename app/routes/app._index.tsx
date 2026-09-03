@@ -629,35 +629,11 @@ export default function AppDashboard() {
                   <BlockStack gap="200">
                     <Button fullWidth onClick={() => navigate("/app/products")}>Configure Products</Button>
                     <Button fullWidth onClick={() => navigate("/app/asset-sets")}>Manage 3D Assets</Button>
-                    <Button fullWidth onClick={() => navigate("/app/exports")}>Export Designs</Button>
                   </BlockStack>
                 </BlockStack>
               </Card>
 
 
-              <Card>
-                <BlockStack gap="300">
-                  <InlineStack align="space-between">
-                    <Text as="h2" variant="headingMd">Your Plan</Text>
-                    <Badge tone={shop.plan === "pro" || shop.plan === "enterprise" ? "success" : "info"}>
-                      {shop.plan.toUpperCase()}
-                    </Badge>
-                  </InlineStack>
-                  <Divider />
-                  {shop.plan === "starter" ? (
-                    <BlockStack gap="200">
-                      <Text as="p" variant="bodySm" tone="subdued">
-                        Upgrade to Pro for 3D Designer, team management, and API access.
-                      </Text>
-                      <Button onClick={() => navigate("/app/billing")}>Upgrade to Pro</Button>
-                    </BlockStack>
-                  ) : (
-                    <Text as="p" variant="bodySm" tone="subdued">
-                      {stats.monthlyLimit > 0 ? `${stats.monthlyLimit} uploads/month included` : "Unlimited uploads"}
-                    </Text>
-                  )}
-                </BlockStack>
-              </Card>
 
 
               <Card>

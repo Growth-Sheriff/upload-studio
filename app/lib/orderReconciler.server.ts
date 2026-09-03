@@ -23,7 +23,7 @@
 import crypto from 'crypto'
 import { Decimal } from '@prisma/client/runtime/library'
 import prisma from '~/lib/prisma.server'
-import { getCommissionRate } from '~/lib/billing.server'
+import { COMMISSION_PERCENT, calculateCommissionAmount } from '~/lib/billing.server'
 import { recordOrderForVisitor } from '~/lib/visitor.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
 import {
@@ -119,6 +119,8 @@ interface DesignManifestRow {
 
 export interface ReconcileSummary {
   linked: Array<{ uploadId: string; matchSource: string }>
+  /** Order line ids this app served (basis of the 4% commission). */
+  servedLineItemIds: string[]
   ghostsCreated: string[]
   foreignLinesSkipped: number
   affectedUploadIds: string[]
@@ -154,6 +156,7 @@ export async function reconcileOrder(
 
   const summary: ReconcileSummary = {
     linked: [],
+    servedLineItemIds: [],
     ghostsCreated: [],
     foreignLinesSkipped: 0,
     affectedUploadIds: [],
@@ -288,6 +291,7 @@ export async function reconcileOrder(
     processed.add(uploadId)
     unconsumedTokenUploads.delete(uploadId)
     summary.linked.push({ uploadId, matchSource })
+    if (lineItemId && !summary.servedLineItemIds.includes(lineItemId)) summary.servedLineItemIds.push(lineItemId)
     summary.affectedUploadIds.push(uploadId)
     console.log(
       `[Reconcile] Upload ${uploadId} <- order ${orderId} (source=${matchSource}, topic=${topic}, status=${nextStatus ?? 'unchanged'})`
@@ -441,14 +445,23 @@ export async function reconcileOrder(
   // lines — are operational warnings, never billable events: billing an
   // order this app did not serve is wrong revenue.
   if (summary.linked.length > 0) {
-    const linkedIds = summary.linked.map((l) => l.uploadId)
-    const uploads = await prisma.upload.findMany({
-      where: { id: { in: linkedIds }, shopId: shop.id },
-      select: { mode: true },
-    })
-    let maxRate = 0
-    for (const u of uploads) maxRate = Math.max(maxRate, getCommissionRate(u.mode))
-    if (maxRate === 0) maxRate = getCommissionRate('dtf')
+    // Basis: the app's own line items, net of their discount allocations.
+    // A note-only match (VIP/measured checkout: every line is ours) falls
+    // back to the order subtotal.
+    const served = new Set(summary.servedLineItemIds)
+    let servedAmount = 0
+    for (const line of order.line_items || []) {
+      if (!served.has(String(line.id))) continue
+      const gross = (parseFloat(String(line.price ?? '0')) || 0) * (Number(line.quantity) || 0)
+      const discounts = Array.isArray(line.discount_allocations)
+        ? line.discount_allocations.reduce((sum: number, d: any) => sum + (parseFloat(String(d?.amount ?? '0')) || 0), 0)
+        : 0
+      servedAmount += Math.max(0, gross - discounts)
+    }
+    if (servedAmount <= 0) {
+      servedAmount = parseFloat(String(order.subtotal_price ?? order.total_line_items_price ?? order.total_price ?? '0')) || 0
+    }
+    const commissionAmount = calculateCommissionAmount(servedAmount)
 
     await prisma.commission.upsert({
       where: { commission_shop_order: { shopId: shop.id, orderId } },
@@ -458,17 +471,18 @@ export async function reconcileOrder(
         orderNumber: order.name || order.order_number?.toString(),
         orderTotal: new Decimal(order.total_price || '0'),
         orderCurrency,
-        commissionRate: new Decimal(0),
-        commissionAmount: new Decimal(maxRate),
+        commissionRate: new Decimal(COMMISSION_PERCENT),
+        commissionAmount: new Decimal(commissionAmount),
         status: 'pending',
       },
       update: {
         orderTotal: new Decimal(order.total_price || '0'),
         orderCurrency,
-        commissionAmount: new Decimal(maxRate),
+        commissionRate: new Decimal(COMMISSION_PERCENT),
+        commissionAmount: new Decimal(commissionAmount),
       },
     })
-    console.log(`[Reconcile] Commission upserted ($${maxRate}) for order ${orderId}`)
+    console.log(`[Reconcile] Commission upserted (${Math.round(COMMISSION_PERCENT * 100)}% of $${servedAmount.toFixed(2)} = $${commissionAmount.toFixed(2)}) for order ${orderId}`)
   }
 
   // ── Metafield mirrors (best-effort, never fail the webhook) ──────────────

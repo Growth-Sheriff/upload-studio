@@ -90,13 +90,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
 
-  if (!['pro', 'enterprise'].includes(shop.plan)) {
-    return json({
-      error: 'upgrade_required',
-      message: '3D Designer requires Pro or Enterprise plan',
-      currentPlan: shop.plan,
-    })
-  }
 
 
   const assetSets = await prisma.assetSet.findMany({
@@ -358,24 +351,6 @@ export default function AssetSetsPage() {
   const [formName, setFormName] = useState('')
   const [formModelUrl, setFormModelUrl] = useState('')
 
-
-  if ('error' in data && data.error === 'upgrade_required') {
-    return (
-      <Page title="Asset Sets">
-        <Layout>
-          <Layout.Section>
-            <Banner title="Upgrade Required" tone="warning">
-              <p>{data.message}</p>
-              <p>
-                Current plan: <strong>{data.currentPlan}</strong>
-              </p>
-              <Button url="/app/billing">Upgrade to Pro</Button>
-            </Banner>
-          </Layout.Section>
-        </Layout>
-      </Page>
-    )
-  }
 
   const { assetSets } = data
 

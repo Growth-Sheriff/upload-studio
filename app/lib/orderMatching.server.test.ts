@@ -224,3 +224,33 @@ describe('matchUploadFromLineItem', () => {
     expect(match).toEqual({ uploadId: UPLOAD_ID, source: 'identity_url' })
   })
 })
+
+describe('current three-property carrier (2026-09)', () => {
+  it('matches the customer-visible Sheet Identity URL first', () => {
+    expect(
+      matchUploadFromLineItem({
+        properties: [
+          { name: 'Print Ready', value: `https://cdn.example.com/shop/prod/${NANO_UPLOAD_ID}/${NANO_ITEM_ID}/design.png` },
+          { name: 'Sheet Identity', value: `https://fastdtftransfer.com/apps/customizer/i/${NANO_UPLOAD_ID}` },
+          { name: 'DPI', value: '300' },
+        ],
+      })
+    ).toEqual({ uploadId: NANO_UPLOAD_ID, source: 'identity_url' })
+  })
+
+  it('falls back to the Print Ready storage path when the identity is missing', () => {
+    expect(
+      matchUploadFromLineItem({
+        properties: [
+          { name: 'Print Ready', value: `https://cdn.example.com/shop/prod/${NANO_UPLOAD_ID}/${NANO_ITEM_ID}/design.png` },
+          { name: 'DPI', value: '300' },
+        ],
+      })
+    ).toEqual({ uploadId: NANO_UPLOAD_ID, source: 'file_url' })
+  })
+
+  it('does not treat an arbitrary order note or foreign properties as ours', () => {
+    expect(matchUploadFromLineItem({ properties: [{ name: 'Notes', value: 'please rush' }] })).toBeNull()
+    expect(matchUploadFromLineItem({ properties: [{ name: '_Print Ready File', value: 'https://app.dripappsserver.com/x/abc' }] })).toBeNull()
+  })
+})

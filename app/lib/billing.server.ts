@@ -1,58 +1,35 @@
-
-
-
-
-
-
-
-
-
-
 import prisma from "~/lib/prisma.server";
 
-
+// Single commercial model (2026-09): no plans, no upload limits. Every order
+// served by this app is billed 4% of the app's own line items (net of line
+// discounts); orders the app did not serve are never billed.
+export const COMMISSION_PERCENT = 0.04;
 export const COMMISSION_RATES = {
-  default: 0.10,
-  builder: 0.50,
+  default: COMMISSION_PERCENT,
+  builder: COMMISSION_PERCENT,
 } as const;
 
-
+// Technical ceiling only (multipart handles it); not a plan limit.
 export const MAX_FILE_SIZE_MB = 10240;
 
+export function getCommissionRate(_mode: string): number {
+  return COMMISSION_PERCENT;
+}
 
-
-
-export function getCommissionRate(mode: string): number {
-  if (mode === "builder") return COMMISSION_RATES.builder;
-  return COMMISSION_RATES.default;
+/** 4% of the served amount, rounded to cents. */
+export function calculateCommissionAmount(servedAmount: number): number {
+  const base = Number.isFinite(servedAmount) && servedAmount > 0 ? servedAmount : 0;
+  return Math.round(base * COMMISSION_PERCENT * 100) / 100;
 }
 
 function buildOrderFeeDescription(
   feeAmounts: number[],
   monthKey?: string | null
 ): string {
-  const defaultCount = feeAmounts.filter(
-    (amount) => Math.abs(amount - COMMISSION_RATES.default) < 0.0001
-  ).length;
-  const builderCount = feeAmounts.filter(
-    (amount) => Math.abs(amount - COMMISSION_RATES.builder) < 0.0001
-  ).length;
-  const customCount = feeAmounts.length - defaultCount - builderCount;
-
-  const parts: string[] = [];
-  if (defaultCount > 0) {
-    parts.push(`${defaultCount} standard orders @ $${COMMISSION_RATES.default.toFixed(2)}`);
-  }
-  if (builderCount > 0) {
-    parts.push(`${builderCount} builder orders @ $${COMMISSION_RATES.builder.toFixed(2)}`);
-  }
-  if (customCount > 0) {
-    parts.push(`${customCount} custom-fee orders`);
-  }
-
   const appName = process.env.APP_NAME || "Upload Studio";
-  const prefix = monthKey ? `${appName} order fees (${monthKey})` : `${appName} order fees`;
-  return `${prefix}: ${parts.join(", ")}`;
+  const prefix = monthKey ? `${appName} commission (${monthKey})` : `${appName} commission`;
+  const total = feeAmounts.reduce((sum, amount) => sum + amount, 0);
+  return `${prefix}: ${feeAmounts.length} order${feeAmounts.length === 1 ? "" : "s"} @ ${Math.round(COMMISSION_PERCENT * 100)}% ($${total.toFixed(2)})`;
 }
 
 export async function getOutstandingFeeSelection(
@@ -115,44 +92,16 @@ export async function calculatePendingCommissions(
   if (pendingOrderIds.length === 0) {
     return { totalAmount: 0, orderRates: new Map(), description: "" };
   }
-
-
-  const orderLinks = await prisma.orderLink.findMany({
-    where: { orderId: { in: pendingOrderIds }, shopId },
-    select: { orderId: true, upload: { select: { mode: true } } },
+  const rows = await prisma.commission.findMany({
+    where: { shopId, orderId: { in: pendingOrderIds } },
+    select: { orderId: true, commissionAmount: true },
   });
-
   const orderRates = new Map<string, number>();
-  for (const orderId of pendingOrderIds) {
-    const links = orderLinks.filter((ol) => ol.orderId === orderId);
-    let rate: number = COMMISSION_RATES.default;
-    for (const link of links) {
-      const mode = link.upload?.mode || "dtf";
-      rate = Math.max(rate, getCommissionRate(mode));
-    }
-    orderRates.set(orderId, rate);
-  }
-
-  const totalAmount = Array.from(orderRates.values()).reduce((sum, r) => sum + r, 0);
-
-
-  const builderCount = Array.from(orderRates.values()).filter(
-    (r) => r === COMMISSION_RATES.builder
-  ).length;
-  const defaultCount = pendingOrderIds.length - builderCount;
-  const parts: string[] = [];
-  if (defaultCount > 0) parts.push(`${defaultCount} orders @ $${COMMISSION_RATES.default}`);
-  if (builderCount > 0) parts.push(`${builderCount} builder orders @ $${COMMISSION_RATES.builder}`);
-
-  const appName = process.env.APP_NAME || "Upload Studio";
-  const prefix = monthKey ? `${appName} commission (${monthKey})` : `${appName} commission`;
-  const description = `${prefix}: ${parts.join(", ")}`;
-
-  return { totalAmount, orderRates, description };
+  for (const row of rows) orderRates.set(row.orderId, Number(row.commissionAmount));
+  const amounts = Array.from(orderRates.values());
+  const totalAmount = amounts.reduce((sum, r) => sum + r, 0);
+  return { totalAmount, orderRates, description: buildOrderFeeDescription(amounts, monthKey) };
 }
-
-
-
 
 export async function checkUploadAllowed(
   shopId: string,

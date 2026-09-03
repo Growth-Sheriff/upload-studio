@@ -2,7 +2,6 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, corsJson } from "~/lib/cors.server";
 import { rateLimitGuard, getIdentifier } from "~/lib/rateLimit.server";
 import prisma from "~/lib/prisma.server";
-import { extractAutoSheetFromSettings } from "~/lib/autoSheet.server";
 import { getMaxWidthLimitForShop, isDtfPrintHouseShop } from "~/lib/customerPricing.server";
 import {
   applyAlphaProBuilderDefaults,
@@ -207,7 +206,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   };
 
 
-  const autoSheet = extractAutoSheetFromSettings(settings);
 
   return corsJson({
     shop: {
@@ -218,6 +216,5 @@ export async function loader({ request }: LoaderFunctionArgs) {
     assetSet,
     product,
     settings: storefrontSettings,
-    autoSheet,
   }, request);
 }

@@ -2986,20 +2986,13 @@
       ? this.apiBase
       : (this.shopDomain ? 'https://' + this.shopDomain : '') + (this.apiBase || '/apps/customizer');
     var identityUrl = base + '/i/' + item.uploadId;
-    var properties = {
-      '_ul_identity': identityUrl,
-      '_ul_upload_id': item.uploadId
+    // Same three visible properties the server writes.
+    var dpi = Math.round(Number(item.effectiveDpi || item.documentDpi) || 0);
+    return {
+      'Print Ready': item.originalUrl || identityUrl,
+      'Sheet Identity': identityUrl,
+      'DPI': dpi > 0 ? String(dpi) : 'n/a'
     };
-    properties['_ul_design_file'] = item.originalUrl || identityUrl;
-    properties['_Print Ready File'] = item.originalUrl || identityUrl;
-    // Customer-visible line (themes render non-underscore properties).
-    properties['Uploaded File'] = item.originalUrl || identityUrl;
-    var line = buildCartLineRequest(item);
-    properties['Copies'] = line.copies === 1
-      ? '1'
-      : line.copies + ' (' + line.designsPerSheet + ' per sheet × ' + line.sheetsNeeded + ' sheet' + (line.sheetsNeeded === 1 ? '' : 's') + ')';
-    properties['_ul_copies'] = line.copies + '|' + line.designsPerSheet + '|' + line.sheetsNeeded;
-    return properties;
   };
 
   // What the customer asked for on this gang sheet, in the shape the server
@@ -3031,7 +3024,7 @@
   function cartLineMatchesUpload(line, uploadId) {
     var props = (line && line.properties) || {};
     if (props['_ul_upload_id'] === uploadId) return true;
-    var identity = String(props['_ul_identity'] || props['Design Identity'] || '');
+    var identity = String(props['Sheet Identity'] || props['_ul_identity'] || props['Design Identity'] || '');
     return identity.indexOf('/i/' + uploadId) !== -1;
   }
 
@@ -3046,7 +3039,7 @@
     if ((Number(line.quantity) || 0) !== cartItem.quantity) return false;
     var props = line.properties || {};
     var want = cartItem.properties || {};
-    return String(props['_ul_copies'] || '') === String(want['_ul_copies'] || '');
+    return String(props['Sheet Identity'] || '') === String(want['Sheet Identity'] || '');
   }
 
   async function cartRequest(url, body) {

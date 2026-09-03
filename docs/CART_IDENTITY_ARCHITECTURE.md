@@ -132,3 +132,31 @@ unified on a constant-time comparison for all four webhooks.
 Remove `_ul_upload_id` from `api.cart.prepare` / `api.cart.add-custom` only
 after audit logs show `matchSource` is never `property` for a full release
 cycle (caller-first, deletion-last).
+
+## 2026-09 update — three visible line properties, 4% commission, single plan
+
+**Line properties** written by `/api/cart/prepare` (and the widget fallback) are now exactly:
+
+| Property | Value |
+|---|---|
+| `Print Ready` | print-ready file URL (falls back to the identity URL) |
+| `Sheet Identity` | `https://<shop>/apps/customizer/i/<uploadId>` — the marker only this app writes and can resolve |
+| `DPI` | effective DPI of the upload |
+
+Copies / sheet / sizes are persisted on the upload (`requested_copies`, `designs_per_sheet`,
+`sheets_needed`, `cart_variant_id`, `cart_sheet_label`) and shown on the identity page; they are no
+longer line properties. `_ul_*`, `Uploaded File`, `_Print Ready File`, `Copies` are legacy and only
+read for old orders (`orderMatching.server.ts` keeps them as fallbacks).
+
+**Order ownership**: an order counts as this app's only when a line's `Sheet Identity` (or legacy
+carrier) resolves to an upload row in this tenant's database. Order notes never qualify on their
+own except the explicit VIP/measured-checkout note format.
+
+**Billing**: one plan, no upload/feature limits. Commission = 4% of the app-served line items
+(price × quantity − discount allocations); note-only matches fall back to the order subtotal.
+Orders without a served line are never billed. Shopify billing plans (`BILLING_PLANS`) removed.
+
+**Removed from the admin app**: API Keys (+ public `/api/v1/*`), Exports page, Team page,
+"Contact Us" duplicate nav entry, Auto Sheet Calculator settings card (+ `ul-auto-sheet` assets),
+plan badges/gates (asset sets, white-label). Prisma models `ApiKey`, `TeamMember`, `ExportJob`
+are kept in the schema (tables untouched) but no longer used by UI.

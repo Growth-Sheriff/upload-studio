@@ -19,9 +19,9 @@ import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
 import { deriveUploadItemLifecycle } from '~/lib/uploadLifecycle.server'
 import {
-  FILE_PROPERTY,
-  IDENTITY_PROPERTY,
-  LEGACY_ID_PROPERTY,
+  DPI_PROPERTY,
+  PRINT_READY_PROPERTY,
+  SHEET_IDENTITY_PROPERTY,
 } from '~/lib/orderMatching.server'
 import {
   buildFileUrl,
@@ -151,37 +151,17 @@ export async function action({ request }: ActionFunctionArgs) {
     const identityUrl = buildIdentityUrl(upload.id)
     const fileUrl = firstItem ? buildFileUrl(storageConfig, firstItem.storageKey) : null
 
-    // All carriers are underscore-prefixed: hidden from the customer's
-    // cart/checkout summary (GSB pattern), visible to merchants in order
-    // admin. `_Print Ready File` doubles as DripApps checkout-rule compat:
-    // its "No gang sheet uploaded" validation looks for that key on shared
-    // gang-sheet products; a priced line with a non-dripapps URL matches
-    // none of its other scanners (zero-price poll, dripappsserver rewrite).
+    // Exactly three customer-visible line properties (merchant decision,
+    // 2026-09): the print-ready file, the Sheet Identity page that only this
+    // app writes and can resolve, and the measured DPI. Everything else the
+    // shop needs (copies, sheet, sizes) lives on the identity page.
+    const dpi = lifecycles
+      .map((l) => Number(l.metadata?.effectiveDpi || l.metadata?.documentDpi || l.metadata?.dpi || 0))
+      .find((n) => n > 0)
     const properties: Record<string, string> = {
-      // Customer-visible (Shopify renders non-underscore properties in cart,
-      // checkout and order confirmation; universal theme snippets shorten
-      // URL values to a clickable filename link).
-      'Uploaded File': fileUrl || identityUrl,
-      // Hidden carriers (underscore = never shown to the customer).
-      [FILE_PROPERTY]: fileUrl || identityUrl,
-      [IDENTITY_PROPERTY]: identityUrl,
-      '_Print Ready File': fileUrl || identityUrl,
-      // Transition carrier: webhook's primary key until all readers migrate.
-      [LEGACY_ID_PROPERTY]: upload.id,
-    }
-
-    // Copies: customer-visible so the buyer sees what they asked for and the
-    // print shop sees how many to gang per sheet. Hidden numeric twin for
-    // machine readers. Only written when the widget sent a line.
-    const line = lineByUpload.get(uploadId)
-    if (line) {
-      const perSheet = line.designsPerSheet || 1
-      const sheets = line.sheetsNeeded || Math.ceil(line.copies / perSheet)
-      properties['Copies'] =
-        line.copies === 1
-          ? '1'
-          : `${line.copies} (${perSheet} per sheet × ${sheets} sheet${sheets === 1 ? '' : 's'})`
-      properties['_ul_copies'] = `${line.copies}|${perSheet}|${sheets}`
+      [PRINT_READY_PROPERTY]: fileUrl || identityUrl,
+      [SHEET_IDENTITY_PROPERTY]: identityUrl,
+      [DPI_PROPERTY]: dpi ? String(Math.round(dpi)) : 'n/a',
     }
 
     return {

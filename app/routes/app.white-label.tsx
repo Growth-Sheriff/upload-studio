@@ -63,9 +63,6 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
 
-  if (shop.plan !== "pro" && shop.plan !== "enterprise") {
-    return json({ error: "White-label requires Pro plan" }, { status: 403 });
-  }
 
   const formData = await request.formData();
 
@@ -127,7 +124,7 @@ export default function WhiteLabelPage() {
   const [hideBranding, setHideBranding] = useState(config.hideBranding);
   const [customDomain, setCustomDomain] = useState(config.customDomain || "");
 
-  const canUseWhiteLabel = plan === "pro" || plan === "enterprise";
+  const canUseWhiteLabel = true; // single plan: every feature included
 
   return (
     <Page

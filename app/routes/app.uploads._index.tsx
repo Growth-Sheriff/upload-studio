@@ -498,10 +498,6 @@ export default function UploadsPage() {
     <Page
       title="Uploads"
       subtitle={`${pagination.total} total uploads`}
-      primaryAction={{
-        content: 'Export All',
-        url: '/app/exports',
-      }}
     >
       <Layout>
         <Layout.Section>

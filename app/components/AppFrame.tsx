@@ -9,14 +9,11 @@ import {
   ChartVerticalFilledIcon,
   ChatIcon,
   CreditCardIcon,
-  ExportIcon,
   HomeIcon,
   ImageIcon,
-  KeyIcon,
   ListBulletedIcon,
   OrderIcon,
   PaintBrushFlatIcon,
-  PersonIcon,
   ProductIcon,
   SettingsIcon,
 } from '@shopify/polaris-icons'
@@ -134,12 +131,6 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFram
             selected: isSelected('/app/queue'),
             badge: pendingQueue > 0 ? String(pendingQueue) : undefined,
           },
-          {
-            url: '/app/exports',
-            label: 'Exports',
-            icon: ExportIcon,
-            selected: isSelected('/app/exports'),
-          },
         ]}
       />
 
@@ -153,18 +144,6 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFram
             label: 'General',
             icon: SettingsIcon,
             selected: isSelected('/app/settings'),
-          },
-          {
-            url: '/app/api-keys',
-            label: 'API Keys',
-            icon: KeyIcon,
-            selected: isSelected('/app/api-keys'),
-          },
-          {
-            url: '/app/team',
-            label: 'Team',
-            icon: PersonIcon,
-            selected: isSelected('/app/team'),
           },
           {
             url: '/app/billing',
@@ -186,7 +165,7 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFram
           },
           {
             url: '/app/support',
-            label: 'Support Tickets',
+            label: 'Support',
             icon: ChatIcon,
             selected: isSelected('/app/support'),
           },
@@ -194,18 +173,6 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFram
       />
 
 
-      <Navigation.Section
-        title="Resources"
-        separator
-        items={[
-          {
-            url: '/app/support',
-            label: 'Contact Us',
-            icon: ChatIcon,
-            selected: isSelected('/app/support'),
-          },
-        ]}
-      />
     </Navigation>
   )
 
