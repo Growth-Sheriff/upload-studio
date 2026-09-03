@@ -1222,7 +1222,7 @@ export default function BillingPage() {
                           <Box paddingBlockStart="200">
                             <DataTable
                               columnContentTypes={['text', 'text', 'text', 'text', 'text']}
-                              headings={['Order', 'Fee', 'Status', 'Order Date', 'Resolved']}
+                              headings={['Order', 'Commission (4%)', 'Status', 'Order Date', 'Resolved']}
                               rows={monthRows}
                             />
                           </Box>
@@ -1256,7 +1256,7 @@ export default function BillingPage() {
               ) : (
                 <DataTable
                   columnContentTypes={['text', 'text', 'text', 'text', 'text']}
-                  headings={['Order', 'Fee', 'Status', 'Order Date', 'Resolved']}
+                  headings={['Order', 'Commission (4%)', 'Status', 'Order Date', 'Resolved']}
                   rows={tableRows}
                 />
               )}

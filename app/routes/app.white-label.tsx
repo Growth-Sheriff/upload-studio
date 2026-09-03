@@ -110,7 +110,8 @@ export async function action({ request }: ActionFunctionArgs) {
   const secondaryColor = formData.get("secondaryColor") as string;
   const customCss = formData.get("customCss") as string;
   const hideBranding = formData.get("hideBranding") === "on";
-  const customDomain = formData.get("customDomain") as string;
+  // Custom domain is no longer editable from the UI; keep whatever is stored.
+  const customDomain = formData.has("customDomain") ? String(formData.get("customDomain") || "") : undefined;
 
 
   await prisma.whiteLabelConfig.upsert({
@@ -122,7 +123,7 @@ export async function action({ request }: ActionFunctionArgs) {
       secondaryColor: secondaryColor || null,
       customCss: customCss || null,
       hideBranding,
-      customDomain: customDomain || null,
+      customDomain: customDomain === undefined ? undefined : customDomain || null,
     },
     create: {
       shopId: shop.id,
@@ -132,7 +133,7 @@ export async function action({ request }: ActionFunctionArgs) {
       secondaryColor: secondaryColor || null,
       customCss: customCss || null,
       hideBranding,
-      customDomain: customDomain || null,
+      customDomain: customDomain === undefined ? undefined : customDomain || null,
     },
   });
 
@@ -162,7 +163,6 @@ export default function WhiteLabelPage() {
   const [secondaryColor, setSecondaryColor] = useState(config.secondaryColor || "#47c1bf");
   const [customCss, setCustomCss] = useState(config.customCss || "");
   const [hideBranding, setHideBranding] = useState(config.hideBranding);
-  const [customDomain, setCustomDomain] = useState(config.customDomain || "");
 
   const canUseWhiteLabel = true; // single plan: every feature included
 
@@ -373,28 +373,6 @@ export default function WhiteLabelPage() {
             </Layout.Section>
 
 
-            <Layout.Section>
-              <Card>
-                <BlockStack gap="400">
-                  <Text as="h2" variant="headingMd">Custom Domain (Preview URLs)</Text>
-
-                  <TextField
-                    label="Custom Domain"
-                    value={customDomain}
-                    onChange={setCustomDomain}
-                    name="customDomain"
-                    placeholder="uploads.yourstore.com"
-                    helpText="Use your own domain for preview URLs (requires DNS configuration)"
-                    autoComplete="off"
-                    disabled={!canUseWhiteLabel}
-                  />
-
-                  <Banner tone="info">
-                    Contact support for custom domain setup instructions.
-                  </Banner>
-                </BlockStack>
-              </Card>
-            </Layout.Section>
 
 
             <Layout.Section>
