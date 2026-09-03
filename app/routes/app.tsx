@@ -7,10 +7,14 @@ import { authenticate } from "~/shopify.server";
 import { AppFrame } from "~/components/AppFrame";
 import { PaymentSetupBanner } from "~/components/PaymentSetupBanner";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
+import adminStyles from "~/styles/admin.css?url";
 import prisma from "~/lib/prisma.server";
 import { useAppBridgeNavigation } from "~/hooks/useAppBridgeNavigation";
 
-export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
+export const links = () => [
+  { rel: "stylesheet", href: polarisStyles },
+  { rel: "stylesheet", href: adminStyles },
+];
 
 
 
@@ -95,20 +99,20 @@ export default function AppLayout() {
 
   return (
     <AppProvider isEmbeddedApp apiKey={apiKey}>
-      {billingBanner ? (
-        <div style={{ padding: '12px 16px 0' }}>
-          <PaymentSetupBanner
-            pendingAmount={billingBanner.pendingAmount}
-            pendingOrderCount={billingBanner.pendingOrderCount}
-            hasOverdueRetry={billingBanner.hasOverdueRetry}
-            retryNextAt={billingBanner.retryNextAt}
-          />
-        </div>
-      ) : null}
       <AppFrame
         shop={shop}
         pendingUploads={pendingUploads}
         pendingQueue={pendingQueue}
+        notice={
+          billingBanner ? (
+            <PaymentSetupBanner
+              pendingAmount={billingBanner.pendingAmount}
+              pendingOrderCount={billingBanner.pendingOrderCount}
+              hasOverdueRetry={billingBanner.hasOverdueRetry}
+              retryNextAt={billingBanner.retryNextAt}
+            />
+          ) : null
+        }
       />
     </AppProvider>
   );

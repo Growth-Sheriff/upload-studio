@@ -1,10 +1,5 @@
-
-
-
-
-
 import { Link, Outlet, useLocation } from '@remix-run/react'
-import { Frame, Navigation, Text, TopBar } from '@shopify/polaris'
+import { Box, Frame, Navigation, Text } from '@shopify/polaris'
 import {
   ChartVerticalFilledIcon,
   ChatIcon,
@@ -12,20 +7,26 @@ import {
   HomeIcon,
   ImageIcon,
   ListBulletedIcon,
+  MenuIcon,
   OrderIcon,
   PaintBrushFlatIcon,
   ProductIcon,
   SettingsIcon,
 } from '@shopify/polaris-icons'
-import { useCallback, useState } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 
 interface AppFrameProps {
   shop: string
   pendingUploads?: number
   pendingQueue?: number
+  /** Rendered inside the content column (never under the sidebar). */
+  notice?: ReactNode
 }
 
-export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFrameProps) {
+// Embedded Polaris frame: no TopBar (Shopify admin already has one; the
+// Polaris TopBar rendered as an empty dark strip), brand block + footer in
+// the sidebar, page content in the right column with a mobile menu toggle.
+export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0, notice }: AppFrameProps) {
   const location = useLocation()
   const [mobileNavigationActive, setMobileNavigationActive] = useState(false)
 
@@ -41,19 +42,20 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFram
     return location.pathname.startsWith(path)
   }
 
-
   const navigationMarkup = (
     <Navigation location={location.pathname}>
-
-      <div style={{ padding: '16px 20px', borderBottom: '1px solid #e1e3e5' }}>
+      <div className="us-brand">
+        <span className="us-brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22">
+            <path d="M12 16V5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+            <path d="m7.5 9.5 4.5-4.5 4.5 4.5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M5 15.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+          </svg>
+        </span>
         <Text variant="headingMd" as="h1">
-          🎨 Custom Upload
-        </Text>
-        <Text variant="bodySm" as="p" tone="subdued">
-          Products Design
+          Upload Studio
         </Text>
       </div>
-
 
       <Navigation.Section
         title="Analytics"
@@ -76,31 +78,15 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFram
             icon: ChartVerticalFilledIcon,
             selected: isSelected('/app/analytics') && !isSelected('/app/analytics/orders'),
             subNavigationItems: [
-              {
-                url: '/app/analytics',
-                label: 'Overview',
-              },
-              {
-                url: '/app/analytics/attribution',
-                label: 'Attribution',
-              },
-              {
-                url: '/app/analytics/visitors',
-                label: 'Visitors',
-              },
-              {
-                url: '/app/analytics/insights',
-                label: 'AI Insights',
-              },
-              {
-                url: '/app/analytics/cohorts',
-                label: 'Cohorts',
-              },
+              { url: '/app/analytics', label: 'Overview' },
+              { url: '/app/analytics/attribution', label: 'Attribution' },
+              { url: '/app/analytics/visitors', label: 'Visitors' },
+              { url: '/app/analytics/insights', label: 'AI Insights' },
+              { url: '/app/analytics/cohorts', label: 'Cohorts' },
             ],
           },
         ]}
       />
-
 
       <Navigation.Section
         title="Manage"
@@ -133,7 +119,6 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFram
           },
         ]}
       />
-
 
       <Navigation.Section
         title="Settings"
@@ -172,87 +157,44 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0 }: AppFram
         ]}
       />
 
-
-    </Navigation>
-  )
-
-
-  const footerMarkup = (
-    <div
-      style={{
-        padding: '16px 24px',
-        borderTop: '1px solid #e1e3e5',
-        background: '#f6f6f7',
-        textAlign: 'center',
-      }}
-    >
-      <Text variant="bodySm" as="p" tone="subdued">
-        PRO Plan • v1.0.0
-      </Text>
-      <div
-        style={{
-          marginTop: '8px',
-          display: 'flex',
-          justifyContent: 'center',
-          flexWrap: 'wrap',
-          gap: '8px',
-        }}
-      >
-        <Link
-          to="/app/legal/privacy"
-          style={{ fontSize: '12px', color: '#6d7175', textDecoration: 'none' }}
-        >
-          Privacy
-        </Link>
-        <span style={{ color: '#c9cccf' }}>•</span>
-        <Link
-          to="/app/legal/terms"
-          style={{ fontSize: '12px', color: '#6d7175', textDecoration: 'none' }}
-        >
-          Terms
-        </Link>
-        <span style={{ color: '#c9cccf' }}>•</span>
-        <Link
-          to="/app/legal/gdpr"
-          style={{ fontSize: '12px', color: '#6d7175', textDecoration: 'none' }}
-        >
-          GDPR
-        </Link>
-        <span style={{ color: '#c9cccf' }}>•</span>
-        <Link
-          to="/app/legal/docs"
-          style={{ fontSize: '12px', color: '#6d7175', textDecoration: 'none' }}
-        >
-          Docs
-        </Link>
-        <span style={{ color: '#c9cccf' }}>•</span>
-        <Link
-          to="/app/legal/changelog"
-          style={{ fontSize: '12px', color: '#6d7175', textDecoration: 'none' }}
-        >
-          Changelog
-        </Link>
+      <div className="us-sidebar-footer">
+        <span className="us-sidebar-footer__by">by</span>
+        <span className="us-sidebar-footer__brand">Techify Boost</span>
+        <nav className="us-sidebar-footer__links" aria-label="Legal">
+          <Link to="/app/legal/privacy">Privacy</Link>
+          <Link to="/app/legal/terms">Terms</Link>
+          <Link to="/app/legal/gdpr">GDPR</Link>
+          <Link to="/app/legal/docs">Docs</Link>
+          <Link to="/app/legal/changelog">Changelog</Link>
+        </nav>
       </div>
-    </div>
-  )
-
-
-  const topBarMarkup = (
-    <TopBar showNavigationToggle onNavigationToggle={toggleMobileNavigationActive} />
+    </Navigation>
   )
 
   return (
     <Frame
       navigation={navigationMarkup}
-      topBar={topBarMarkup}
       showMobileNavigation={mobileNavigationActive}
       onNavigationDismiss={toggleMobileNavigationActive}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
-        <div style={{ flex: 1 }}>
+      <div className="us-content">
+        <button
+          type="button"
+          className="us-mobile-menu"
+          onClick={toggleMobileNavigationActive}
+          aria-label="Open navigation"
+        >
+          <MenuIcon />
+          <span>Menu</span>
+        </button>
+        {notice ? (
+          <Box paddingBlockStart="400" paddingInline="400">
+            {notice}
+          </Box>
+        ) : null}
+        <div className="us-content__page">
           <Outlet />
         </div>
-        {footerMarkup}
       </div>
     </Frame>
   )

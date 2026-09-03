@@ -1,0 +1,114 @@
+/* Upload Studio admin — frame-level styling on Polaris tokens.
+   Polaris owns components; this file only styles the sidebar brand block,
+   the footer, the content column and the mobile menu toggle. */
+
+/* Sidebar brand */
+.us-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--p-space-300);
+  padding: var(--p-space-400) var(--p-space-400) var(--p-space-300);
+  border-bottom: var(--p-border-width-025) solid var(--p-color-border-secondary);
+}
+
+.us-brand__mark {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--p-border-radius-300);
+  background: linear-gradient(135deg, #4f7cff, #2e5bff);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(46, 91, 255, 0.28);
+  flex: none;
+}
+
+/* Sidebar footer */
+.us-sidebar-footer {
+  margin-top: auto;
+  padding: var(--p-space-400);
+  border-top: var(--p-border-width-025) solid var(--p-color-border-secondary);
+  display: grid;
+  gap: var(--p-space-100);
+}
+
+.us-sidebar-footer__by {
+  color: var(--p-color-text-secondary);
+  font-size: var(--p-font-size-275);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.us-sidebar-footer__brand {
+  font-size: var(--p-font-size-400);
+  font-weight: var(--p-font-weight-bold);
+  letter-spacing: 0.01em;
+  background: linear-gradient(95deg, #b8860b 0%, #f2c94c 45%, #d4a017 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.us-sidebar-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--p-space-200) var(--p-space-300);
+  margin-top: var(--p-space-200);
+}
+
+.us-sidebar-footer__links a {
+  color: var(--p-color-text-secondary);
+  font-size: var(--p-font-size-300);
+  text-decoration: none;
+}
+
+.us-sidebar-footer__links a:hover {
+  color: var(--p-color-text);
+  text-decoration: underline;
+}
+
+/* Keep the footer pinned to the bottom of the sidebar */
+.Polaris-Navigation {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Content column */
+.us-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  background: var(--p-color-bg);
+}
+
+.us-content__page {
+  flex: 1;
+}
+
+/* Mobile menu toggle (the frame has no TopBar) */
+.us-mobile-menu {
+  display: none;
+  align-items: center;
+  gap: var(--p-space-200);
+  margin: var(--p-space-300) var(--p-space-400) 0;
+  padding: var(--p-space-150) var(--p-space-300);
+  border: var(--p-border-width-025) solid var(--p-color-border);
+  border-radius: var(--p-border-radius-200);
+  background: var(--p-color-bg-surface);
+  color: var(--p-color-text);
+  font: inherit;
+  font-weight: var(--p-font-weight-medium);
+  cursor: pointer;
+}
+
+.us-mobile-menu svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+@media (max-width: 767px) {
+  .us-mobile-menu {
+    display: inline-flex;
+  }
+}
