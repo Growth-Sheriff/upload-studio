@@ -3,6 +3,7 @@ import {
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
   GetObjectCommand,
+  ListPartsCommand,
   PutObjectCommand,
   S3Client,
   UploadPartCommand,
@@ -851,6 +852,60 @@ export async function completeR2Multipart(
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
+}
+
+/** Parts R2 already holds for an in-progress multipart upload (resume). */
+export async function listR2MultipartParts(
+  config: StorageConfig,
+  key: string,
+  uploadId: string
+): Promise<{ ok: boolean; parts: Array<{ partNumber: number; etag: string; size: number }>; error?: string }> {
+  const client = getR2Client()
+  if (!client) return { ok: false, parts: [], error: 'r2_not_configured' }
+  const bucket = config.r2BucketName || R2_BUCKET_NAME
+  if (!bucket) return { ok: false, parts: [], error: 'r2_bucket_missing' }
+  try {
+    const parts: Array<{ partNumber: number; etag: string; size: number }> = []
+    let marker: number | undefined
+    // ListParts pages at 1000; loop until IsTruncated is false.
+    for (let page = 0; page < 20; page++) {
+      const res = await client.send(
+        new ListPartsCommand({ Bucket: bucket, Key: key, UploadId: uploadId, PartNumberMarker: marker as any })
+      )
+      for (const p of res.Parts || []) {
+        if (p.PartNumber && p.ETag) {
+          parts.push({ partNumber: p.PartNumber, etag: p.ETag.replace(/^"|"$/g, ''), size: p.Size || 0 })
+        }
+      }
+      if (!res.IsTruncated) break
+      marker = res.NextPartNumberMarker as any
+    }
+    return { ok: true, parts }
+  } catch (err) {
+    return { ok: false, parts: [], error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+/** Fresh presigned URLs for specific part numbers of an existing multipart upload. */
+export async function presignR2MultipartParts(
+  config: StorageConfig,
+  key: string,
+  uploadId: string,
+  partNumbers: number[]
+): Promise<Array<{ partNumber: number; url: string }>> {
+  const client = getR2Client()
+  const bucket = config.r2BucketName || R2_BUCKET_NAME
+  if (!client || !bucket) return []
+  const out: Array<{ partNumber: number; url: string }> = []
+  for (const partNumber of partNumbers) {
+    const url = await getSignedUrl(
+      client,
+      new UploadPartCommand({ Bucket: bucket, Key: key, PartNumber: partNumber, UploadId: uploadId }),
+      { expiresIn: 3600 }
+    )
+    out.push({ partNumber, url })
+  }
+  return out
 }
 
 export async function abortR2Multipart(

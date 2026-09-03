@@ -1,6 +1,7 @@
 {{ 'main-product-upload-app.css' | asset_url | stylesheet_tag }}
 <script src="{{ 'ul-upload-telemetry.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-multipart-uploader.js' | asset_url }}" defer></script>
+<script src="{{ 'ul-file-probe.js' | asset_url }}" defer></script>
 <script src="{{ 'main-product-upload-app.js' | asset_url }}" defer></script>
 {%- assign ump_default_accept = ".png,.jpg,.jpeg,.webp,.tif,.tiff,.psd,.pdf,.ai,.eps,.svg,image/png,image/jpeg,image/webp,image/tiff,image/x-tiff,image/vnd.adobe.photoshop,application/vnd.adobe.photoshop,application/x-photoshop,image/x-psd,application/photoshop,application/psd,application/pdf,application/postscript,application/illustrator,application/vnd.adobe.illustrator,application/eps,application/x-eps,image/x-eps,image/svg+xml" -%}
 {%- assign ump_accept = block.settings.accepted_files | default: ump_default_accept -%}
@@ -136,6 +137,17 @@
             <span>Sheet</span>
             <strong data-ump-sheet-label>--</strong>
           </div>
+        </div>
+        <div class="ump__copies" data-ump-copies hidden>
+          <div class="ump__copies-row">
+            <span class="ump__copies-label">Copies of this design</span>
+            <div class="ump__copies-stepper">
+              <button type="button" class="ump__copies-btn" data-ump-copies-minus aria-label="Fewer copies">−</button>
+              <input type="number" class="ump__copies-input" data-ump-copies-input value="1" min="1" max="999" inputmode="numeric" aria-label="Copies">
+              <button type="button" class="ump__copies-btn" data-ump-copies-plus aria-label="More copies">+</button>
+            </div>
+          </div>
+          <small class="ump__copies-summary" data-ump-copies-summary></small>
         </div>
         <div class="ump__quality" data-ump-quality hidden>
           <span class="ump__quality-badge" data-ump-quality-badge></span>

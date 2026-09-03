@@ -217,6 +217,7 @@ model UploadItem {
   mimeType        String?  @map("mime_type")
   fileSize        Int?     @map("file_size")
   uploadDurationMs Int?    @map("upload_duration_ms")
+  fingerprint     String?  @map("fingerprint")
   transform       Json?    @map("transform_json")
   preflightStatus String   @default("pending") @map("preflight_status")
   preflightResult Json?    @map("preflight_result_json")
@@ -225,6 +226,7 @@ model UploadItem {
 
   upload Upload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
 
+  @@index([fingerprint])
   @@map("upload_items")
 }
 

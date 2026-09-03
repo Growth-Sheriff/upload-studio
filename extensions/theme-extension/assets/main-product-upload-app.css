@@ -540,6 +540,85 @@
 }
 
 /* Explicit warning that the highlighted size was picked by the system. */
+.ump__copies {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--ump-line);
+  border-radius: 12px;
+  background: var(--ump-panel);
+}
+
+.ump__copies-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ump__copies-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ump-ink);
+}
+
+.ump__copies-stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--ump-line);
+  border-radius: 999px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.ump__copies-btn {
+  width: 32px;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ump-ink);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.ump__copies-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.ump__copies-input {
+  width: 52px;
+  height: 30px;
+  border: 0;
+  border-left: 1px solid var(--ump-line);
+  border-right: 1px solid var(--ump-line);
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ump-ink);
+  background: transparent;
+  -moz-appearance: textfield;
+}
+
+.ump__copies-input::-webkit-outer-spin-button,
+.ump__copies-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.ump__copies-summary {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ump-muted);
+}
+
+.ump__copies-summary:empty {
+  display: none;
+}
+
 .ump__price-notice {
   margin: 0 0 10px;
   padding: 9px 11px;

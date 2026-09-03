@@ -89,6 +89,17 @@ export async function action({ request }: ActionFunctionArgs) {
     sessionId,
   } = body
 
+  // Optional transport hints from the storefront probe.
+  const fingerprint =
+    typeof body.fingerprint === 'string' && /^v1-\d+-[a-f0-9]{64}$/.test(body.fingerprint)
+      ? body.fingerprint
+      : null
+  const partSizeHintMb = Number(body.partSizeMb)
+  const partSizeOverride =
+    Number.isFinite(partSizeHintMb) && partSizeHintMb >= 5 && partSizeHintMb <= 64
+      ? Math.round(partSizeHintMb) * 1024 * 1024
+      : undefined
+
 
   if (!shopDomain) {
     return corsJson({ error: 'Missing required field: shopDomain' }, request, { status: 400 })
@@ -213,6 +224,45 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
 
+  // Instant re-upload: the same file (content fingerprint) from the same
+  // customer/visitor that already measured fine is reused — zero bytes sent.
+  // Guests without any identity never dedupe (no cross-customer reuse).
+  if (fingerprint && (customerId || visitorId)) {
+    const existing = await prisma.upload.findFirst({
+      where: {
+        shopId: shop.id,
+        productId: productId ? String(productId) : null,
+        status: { notIn: ['archived', 'blocked'] },
+        createdAt: { gte: new Date(Date.now() - 30 * 24 * 3600 * 1000) },
+        ...(customerId ? { customerId: String(customerId) } : { visitorId: String(visitorId) }),
+        items: {
+          some: {
+            fingerprint,
+            preflightStatus: { in: ['ok', 'warning'] },
+            NOT: { storageKey: '' },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, items: { select: { id: true, fingerprint: true }, orderBy: { createdAt: 'asc' } } },
+    })
+    if (existing) {
+      const item = existing.items.find((i) => i.fingerprint === fingerprint) || existing.items[0]
+      console.log(`[Upload Intent] Dedupe hit: fingerprint reuse -> upload ${existing.id} (shop ${shopDomain})`)
+      return corsJson(
+        {
+          deduplicated: true,
+          uploadId: existing.id,
+          itemId: item?.id || null,
+          fileName,
+          fileSize,
+          mimeType: contentType,
+        },
+        request
+      )
+    }
+  }
+
   const uploadId = nanoid(12)
   const itemId = nanoid(8)
 
@@ -301,6 +351,7 @@ export async function action({ request }: ActionFunctionArgs) {
         originalName: fileName,
         mimeType: contentType,
         fileSize: fileSize || null,
+        fingerprint,
         preflightStatus: 'pending',
       },
     })
@@ -324,7 +375,7 @@ export async function action({ request }: ActionFunctionArgs) {
       isR2FallbackAvailable()
     ) {
       try {
-        multipart = await getR2MultipartInit(storageConfig, key, contentType, fileSize)
+        multipart = await getR2MultipartInit(storageConfig, key, contentType, fileSize, partSizeOverride)
         if (multipart) {
           console.log(
             `[Upload Intent] Multipart enabled: ${multipart.totalParts} parts of ${Math.round(multipart.partSize / 1024 / 1024)}MB (uploadId=${multipart.uploadId.slice(0, 16)}...)`

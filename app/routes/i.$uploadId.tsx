@@ -21,6 +21,7 @@ import {
   storageConfigForShop,
 } from '~/lib/uploadUrls.server'
 import { corsJson } from '~/lib/cors.server'
+import { shopifyGraphQL } from '~/lib/shopify.server'
 
 function escapeHtml(input: unknown): string {
   return String(input ?? '')
@@ -29,6 +30,32 @@ function escapeHtml(input: unknown): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#x27;')
+}
+
+async function buildReorderUrl(
+  shop: { shopDomain: string; accessToken: string | null },
+  productId: string | null,
+  uploadId: string
+): Promise<string | null> {
+  if (!productId || !shop.accessToken) return null
+  const gid = String(productId).startsWith('gid://') ? String(productId) : `gid://shopify/Product/${productId}`
+  try {
+    const data = await shopifyGraphQL<{ product: { handle: string; onlineStoreUrl: string | null } | null }>(
+      shop.shopDomain,
+      shop.accessToken,
+      `query ReorderProduct($id: ID!) { product(id: $id) { handle onlineStoreUrl } }`,
+      { id: gid }
+    )
+    const product = data.product
+    if (!product?.handle) return null
+    const base = product.onlineStoreUrl || `https://${shop.shopDomain}/products/${product.handle}`
+    const url = new URL(base)
+    url.searchParams.set('ul_reorder', uploadId)
+    return url.toString()
+  } catch (error) {
+    console.warn('[Identity] reorder link unavailable:', error instanceof Error ? error.message : error)
+    return null
+  }
 }
 
 function formatInches(value: number | null | undefined): string {
@@ -54,7 +81,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const upload = await prisma.upload.findUnique({
     where: { id: uploadId },
     include: {
-      shop: { select: { shopDomain: true, storageProvider: true, storageConfig: true } },
+      shop: { select: { shopDomain: true, storageProvider: true, storageConfig: true, accessToken: true } },
       items: {
         select: {
           id: true,
@@ -100,9 +127,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     }
   })
 
+  // "Order again" deep link: the product page restores this upload from the
+  // status API (?ul_reorder=<id>) so the customer never re-sends the file.
+  const reorderUrl = await buildReorderUrl(upload.shop, upload.productId, upload.id)
+
   const payload = {
     uploadId: upload.id,
     identityUrl: buildIdentityUrl(upload.id),
+    reorderUrl,
     shopDomain: upload.shop.shopDomain,
     mode: upload.mode,
     status: upload.status,
@@ -169,6 +201,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   .status-warning { color: #a16207; }
   .download { display: inline-block; margin-top: 10px; font-size: 13px; font-weight: 600; color: #1d4ed8; text-decoration: none; }
   .download:hover { text-decoration: underline; }
+  .reorder { display: inline-block; margin-top: 4px; padding: 10px 18px; border-radius: 10px; background: #1d4ed8; color: #fff; font-size: 14px; font-weight: 600; text-decoration: none; }
+  .reorder:hover { background: #1e40af; }
   footer { color: #9ca3af; font-size: 12px; margin-top: 20px; }
 </style>
 </head>
@@ -187,6 +221,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     }
   </header>
   ${rows || '<p>No files attached to this design yet.</p>'}
+  ${reorderUrl ? `<a class="reorder" href="${escapeHtml(reorderUrl)}">Order this design again</a>` : ''}
   <footer>Created ${escapeHtml(upload.createdAt.toISOString().slice(0, 10))} · ${escapeHtml(upload.shop.shopDomain)} · <a href="${escapeHtml(buildIdentityUrl(upload.id))}.json">JSON</a></footer>
 </main>
 </body>

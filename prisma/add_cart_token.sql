@@ -7,6 +7,8 @@
 
 ALTER TABLE uploads ADD COLUMN IF NOT EXISTS cart_token TEXT;
 ALTER TABLE uploads ADD COLUMN IF NOT EXISTS order_name TEXT;
+ALTER TABLE upload_items ADD COLUMN IF NOT EXISTS fingerprint TEXT;
+CREATE INDEX IF NOT EXISTS "upload_items_fingerprint_idx" ON upload_items (fingerprint);
 
 CREATE INDEX IF NOT EXISTS "uploads_shop_id_cart_token_idx"
   ON uploads (shop_id, cart_token);

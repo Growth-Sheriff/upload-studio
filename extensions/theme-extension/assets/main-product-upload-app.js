@@ -325,8 +325,10 @@
     this.renderPriceStrip();
     this.customerPricingPromise = this.loadCustomerPricingContext();
     this.productConfigPromise = this.loadProductConfig();
+    this.requestedCopies = 1;
     this.restorePersistedItems();
     this.render();
+    this.restoreReorderFromUrl();
   }
 
   // ── Session persistence ─────────────────────────────────────────────────
@@ -448,6 +450,11 @@
     this.pillSize = this.root.querySelector('[data-ump-pill-size]');
     this.pillType = this.root.querySelector('[data-ump-pill-type]');
     this.pillMultipart = this.root.querySelector('[data-ump-pill-multipart]');
+    this.copies = this.root.querySelector('[data-ump-copies]');
+    this.copiesInput = this.root.querySelector('[data-ump-copies-input]');
+    this.copiesMinus = this.root.querySelector('[data-ump-copies-minus]');
+    this.copiesPlus = this.root.querySelector('[data-ump-copies-plus]');
+    this.copiesSummary = this.root.querySelector('[data-ump-copies-summary]');
     this.progressWrap = this.root.querySelector('[data-ump-progress-wrap]');
     this.progress = this.root.querySelector('[data-ump-progress]');
     this.progressText = this.root.querySelector('[data-ump-progress-text]');
@@ -984,7 +991,7 @@
     this.priceTable.innerHTML = [
       '<div class="ump__price-table-head">',
         '<span>Sheet sizes &amp; prices</span>',
-        '<small>', selectedCount ? 'System selection' : 'Selected automatically after upload', '</small>',
+        '<small>', selectedCount ? 'System selection' : (pendingId && this.state.provisional ? 'Estimated · confirming' : 'Selected automatically after upload'), '</small>',
       '</div>',
       noticeHtml,
       '<table class="ump__price-table">',
@@ -1238,6 +1245,20 @@
         self.addToCart('/checkout');
       });
     }
+    // Copies stepper: re-resolves the active upload with the new quantity so
+    // designs-per-sheet / sheets-needed come from the server nesting logic.
+    var onCopiesChange = function(next) {
+      var n = Math.floor(Number(next));
+      if (!(n > 0)) n = 1;
+      if (n > 999) n = 999;
+      if (n === self.getRequestedCopies()) { self.renderCopies(); return; }
+      self.requestedCopies = n;
+      self.renderCopies();
+      self.reresolveForCopies();
+    };
+    if (this.copiesMinus) this.copiesMinus.addEventListener('click', function(event) { event.preventDefault(); onCopiesChange(self.getRequestedCopies() - 1); });
+    if (this.copiesPlus) this.copiesPlus.addEventListener('click', function(event) { event.preventDefault(); onCopiesChange(self.getRequestedCopies() + 1); });
+    if (this.copiesInput) this.copiesInput.addEventListener('change', function() { onCopiesChange(self.copiesInput.value); });
     if (this.discountInput) {
       this.discountInput.addEventListener('input', function() {
         self.discountCode = normalizeDiscountCode(self.discountInput.value);
@@ -1437,6 +1458,7 @@
       sizingSource: '',
       selectedResult: null,
       selectedVariantId: '',
+      provisional: false,
       status: file ? 'uploading' : 'idle',
       abort: null,
       isMultipart: false,
@@ -1483,6 +1505,7 @@
       sizingSource: this.state.sizingSource,
       selectedResult: this.state.selectedResult,
       selectedVariantId: this.state.selectedVariantId,
+      provisional: Boolean(this.state.provisional),
       status: this.state.status,
       isMultipart: this.state.isMultipart,
       uploadStartTime: this.state.uploadStartTime,
@@ -1512,10 +1535,160 @@
   };
 
   MainProductUpload.prototype.isCartReadyItem = function(item) {
+    // Provisional (client-probed) measurements are never cart-ready: only the
+    // server-confirmed size may drive a cart line.
+    if (item && item.provisional) return false;
     if (this.isExactMeasuredMode()) {
       return this.hasMeasuredUpload(item);
     }
     return Boolean(item && item.uploadId && item.selectedResult && item.selectedVariantId);
+  };
+
+  // ── Instant preview (Step 1) ────────────────────────────────────────────
+  // Header-only probe (first/last MB) gives size + DPI before a single byte
+  // of the file body is sent; the server resolves the same policy for a
+  // provisional sheet/price. Everything set here is marked provisional and
+  // replaced by the authoritative measurement after upload.
+  MainProductUpload.prototype.probeAndPreview = async function(file, currentToken) {
+    if (!window.ULFileProbe || !window.ULFileProbe.probe) return null;
+    var probe = null;
+    try { probe = await window.ULFileProbe.probe(file); } catch (_) { return null; }
+    if (currentToken !== this.token) return probe;
+    if (!probe || !(probe.widthPx > 0) || !(probe.heightPx > 0)) return probe;
+    this.state.provisional = true;
+    this.state.widthPx = probe.widthPx;
+    this.state.heightPx = probe.heightPx;
+    if (probe.dpi > 0) this.state.documentDpi = probe.dpi;
+    this.state.sizingSource = 'client_probe';
+    if (probe.widthIn > 0 && probe.heightIn > 0) {
+      this.state.widthIn = probe.widthIn;
+      this.state.heightIn = probe.heightIn;
+    }
+    this.render();
+    if (this.isExactMeasuredMode()) return probe;
+    try {
+      var response = await fetch(this.apiBase + '/api/upload/resolve-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shopDomain: this.shopDomain,
+          productId: String(this.productId),
+          widthPx: probe.widthPx,
+          heightPx: probe.heightPx,
+          dpi: probe.dpi || null,
+          dpiSource: probe.dpiSource || null,
+          quantity: this.getRequestedCopies(),
+          selectedVariantId: this.isLinearInchPricing() ? null : (this.getFallbackVariantId() || null),
+          customerId: this.customerId || null,
+          customerEmail: this.customerEmail || null,
+          customerName: this.customerName || null,
+          measurementPolicy: POLICY,
+          rollWidthIn: this.rollWidthIn,
+          maxUploadWidth: this.rollWidthIn
+        })
+      });
+      var data = await response.json().catch(function() { return {}; });
+      if (currentToken !== this.token || !this.state.provisional) return probe;
+      if (data && data.dimensions) this.applyMeasurement(data.dimensions);
+      if (response.ok && data.resolution) {
+        this.state.selectedResult = data.resolution;
+        this.state.selectedVariantId = String(data.resolution.selectedVariantId || '');
+      }
+      this.render();
+    } catch (_) {}
+    return probe;
+  };
+
+  MainProductUpload.prototype.renderCopies = function() {
+    if (!this.copies) return;
+    var show = !this.isExactMeasuredMode() && Boolean(this.state.uploadId) && this.state.status !== 'error';
+    this.copies.hidden = !show;
+    if (!show) return;
+    var copies = this.getRequestedCopies();
+    if (this.copiesInput && String(this.copiesInput.value) !== String(copies)) this.copiesInput.value = String(copies);
+    if (this.copiesMinus) this.copiesMinus.disabled = copies <= 1 || this.state.status === 'uploading';
+    if (this.copiesPlus) this.copiesPlus.disabled = copies >= 999 || this.state.status === 'uploading';
+    if (this.copiesSummary) {
+      var result = this.state.selectedResult || {};
+      var perSheet = Number(result.designsPerSheet) || 0;
+      var sheets = Number(result.cartQuantity || result.sheetsNeeded) || 0;
+      var text = '';
+      if (result.pricingMode === 'linear_inches') {
+        text = sheets ? sheets + ' billable inches' : '';
+      } else if (perSheet > 0 && sheets > 0) {
+        text = perSheet + ' per sheet · ' + sheets + ' sheet' + (sheets === 1 ? '' : 's');
+      }
+      this.copiesSummary.textContent = text + (this.state.provisional && text ? ' (est.)' : '');
+    }
+  };
+
+  MainProductUpload.prototype.reresolveForCopies = async function() {
+    if (this.isExactMeasuredMode()) return;
+    if (!this.state.uploadId || this.state.status === 'uploading') return;
+    var currentToken = this.token;
+    var uploadId = this.state.uploadId;
+    try {
+      await this.resolveProduct();
+      if (currentToken !== this.token || !sameUploadId(this.state.uploadId, uploadId)) return;
+      this.rememberCurrentUpload();
+      this.setError('');
+    } catch (error) {
+      if (currentToken !== this.token) return;
+      this.setError(error && error.message ? error.message : 'No product variant can fit this quantity.');
+    }
+    this.render();
+  };
+
+  MainProductUpload.prototype.getRequestedCopies = function() {
+    var n = Math.floor(Number(this.requestedCopies));
+    return n > 0 ? Math.min(n, 999) : 1;
+  };
+
+  // Rotation hint: the policy measures against the roll width; a design that
+  // only fits sideways is worth telling the customer about.
+  MainProductUpload.prototype.getRotationHint = function() {
+    var roll = toNumber(this.rollWidthIn);
+    var w = toNumber(this.state.widthIn);
+    var h = toNumber(this.state.heightIn);
+    if (!(roll > 0) || !(w > 0) || !(h > 0)) return '';
+    if (w > roll && h <= roll) return 'Wider than the ' + formatInches(roll) + ' roll — it will be placed rotated (' + formatInches(h) + ' x ' + formatInches(w) + ').';
+    return '';
+  };
+
+  // ── Reorder deep link (Step 3) ──────────────────────────────────────────
+  // /products/<handle>?ul_reorder=<uploadId>: restore a previously measured
+  // upload from the status API so a repeat order needs no re-upload.
+  MainProductUpload.prototype.restoreReorderFromUrl = async function() {
+    var uploadId = '';
+    try { uploadId = String(new URLSearchParams(window.location.search).get('ul_reorder') || '').trim(); } catch (_) { return; }
+    if (!uploadId || !/^[A-Za-z0-9_-]{8,40}$/.test(uploadId)) return;
+    if ((this.state.items || []).some(function(item) { return sameUploadId(item.uploadId, uploadId); })) return;
+    try {
+      var response = await fetch(this.apiBase + '/api/upload/status/' + encodeURIComponent(uploadId) + '?shopDomain=' + encodeURIComponent(this.shopDomain));
+      if (!response.ok) return;
+      var data = await response.json();
+      var first = data.items && data.items[0];
+      if (!first || !(toNumber(first.widthIn) > 0)) return;
+      if (data.capabilities && data.capabilities.canAddToCart === false) return;
+      var currentToken = this.token;
+      this.state.uploadId = uploadId;
+      this.state.itemId = first.itemId || first.id || '';
+      this.state.fileName = first.fileName || first.originalName || 'Previous design';
+      this.state.lastFile = first.fileSize ? { name: this.state.fileName, size: Number(first.fileSize) || 0, type: first.mimeType || '' } : null;
+      this.state.thumbnailUrl = first.thumbnailUrl || data.thumbnailUrl || '';
+      this.state.originalUrl = first.originalUrl || data.downloadUrl || '';
+      this.state.provisional = false;
+      this.applyMeasurement(first);
+      await this.resolveProduct();
+      if (currentToken !== this.token) return;
+      this.state.status = 'ready';
+      this.rememberCurrentUpload();
+      this.setStage(null);
+      this.render();
+      console.log('[UMP] reorder restored upload ' + uploadId);
+    } catch (error) {
+      console.warn('[UMP] reorder restore failed:', error && error.message);
+    }
   };
 
   MainProductUpload.prototype.rememberCurrentUpload = function() {
@@ -1575,6 +1748,7 @@
     this.state.sizingSource = item.sizingSource || '';
     this.state.selectedResult = item.selectedResult || null;
     this.state.selectedVariantId = String(item.selectedVariantId || '');
+    this.state.provisional = Boolean(item.provisional);
     this.state.status = item.status || (this.isCartReadyItem(item) ? 'ready' : 'idle');
     this.state.isMultipart = Boolean(item.isMultipart);
     this.state.uploadStartTime = item.uploadStartTime || 0;
@@ -1674,6 +1848,7 @@
         : 'Exact measured pricing is active. Upload required before checkout.';
     }
     var source = this.state.sizingSource;
+    if (this.state.provisional || source === 'client_probe') return 'Estimated from the file header — the server confirms the exact size once the upload lands.';
     if (source === 'document_dpi') return 'Measured from embedded document resolution.';
     if (source === 'adobe_default_dpi') return 'Measured with Adobe-compatible no-DPI handling.';
     if (source === 'sheet_width_anchor') return 'Measured against the configured roll width.';
@@ -1933,9 +2108,17 @@
         : null;
       fileMetaText = 'Ready' + (dur ? ' in ' + dur : '') + '. ' + this.getMethodText();
     } else if (this.state.status === 'uploading') {
-      fileMetaText = this.state.isMultipart
-        ? 'Uploading in parallel chunks (R2 multipart)...'
-        : 'Uploading and measuring...';
+      var provisionalText = this.state.provisional && this.state.widthIn && this.state.heightIn
+        ? 'Estimated ' + formatInches(this.state.widthIn) + ' x ' + formatInches(this.state.heightIn) +
+          (this.state.selectedResult && this.state.selectedResult.selectedSheetLabel ? ' → ' + this.state.selectedResult.selectedSheetLabel : '') +
+          ' · confirming on server. '
+        : '';
+      var rotationHint = this.getRotationHint();
+      fileMetaText = provisionalText + (this.state.resumedParts > 0
+        ? 'Resuming upload — ' + this.state.resumedParts + ' chunks already on the server...'
+        : this.state.isMultipart
+        ? 'Uploading in parallel chunks...'
+        : 'Uploading and measuring...') + (rotationHint ? ' ' + rotationHint : '');
     } else if (this.state.status === 'error') {
       fileMetaText = 'Upload failed. You can try again or pick a different file.';
     }
@@ -1969,11 +2152,12 @@
     this.sheetLabel.textContent = exactMode && this.state.widthIn && this.state.heightIn
       ? 'Exact measured'
       : this.state.selectedResult
-      ? (this.state.selectedResult.selectedSheetLabel || this.state.selectedResult.selectedVariantTitle || '--')
+      ? (this.state.selectedResult.selectedSheetLabel || this.state.selectedResult.selectedVariantTitle || '--') + (this.state.provisional ? ' (est.)' : '')
       : '--';
     this.renderQuality();
     this.renderPriceNow(readyItems);
     this.renderPriceTable();
+    this.renderCopies();
     this.method.textContent = this.getMethodText();
 
     var badgeLabel, badgeClass;
@@ -2026,26 +2210,136 @@
     this.root.dispatchEvent(new CustomEvent('ump:render', { detail: { instance: this } }));
   };
 
-  MainProductUpload.prototype.performUpload = async function(file, intent, onProgress) {
+  // ── Resumable multipart sessions (Step 2) ───────────────────────────────
+  // Per-file (content fingerprint) record of an in-flight R2 multipart
+  // upload: which parts landed (ETags) and the ids needed to ask the server
+  // for fresh presigned URLs. Survives refresh/tab close; the next drop of
+  // the same file resumes instead of restarting.
+  var MP_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+  var SINGLE_SHOT_FALLBACK_MAX_BYTES = 256 * 1024 * 1024;
+
+  MainProductUpload.prototype.getMpSessionKey = function(fingerprint) {
+    return ['umpMp', this.shopDomain || 'shop', this.productId || 'product', fingerprint].join(':');
+  };
+
+  MainProductUpload.prototype.loadMpSession = function(fingerprint, file) {
+    if (!fingerprint || !this.exactCartStorageEnabled) return null;
+    var session = null;
+    try { session = parseJson(window.localStorage.getItem(this.getMpSessionKey(fingerprint)), null); } catch (_) { return null; }
+    if (!session || !session.uploadId || !session.multipartUploadId || !session.key) return null;
+    if (!(session.savedAt > 0) || Date.now() - session.savedAt > MP_SESSION_TTL_MS || (file && session.fileSize !== file.size)) {
+      this.clearMpSession(fingerprint);
+      return null;
+    }
+    return session;
+  };
+
+  MainProductUpload.prototype.saveMpSession = function(fingerprint, session) {
+    if (!fingerprint || !this.exactCartStorageEnabled) return;
+    session.savedAt = Date.now();
+    try { window.localStorage.setItem(this.getMpSessionKey(fingerprint), JSON.stringify(session)); } catch (_) {}
+  };
+
+  MainProductUpload.prototype.clearMpSession = function(fingerprint) {
+    if (!fingerprint) return;
+    try { window.localStorage.removeItem(this.getMpSessionKey(fingerprint)); } catch (_) {}
+  };
+
+  // Ask the server which parts R2 already holds and get fresh URLs for the
+  // rest. Returns {uploadedParts, parts, completeUrl, abortUrl} or null when
+  // the multipart upload is gone (client must start over).
+  MainProductUpload.prototype.requestMultipartResume = async function(session) {
+    var response = await fetch(this.apiBase + '/api/upload/multipart-resume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        shopDomain: this.shopDomain,
+        uploadId: session.uploadId,
+        key: session.key,
+        multipartUploadId: session.multipartUploadId,
+        totalParts: session.totalParts
+      })
+    });
+    var data = await response.json().catch(function() { return {}; });
+    if (!response.ok || !data.success) return null;
+    return data;
+  };
+
+  function suggestPartSizeMb(fileSize) {
+    if (fileSize < 64 * 1024 * 1024) return 8;
+    if (fileSize < 512 * 1024 * 1024) return 16;
+    return 32;
+  }
+
+  MainProductUpload.prototype.performUpload = async function(file, intent, onProgress, transport) {
     var self = this;
-    // Try parallel multipart upload first if intent advertises it (R2-only, large files)
+    transport = transport || {};
+    var fingerprint = transport.fingerprint || '';
+    // Parallel multipart first when the intent advertises it (R2, large files).
     if (intent.multipart && window.ULMultipartUploader && window.ULMultipartUploader.tryUpload) {
       this.state.isMultipart = true;
       this.render();
-      try {
-        var mpResult = await window.ULMultipartUploader.tryUpload(file, intent, {
-          onProgress: onProgress,
-          shopDomain: this.shopDomain,
-        });
-        if (mpResult) {
-          intent.publicUrl = mpResult.fileUrl || intent.publicUrl;
-          intent.storageProvider = mpResult.storageProvider;
-          return;
+      var mp = intent.multipart;
+      var session = transport.session || null;
+      if (fingerprint && !session) {
+        session = {
+          uploadId: intent.uploadId, itemId: intent.itemId, key: mp.key,
+          multipartUploadId: mp.uploadId, partSize: mp.partSize, totalParts: mp.totalParts,
+          publicUrl: mp.publicUrl || intent.publicUrl || '', fileName: file.name, fileSize: file.size, parts: {}
+        };
+        this.saveMpSession(fingerprint, session);
+      }
+      var resume = transport.resume || null;
+      var mpAttempt = 0;
+      while (true) {
+        mpAttempt += 1;
+        try {
+          var mpResult = await window.ULMultipartUploader.tryUpload(file, intent, {
+            onProgress: onProgress,
+            shopDomain: this.shopDomain,
+            concurrency: window.ULMultipartUploader.DEFAULT_CONCURRENCY || 6,
+            resume: resume,
+            onPartDone: function(partNumber, etag) {
+              if (!session) return;
+              session.parts[partNumber] = etag;
+              self.saveMpSession(fingerprint, session);
+            }
+          });
+          if (mpResult) {
+            intent.publicUrl = mpResult.fileUrl || intent.publicUrl;
+            intent.storageProvider = mpResult.storageProvider;
+            this.clearMpSession(fingerprint);
+            return;
+          }
+          break;
+        } catch (mpErr) {
+          // In-place resume: fresh URLs for the parts still missing, twice,
+          // before giving up on multipart for this attempt.
+          if (mpErr && mpErr.resumable && session && mpAttempt <= 2) {
+            console.warn('[UMP] multipart interrupted (' + (mpErr.message || 'error') + '), resuming in place...');
+            await sleep(1500 * mpAttempt);
+            var fresh = null;
+            try { fresh = await this.requestMultipartResume(session); } catch (_) {}
+            if (fresh) {
+              resume = fresh;
+              intent.multipart.parts = fresh.parts && fresh.parts.length ? fresh.parts : intent.multipart.parts;
+              intent.multipart.completeUrl = fresh.completeUrl || intent.multipart.completeUrl;
+              intent.multipart.abortUrl = fresh.abortUrl || intent.multipart.abortUrl;
+              this.state.resumedParts = (fresh.uploadedParts || []).length;
+              this.render();
+              continue;
+            }
+          }
+          console.warn('[UMP] multipart failed:', mpErr && mpErr.message);
+          if (file.size > SINGLE_SHOT_FALLBACK_MAX_BYTES) {
+            // Re-sending a huge file in one request is worse than asking for
+            // one more drop: the session is kept, the next drop resumes.
+            throw new Error('Connection interrupted. Drop the same file again to resume from where it stopped.');
+          }
+          this.state.isMultipart = false;
+          this.render();
+          break;
         }
-      } catch (mpErr) {
-        console.warn('[UMP] multipart failed, falling back to single-shot:', mpErr && mpErr.message);
-        this.state.isMultipart = false;
-        this.render();
       }
     }
 
@@ -2066,6 +2360,7 @@
           self.state.abort = function() { try { xhr.abort(); } catch (_) {} };
         });
         self.state.abort = null;
+        this.clearMpSession(fingerprint);
         return;
       } catch (error) {
         lastError = error;
@@ -2081,6 +2376,7 @@
         self.state.abort = function() { try { xhr.abort(); } catch (_) {} };
       });
       self.state.abort = null;
+      this.clearMpSession(fingerprint);
       return;
     }
 
@@ -2111,30 +2407,93 @@
     this.setError('');
     this.setProgress(8);
     this.setStage('upload');
+    this.state.resumedParts = 0;
     this.render();
 
     try {
-      var intentResponse = await fetch(this.apiBase + '/api/upload/intent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          shopDomain: this.shopDomain,
-          productId: String(this.productId),
-          variantId: this.getFallbackVariantId() || null,
-          mode: 'dtf',
-          fileName: file.name,
-          contentType: file.type || 'application/octet-stream',
-          fileSize: file.size,
-          customerId: this.customerId || null,
-          customerEmail: this.customerEmail || null
-        })
-      });
-      var intent = await intentResponse.json().catch(function() { return {}; });
-      if (!intentResponse.ok) throw new Error(intent.error || 'Failed to create upload intent.');
+      // Header probe (instant size/price) and content fingerprint run while
+      // the intent is negotiated; neither reads more than 2 MB of the file.
+      var self = this;
+      var probePromise = this.probeAndPreview(file, currentToken);
+      var fingerprintPromise = window.ULFileProbe && window.ULFileProbe.fingerprint
+        ? window.ULFileProbe.fingerprint(file).catch(function() { return null; })
+        : Promise.resolve(null);
+      var fingerprint = await fingerprintPromise;
       if (currentToken !== this.token) return;
+
+      var intent = null;
+      var resume = null;
+      var session = this.loadMpSession(fingerprint, file);
+      if (session) {
+        var resumeData = null;
+        try { resumeData = await this.requestMultipartResume(session); } catch (_) {}
+        if (currentToken !== this.token) return;
+        if (resumeData) {
+          intent = {
+            uploadId: session.uploadId,
+            itemId: session.itemId,
+            key: session.key,
+            publicUrl: session.publicUrl,
+            storageProvider: 'r2',
+            multipart: {
+              uploadId: session.multipartUploadId,
+              key: session.key,
+              partSize: session.partSize,
+              totalParts: session.totalParts,
+              parts: resumeData.parts || [],
+              completeUrl: resumeData.completeUrl,
+              abortUrl: resumeData.abortUrl,
+              publicUrl: session.publicUrl
+            }
+          };
+          resume = resumeData;
+          this.state.resumedParts = (resumeData.uploadedParts || []).length;
+          console.log('[UMP] resuming multipart upload ' + session.uploadId + ': ' + this.state.resumedParts + '/' + session.totalParts + ' parts already on R2');
+        } else {
+          this.clearMpSession(fingerprint);
+          session = null;
+        }
+      }
+
+      if (!intent) {
+        var intentResponse = await fetch(this.apiBase + '/api/upload/intent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            shopDomain: this.shopDomain,
+            productId: String(this.productId),
+            variantId: this.getFallbackVariantId() || null,
+            mode: 'dtf',
+            fileName: file.name,
+            contentType: file.type || 'application/octet-stream',
+            fileSize: file.size,
+            customerId: this.customerId || null,
+            customerEmail: this.customerEmail || null,
+            fingerprint: fingerprint || null,
+            partSizeMb: suggestPartSizeMb(file.size)
+          })
+        });
+        intent = await intentResponse.json().catch(function() { return {}; });
+        if (!intentResponse.ok) throw new Error(intent.error || 'Failed to create upload intent.');
+        if (currentToken !== this.token) return;
+      }
 
       this.state.uploadId = intent.uploadId;
       this.state.itemId = intent.itemId;
+
+      if (intent.deduplicated) {
+        // Same file, same customer, already measured: nothing to send.
+        console.log('[UMP] instant re-upload: reusing measured upload ' + intent.uploadId);
+        this.state.isMultipart = false;
+        this.setStage('measure');
+        this.setProgress(86);
+        await this.pollStatus(currentToken);
+        if (currentToken !== this.token) return;
+        this.rememberCurrentUpload();
+        this.render();
+        return;
+      }
+
       this.state.isMultipart = Boolean(intent.multipart);
       this.setProgress(18);
       this.render();
@@ -2142,8 +2501,9 @@
         var ratio = total > 0 ? loaded / total : 0;
         this.setProgress(18 + ratio * 52);
         this.setProgressText(loaded, total);
-      }.bind(this));
+      }.bind(this), { fingerprint: fingerprint, session: session, resume: resume });
       if (currentToken !== this.token) return;
+      try { await probePromise; } catch (_) {}
       this.setProgressText(0, 0);
       this.setStage('measure');
 
@@ -2198,7 +2558,12 @@
         if (item) {
           this.state.thumbnailUrl = item.thumbnailUrl || data.thumbnailUrl || this.state.thumbnailUrl || '';
           this.state.originalUrl = item.originalUrl || data.downloadUrl || this.state.originalUrl || '';
-          this.applyMeasurement(item);
+          if (this.applyMeasurement(item)) {
+            // Server measurement replaces the provisional probe entirely.
+            this.state.provisional = false;
+            this.state.selectedResult = null;
+            this.state.selectedVariantId = '';
+          }
           var measurementStatus = item.measurementStatus || 'pending';
           var blocked = data.orderabilityStatus === 'blocked' || item.orderabilityStatus === 'blocked' || data.status === 'error';
           if (blocked || measurementStatus === 'error') {
@@ -2247,7 +2612,7 @@
         shopDomain: this.shopDomain,
         productId: String(this.productId),
         uploadId: this.state.uploadId,
-        quantity: 1,
+        quantity: this.getRequestedCopies(),
         selectedVariantId: linear ? null : (this.getFallbackVariantId() || null),
         customerId: this.customerId || null,
         customerEmail: this.customerEmail || null,
