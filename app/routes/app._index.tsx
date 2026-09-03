@@ -131,6 +131,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
       id: u.id,
       mode: u.mode,
       status: u.status,
+      orderId: u.orderId,
+      orderPaidAt: u.orderPaidAt ? new Date(u.orderPaidAt).toISOString() : null,
+      cartAddedAt: u.cartAddedAt ? new Date(u.cartAddedAt).toISOString() : null,
       productId: u.productId,
       itemCount: u.items.length,
       preflightStatus: u.items.some((i: any) => i.preflightStatus === "error")
@@ -194,17 +197,19 @@ export async function action({ request }: ActionFunctionArgs) {
 
 import { StatCard } from "~/components/StatCard";
 import {
-  UPLOAD_STATUS_LABELS,
+  describeUploadStatus,
   preflightLabel,
   preflightTone,
-  uploadStatusLabel,
-  uploadStatusTone,
+  type UploadStatusFacts,
 } from "~/lib/uploadStatus";
 
-function StatusBadge({ status }: { status: string }) {
-  const label = UPLOAD_STATUS_LABELS[status] ? uploadStatusLabel(status) : preflightLabel(status);
-  const tone = UPLOAD_STATUS_LABELS[status] ? uploadStatusTone(status) : preflightTone(status);
+function StatusBadge({ facts }: { facts: UploadStatusFacts }) {
+  const { label, tone } = describeUploadStatus(facts);
   return <Badge tone={tone}>{label}</Badge>;
+}
+
+function PreflightBadge({ status }: { status: string }) {
+  return <Badge tone={preflightTone(status)}>{preflightLabel(status)}</Badge>;
 }
 
 
@@ -476,8 +481,8 @@ export default function AppDashboard() {
   const rows = uploads.slice(0, 5).map((upload: any) => [
     upload.id.slice(0, 8) + "...",
     <Badge key={upload.id + "-mode"} tone="info">{upload.mode === "3d_designer" ? "3D" : upload.mode}</Badge>,
-    <StatusBadge key={upload.id + "-status"} status={upload.status} />,
-    <StatusBadge key={upload.id + "-preflight"} status={upload.preflightStatus} />,
+    <StatusBadge key={upload.id + "-status"} facts={upload} />,
+    <PreflightBadge key={upload.id + "-preflight"} status={upload.preflightStatus} />,
     new Date(upload.createdAt).toLocaleDateString(),
   ]);
 

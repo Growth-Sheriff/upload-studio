@@ -37,10 +37,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   if (shop) {
 
+    // Badge on "Uploads": files a merchant may want to look at that are not
+    // ordered yet (warnings land in pending_approval) plus ordered-unpaid.
     pendingUploads = await prisma.upload.count({
       where: {
         shopId: shop.id,
-        status: { in: ["uploaded", "needs_review"] }
+        status: { in: ["pending_approval", "needs_review"] }
       },
     });
 

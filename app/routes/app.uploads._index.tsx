@@ -155,6 +155,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
         id: u.id,
         mode: u.mode,
         status: u.status,
+        orderId: u.orderId,
+        orderPaidAt: u.orderPaidAt?.toISOString() || null,
+        cartAddedAt: u.cartAddedAt?.toISOString() || null,
         productId: u.productId,
         customerId: u.customerId,
         customerEmail: u.customerEmail,
@@ -193,24 +196,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 import {
-  PREFLIGHT_LABELS,
-  PREFLIGHT_TONES,
   UPLOAD_STATUS_LABELS,
-  UPLOAD_STATUS_TONES,
+  describeUploadStatus,
+  preflightLabel,
+  preflightTone,
+  type UploadStatusFacts,
 } from '~/lib/uploadStatus'
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ facts }: { facts: UploadStatusFacts }) {
+  const { label, tone } = describeUploadStatus(facts)
+  return <Badge tone={tone}>{label}</Badge>
+}
 
-  const labelMap: Record<string, string> = {
-    ...PREFLIGHT_LABELS,
-    ...UPLOAD_STATUS_LABELS,
-  }
-
-  const toneMap: Record<string, 'success' | 'warning' | 'critical' | 'info' | 'attention'> = {
-    ...PREFLIGHT_TONES,
-    ...UPLOAD_STATUS_TONES,
-  }
-  return <Badge tone={toneMap[status] || 'info'}>{labelMap[status] || status}</Badge>
+function PreflightBadge({ status }: { status: string }) {
+  return <Badge tone={preflightTone(status)}>{preflightLabel(status)}</Badge>
 }
 
 
@@ -434,9 +433,9 @@ export default function UploadsPage() {
 
     upload.mode,
 
-    <StatusBadge key={`${upload.id}-status`} status={upload.status} />,
+    <StatusBadge key={`${upload.id}-status`} facts={upload} />,
 
-    <StatusBadge key={`${upload.id}-preflight`} status={upload.preflightStatus} />,
+    <PreflightBadge key={`${upload.id}-preflight`} status={upload.preflightStatus} />,
 
     <Text key={`${upload.id}-size`} as="span" variant="bodySm">
       {formatBytes(upload.totalFileSize)}
@@ -504,9 +503,18 @@ export default function UploadsPage() {
                       <ChoiceList
                         title="Status"
                         titleHidden
-                        choices={['draft', 'uploaded', 'processing', 'needs_review', 'approved', 'rejected', 'blocked'].map(
-                          (value) => ({ label: UPLOAD_STATUS_LABELS[value], value })
-                        )}
+                        choices={[
+                          { label: UPLOAD_STATUS_LABELS.draft, value: 'draft' },
+                          { label: UPLOAD_STATUS_LABELS.processing, value: 'processing' },
+                          { label: 'Uploaded, not ordered (needs a look)', value: 'pending_approval' },
+                          { label: 'Uploaded, not ordered (file OK)', value: 'ready' },
+                          { label: UPLOAD_STATUS_LABELS.needs_review, value: 'needs_review' },
+                          { label: 'Approved / paid', value: 'approved' },
+                          { label: UPLOAD_STATUS_LABELS.printed, value: 'printed' },
+                          { label: UPLOAD_STATUS_LABELS.shipped, value: 'shipped' },
+                          { label: UPLOAD_STATUS_LABELS.rejected, value: 'rejected' },
+                          { label: UPLOAD_STATUS_LABELS.blocked, value: 'blocked' },
+                        ]}
                         selected={filters.status ? [filters.status] : []}
                         onChange={handleStatusChange}
                       />

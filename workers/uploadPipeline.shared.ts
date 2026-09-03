@@ -801,7 +801,11 @@ export async function updateUploadAggregateStatus(
     uploadStatus = 'pending_approval'
     summaryOverall = 'ok'
   } else {
-    uploadStatus = 'needs_review'
+    // File-check warnings keep the upload in the pre-order "look at this"
+    // state. `needs_review` is reserved for the order webhook (= ordered,
+    // not yet paid) so the merchant never sees "Ordered" for a file that was
+    // only uploaded. The warning itself is carried by preflightSummary.
+    uploadStatus = 'pending_approval'
     summaryOverall = 'warning'
   }
 

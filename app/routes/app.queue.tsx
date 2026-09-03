@@ -40,10 +40,11 @@ import { UploadDetailModal } from '~/components/UploadDetailModal'
 
 import {
   QUEUE_STATUSES,
+  describeUploadStatus,
   preflightLabel,
   preflightTone,
   uploadStatusLabel,
-  uploadStatusTone,
+  type UploadStatusFacts,
 } from '~/lib/uploadStatus'
 
 const STATUS_OPTIONS = QUEUE_STATUSES.map((s) => ({ label: s.label, value: s.value }))
@@ -162,6 +163,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         mode: u.mode,
         status: u.status,
         orderId: u.orderId,
+        orderPaidAt: u.orderPaidAt?.toISOString() || null,
+        cartAddedAt: u.cartAddedAt?.toISOString() || null,
         customerEmail: u.customerEmail,
         itemCount: u.items.length,
         locations: u.items.map((i: { location: string }) => i.location),
@@ -344,8 +347,9 @@ export async function action({ request }: ActionFunctionArgs) {
   return json({ error: 'Unknown action' }, { status: 400 })
 }
 
-function StatusBadge({ status }: { status: string }) {
-  return <Badge tone={uploadStatusTone(status)}>{uploadStatusLabel(status)}</Badge>
+function StatusBadge({ facts }: { facts: UploadStatusFacts }) {
+  const { label, tone } = describeUploadStatus(facts)
+  return <Badge tone={tone}>{label}</Badge>
 }
 
 function PreflightBadge({ status }: { status: string }) {
@@ -474,7 +478,7 @@ export default function ProductionQueuePage() {
         —
       </Text>
     ),
-    <StatusBadge key={`status-${upload.id}`} status={upload.status} />,
+    <StatusBadge key={`status-${upload.id}`} facts={upload} />,
     <PreflightBadge key={`preflight-${upload.id}`} status={upload.preflightStatus} />,
     new Date(upload.createdAt).toLocaleDateString(),
     <InlineStack key={`actions-${upload.id}`} gap="100">
