@@ -453,6 +453,8 @@
   margin-bottom: var(--ump-s2);
 }
 
+.ump__files-tools { display: inline-flex; gap: 6px; }
+
 .ump__queue-list { display: grid; gap: var(--ump-s1); }
 
 .ump__queue-item {

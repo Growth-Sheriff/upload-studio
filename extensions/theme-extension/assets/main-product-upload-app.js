@@ -410,16 +410,27 @@
     this.state.status = 'ready';
     this.setStage(null);
     var self = this;
+    // Uploads already sitting in the Shopify cart belong to the cart now
+    // (added in another tab, or the redirect after add-to-cart was interrupted).
+    var cartCheck = fetch('/cart.js', { headers: { 'Accept': 'application/json' }, cache: 'no-store' })
+      .then(function(res) { return res.ok ? res.json() : null; })
+      .catch(function() { return null; });
     Promise.all(items.map(function(item) {
       return fetch(self.apiBase + '/api/upload/status/' + encodeURIComponent(item.uploadId) + '?shopDomain=' + encodeURIComponent(self.shopDomain))
         .then(function(res) { return res.ok ? res.json() : null; })
         .catch(function() { return null; });
-    })).then(function(results) {
+    }).concat([cartCheck])).then(function(all) {
+      var cart = all[all.length - 1];
+      var results = all.slice(0, -1);
+      var inCart = function(uploadId) {
+        return Boolean(cart && (cart.items || []).some(function(line) { return cartLineMatchesUpload(line, uploadId); }));
+      };
       var kept = [];
       results.forEach(function(status, index) {
         var item = items[index];
         if (!status || status.error) return;                 // gone on the server
         if (status.orderId) return;                           // already purchased
+        if (inCart(item.uploadId)) return;                    // already in the cart
         var canAdd = !status.capabilities || status.capabilities.canAddToCart !== false;
         if (!canAdd) return;
         var first = status.items && status.items[0];
@@ -462,6 +473,7 @@
     this.pillType = this.root.querySelector('[data-ump-pill-type]');
     this.pillMultipart = this.root.querySelector('[data-ump-pill-multipart]');
     this.files = this.root.querySelector('[data-ump-files]');
+    this.clearAll = this.root.querySelector('[data-ump-clear]');
     this.filesCount = this.root.querySelector('[data-ump-files-count]');
     this.sheetPlane = this.root.querySelector('[data-ump-sheet-plane]');
     this.sheetCut = this.root.querySelector('[data-ump-sheet-cut]');
@@ -1214,6 +1226,12 @@
       event.preventDefault();
       self.input.click();
     });
+    if (this.clearAll) {
+      this.clearAll.addEventListener('click', function(event) {
+        event.preventDefault();
+        self.clearAllUploads();
+      });
+    }
     if (this.cancel) {
       this.cancel.addEventListener('click', function(event) {
         event.preventDefault();
@@ -1863,6 +1881,45 @@
     }
     this.persistItems();
     this.render();
+  };
+
+  // Clear all: drop every file from the widget (in-flight upload aborted,
+  // previews revoked, persisted list removed). Server-side drafts are left
+  // alone; they are never billed and expire on their own.
+  MainProductUpload.prototype.clearAllUploads = function() {
+    if (this.state.status === 'uploading') this.cancelUpload();
+    (this.state.items || []).forEach(function(item) {
+      if (item && item.localPreviewUrl) { try { URL.revokeObjectURL(item.localPreviewUrl); } catch (_) {} }
+    });
+    this.state.items = [];
+    this.resetMeasurement(null);
+    this.state.items = [];
+    this.persistItems();
+    this.setProgress(0);
+    this.setProgressText(0, 0);
+    this.setStage(null);
+    this.setError('');
+    this.render();
+  };
+
+  // Forget uploads that are now in the Shopify cart: the cart owns them from
+  // here on, so a customer returning to the page starts with a clean list.
+  MainProductUpload.prototype.forgetUploads = function(uploadIds) {
+    var ids = (uploadIds || []).map(String);
+    var remaining = (this.state.items || []).filter(function(item) {
+      return ids.indexOf(String(item.uploadId)) === -1;
+    });
+    (this.state.items || []).forEach(function(item) {
+      if (ids.indexOf(String(item.uploadId)) !== -1 && item.localPreviewUrl) {
+        try { URL.revokeObjectURL(item.localPreviewUrl); } catch (_) {}
+      }
+    });
+    this.state.items = remaining;
+    if (ids.indexOf(String(this.state.uploadId)) !== -1) {
+      this.resetMeasurement(null);
+      this.state.items = remaining;
+    }
+    this.persistItems();
   };
 
   MainProductUpload.prototype.renderQueue = function() {
@@ -3128,6 +3185,9 @@
       }
 
       await this.bindCartToken(lastCart, uploadIds);
+
+      // The cart owns these uploads now; do not show them again on return.
+      this.forgetUploads(uploadIds);
 
       window.location.href = discountRedirect(redirectTo || '/cart', this.getDiscountCode());
     } catch (error) {
