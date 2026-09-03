@@ -178,7 +178,8 @@
   }
 
   function parseSheetSize(label) {
-    var match = String(label || '').match(/(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)/);
+    // Accepts 22x30, 22 x 30, 22"x30", 22” × 30”, 22in x 30in.
+    var match = String(label || '').match(/(\d+(?:\.\d+)?)\s*(?:"|”|″|in(?:ch)?)?\s*[xX×]\s*(\d+(?:\.\d+)?)/);
     if (!match) return null;
     var a = parseFloat(match[1]);
     var b = parseFloat(match[2]);
@@ -314,6 +315,7 @@
       sizingSource: '',
       selectedResult: null,
       selectedVariantId: '',
+      copies: 1,
       status: 'idle',
       items: [],
       activeItemId: '',
@@ -325,7 +327,7 @@
     this.renderPriceStrip();
     this.customerPricingPromise = this.loadCustomerPricingContext();
     this.productConfigPromise = this.loadProductConfig();
-    this.requestedCopies = 1;
+    this.priceTableExpanded = false;
     this.restorePersistedItems();
     this.render();
     this.restoreReorderFromUrl();
@@ -362,6 +364,7 @@
           sizingSource: item.sizingSource,
           selectedResult: item.selectedResult,
           selectedVariantId: item.selectedVariantId,
+          copies: Math.max(1, Number(item.copies) || 1),
           isMultipart: item.isMultipart,
           uploadStartTime: item.uploadStartTime,
           uploadEndTime: item.uploadEndTime
@@ -389,6 +392,7 @@
     }).map(function(item) {
       item.status = 'ready';
       item.localPreviewUrl = '';
+      item.copies = Math.max(1, Number(item.copies) || 1);
       return item;
     });
     if (!items.length) return;
@@ -450,11 +454,11 @@
     this.pillSize = this.root.querySelector('[data-ump-pill-size]');
     this.pillType = this.root.querySelector('[data-ump-pill-type]');
     this.pillMultipart = this.root.querySelector('[data-ump-pill-multipart]');
-    this.copies = this.root.querySelector('[data-ump-copies]');
-    this.copiesInput = this.root.querySelector('[data-ump-copies-input]');
-    this.copiesMinus = this.root.querySelector('[data-ump-copies-minus]');
-    this.copiesPlus = this.root.querySelector('[data-ump-copies-plus]');
-    this.copiesSummary = this.root.querySelector('[data-ump-copies-summary]');
+    this.files = this.root.querySelector('[data-ump-files]');
+    this.filesCount = this.root.querySelector('[data-ump-files-count]');
+    this.sheetPlane = this.root.querySelector('[data-ump-sheet-plane]');
+    this.sheetCut = this.root.querySelector('[data-ump-sheet-cut]');
+    this.note = this.root.querySelector('[data-ump-note]');
     this.progressWrap = this.root.querySelector('[data-ump-progress-wrap]');
     this.progress = this.root.querySelector('[data-ump-progress]');
     this.progressText = this.root.querySelector('[data-ump-progress-text]');
@@ -963,41 +967,76 @@
     });
     var pendingId = !readyItems.length && this.state.selectedVariantId ? String(this.state.selectedVariantId) : '';
     var selectedCount = Object.keys(qtyByVariant).length;
+    var isSelected = function(variant) {
+      var id = String(variant.id);
+      return (qtyByVariant[id] || 0) > 0 || (pendingId && pendingId === id);
+    };
 
-    var rows = variants.map(function(variant) {
+    // Collapsed by default: the chosen size(s) with two neighbours each side,
+    // so 40 rows never push the cart button off screen. "Show all" expands.
+    var NEIGHBOURS = 2;
+    var visibleIndex = {};
+    var anySelected = variants.some(isSelected);
+    if (this.priceTableExpanded || !anySelected) {
+      variants.forEach(function(_, i) { visibleIndex[i] = true; });
+    } else {
+      variants.forEach(function(variant, i) {
+        if (!isSelected(variant)) return;
+        for (var j = Math.max(0, i - NEIGHBOURS); j <= Math.min(variants.length - 1, i + NEIGHBOURS); j += 1) visibleIndex[j] = true;
+      });
+    }
+    var hiddenCount = variants.length - Object.keys(visibleIndex).length;
+    var expandedNoSelection = !anySelected && variants.length > 8 && !this.priceTableExpanded;
+    if (expandedNoSelection) {
+      // Nothing measured yet: show the first rows only.
+      visibleIndex = {};
+      variants.forEach(function(_, i) { if (i < 6) visibleIndex[i] = true; });
+      hiddenCount = variants.length - 6;
+    }
+
+    var rows = [];
+    var lastShown = -1;
+    variants.forEach(function(variant, i) {
+      if (!visibleIndex[i]) return;
+      if (lastShown >= 0 && i - lastShown > 1) {
+        rows.push('<tr class="is-gap"><td colspan="2">···</td></tr>');
+      }
+      lastShown = i;
       var id = String(variant.id);
       var qty = qtyByVariant[id] || 0;
-      var selected = qty > 0 || (pendingId && pendingId === id);
+      var selected = isSelected(variant);
       var unavailable = variant.available === false || variant.availableForSale === false;
-      return [
+      rows.push([
         '<tr class="', selected ? 'is-selected' : '', unavailable ? ' is-unavailable' : '', '">',
           '<td>', selected ? '<span class="ump__price-check">✓</span>' : '', '<strong>', escapeHtml(getVariantLabel(variant)), '</strong>',
-            selected ? '<span class="ump__price-auto">Auto-selected</span>' : '',
+            selected ? '<span class="ump__price-auto">' + (this.state.provisional && !qty ? 'Estimated' : 'Auto') + '</span>' : '',
             qty > 1 ? '<span class="ump__price-qty">×' + qty + '</span>' : '',
           '</td>',
           '<td>', escapeHtml(formatMoney(variant.price, this.currency)), '</td>',
         '</tr>'
-      ].join('');
-    }, this).join('');
+      ].join(''));
+    }, this);
 
     var noticeHtml = selectedCount
-      ? '<p class="ump__price-notice" role="status">' +
-          '<strong>Auto-selected by the system.</strong> Based on the measured size of your file' +
-          (selectedCount === 1 ? ', the highlighted sheet size was chosen automatically' : ', the highlighted sheet sizes were chosen automatically') +
-          ' &mdash; please check it before you add to cart.' +
-        '</p>'
+      ? '<p class="ump__price-notice" role="status">Sheet size chosen automatically from your file\'s measured size. Check it before adding to cart.</p>'
+      : '';
+    var moreHtml = hiddenCount > 0 || this.priceTableExpanded
+      ? '<button type="button" class="ump__btn ump__btn--ghost ump__price-more" data-ump-price-more>' +
+          (this.priceTableExpanded ? 'Show fewer sizes' : 'Show all ' + variants.length + ' sizes') +
+        '</button>'
       : '';
 
     this.priceTable.innerHTML = [
       '<div class="ump__price-table-head">',
-        '<span>Sheet sizes &amp; prices</span>',
-        '<small>', selectedCount ? 'System selection' : (pendingId && this.state.provisional ? 'Estimated · confirming' : 'Selected automatically after upload'), '</small>',
+        '<span>Sizes &amp; prices</span>',
+        '<small>', selectedCount ? 'Chosen for your file' : (pendingId && this.state.provisional ? 'Estimated · confirming' : 'Chosen after upload'), '</small>',
       '</div>',
       noticeHtml,
       '<table class="ump__price-table">',
-        '<thead><tr><th>Sheet size</th><th>Price</th></tr></thead>',
-        '<tbody>', rows, '</tbody>',
-      '</table>'
+        '<thead><tr><th>Sheet</th><th>Price</th></tr></thead>',
+        '<tbody>', rows.join(''), '</tbody>',
+      '</table>',
+      moreHtml
     ].join('');
     this.priceTable.hidden = false;
   };
@@ -1245,20 +1284,42 @@
         self.addToCart('/checkout');
       });
     }
-    // Copies stepper: re-resolves the active upload with the new quantity so
-    // designs-per-sheet / sheets-needed come from the server nesting logic.
-    var onCopiesChange = function(next) {
-      var n = Math.floor(Number(next));
-      if (!(n > 0)) n = 1;
-      if (n > 999) n = 999;
-      if (n === self.getRequestedCopies()) { self.renderCopies(); return; }
-      self.requestedCopies = n;
-      self.renderCopies();
-      self.reresolveForCopies();
-    };
-    if (this.copiesMinus) this.copiesMinus.addEventListener('click', function(event) { event.preventDefault(); onCopiesChange(self.getRequestedCopies() - 1); });
-    if (this.copiesPlus) this.copiesPlus.addEventListener('click', function(event) { event.preventDefault(); onCopiesChange(self.getRequestedCopies() + 1); });
-    if (this.copiesInput) this.copiesInput.addEventListener('change', function() { onCopiesChange(self.copiesInput.value); });
+    // Per-file copies stepper lives in each queue row (delegated). Changing it
+    // re-resolves that upload with the new quantity so designs-per-sheet and
+    // sheets-needed come from the server nesting logic.
+    if (this.queue) {
+      this.queue.addEventListener('click', function(event) {
+        var minus = event.target.closest('[data-ump-copies-minus]');
+        var plus = event.target.closest('[data-ump-copies-plus]');
+        var control = minus || plus;
+        if (!control) return;
+        event.preventDefault();
+        event.stopPropagation();
+        var uploadId = control.getAttribute('data-upload-id');
+        var item = self.findItem(uploadId);
+        if (!item) return;
+        self.setItemCopies(uploadId, (Number(item.copies) || 1) + (plus ? 1 : -1));
+      });
+      this.queue.addEventListener('change', function(event) {
+        var input = event.target.closest('[data-ump-copies-input]');
+        if (!input) return;
+        self.setItemCopies(input.getAttribute('data-upload-id'), input.value);
+      });
+    }
+    if (this.priceTable) {
+      this.priceTable.addEventListener('click', function(event) {
+        var toggle = event.target.closest('[data-ump-price-more]');
+        if (!toggle) return;
+        event.preventDefault();
+        self.priceTableExpanded = !self.priceTableExpanded;
+        self.renderPriceTable();
+      });
+    }
+    // The roll preview is drawn in pixels; redraw whenever the plane resizes.
+    if (this.sheetPlane && typeof ResizeObserver === 'function') {
+      this.previewResizeObserver = new ResizeObserver(function() { self.updatePreviewGeometry(); });
+      this.previewResizeObserver.observe(this.sheetPlane);
+    }
     if (this.discountInput) {
       this.discountInput.addEventListener('input', function() {
         self.discountCode = normalizeDiscountCode(self.discountInput.value);
@@ -1459,6 +1520,7 @@
       selectedResult: null,
       selectedVariantId: '',
       provisional: false,
+      copies: 1,
       status: file ? 'uploading' : 'idle',
       abort: null,
       isMultipart: false,
@@ -1506,6 +1568,7 @@
       selectedResult: this.state.selectedResult,
       selectedVariantId: this.state.selectedVariantId,
       provisional: Boolean(this.state.provisional),
+      copies: Math.max(1, Number(this.state.copies) || 1),
       status: this.state.status,
       isMultipart: this.state.isMultipart,
       uploadStartTime: this.state.uploadStartTime,
@@ -1599,48 +1662,48 @@
     return probe;
   };
 
-  MainProductUpload.prototype.renderCopies = function() {
-    if (!this.copies) return;
-    var show = !this.isExactMeasuredMode() && Boolean(this.state.uploadId) && this.state.status !== 'error';
-    this.copies.hidden = !show;
-    if (!show) return;
-    var copies = this.getRequestedCopies();
-    if (this.copiesInput && String(this.copiesInput.value) !== String(copies)) this.copiesInput.value = String(copies);
-    if (this.copiesMinus) this.copiesMinus.disabled = copies <= 1 || this.state.status === 'uploading';
-    if (this.copiesPlus) this.copiesPlus.disabled = copies >= 999 || this.state.status === 'uploading';
-    if (this.copiesSummary) {
-      var result = this.state.selectedResult || {};
-      var perSheet = Number(result.designsPerSheet) || 0;
-      var sheets = Number(result.cartQuantity || result.sheetsNeeded) || 0;
-      var text = '';
-      if (result.pricingMode === 'linear_inches') {
-        text = sheets ? sheets + ' billable inches' : '';
-      } else if (perSheet > 0 && sheets > 0) {
-        text = perSheet + ' per sheet · ' + sheets + ' sheet' + (sheets === 1 ? '' : 's');
-      }
-      this.copiesSummary.textContent = text + (this.state.provisional && text ? ' (est.)' : '');
-    }
+  MainProductUpload.prototype.findItem = function(uploadId) {
+    return (this.state.items || []).find(function(item) { return sameUploadId(item.uploadId, uploadId); }) || null;
   };
 
-  MainProductUpload.prototype.reresolveForCopies = async function() {
-    if (this.isExactMeasuredMode()) return;
-    if (!this.state.uploadId || this.state.status === 'uploading') return;
-    var currentToken = this.token;
-    var uploadId = this.state.uploadId;
+  // Copies are per gang sheet. Changing them re-resolves that upload only
+  // (server nesting: designs per sheet, sheets needed) and leaves the other
+  // files untouched.
+  MainProductUpload.prototype.setItemCopies = async function(uploadId, next) {
+    var item = this.findItem(uploadId);
+    if (!item || this.isExactMeasuredMode()) return;
+    var n = Math.floor(Number(next));
+    if (!(n > 0)) n = 1;
+    if (n > 999) n = 999;
+    if (n === (Number(item.copies) || 1)) { this.render(); return; }
+    var previous = item.copies || 1;
+    item.copies = n;
+    var isActive = sameUploadId(this.state.uploadId, uploadId);
+    if (isActive) this.state.copies = n;
+    this.render();
     try {
-      await this.resolveProduct();
-      if (currentToken !== this.token || !sameUploadId(this.state.uploadId, uploadId)) return;
-      this.rememberCurrentUpload();
+      var resolved = await this.resolveForUpload(uploadId, n);
+      var live = this.findItem(uploadId);
+      if (!live || live.copies !== n) return; // changed again meanwhile
+      live.selectedResult = resolved.resolution;
+      live.selectedVariantId = resolved.selectedVariantId;
+      if (sameUploadId(this.state.uploadId, uploadId)) {
+        this.state.selectedResult = resolved.resolution;
+        this.state.selectedVariantId = resolved.selectedVariantId;
+      }
       this.setError('');
     } catch (error) {
-      if (currentToken !== this.token) return;
-      this.setError(error && error.message ? error.message : 'No product variant can fit this quantity.');
+      var rollback = this.findItem(uploadId);
+      if (rollback && rollback.copies === n) rollback.copies = previous;
+      if (isActive) this.state.copies = previous;
+      this.setError(error && error.message ? error.message : 'No sheet can fit that many copies.');
     }
+    this.persistItems();
     this.render();
   };
 
   MainProductUpload.prototype.getRequestedCopies = function() {
-    var n = Math.floor(Number(this.requestedCopies));
+    var n = Math.floor(Number(this.state && this.state.copies));
     return n > 0 ? Math.min(n, 999) : 1;
   };
 
@@ -1749,6 +1812,7 @@
     this.state.selectedResult = item.selectedResult || null;
     this.state.selectedVariantId = String(item.selectedVariantId || '');
     this.state.provisional = Boolean(item.provisional);
+    this.state.copies = Math.max(1, Number(item.copies) || 1);
     this.state.status = item.status || (this.isCartReadyItem(item) ? 'ready' : 'idle');
     this.state.isMultipart = Boolean(item.isMultipart);
     this.state.uploadStartTime = item.uploadStartTime || 0;
@@ -1796,46 +1860,57 @@
     if (!this.queue) return;
     var items = this.getQueueItems();
     if (!items.length) {
-      this.queue.hidden = true;
+      if (this.files) this.files.hidden = true;
       this.queue.innerHTML = '';
       return;
     }
     var readyCount = items.filter(this.isCartReadyItem.bind(this)).length;
-    this.queue.hidden = false;
+    if (this.files) this.files.hidden = false;
+    if (this.filesCount) this.filesCount.textContent = readyCount + '/' + items.length + ' ready';
+    var exact = this.isExactMeasuredMode();
     this.queue.innerHTML =
-      '<div class="ump__queue-head">' +
-        '<span>Gang sheets</span>' +
-        '<strong>' + readyCount + '/' + items.length + ' ready</strong>' +
-      '</div>' +
       '<div class="ump__queue-list">' +
-        items.map(function(item, index) {
+        items.map(function(item) {
+          var id = escapeHtml(item.uploadId || '');
           var isActive = sameUploadId(item.uploadId, this.state.activeItemId || this.state.uploadId);
           var isReady = this.isCartReadyItem(item);
-          var statusLabel = isReady ? 'Ready' : (item.status === 'error' ? 'Error' : (item.status === 'uploading' ? 'Uploading' : 'Measuring'));
-          var sheetLabel = this.isExactMeasuredMode() && isReady
+          var statusLabel = isReady ? 'Ready' : (item.status === 'error' ? 'Failed' : (item.status === 'uploading' ? 'Uploading' : 'Measuring'));
+          var result = item.selectedResult || {};
+          var sheetLabel = exact && isReady
             ? 'Exact measured'
-            : item.selectedResult
-            ? (item.selectedResult.selectedSheetLabel || item.selectedResult.selectedVariantTitle || '')
-            : '';
+            : (result.selectedSheetLabel || result.selectedVariantTitle || '');
+          var sheets = Number(result.cartQuantity || result.sheetsNeeded) || 0;
+          var perSheet = Number(result.designsPerSheet) || 0;
           var sizeText = item.widthIn && item.heightIn
-            ? formatInches(item.widthIn) + ' x ' + formatInches(item.heightIn)
-            : 'Measuring';
+            ? formatInches(item.widthIn) + ' × ' + formatInches(item.heightIn)
+            : '';
+          var metaParts = [];
+          if (sizeText) metaParts.push(escapeHtml(sizeText));
+          if (sheetLabel) metaParts.push('<b>' + escapeHtml(sheetLabel) + '</b>' + (sheets > 1 ? ' ×' + sheets : ''));
+          if (isReady && perSheet > 1) metaParts.push(perSheet + ' per sheet');
+          if (item.provisional && sizeText) metaParts.push('est.');
           var thumbUrl = item.thumbnailUrl || item.localPreviewUrl || '';
           var isBusy = !isReady && item.status !== 'error';
+          var copies = Math.max(1, Number(item.copies) || 1);
+          var canEdit = isReady && !exact;
           return '' +
             '<div class="ump__queue-item' + (isActive ? ' is-active' : '') + (isBusy ? ' is-busy' : '') + (item.status === 'error' ? ' is-error' : '') + '">' +
-              '<button class="ump__queue-main" type="button" data-ump-select-item="' + escapeHtml(item.uploadId || '') + '">' +
-                '<span class="ump__queue-index">' + (index + 1) + '</span>' +
-                (thumbUrl
-                  ? '<span class="ump__queue-thumb" style="background-image:url(&quot;' + escapeHtml(thumbUrl.replace(/"/g, '%22')) + '&quot;)"></span>'
-                  : '<span class="ump__queue-thumb"></span>') +
-                '<span class="ump__queue-copy">' +
-                  '<span class="ump__queue-name">' + escapeHtml(item.fileName || 'Gang sheet') + '</span>' +
-                  '<span class="ump__queue-meta">' + escapeHtml(sizeText) + (sheetLabel ? ' / ' + escapeHtml(sheetLabel) : '') + '</span>' +
-                '</span>' +
-                '<span class="ump__queue-status' + (isReady ? ' is-ready' : '') + '">' + escapeHtml(statusLabel) + '</span>' +
-              '</button>' +
-              (isReady ? '<button class="ump__queue-remove" type="button" data-ump-remove-item="' + escapeHtml(item.uploadId || '') + '" aria-label="Remove ' + escapeHtml(item.fileName || 'gang sheet') + '">Remove</button>' : '') +
+              '<span class="ump__queue-thumb" data-ump-select-item="' + id + '"' + (thumbUrl ? ' style="background-image:url(&quot;' + escapeHtml(thumbUrl.replace(/"/g, '%22')) + '&quot;)"' : '') + '></span>' +
+              '<span class="ump__queue-copy" data-ump-select-item="' + id + '">' +
+                '<span class="ump__queue-name">' + escapeHtml(item.fileName || 'Gang sheet') + '</span>' +
+                '<span class="ump__queue-meta">' + (metaParts.join(' · ') || escapeHtml(statusLabel)) + '</span>' +
+              '</span>' +
+              '<span class="ump__queue-status' + (isReady ? ' is-ready' : '') + '">' + escapeHtml(statusLabel) + '</span>' +
+              '<span class="ump__queue-tools">' +
+                (canEdit
+                  ? '<span class="ump__copies" role="group" aria-label="Copies">' +
+                      '<button type="button" class="ump__copies-btn" data-ump-copies-minus data-upload-id="' + id + '" aria-label="Fewer copies"' + (copies <= 1 ? ' disabled' : '') + '>−</button>' +
+                      '<input type="number" class="ump__copies-input" data-ump-copies-input data-upload-id="' + id + '" value="' + copies + '" min="1" max="999" inputmode="numeric" aria-label="Copies">' +
+                      '<button type="button" class="ump__copies-btn" data-ump-copies-plus data-upload-id="' + id + '" aria-label="More copies"' + (copies >= 999 ? ' disabled' : '') + '>+</button>' +
+                    '</span>'
+                  : '') +
+                (isReady ? '<button class="ump__queue-remove" type="button" data-ump-remove-item="' + id + '" aria-label="Remove ' + escapeHtml(item.fileName || 'gang sheet') + '">×</button>' : '') +
+              '</span>' +
             '</div>';
         }.bind(this)).join('') +
       '</div>';
@@ -1881,33 +1956,112 @@
       : { width: sheetShort, height: sheetLong, label: label || '--' };
   };
 
+  // ── True-scale roll preview ─────────────────────────────────────────────
+  // The sheet is drawn as a roll segment (long edge horizontal) at a real
+  // pixels-per-inch scale; the design is placed exactly as the nesting logic
+  // places it (rotated when that fits more copies), and every requested copy
+  // is tiled from the top-left corner. Very long sheets are cut at 2.4:1 with
+  // a marker so the short edge (the roll width) always stays exact.
+  var PREVIEW_MAX_RATIO = 2.4;
+  var PREVIEW_MAX_TILES = 200;
+
+  function fitTiles(tileW, tileH, longIn, shortIn) {
+    if (!(tileW > 0) || !(tileH > 0)) return { cols: 0, rows: 0, count: 0 };
+    var cols = Math.floor(longIn / tileW + 0.0001);
+    var rows = Math.floor(shortIn / tileH + 0.0001);
+    if (cols <= 0 || rows <= 0) return { cols: 0, rows: 0, count: 0 };
+    return { cols: cols, rows: rows, count: cols * rows };
+  }
+
   MainProductUpload.prototype.updatePreviewGeometry = function() {
+    if (!this.sheetPlane || !this.art) return;
     var hasSize = this.state.widthIn > 0 && this.state.heightIn > 0;
     var sheet = this.parseSelectedSheet();
-    var sheetRatio = sheet.width > 0 && sheet.height > 0 ? sheet.width / sheet.height : 1.83;
-    var artW = 58;
-    var artH = 34;
-    if (hasSize) {
-      artW = Math.max(6, Math.min(100, (this.state.widthIn / sheet.width) * 100));
-      artH = Math.max(6, Math.min(100, (this.state.heightIn / sheet.height) * 100));
-    }
-    this.root.style.setProperty('--ump-sheet-ratio', String(Math.max(0.45, Math.min(4.5, sheetRatio))));
-    this.root.style.setProperty('--ump-art-w', artW.toFixed(2) + '%');
-    this.root.style.setProperty('--ump-art-h', artH.toFixed(2) + '%');
-    this.rulerTop.setAttribute('data-label', formatInches(sheet.width));
-    this.rulerSide.setAttribute('data-label', formatInches(sheet.height));
+    var sheetLong = Math.max(sheet.width, sheet.height) || Math.max(this.rollWidthIn, 12);
+    var sheetShort = Math.min(sheet.width, sheet.height) || this.rollWidthIn || 22;
+    var trueRatio = sheetLong / sheetShort;
+    var displayRatio = Math.min(PREVIEW_MAX_RATIO, Math.max(0.8, trueRatio));
+    this.root.style.setProperty('--ump-sheet-ratio', displayRatio.toFixed(4));
 
-    // Dimension callouts on the artwork and sheet utilization (design area
-    // over selected sheet area) — the two numbers a gang-sheet buyer checks
-    // before paying.
+    var planeW = this.sheetPlane.clientWidth || 0;
+    var planeH = planeW / displayRatio;
+    var scale = sheetShort > 0 ? planeH / sheetShort : 0; // px per inch
+    if (scale > 0) this.root.style.setProperty('--ump-inch', scale.toFixed(3) + 'px');
+    if (this.rulerTop) this.rulerTop.setAttribute('data-label', formatInches(sheetLong));
+    if (this.rulerSide) this.rulerSide.setAttribute('data-label', formatInches(sheetShort));
+    if (this.sheetCut) {
+      var cut = trueRatio > PREVIEW_MAX_RATIO + 0.01;
+      this.sheetCut.hidden = !cut;
+      if (cut) this.sheetCut.textContent = 'continues to ' + formatInches(sheetLong);
+    }
+
+    var existing = this.art.querySelectorAll('.ump__tile');
+    for (var k = 0; k < existing.length; k += 1) existing[k].remove();
+    if (!hasSize || !(scale > 0)) {
+      this.art.classList.remove('has-tiles');
+      if (this.artDimW) this.artDimW.hidden = true;
+      if (this.artDimH) this.artDimH.hidden = true;
+      return;
+    }
+
+    var dw = this.state.widthIn;
+    var dh = this.state.heightIn;
+    var normal = fitTiles(dw, dh, sheetLong, sheetShort);
+    var rotated = dw !== dh ? fitTiles(dh, dw, sheetLong, sheetShort) : { cols: 0, rows: 0, count: 0 };
+    var useRotated = rotated.count > normal.count;
+    var fit = useRotated ? rotated : normal;
+    var tileW = useRotated ? dh : dw;
+    var tileH = useRotated ? dw : dh;
+    if (fit.count === 0) {
+      // Oversize for the drawn sheet: show one tile clipped by the plane.
+      fit = { cols: 1, rows: 1, count: 1 };
+    }
+    var result = this.state.selectedResult || {};
+    var copies = Math.max(1, Number(this.state.copies) || 1);
+    var perSheet = Math.max(1, Number(result.designsPerSheet) || fit.count);
+    var count = Math.min(copies, perSheet, fit.count, PREVIEW_MAX_TILES);
+    var imageUrl = this.state.thumbnailUrl || this.state.localPreviewUrl || '';
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < count; i += 1) {
+      var c = i % fit.cols;
+      var r = Math.floor(i / fit.cols);
+      var tile = document.createElement('i');
+      tile.className = 'ump__tile' + (this.state.provisional ? ' is-provisional' : '');
+      tile.style.left = (c * tileW * scale).toFixed(2) + 'px';
+      tile.style.top = (r * tileH * scale).toFixed(2) + 'px';
+      tile.style.width = (tileW * scale).toFixed(2) + 'px';
+      tile.style.height = (tileH * scale).toFixed(2) + 'px';
+      if (imageUrl) {
+        var img = document.createElement('img');
+        img.alt = '';
+        img.decoding = 'async';
+        img.src = imageUrl;
+        img.style.width = (dw * scale).toFixed(2) + 'px';
+        img.style.height = (dh * scale).toFixed(2) + 'px';
+        img.style.transform = 'translate(-50%, -50%)' + (useRotated ? ' rotate(90deg)' : '');
+        tile.appendChild(img);
+      }
+      frag.appendChild(tile);
+    }
+    this.art.appendChild(frag);
+    this.art.classList.add('has-tiles');
+
+    // Dimension callouts on the first tile: the two numbers a buyer checks.
     if (this.artDimW) {
-      this.artDimW.hidden = !hasSize;
-      if (hasSize) this.artDimW.textContent = formatInches(this.state.widthIn);
+      this.artDimW.hidden = false;
+      this.artDimW.textContent = formatInches(tileW);
+      this.artDimW.style.left = (tileW * scale / 2).toFixed(2) + 'px';
+      this.artDimW.style.top = '4px';
+      this.artDimW.style.transform = 'translateX(-50%)';
     }
     if (this.artDimH) {
-      this.artDimH.hidden = !hasSize;
-      if (hasSize) this.artDimH.textContent = formatInches(this.state.heightIn);
+      this.artDimH.hidden = false;
+      this.artDimH.textContent = formatInches(tileH);
+      this.artDimH.style.left = '4px';
+      this.artDimH.style.top = (tileH * scale / 2).toFixed(2) + 'px';
+      this.artDimH.style.transform = 'translateY(-50%)';
     }
+    this.previewLayout = { rotated: useRotated, cols: fit.cols, rows: fit.rows, perSheet: perSheet, copies: copies };
   };
 
   MainProductUpload.prototype.getSelectedVariantPrice = function() {
@@ -2097,9 +2251,11 @@
     var ready = exactMode
       ? (readyItems.length > 0 || exactCartItems.length > 0) && !hasBlockingWork && quoteReady
       : readyItems.length > 0 && !hasBlockingWork && quoteReady;
-    var hasUpload = Boolean(this.state.uploadId || this.state.fileName);
-    this.statusPanel.hidden = !hasUpload;
-    this.fileName.textContent = this.state.fileName || 'Waiting for file';
+    // The transfer strip only exists while a file is in flight or failed;
+    // ready files live in the files list.
+    var inFlight = Boolean(this.state.fileName) && (this.state.status === 'uploading' || this.state.status === 'error');
+    this.statusPanel.hidden = !inFlight;
+    this.fileName.textContent = this.state.fileName || '';
 
     var fileMetaText = 'Upload a file to detect the gang sheet size.';
     if (this.state.status === 'ready') {
@@ -2128,13 +2284,9 @@
     if (imageUrl) {
       this.thumb.hidden = false;
       this.thumb.src = imageUrl;
-      this.art.classList.add('has-image');
-      this.art.style.backgroundImage = 'url("' + imageUrl.replace(/"/g, '%22') + '")';
     } else {
       this.thumb.hidden = true;
       this.thumb.removeAttribute('src');
-      this.art.classList.remove('has-image');
-      this.art.style.backgroundImage = '';
     }
 
     this.renderFilePills(this.state.lastFile, this.state.isMultipart);
@@ -2142,7 +2294,11 @@
 
     if (this.cancel) this.cancel.hidden = this.state.status !== 'uploading';
     if (this.retry) this.retry.hidden = this.state.status !== 'error';
-    if (this.replace) this.replace.textContent = queueItems.length ? 'Add more' : 'Replace';
+    if (this.note) {
+      var noteText = this.state.status === 'ready' ? this.getRotationHint() : '';
+      this.note.hidden = !noteText;
+      this.note.textContent = noteText;
+    }
 
     this.size.textContent = this.state.widthIn && this.state.heightIn
       ? formatInches(this.state.widthIn) + ' x ' + formatInches(this.state.heightIn)
@@ -2157,8 +2313,7 @@
     this.renderQuality();
     this.renderPriceNow(readyItems);
     this.renderPriceTable();
-    this.renderCopies();
-    this.method.textContent = this.getMethodText();
+    if (this.method) this.method.textContent = this.getMethodText();
 
     var badgeLabel, badgeClass;
     if (ready) { badgeLabel = 'Ready'; badgeClass = 'is-ready'; }
@@ -2176,7 +2331,7 @@
     } else if (this.state.status === 'error') {
       badgeLabel = 'Error'; badgeClass = '';
     } else {
-      badgeLabel = 'Locked'; badgeClass = '';
+      badgeLabel = 'Waiting'; badgeClass = '';
     }
     this.badge.textContent = badgeLabel;
     this.badge.classList.remove('is-ready', 'is-uploading', 'is-measuring');
@@ -2205,7 +2360,6 @@
         this.checkoutButton.textContent = readyItems.length > 1 ? 'Checkout with ' + readyItems.length + ' gang sheets' : checkoutLabel;
       }
     }
-    if (this.artLabel) this.artLabel.textContent = this.state.fileName || 'Upload preview';
     this.updatePreviewGeometry();
     this.root.dispatchEvent(new CustomEvent('ump:render', { detail: { instance: this } }));
   };
@@ -2610,6 +2764,25 @@
       this.setExactMeasuredResult();
       return;
     }
+    var data = await this.requestResolve(this.state.uploadId, this.getRequestedCopies());
+    if (data.payload && data.payload.upload) this.applyMeasurement(data.payload.upload);
+    if (!data.ok) {
+      if (this.isExactMeasuredMode() && data.payload && data.payload.upload && this.hasMeasuredUpload(this.state)) {
+        this.setExactMeasuredResult();
+        return;
+      }
+      throw new Error(data.payload.error || 'No product variant can fit this upload.');
+    }
+    if (this.isExactMeasuredMode() && this.hasMeasuredUpload(this.state)) {
+      this.setExactMeasuredResult();
+      return;
+    }
+    this.state.selectedResult = data.payload.resolution || null;
+    this.state.selectedVariantId = this.state.selectedResult ? String(this.state.selectedResult.selectedVariantId || '') : '';
+    if (!this.state.selectedVariantId && !this.isExactMeasuredMode()) throw new Error('No product variant can fit this upload.');
+  };
+
+  MainProductUpload.prototype.requestResolve = async function(uploadId, quantity) {
     var linear = this.isLinearInchPricing();
     var response = await fetch(this.apiBase + '/api/upload/resolve-product', {
       method: 'POST',
@@ -2617,8 +2790,8 @@
       body: JSON.stringify({
         shopDomain: this.shopDomain,
         productId: String(this.productId),
-        uploadId: this.state.uploadId,
-        quantity: this.getRequestedCopies(),
+        uploadId: uploadId,
+        quantity: Math.max(1, Math.floor(Number(quantity) || 1)),
         selectedVariantId: linear ? null : (this.getFallbackVariantId() || null),
         customerId: this.customerId || null,
         customerEmail: this.customerEmail || null,
@@ -2628,22 +2801,20 @@
         maxUploadWidth: this.rollWidthIn
       })
     });
-    var data = await response.json().catch(function() { return {}; });
-    if (data && data.upload) this.applyMeasurement(data.upload);
-    if (!response.ok) {
-      if (this.isExactMeasuredMode() && data && data.upload && this.hasMeasuredUpload(this.state)) {
-        this.setExactMeasuredResult();
-        return;
-      }
-      throw new Error(data.error || 'No product variant can fit this upload.');
+    var payload = await response.json().catch(function() { return {}; });
+    return { ok: response.ok, payload: payload || {} };
+  };
+
+  // Resolve any upload (not necessarily the active one) for a quantity.
+  MainProductUpload.prototype.resolveForUpload = async function(uploadId, quantity) {
+    var data = await this.requestResolve(uploadId, quantity);
+    if (!data.ok || !data.payload.resolution) {
+      throw new Error((data.payload && data.payload.error) || 'No sheet can fit that many copies.');
     }
-    if (this.isExactMeasuredMode() && this.hasMeasuredUpload(this.state)) {
-      this.setExactMeasuredResult();
-      return;
-    }
-    this.state.selectedResult = data.resolution || null;
-    this.state.selectedVariantId = this.state.selectedResult ? String(this.state.selectedResult.selectedVariantId || '') : '';
-    if (!this.state.selectedVariantId && !this.isExactMeasuredMode()) throw new Error('No product variant can fit this upload.');
+    var resolution = data.payload.resolution;
+    var selectedVariantId = String(resolution.selectedVariantId || '');
+    if (!selectedVariantId) throw new Error('No sheet can fit that many copies.');
+    return { resolution: resolution, selectedVariantId: selectedVariantId };
   };
 
   // ── Verified cart mutations ─────────────────────────────────────────────

@@ -36,50 +36,39 @@
         <input class="ump__input" data-ump-input type="file" accept="{{ ump_accept | escape }}" multiple />
         <div class="ump__drop-grid" aria-hidden="true"></div>
         <div class="ump__drop-main">
-          <div class="ump__icon">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 3v12"></path>
-              <path d="m7 8 5-5 5 5"></path>
-              <path d="M5 15v4h14v-4"></path>
-            </svg>
-          </div>
-          <div>
-            {%- if block.settings.show_product_title -%}
-              <p class="ump__product-name">{{ product.title | escape }}</p>
-            {%- endif -%}
-            <p class="ump__eyebrow">{{ block.settings.eyebrow | default: 'Print-ready upload' }}</p>
-            <h2 class="ump__title">{{ block.settings.heading | default: 'Upload your gang sheet' }}</h2>
-            <p class="ump__copy">{{ block.settings.subheading | default: 'We measure each file, select the right sheet, and unlock checkout when every gang sheet is ready.' }}</p>
-          </div>
+          {%- if block.settings.show_product_title -%}
+            <p class="ump__product-name">{{ product.title | escape }}</p>
+          {%- endif -%}
+          <h2 class="ump__title">{{ block.settings.heading | default: 'Upload your gang sheet' }}</h2>
           <button class="ump__upload-btn ump__upload-btn--live" type="button" data-ump-upload-trigger>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4"></path><path d="m6 10 6-6 6 6"></path><path d="M4 20h16"></path></svg>
             <span>{{ block.settings.upload_label | default: 'Upload files' }}</span>
-            <em>or drag &amp; drop here</em>
+            <em>or drop them here</em>
           </button>
-          <p class="ump__hint">{{ block.settings.support_text | default: 'PNG, JPG, TIFF, PSD, PDF, AI, EPS and SVG are supported. You can upload one or more gang sheets.' }}</p>
-          <ul class="ump__specs" aria-label="Upload specs">
-            <li class="ump__spec--roll">{{ ump_roll_width }}&quot; roll width</li>
+          <ul class="ump__specs" aria-label="Accepted files">
+            <li class="ump__spec--roll">{{ ump_roll_width }}&quot; roll</li>
             <li>PNG</li><li>JPG</li><li>TIFF</li><li>PSD</li><li>PDF</li><li>AI</li><li>EPS</li><li>SVG</li>
           </ul>
         </div>
-        <div class="ump__drop-overlay" aria-hidden="true"><span>Drop files to upload</span></div>
+        <div class="ump__drop-overlay" aria-hidden="true"><span>Drop to upload</span></div>
       </div>
+
+      {%- comment -%} Transfer strip: visible only while a file is uploading, measuring or failed. {%- endcomment -%}
       <div class="ump__status" data-ump-status-panel hidden>
         <div class="ump__file">
-          <img class="ump__thumb" data-ump-thumb alt="" width="76" height="76" hidden>
+          <img class="ump__thumb" data-ump-thumb alt="" width="48" height="48" hidden>
           <div>
-            <p class="ump__file-name" data-ump-file-name>Waiting for file</p>
-            <p class="ump__file-meta" data-ump-file-meta>Upload a file to detect the gang sheet size.</p>
+            <p class="ump__file-name" data-ump-file-name></p>
+            <p class="ump__file-meta" data-ump-file-meta></p>
             <div class="ump__file-pills" data-ump-file-pills hidden>
-              <span class="ump__pill ump__pill--size" data-ump-pill-size></span>
+              <span class="ump__pill" data-ump-pill-size></span>
               <span class="ump__pill ump__pill--type" data-ump-pill-type></span>
-              <span class="ump__pill ump__pill--multipart" data-ump-pill-multipart hidden>⚡ Parallel</span>
+              <span class="ump__pill ump__pill--multipart" data-ump-pill-multipart hidden>Parallel</span>
             </div>
           </div>
           <div class="ump__file-actions">
-            <button class="ump__cancel" type="button" data-ump-cancel hidden>Cancel</button>
-            <button class="ump__retry" type="button" data-ump-retry hidden>Try again</button>
-            <button class="ump__replace" type="button" data-ump-replace>Replace</button>
+            <button class="ump__btn ump__btn--ghost ump__cancel" type="button" data-ump-cancel hidden>Cancel</button>
+            <button class="ump__btn ump__btn--primary ump__retry" type="button" data-ump-retry hidden>Try again</button>
           </div>
         </div>
         <div class="ump__progress" data-ump-progress-wrap hidden>
@@ -87,83 +76,77 @@
         </div>
         <div class="ump__progress-text" data-ump-progress-text hidden></div>
         <div class="ump__stage" data-ump-stage hidden>
-          <span class="ump__stage-dot ump__stage-dot--upload" data-ump-stage-upload></span>
+          <span class="ump__stage-dot" data-ump-stage-upload></span>
           <span class="ump__stage-label" data-ump-stage-upload-label>Uploading</span>
-          <span class="ump__stage-sep">→</span>
-          <span class="ump__stage-dot ump__stage-dot--measure" data-ump-stage-measure></span>
+          <span class="ump__stage-sep" aria-hidden="true"></span>
+          <span class="ump__stage-dot" data-ump-stage-measure></span>
           <span class="ump__stage-label" data-ump-stage-measure-label>Measuring</span>
-          <span class="ump__stage-sep">→</span>
-          <span class="ump__stage-dot ump__stage-dot--ready" data-ump-stage-ready></span>
+          <span class="ump__stage-sep" aria-hidden="true"></span>
+          <span class="ump__stage-dot" data-ump-stage-ready></span>
           <span class="ump__stage-label" data-ump-stage-ready-label>Ready</span>
         </div>
       </div>
-      <div class="ump__queue" data-ump-queue hidden></div>
+
+      {%- comment -%} Files list: one row per gang sheet, copies are per row. {%- endcomment -%}
+      <div class="ump__files" data-ump-files hidden>
+        <div class="ump__files-head">
+          <h3 class="ump__card-title">Your files <span data-ump-files-count></span></h3>
+          <button class="ump__btn ump__btn--ghost" type="button" data-ump-replace>Add more</button>
+        </div>
+        <div class="ump__queue" data-ump-queue></div>
+      </div>
+
       <div class="ump__price-table-wrap" data-ump-price-table hidden></div>
     </div>
+
     <aside class="ump__inspector" aria-live="polite">
       <div class="ump__preview-card" data-ump-preview-card>
         <div class="ump__preview-head">
           <div>
-            <p class="ump__eyebrow">Detected size</p>
+            <p class="ump__eyebrow">Measured size</p>
             <h3 class="ump__size" data-ump-size>-- x --</h3>
-            <div class="ump__price-now" data-ump-price-now hidden>
-              <span>Your price</span>
-              <strong data-ump-price-now-value></strong>
-            </div>
           </div>
-          <span class="ump__badge" data-ump-badge>Locked</span>
+          <span class="ump__badge" data-ump-badge>Waiting</span>
         </div>
+        <div class="ump__price-now" data-ump-price-now hidden>
+          <span>Total</span>
+          <strong data-ump-price-now-value></strong>
+        </div>
+
+        {%- comment -%} Signature: true-scale roll preview. Tiles are drawn by JS at the printer's placement. {%- endcomment -%}
         <div class="ump__sheet" data-ump-sheet>
           <div class="ump__ruler ump__ruler--top" data-ump-ruler-top></div>
           <div class="ump__ruler ump__ruler--side" data-ump-ruler-side></div>
-          <div class="ump__sheet-plane">
+          <div class="ump__sheet-plane" data-ump-sheet-plane>
             <div class="ump__art" data-ump-art>
-              <span data-ump-art-label>Upload preview</span>
+              <span class="ump__art-empty" data-ump-art-label>Your design appears here</span>
               <em class="ump__art-dim ump__art-dim--w" data-ump-art-dim-w hidden></em>
               <em class="ump__art-dim ump__art-dim--h" data-ump-art-dim-h hidden></em>
             </div>
+            <span class="ump__sheet-cut" data-ump-sheet-cut hidden></span>
           </div>
         </div>
-        <div class="ump__metrics">
-          <div>
-            <span>Width</span>
-            <strong data-ump-width>--</strong>
-          </div>
-          <div>
-            <span>Height</span>
-            <strong data-ump-height>--</strong>
-          </div>
-          <div>
-            <span>Sheet</span>
-            <strong data-ump-sheet-label>--</strong>
-          </div>
+
+        <div class="ump__facts" data-ump-facts>
+          <span class="ump__fact"><small>Sheet</small><strong data-ump-sheet-label>--</strong></span>
+          <span class="ump__fact"><small>Width</small><strong data-ump-width>--</strong></span>
+          <span class="ump__fact"><small>Height</small><strong data-ump-height>--</strong></span>
+          <span class="ump__fact ump__quality" data-ump-quality hidden>
+            <small>Quality</small>
+            <strong><i class="ump__quality-dot" aria-hidden="true"></i><span data-ump-quality-badge></span></strong>
+            <span class="ump__quality-text" data-ump-quality-text hidden></span>
+          </span>
         </div>
-        <div class="ump__copies" data-ump-copies hidden>
-          <div class="ump__copies-row">
-            <span class="ump__copies-label">Copies of this design</span>
-            <div class="ump__copies-stepper">
-              <button type="button" class="ump__copies-btn" data-ump-copies-minus aria-label="Fewer copies">−</button>
-              <input type="number" class="ump__copies-input" data-ump-copies-input value="1" min="1" max="999" inputmode="numeric" aria-label="Copies">
-              <button type="button" class="ump__copies-btn" data-ump-copies-plus aria-label="More copies">+</button>
-            </div>
-          </div>
-          <small class="ump__copies-summary" data-ump-copies-summary></small>
-        </div>
-        <div class="ump__quality" data-ump-quality hidden>
-          <span class="ump__quality-badge" data-ump-quality-badge></span>
-          <span class="ump__quality-text" data-ump-quality-text></span>
-          <span class="ump__quality-meter" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-        </div>
-        <p class="ump__method" data-ump-method>Upload required before this product can be added to cart.</p>
+        <p class="ump__note" data-ump-note hidden></p>
       </div>
       <div class="ump__price-strip" data-ump-price-strip hidden></div>
       <div class="ump__actions">
         {%- comment -%} data-gs-event keeps third-party gang-sheet scripts (DripApps) from hijacking these buttons {%- endcomment -%}
-        <button class="ump__cart" type="button" data-ump-add data-gs-event="click" data-default-label="{{ block.settings.add_to_cart_label | default: 'Add to cart' | escape }}" disabled>
+        <button class="ump__btn ump__btn--primary ump__cart" type="button" data-ump-add data-gs-event="click" data-default-label="{{ block.settings.add_to_cart_label | default: 'Add to cart' | escape }}" disabled>
           <span>{{ block.settings.add_to_cart_label | default: 'Add to cart' }}</span>
         </button>
         {%- if block.settings.enable_checkout_button -%}
-          <button class="ump__checkout" type="button" data-ump-checkout data-gs-event="click" data-default-label="{{ block.settings.checkout_label | default: 'Checkout' | escape }}" disabled>
+          <button class="ump__btn ump__btn--accent ump__checkout" type="button" data-ump-checkout data-gs-event="click" data-default-label="{{ block.settings.checkout_label | default: 'Checkout' | escape }}" disabled>
             <span>{{ block.settings.checkout_label | default: 'Checkout' }}</span>
           </button>
         {%- endif -%}
@@ -180,13 +163,7 @@
   "settings": [
     {
       "type": "paragraph",
-      "content": "Upload-only main product section. It auto-detects one or more gang sheets, chooses the fitting sheet variants, then unlocks Add to cart and Checkout."
-    },
-    {
-      "type": "text",
-      "id": "eyebrow",
-      "label": "Eyebrow",
-      "default": "Print-ready upload"
+      "content": "Upload-only main product section. It measures each gang sheet, chooses the fitting sheet variant, then unlocks Add to cart and Checkout."
     },
     {
       "type": "text",
@@ -195,22 +172,10 @@
       "default": "Upload your gang sheet"
     },
     {
-      "type": "textarea",
-      "id": "subheading",
-      "label": "Subheading",
-      "default": "We measure each file, select the right sheet, and unlock checkout when every gang sheet is ready."
-    },
-    {
       "type": "text",
       "id": "upload_label",
       "label": "Upload button label",
       "default": "Upload files"
-    },
-    {
-      "type": "text",
-      "id": "support_text",
-      "label": "Support text",
-      "default": "PNG, JPG, TIFF, PSD, PDF, AI, EPS and SVG are supported. You can upload one or more gang sheets."
     },
     {
       "type": "text",
