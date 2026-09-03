@@ -2299,12 +2299,14 @@
             shopDomain: this.shopDomain,
             concurrency: window.ULMultipartUploader.DEFAULT_CONCURRENCY || 6,
             resume: resume,
+            registerAbort: function(abortFn) { self.state.abort = abortFn; },
             onPartDone: function(partNumber, etag) {
               if (!session) return;
               session.parts[partNumber] = etag;
               self.saveMpSession(fingerprint, session);
             }
           });
+          self.state.abort = null;
           if (mpResult) {
             intent.publicUrl = mpResult.fileUrl || intent.publicUrl;
             intent.storageProvider = mpResult.storageProvider;
@@ -2313,6 +2315,10 @@
           }
           break;
         } catch (mpErr) {
+          self.state.abort = null;
+          // Cancelled by the customer: keep the session (the next drop of the
+          // same file resumes) and stop here.
+          if (mpErr && mpErr.cancelled) throw new Error('Upload cancelled.');
           // In-place resume: fresh URLs for the parts still missing, twice,
           // before giving up on multipart for this attempt.
           if (mpErr && mpErr.resumable && session && mpAttempt <= 2) {

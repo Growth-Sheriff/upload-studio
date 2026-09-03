@@ -29,9 +29,10 @@
     return new Promise(function(resolve) { setTimeout(resolve, ms); });
   }
 
-  function putPart(url, blob, onProgress) {
+  function putPart(url, blob, onProgress, onXhr) {
     return new Promise(function(resolve, reject) {
       var xhr = new XMLHttpRequest();
+      if (typeof onXhr === 'function') onXhr(xhr);
       xhr.open('PUT', url, true);
       xhr.upload.onprogress = function(ev) {
         if (ev.lengthComputable && typeof onProgress === 'function') onProgress(ev.loaded);
@@ -48,16 +49,25 @@
         }
       };
       xhr.onerror = function() { reject(new Error('Network error during part upload')); };
-      xhr.onabort = function() { reject(new Error('Part upload aborted')); };
+      xhr.onabort = function() {
+        var abortErr = new Error('Upload cancelled');
+        abortErr.cancelled = true;
+        reject(abortErr);
+      };
       xhr.send(blob);
     });
   }
 
-  async function putPartWithRetry(part, blob, onProgress, maxRetries) {
+  async function putPartWithRetry(part, blob, onProgress, maxRetries, control) {
     var attempt = 0;
     var lastErr = null;
     var partProgressLast = 0;
     while (attempt < maxRetries) {
+      if (control && control.aborted) {
+        var cancelledErr = new Error('Upload cancelled');
+        cancelledErr.cancelled = true;
+        throw cancelledErr;
+      }
       try {
         if (typeof onProgress === 'function' && partProgressLast > 0) {
           onProgress(-partProgressLast);
@@ -68,10 +78,13 @@
           partProgressLast = loaded;
           if (typeof onProgress === 'function' && delta !== 0) onProgress(delta);
         };
-        return await putPart(part.url, blob, trackedOnProgress);
+        return await putPart(part.url, blob, trackedOnProgress, function(xhr) {
+          if (control) control.active.push(xhr);
+        });
       } catch (err) {
         attempt += 1;
         lastErr = err;
+        if (err && err.cancelled) break;
         // A 403 means the presigned URL expired — retrying the same URL is
         // pointless; let the caller resume with fresh URLs.
         if (err && err.status === 403) break;
@@ -144,9 +157,19 @@
     Object.keys(doneMap).forEach(function(n) { etags[n] = { partNumber: Number(n), etag: doneMap[n] }; });
     var firstError = null;
 
+    // Cancellation: the caller gets an abort function that stops queued parts
+    // and aborts the in-flight XHRs. Landed parts stay on R2 for a resume.
+    var control = { aborted: false, active: [] };
+    if (typeof options.registerAbort === 'function') {
+      options.registerAbort(function() {
+        control.aborted = true;
+        control.active.forEach(function(xhr) { try { xhr.abort(); } catch (_) {} });
+      });
+    }
+
     async function worker() {
       while (true) {
-        if (firstError) return;
+        if (firstError || control.aborted) return;
         var idx = queueIdx++;
         if (idx >= pending.length) return;
         var part = pending[idx];
@@ -154,7 +177,7 @@
         var end = Math.min(start + partSize, fileSize);
         var blob = file.slice(start, end);
         try {
-          var etag = await putPartWithRetry(part, blob, progressTick, PART_RETRY_MAX);
+          var etag = await putPartWithRetry(part, blob, progressTick, PART_RETRY_MAX, control);
           etags[part.partNumber] = { partNumber: part.partNumber, etag: etag };
           if (onPartDone) { try { onPartDone(part.partNumber, etag); } catch (_) {} }
         } catch (err) {
@@ -168,12 +191,14 @@
     for (var i = 0; i < concurrency; i++) workers.push(worker());
     await Promise.all(workers);
 
-    if (firstError) {
+    if (firstError || control.aborted) {
       // Do NOT abort on failure: the parts that landed stay on R2 so the
       // caller can resume. The caller aborts explicitly when giving up.
-      var resumable = new Error(firstError.message || 'Part upload failed');
-      resumable.resumable = true;
-      resumable.status = firstError.status;
+      var failure = firstError || { message: 'Upload cancelled', cancelled: true };
+      var resumable = new Error(failure.message || 'Part upload failed');
+      resumable.resumable = !failure.cancelled;
+      resumable.cancelled = Boolean(failure.cancelled || control.aborted);
+      resumable.status = failure.status;
       throw resumable;
     }
 

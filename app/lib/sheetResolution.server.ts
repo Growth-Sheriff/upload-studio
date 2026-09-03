@@ -425,22 +425,43 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
   return { kind: 'ok', dimensions, resolution: resolution as unknown as Record<string, unknown>, config: effectiveConfig, pricingMode: 'sheet' }
 }
 
-/** Metadata shape for dimensions the browser probed from file headers. */
+const ADOBE_DEFAULT_DPI = 72
+
+/** Metadata shape for dimensions the browser probed from file headers.
+ *  Mirrors the server's no-DPI rule (uploadLifecycle.resolveBestDimensions):
+ *  embedded DPI wins; otherwise Adobe's 72 DPI when the short edge fits the
+ *  roll; otherwise inches stay 0 and the measurement policy anchors to the
+ *  roll width — so the estimate lands on the same numbers the server will. */
 export function metadataFromProbe(probe: {
   widthPx: number
   heightPx: number
   dpi?: number | null
   dpiSource?: string | null
+  rollWidthIn?: number | null
 }): UploadLifecycleMetadata {
   const widthPx = Math.max(0, Math.round(Number(probe.widthPx) || 0))
   const heightPx = Math.max(0, Math.round(Number(probe.heightPx) || 0))
-  const dpi = Math.max(0, Number(probe.dpi) || 0)
+  const documentDpi = Math.max(0, Number(probe.dpi) || 0)
+  const rollWidthIn = Number(probe.rollWidthIn) > 0 ? Number(probe.rollWidthIn) : 22
+
+  let dpi = documentDpi
+  let sizingSource = 'document_dpi'
+  if (!(dpi > 0)) {
+    const shortEdgeIn = Math.min(widthPx, heightPx) / ADOBE_DEFAULT_DPI
+    if (shortEdgeIn <= rollWidthIn + 0.5) {
+      dpi = ADOBE_DEFAULT_DPI
+      sizingSource = 'adobe_default_dpi'
+    } else {
+      sizingSource = 'client_probe'
+    }
+  }
+
   return {
     widthPx,
     heightPx,
     dpi,
-    documentDpi: dpi || undefined,
-    documentDpiSource: probe.dpiSource || null,
+    documentDpi: documentDpi || undefined,
+    documentDpiSource: documentDpi > 0 ? probe.dpiSource || null : null,
     trimmedWidthPx: widthPx,
     trimmedHeightPx: heightPx,
     trimmedOffsetXPx: 0,
@@ -448,7 +469,7 @@ export function metadataFromProbe(probe: {
     measurementWidthPx: widthPx,
     measurementHeightPx: heightPx,
     effectiveDpi: dpi,
-    sizingSource: 'client_probe',
+    sizingSource,
     widthIn: dpi > 0 ? Number((widthPx / dpi).toFixed(2)) : 0,
     heightIn: dpi > 0 ? Number((heightPx / dpi).toFixed(2)) : 0,
     measurementMode: 'full',

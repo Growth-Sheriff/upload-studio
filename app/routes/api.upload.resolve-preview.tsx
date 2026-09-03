@@ -8,6 +8,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from '@remix-run/node'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
+import { getMainProductRollWidth } from '~/lib/mainProductMeasurement.server'
 import {
   metadataFromProbe,
   normalizeProductId,
@@ -70,6 +71,7 @@ export async function action({ request }: ActionFunctionArgs) {
         heightPx,
         dpi,
         dpiSource: typeof body.dpiSource === 'string' ? body.dpiSource : null,
+        rollWidthIn: getMainProductRollWidth(body.rollWidthIn),
       }),
       quantity,
       selectedVariantId,
