@@ -1056,35 +1056,6 @@
   position: relative;
 }
 
-.ump__utilization {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-  color: var(--ump-muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.ump__utilization i {
-  display: inline-block;
-  width: 110px;
-  height: 6px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #e9eef6;
-}
-
-.ump__utilization i::after {
-  content: "";
-  display: block;
-  width: var(--ump-util, 0%);
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--ump-accent), var(--ump-success));
-  transition: width 320ms ease;
-}
-
 /* Live price next to the detected size — the number buyers decide on. */
 .ump__price-now {
   display: grid;
@@ -1523,9 +1494,5 @@
 
   .ump__actions {
     grid-template-columns: 1fr;
-  }
-
-  .ump__utilization i {
-    width: 80px;
   }
 }

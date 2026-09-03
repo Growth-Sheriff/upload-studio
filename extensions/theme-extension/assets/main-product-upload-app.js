@@ -325,8 +325,112 @@
     this.renderPriceStrip();
     this.customerPricingPromise = this.loadCustomerPricingContext();
     this.productConfigPromise = this.loadProductConfig();
+    this.restorePersistedItems();
     this.render();
   }
+
+  // ── Session persistence ─────────────────────────────────────────────────
+  // Ready uploads survive a page refresh: the serializable part of each item
+  // is kept in localStorage (per shop/product/customer) and re-verified
+  // against the server on restore, so purchased or expired uploads never
+  // come back. Blob preview URLs are never stored (invalid after reload).
+  var PERSIST_TTL_MS = 24 * 60 * 60 * 1000;
+
+  MainProductUpload.prototype.getPersistKey = function() {
+    return ['umpItems', this.shopDomain || 'shop', this.productId || 'product', this.customerId || 'guest'].join(':');
+  };
+
+  MainProductUpload.prototype.persistItems = function() {
+    if (!this.exactCartStorageEnabled) return;
+    try {
+      var items = (this.state.items || []).filter(this.isCartReadyItem.bind(this)).map(function(item) {
+        return {
+          uploadId: item.uploadId,
+          itemId: item.itemId,
+          fileName: item.fileName,
+          lastFile: item.lastFile ? { name: item.lastFile.name, size: item.lastFile.size, type: item.lastFile.type } : null,
+          originalUrl: item.originalUrl,
+          thumbnailUrl: item.thumbnailUrl,
+          widthIn: item.widthIn,
+          heightIn: item.heightIn,
+          widthPx: item.widthPx,
+          heightPx: item.heightPx,
+          effectiveDpi: item.effectiveDpi,
+          documentDpi: item.documentDpi,
+          sizingSource: item.sizingSource,
+          selectedResult: item.selectedResult,
+          selectedVariantId: item.selectedVariantId,
+          isMultipart: item.isMultipart,
+          uploadStartTime: item.uploadStartTime,
+          uploadEndTime: item.uploadEndTime
+        };
+      });
+      if (!items.length) {
+        window.localStorage.removeItem(this.getPersistKey());
+        return;
+      }
+      window.localStorage.setItem(this.getPersistKey(), JSON.stringify({ savedAt: Date.now(), items: items }));
+    } catch (_) {}
+  };
+
+  MainProductUpload.prototype.restorePersistedItems = function() {
+    if (!this.exactCartStorageEnabled) return;
+    var stored = null;
+    try { stored = parseJson(window.localStorage.getItem(this.getPersistKey()), null); } catch (_) { return; }
+    if (!stored || !Array.isArray(stored.items) || !stored.items.length) return;
+    if (!(stored.savedAt > 0) || Date.now() - stored.savedAt > PERSIST_TTL_MS) {
+      try { window.localStorage.removeItem(this.getPersistKey()); } catch (_) {}
+      return;
+    }
+    var items = stored.items.filter(function(item) {
+      return item && item.uploadId && item.selectedVariantId && item.selectedResult;
+    }).map(function(item) {
+      item.status = 'ready';
+      item.localPreviewUrl = '';
+      return item;
+    });
+    if (!items.length) return;
+
+    // Optimistic restore, then server verification (drop purchased/expired).
+    this.state.items = items;
+    this.loadUploadItem(items[items.length - 1]);
+    this.state.status = 'ready';
+    this.setStage(null);
+    var self = this;
+    Promise.all(items.map(function(item) {
+      return fetch(self.apiBase + '/api/upload/status/' + encodeURIComponent(item.uploadId) + '?shopDomain=' + encodeURIComponent(self.shopDomain))
+        .then(function(res) { return res.ok ? res.json() : null; })
+        .catch(function() { return null; });
+    })).then(function(results) {
+      var kept = [];
+      results.forEach(function(status, index) {
+        var item = items[index];
+        if (!status || status.error) return;                 // gone on the server
+        if (status.orderId) return;                           // already purchased
+        var canAdd = !status.capabilities || status.capabilities.canAddToCart !== false;
+        if (!canAdd) return;
+        var first = status.items && status.items[0];
+        if (first) {
+          item.thumbnailUrl = first.thumbnailUrl || item.thumbnailUrl;
+          item.originalUrl = first.originalUrl || item.originalUrl;
+        }
+        kept.push(item);
+      });
+      var currentId = self.state.uploadId;
+      self.state.items = kept;
+      if (!kept.length) {
+        self.resetMeasurement(null);
+        self.state.items = [];
+      } else if (!kept.some(function(item) { return sameUploadId(item.uploadId, currentId); })) {
+        self.loadUploadItem(kept[kept.length - 1]);
+      } else {
+        var current = kept.find(function(item) { return sameUploadId(item.uploadId, currentId); });
+        if (current) self.loadUploadItem(current);
+      }
+      self.persistItems();
+      self.render();
+    });
+  };
 
   MainProductUpload.prototype.bindDom = function() {
     this.workspace = this.root.querySelector('.ump__workspace');
@@ -371,8 +475,6 @@
     this.rulerSide = this.root.querySelector('[data-ump-ruler-side]');
     this.priceNow = this.root.querySelector('[data-ump-price-now]');
     this.priceNowValue = this.root.querySelector('[data-ump-price-now-value]');
-    this.utilization = this.root.querySelector('[data-ump-utilization]');
-    this.utilizationText = this.root.querySelector('[data-ump-utilization-text]');
     this.artDimW = this.root.querySelector('[data-ump-art-dim-w]');
     this.artDimH = this.root.querySelector('[data-ump-art-dim-h]');
     this.addButton = this.root.querySelector('[data-ump-add]');
@@ -1375,6 +1477,7 @@
     if (!replaced) items.push(snapshot);
     this.state.items = items;
     this.state.activeItemId = snapshot.uploadId;
+    this.persistItems();
   };
 
   MainProductUpload.prototype.getReadyItems = function() {
@@ -1455,6 +1558,7 @@
         this.state.items = [];
       }
     }
+    this.persistItems();
     this.render();
   };
 
@@ -1572,20 +1676,6 @@
     if (this.artDimH) {
       this.artDimH.hidden = !hasSize;
       if (hasSize) this.artDimH.textContent = formatInches(this.state.heightIn);
-    }
-    if (this.utilization) {
-      var sheetArea = sheet.width * sheet.height;
-      var showUtil = hasSize && sheetArea > 0 && !this.isExactMeasuredMode() && Boolean(this.state.selectedResult);
-      this.utilization.hidden = !showUtil;
-      if (showUtil) {
-        var util = Math.max(0, Math.min(100, ((this.state.widthIn * this.state.heightIn) / sheetArea) * 100));
-        var bar = this.utilization.querySelector('i');
-        if (bar) bar.style.setProperty('--ump-util', util.toFixed(0) + '%');
-        if (this.utilizationText) {
-          this.utilizationText.textContent = 'Sheet usage ' + util.toFixed(0) + '%' +
-            (util < 60 ? ' — room to add more designs' : util >= 92 ? ' — fully used' : '');
-        }
-      }
     }
   };
 

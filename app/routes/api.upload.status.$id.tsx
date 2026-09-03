@@ -448,6 +448,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       mode: upload.mode,
       productId: upload.productId,
       variantId: upload.variantId,
+      // Lets the storefront drop restored uploads that were already purchased.
+      orderId: upload.orderId,
       overallPreflight,
       orderabilityStatus,
       stages: {
