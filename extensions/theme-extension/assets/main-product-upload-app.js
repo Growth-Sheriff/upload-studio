@@ -1971,7 +1971,7 @@
   // places it (rotated when that fits more copies), and every requested copy
   // is tiled from the top-left corner. Very long sheets are cut at 2.4:1 with
   // a marker so the short edge (the roll width) always stays exact.
-  var PREVIEW_MAX_RATIO = 2.4;
+  var PREVIEW_MAX_RATIO = 4; // 22x6 … 22x88 draw in full; longer rolls are cut with a marker
   var PREVIEW_MAX_TILES = 200;
 
   function fitTiles(tileW, tileH, longIn, shortIn) {
