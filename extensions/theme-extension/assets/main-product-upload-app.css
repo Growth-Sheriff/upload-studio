@@ -539,6 +539,36 @@
   text-transform: none;
 }
 
+/* Explicit warning that the highlighted size was picked by the system. */
+.ump__price-notice {
+  margin: 0 0 10px;
+  padding: 9px 11px;
+  border: 1px solid #f5d38a;
+  border-left: 4px solid #d98a00;
+  border-radius: 10px;
+  background: #fff8e6;
+  color: #7a4d00;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ump__price-notice strong {
+  color: #7a4d00;
+}
+
+.ump__price-auto {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #fff3d6;
+  color: #7a4d00;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
 .ump__price-table {
   width: 100%;
   border-collapse: separate;

@@ -965,6 +965,7 @@
       return [
         '<tr class="', selected ? 'is-selected' : '', unavailable ? ' is-unavailable' : '', '">',
           '<td>', selected ? '<span class="ump__price-check">✓</span>' : '', '<strong>', escapeHtml(getVariantLabel(variant)), '</strong>',
+            selected ? '<span class="ump__price-auto">Auto-selected</span>' : '',
             qty > 1 ? '<span class="ump__price-qty">×' + qty + '</span>' : '',
           '</td>',
           '<td>', escapeHtml(formatMoney(variant.price, this.currency)), '</td>',
@@ -972,11 +973,20 @@
       ].join('');
     }, this).join('');
 
+    var noticeHtml = selectedCount
+      ? '<p class="ump__price-notice" role="status">' +
+          '<strong>Auto-selected by the system.</strong> Based on the measured size of your file' +
+          (selectedCount === 1 ? ', the highlighted sheet size was chosen automatically' : ', the highlighted sheet sizes were chosen automatically') +
+          ' &mdash; please check it before you add to cart.' +
+        '</p>'
+      : '';
+
     this.priceTable.innerHTML = [
       '<div class="ump__price-table-head">',
         '<span>Sheet sizes &amp; prices</span>',
-        '<small>', selectedCount ? (selectedCount === 1 ? 'Selected for your file' : selectedCount + ' sizes selected') : 'Auto-selected after upload', '</small>',
+        '<small>', selectedCount ? 'System selection' : 'Selected automatically after upload', '</small>',
       '</div>',
+      noticeHtml,
       '<table class="ump__price-table">',
         '<thead><tr><th>Sheet size</th><th>Price</th></tr></thead>',
         '<tbody>', rows, '</tbody>',
