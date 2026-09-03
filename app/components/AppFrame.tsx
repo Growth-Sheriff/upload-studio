@@ -1,11 +1,10 @@
-import { Link, Outlet, useLocation } from '@remix-run/react'
-import { Box, Frame, Navigation, Text } from '@shopify/polaris'
+import { Link, Outlet, useLocation, useNavigation } from '@remix-run/react'
+import { Box, Frame, Loading, Navigation, Text } from '@shopify/polaris'
 import {
   ChartVerticalFilledIcon,
   ChatIcon,
   CreditCardIcon,
   HomeIcon,
-  ImageIcon,
   ListBulletedIcon,
   MenuIcon,
   OrderIcon,
@@ -27,6 +26,10 @@ interface AppFrameProps {
 // the sidebar, page content in the right column with a mobile menu toggle.
 export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0, notice }: AppFrameProps) {
   const location = useLocation()
+  // Remix navigation is client-side and single-click; page loaders can take a
+  // moment, so the frame shows Polaris' progress bar until the new route
+  // renders instead of leaving the click without feedback.
+  const navigation = useNavigation()
   const [mobileNavigationActive, setMobileNavigationActive] = useState(false)
 
   const toggleMobileNavigationActive = useCallback(
@@ -108,12 +111,6 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0, notice }:
             ],
           },
           {
-            url: '/app/asset-sets',
-            label: 'Asset Sets',
-            icon: ImageIcon,
-            selected: isSelected('/app/asset-sets'),
-          },
-          {
             url: '/app/queue',
             label: 'Production Queue',
             icon: ListBulletedIcon,
@@ -168,6 +165,7 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0, notice }:
       showMobileNavigation={mobileNavigationActive}
       onNavigationDismiss={toggleMobileNavigationActive}
     >
+      {navigation.state !== 'idle' ? <Loading /> : null}
       <div className="us-content">
         <button
           type="button"

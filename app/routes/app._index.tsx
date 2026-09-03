@@ -4,7 +4,7 @@ import { useLoaderData, useNavigate, useFetcher } from "@remix-run/react";
 import {
   Page, Card, Text, BlockStack, Banner,
   DataTable, Badge, Button, InlineStack, Box,
-  Grid, ProgressBar, Divider, Icon, Select,
+  Grid, ProgressBar, Divider, Icon, Select, InlineGrid,
 } from "@shopify/polaris";
 import {
   OrderIcon,
@@ -34,7 +34,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       data: {
         shopDomain,
         accessToken: session.accessToken || "",
-        plan: "starter",
+        plan: "commission",
         billingStatus: "active",
         storageProvider: "r2",
         onboardingCompleted: false,
@@ -192,30 +192,19 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 
-const statusLabels: Record<string, string> = {
-  ok: "Ready",
-  warning: "Review",
-  error: "Needs Fix",
-  pending: "Processing",
-  draft: "Draft",
-  uploaded: "Received",
-  processing: "Processing",
-  needs_review: "Pending",
-  approved: "Approved",
-  rejected: "Rejected",
-  blocked: "On Hold",
-  printed: "Completed",
-};
-
+import { StatCard } from "~/components/StatCard";
+import {
+  UPLOAD_STATUS_LABELS,
+  preflightLabel,
+  preflightTone,
+  uploadStatusLabel,
+  uploadStatusTone,
+} from "~/lib/uploadStatus";
 
 function StatusBadge({ status }: { status: string }) {
-  const toneMap: Record<string, "success" | "warning" | "critical" | "info" | "attention"> = {
-    ok: "success", warning: "attention", error: "warning", pending: "info",
-    draft: "info", uploaded: "success", processing: "info",
-    needs_review: "attention", approved: "success", rejected: "critical",
-    blocked: "attention", printed: "success",
-  };
-  return <Badge tone={toneMap[status] || "info"}>{statusLabels[status] || status}</Badge>;
+  const label = UPLOAD_STATUS_LABELS[status] ? uploadStatusLabel(status) : preflightLabel(status);
+  const tone = UPLOAD_STATUS_LABELS[status] ? uploadStatusTone(status) : preflightTone(status);
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
 
@@ -526,68 +515,29 @@ export default function AppDashboard() {
         )}
 
 
-        <Grid>
-          <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}>
-            <Card>
-              <BlockStack gap="200">
-                <InlineStack align="space-between">
-                  <Text as="h3" variant="headingSm" tone="subdued">Uploads This Month</Text>
-                  <Icon source={OrderIcon} tone="base" />
-                </InlineStack>
-                <Text as="p" variant="heading2xl">{stats.monthlyUploads}</Text>
-                {stats.monthlyLimit > 0 && (
-                  <BlockStack gap="100">
-                    <ProgressBar progress={(stats.monthlyUploads / stats.monthlyLimit) * 100} size="small" />
-                    <Text as="p" variant="bodySm" tone="subdued">
-                      {stats.monthlyLimit - stats.monthlyUploads} remaining
-                    </Text>
-                  </BlockStack>
-                )}
-              </BlockStack>
-            </Card>
-          </Grid.Cell>
-
-          <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}>
-            <Card>
-              <BlockStack gap="200">
-                <InlineStack align="space-between">
-                  <Text as="h3" variant="headingSm" tone="subdued">Orders This Month</Text>
-                  <Icon source={CartIcon} tone="success" />
-                </InlineStack>
-                <Text as="p" variant="heading2xl">{stats.monthlyOrders}</Text>
-                <Text as="p" variant="bodySm" tone="subdued">
-                  {conversionRate}% conversion rate
-                </Text>
-              </BlockStack>
-            </Card>
-          </Grid.Cell>
-
-          <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}>
-            <Card>
-              <BlockStack gap="200">
-                <InlineStack align="space-between">
-                  <Text as="h3" variant="headingSm" tone="subdued">Products Configured</Text>
-                  <Icon source={ProductIcon} tone="base" />
-                </InlineStack>
-                <Text as="p" variant="heading2xl">{stats.productsConfigured}</Text>
-                <Text as="p" variant="bodySm" tone="subdued">Ready for customization</Text>
-              </BlockStack>
-            </Card>
-          </Grid.Cell>
-
-          <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 3, xl: 3 }}>
-            <Card>
-              <BlockStack gap="200">
-                <InlineStack align="space-between">
-                  <Text as="h3" variant="headingSm" tone="subdued">Pending Review</Text>
-                  <Icon source={ClockIcon} tone="warning" />
-                </InlineStack>
-                <Text as="p" variant="heading2xl">{stats.pendingQueue}</Text>
-                <Button variant="plain" onClick={() => navigate("/app/queue")}>View Queue</Button>
-              </BlockStack>
-            </Card>
-          </Grid.Cell>
-        </Grid>
+        <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="400">
+          <StatCard title="Uploads this month" value={stats.monthlyUploads} icon={OrderIcon} />
+          <StatCard
+            title="Orders this month"
+            value={stats.monthlyOrders}
+            icon={CartIcon}
+            subtitle={`${conversionRate}% of uploads became orders`}
+          />
+          <StatCard
+            title="Products with upload"
+            value={stats.productsConfigured}
+            icon={ProductIcon}
+            subtitle="Upload block enabled"
+          />
+          <StatCard
+            title="Ordered – check file"
+            value={stats.pendingQueue}
+            icon={ClockIcon}
+            badge={stats.pendingQueue > 0 ? "Action" : undefined}
+            badgeTone="attention"
+            action={<Button variant="plain" onClick={() => navigate("/app/queue")}>Open production queue</Button>}
+          />
+        </InlineGrid>
 
 
         <Grid>
@@ -628,7 +578,6 @@ export default function AppDashboard() {
                   <Divider />
                   <BlockStack gap="200">
                     <Button fullWidth onClick={() => navigate("/app/products")}>Configure Products</Button>
-                    <Button fullWidth onClick={() => navigate("/app/asset-sets")}>Manage 3D Assets</Button>
                   </BlockStack>
                 </BlockStack>
               </Card>

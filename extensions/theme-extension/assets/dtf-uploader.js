@@ -96,7 +96,7 @@
             uploadEnabled: true,
             tshirtEnabled: false,
             allowedFileTypes: ALLOWED_EXTENSIONS,
-            maxFileSizeMB: 1024, // 1GB default, backend validates per plan
+            maxFileSizeMB: 1024, // 1GB default, backend validates the ceiling
             minDPI: 150,
             extraQuestions: [],
             bulkDiscountThreshold: 10,

@@ -210,7 +210,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return corsJson({
     shop: {
       domain: shop.shopDomain,
-      plan: shop.plan,
     },
     whiteLabel,
     assetSet,

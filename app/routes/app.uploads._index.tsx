@@ -35,7 +35,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       data: {
         shopDomain,
         accessToken: session.accessToken || '',
-        plan: 'starter',
+        plan: 'commission',
         billingStatus: 'active',
         storageProvider: 'r2',
         settings: {},
@@ -192,36 +192,23 @@ export async function loader({ request }: LoaderFunctionArgs) {
   })
 }
 
+import {
+  PREFLIGHT_LABELS,
+  PREFLIGHT_TONES,
+  UPLOAD_STATUS_LABELS,
+  UPLOAD_STATUS_TONES,
+} from '~/lib/uploadStatus'
+
 function StatusBadge({ status }: { status: string }) {
 
   const labelMap: Record<string, string> = {
-    ok: 'Ready ✓',
-    warning: 'Review',
-    error: 'Check',
-    pending: 'Processing',
-    draft: 'Draft',
-    uploaded: 'Received',
-    processing: 'Processing',
-    needs_review: 'Pending',
-    approved: 'Approved ✓',
-    rejected: 'Rejected',
-    blocked: 'On Hold',
-    printed: 'Completed ✓',
+    ...PREFLIGHT_LABELS,
+    ...UPLOAD_STATUS_LABELS,
   }
 
   const toneMap: Record<string, 'success' | 'warning' | 'critical' | 'info' | 'attention'> = {
-    ok: 'success',
-    warning: 'info',
-    error: 'attention',
-    pending: 'info',
-    draft: 'info',
-    uploaded: 'success',
-    processing: 'info',
-    needs_review: 'info',
-    approved: 'success',
-    rejected: 'critical',
-    blocked: 'attention',
-    printed: 'success',
+    ...PREFLIGHT_TONES,
+    ...UPLOAD_STATUS_TONES,
   }
   return <Badge tone={toneMap[status] || 'info'}>{labelMap[status] || status}</Badge>
 }
@@ -517,15 +504,9 @@ export default function UploadsPage() {
                       <ChoiceList
                         title="Status"
                         titleHidden
-                        choices={[
-                          { label: 'Draft', value: 'draft' },
-                          { label: 'Uploaded', value: 'uploaded' },
-                          { label: 'Processing', value: 'processing' },
-                          { label: 'Needs Review', value: 'needs_review' },
-                          { label: 'Approved', value: 'approved' },
-                          { label: 'Rejected', value: 'rejected' },
-                          { label: 'Blocked', value: 'blocked' },
-                        ]}
+                        choices={['draft', 'uploaded', 'processing', 'needs_review', 'approved', 'rejected', 'blocked'].map(
+                          (value) => ({ label: UPLOAD_STATUS_LABELS[value], value })
+                        )}
                         selected={filters.status ? [filters.status] : []}
                         onChange={handleStatusChange}
                       />

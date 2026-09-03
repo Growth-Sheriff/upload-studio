@@ -56,7 +56,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       data: {
         shopDomain,
         accessToken: session.accessToken || "",
-        plan: "starter",
+        plan: "commission",
         billingStatus: "active",
         storageProvider: "r2",
         settings: {},
@@ -109,6 +109,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
       isEnabled: config?.uploadEnabled ?? config?.enabled ?? false,
       mode: config?.mode || null,
     };
+  });
+
+  // Upload-enabled products always come first, then the rest by title.
+  products.sort((a, b) => {
+    if (a.isEnabled !== b.isEnabled) return a.isEnabled ? -1 : 1;
+    return String(a.title || "").localeCompare(String(b.title || ""));
   });
 
   const configuredCount = productConfigs.filter(c => c.enabled || c.uploadEnabled).length;
@@ -190,14 +196,8 @@ export default function ProductsPage() {
             <BlockStack gap="200">
               <Text as="h2" variant="headingMd">Product Configuration</Text>
               <Text as="p" tone="subdued">
-                {configuredCount} of {products.length} products configured for upload
+                {configuredCount} of {products.length} products configured for upload. Products with upload enabled are listed first.
               </Text>
-
-              {shopPlan === "starter" && (
-                <Banner tone="info">
-                  Starter plan active. Upgrade to Pro for 3D Designer and more features.
-                </Banner>
-              )}
             </BlockStack>
           </Card>
         </Layout.Section>

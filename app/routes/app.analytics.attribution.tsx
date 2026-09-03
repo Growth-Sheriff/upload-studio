@@ -169,40 +169,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 }
 
-function StatCard({
-  title,
-  value,
-  subtitle,
-  badge,
-  badgeTone,
-}: {
-  title: string
-  value: string | number
-  subtitle?: string
-  badge?: string
-  badgeTone?: 'success' | 'info' | 'warning' | 'critical'
-}) {
-  return (
-    <Card>
-      <BlockStack gap="300">
-        <InlineStack align="space-between" blockAlign="center">
-          <Text as="p" variant="bodyMd" tone="subdued">
-            {title}
-          </Text>
-          {badge && <Badge tone={badgeTone}>{badge}</Badge>}
-        </InlineStack>
-        <Text as="p" variant="headingXl" fontWeight="bold">
-          {typeof value === 'number' ? value.toLocaleString() : value}
-        </Text>
-        {subtitle && (
-          <Text as="p" variant="bodySm" tone="subdued">
-            {subtitle}
-          </Text>
-        )}
-      </BlockStack>
-    </Card>
-  )
-}
+import { StatCard } from '~/components/StatCard'
 
 function PlatformCard({
   platform,

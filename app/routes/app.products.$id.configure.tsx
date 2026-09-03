@@ -869,37 +869,11 @@ export default function ProductConfigurePage() {
 
           <Layout.Section>
             <Card>
-              <BlockStack gap="400">
-                <Text as="h2" variant="headingMd">🎨 Upload Mode</Text>
-                <Text as="p" tone="subdued">
-                  Select the upload mode for this product. Each mode has different features and customer experience.
-                </Text>
-
-                <BlockStack gap="200">
-                  <RadioButton
-                    label="DTF Transfer"
-                    helpText="Customers upload their design for DTF (Direct to Film) transfer printing. Includes optional T-Shirt add-on."
-                    checked={mode === "dtf"}
-                    id="mode-dtf"
-                    name="mode-radio"
-                    onChange={() => setMode("dtf")}
-                  />
-                  <RadioButton
-                    label="Mode 2 (Coming Soon)"
-                    helpText="Second mode will be available soon."
-                    checked={mode === "mode2"}
-                    id="mode-mode2"
-                    name="mode-radio"
-                    disabled
-                    onChange={() => {}}
-                  />
-                </BlockStack>
-
-                <Divider />
-
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingMd">Upload on this product</Text>
                 <Checkbox
-                  label="Enable upload widget for this product"
-                  helpText="When enabled, customers can upload their designs on the product page"
+                  label="Customers can upload a design on this product page"
+                  helpText="Keep this on. Turn it off only to hide the upload block on this product without removing it from the theme."
                   checked={uploadEnabled}
                   onChange={setUploadEnabled}
                 />
@@ -910,17 +884,30 @@ export default function ProductConfigurePage() {
           <Layout.Section>
             <Card>
               <BlockStack gap="400">
-                <Text as="h2" variant="headingMd">DTF Sheet Pricing</Text>
-                <Text as="p" tone="subdued">
-                  Keep existing products on legacy area pricing, or enable sheet-based pricing for products
-                  that should calculate required sheet count from product variants.
+                <Text as="h2" variant="headingMd">How the customer is charged</Text>
+                <Text as="p">
+                  This setting is for the <strong>Variant Gang Sheet Upload</strong> block. It decides which
+                  Shopify variant (sheet size) goes to the cart after the customer uploads a file.
                 </Text>
+                <BlockStack gap="150">
+                  <Text as="p">
+                    <strong>Sheet pricing (recommended):</strong> the customer drops a file → the app measures it
+                    (for example 10" × 8") → it picks the smallest sheet variant that fits (for example 22"x12") →
+                    that variant and price go to the cart. If the customer asks for 5 copies, the app nests them
+                    and adds as many sheets as needed. Your variants must be named with their size, like
+                    <strong> 22x12</strong>, <strong>22"x24"</strong>, <strong>22 x 36</strong>.
+                  </Text>
+                  <Text as="p">
+                    <strong>Area pricing (old products):</strong> the price is not taken from variants; the old
+                    per-area rule stays. Use only for products that were already set up this way.
+                  </Text>
+                </BlockStack>
 
                 <Select
-                  label="Pricing Mode"
+                  label="Pricing"
                   options={[
-                    { label: "Legacy Area Pricing (safe default)", value: "area" },
-                    { label: "Sheet Pricing from Variants", value: "sheet" },
+                    { label: "Sheet pricing from variants (recommended)", value: "sheet" },
+                    { label: "Area pricing (old products only)", value: "area" },
                   ]}
                   value={builderConfig.pricingMode}
                   onChange={(value) => {
@@ -929,7 +916,7 @@ export default function ProductConfigurePage() {
                       pricingMode: value as BuilderConfig["pricingMode"],
                     }));
                   }}
-                  helpText="Default remains area pricing so existing tenant flows do not change until you enable sheet pricing per product."
+                  helpText="Sheet pricing needs size-named variants. The fields below are only for products whose size is split into two options or has extra options like material."
                 />
 
                 <FormLayout>
@@ -1017,11 +1004,11 @@ export default function ProductConfigurePage() {
                   />
                 </FormLayout>
 
-                <Banner tone={builderConfig.pricingMode === "sheet" ? "success" : "info"}>
+                <Banner tone={builderConfig.pricingMode === "sheet" ? "success" : "warning"}>
                   <p>
                     {builderConfig.pricingMode === "sheet"
-                      ? "Sheet pricing is enabled for this product. Storefront will resolve exact Shopify variants from sheet size plus modal selections."
-                      : "Legacy area pricing stays active for this product. This preserves existing storefront behavior."}
+                      ? "Sheet pricing is on: uploads are measured and the matching sheet variant is added to the cart at your variant price."
+                      : "Area pricing is on: variants are ignored for this product. Switch to sheet pricing unless this is an old product that must keep its area rule."}
                   </p>
                 </Banner>
               </BlockStack>
@@ -1467,46 +1454,6 @@ export default function ProductConfigurePage() {
           </Card>
         </Layout.Section>
 
-        <Layout.Section>
-          <Card>
-            <BlockStack gap="400">
-              <Text as="h2" variant="headingMd">🔧 Theme Integration</Text>
-
-              <Banner tone="info">
-                <p><strong>Important:</strong> Theme App Extension blocks must be added via Theme Editor, not code.</p>
-              </Banner>
-
-              <Text as="h3" variant="headingSm">How to Add the Upload Widget:</Text>
-
-              <BlockStack gap="200">
-                <Text as="p">
-                  <strong>Step 1:</strong> Go to your Shopify Admin → Online Store → Themes → Customize
-                </Text>
-                <Text as="p">
-                  <strong>Step 2:</strong> Navigate to a Product page template
-                </Text>
-                <Text as="p">
-                  <strong>Step 3:</strong> Click "Add block" or "Add section"
-                </Text>
-                <Text as="p">
-                  <strong>Step 4:</strong> Look under "Apps" section → Select "<strong>UL DTF Transfer</strong>"
-                </Text>
-                <Text as="p">
-                  <strong>Step 5:</strong> Position the block where you want it and Save
-                </Text>
-              </BlockStack>
-
-              <Divider />
-
-              <Box padding="200" background="bg-surface-secondary" borderRadius="100">
-                <Text as="p" tone="subdued">
-                  ⚠️ Note: The old method using render tags does NOT work with Theme App Extensions.
-                  You must use the Theme Editor to add app blocks.
-                </Text>
-              </Box>
-            </BlockStack>
-          </Card>
-        </Layout.Section>
       </Layout>
 
 

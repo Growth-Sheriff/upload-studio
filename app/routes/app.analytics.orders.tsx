@@ -362,42 +362,7 @@ function formatCurrency(amount: number, currency = 'USD'): string {
   }).format(amount)
 }
 
-function MetricCard({
-  title,
-  value,
-  subtitle,
-  tone,
-}: {
-  title: string
-  value: string | number
-  subtitle?: string
-  tone?: 'success' | 'critical' | 'warning' | 'info'
-}) {
-  const colorMap = {
-    success: '#008060',
-    critical: '#D72C0D',
-    warning: '#B98900',
-    info: '#5C6AC4',
-  }
-
-  return (
-    <Card>
-      <BlockStack gap="200">
-        <Text as="h3" variant="headingSm" tone="subdued">
-          {title}
-        </Text>
-        <Text as="p" variant="headingXl" fontWeight="bold">
-          {tone ? <span style={{ color: colorMap[tone] }}>{value}</span> : value}
-        </Text>
-        {subtitle && (
-          <Text as="p" variant="bodySm" tone="subdued">
-            {subtitle}
-          </Text>
-        )}
-      </BlockStack>
-    </Card>
-  )
-}
+import { StatCard as MetricCard } from '~/components/StatCard'
 
 export default function OrderAnalyticsPage() {
   const data = useLoaderData<typeof loader>()

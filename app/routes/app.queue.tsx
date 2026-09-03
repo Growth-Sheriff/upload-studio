@@ -38,15 +38,13 @@ import { authenticate } from '~/shopify.server'
 import { UploadDetailModal } from '~/components/UploadDetailModal'
 
 
-const QUEUE_STATUSES = [
-  { value: 'needs_review', label: 'Needs Review', tone: 'attention' as const },
-  { value: 'approved', label: 'Approved', tone: 'success' as const },
-  { value: 'printing', label: 'Printing', tone: 'info' as const },
-  { value: 'printed', label: 'Printed', tone: 'success' as const },
-  { value: 'shipped', label: 'Shipped', tone: 'success' as const },
-  { value: 'rejected', label: 'Rejected', tone: 'critical' as const },
-  { value: 'reupload_requested', label: 'Reupload Requested', tone: 'warning' as const },
-]
+import {
+  QUEUE_STATUSES,
+  preflightLabel,
+  preflightTone,
+  uploadStatusLabel,
+  uploadStatusTone,
+} from '~/lib/uploadStatus'
 
 const STATUS_OPTIONS = QUEUE_STATUSES.map((s) => ({ label: s.label, value: s.value }))
 
@@ -63,7 +61,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       data: {
         shopDomain,
         accessToken: session.accessToken || '',
-        plan: 'starter',
+        plan: 'commission',
         billingStatus: 'active',
         storageProvider: 'r2',
         settings: {},
@@ -347,19 +345,11 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const config = QUEUE_STATUSES.find((s) => s.value === status)
-  return <Badge tone={config?.tone || 'info'}>{config?.label || status}</Badge>
+  return <Badge tone={uploadStatusTone(status)}>{uploadStatusLabel(status)}</Badge>
 }
 
 function PreflightBadge({ status }: { status: string }) {
-
-  const config: Record<string, { tone: 'success' | 'info' | 'attention'; label: string }> = {
-    ok: { tone: 'success', label: 'Ready ✓' },
-    warning: { tone: 'info', label: 'Review' },
-    error: { tone: 'attention', label: 'Check' },
-  }
-  const { tone, label } = config[status] || { tone: 'info' as const, label: status }
-  return <Badge tone={tone}>{label}</Badge>
+  return <Badge tone={preflightTone(status)}>{preflightLabel(status)}</Badge>
 }
 
 export default function ProductionQueuePage() {
@@ -389,22 +379,22 @@ export default function ProductionQueuePage() {
     { id: 'all', content: `All (${totalCount})`, panelID: 'all' },
     {
       id: 'needs_review',
-      content: `Needs Review (${(statusCounts as Record<string, number>).needs_review || 0})`,
+      content: `${uploadStatusLabel('needs_review')} (${(statusCounts as Record<string, number>).needs_review || 0})`,
       panelID: 'needs_review',
     },
     {
       id: 'approved',
-      content: `Approved (${(statusCounts as Record<string, number>).approved || 0})`,
+      content: `${uploadStatusLabel('approved')} (${(statusCounts as Record<string, number>).approved || 0})`,
       panelID: 'approved',
     },
     {
       id: 'printing',
-      content: `Printing (${(statusCounts as Record<string, number>).printing || 0})`,
+      content: `${uploadStatusLabel('printing')} (${(statusCounts as Record<string, number>).printing || 0})`,
       panelID: 'printing',
     },
     {
       id: 'shipped',
-      content: `Shipped (${(statusCounts as Record<string, number>).shipped || 0})`,
+      content: `${uploadStatusLabel('shipped')} (${(statusCounts as Record<string, number>).shipped || 0})`,
       panelID: 'shipped',
     },
   ]
@@ -484,12 +474,8 @@ export default function ProductionQueuePage() {
         —
       </Text>
     ),
-    <Badge key={`mode-${upload.id}`}>{upload.mode}</Badge>,
     <StatusBadge key={`status-${upload.id}`} status={upload.status} />,
     <PreflightBadge key={`preflight-${upload.id}`} status={upload.preflightStatus} />,
-    <Text key={`loc-${upload.id}`} as="span" variant="bodySm">
-      {upload.locations.join(', ')}
-    </Text>,
     new Date(upload.createdAt).toLocaleDateString(),
     <InlineStack key={`actions-${upload.id}`} gap="100">
       <Button size="slim" onClick={() => openStatusModal(upload)}>
@@ -650,8 +636,6 @@ export default function ProductionQueuePage() {
                         'text',
                         'text',
                         'text',
-                        'text',
-                        'text',
                       ]}
                       headings={[
                         <Checkbox
@@ -663,10 +647,8 @@ export default function ProductionQueuePage() {
                         />,
                         'Upload',
                         'Order',
-                        'Mode',
                         'Status',
-                        'Preflight',
-                        'Locations',
+                        'File check',
                         'Date',
                         'Actions',
                       ]}

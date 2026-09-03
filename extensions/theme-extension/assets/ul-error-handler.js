@@ -382,7 +382,7 @@
     validateFile(file, config = {}) {
 
       const {
-        maxSize = 10240 * 1024 * 1024, // 10GB - Enterprise plan (backend validates per plan)
+        maxSize = 10240 * 1024 * 1024, // 10GB technical ceiling (backend validates)
         allowedTypes = [
           'image/png', 'image/jpeg', 'image/webp', 'image/tiff',
           'image/vnd.adobe.photoshop', 'application/x-photoshop', 'image/x-psd',

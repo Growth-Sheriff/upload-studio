@@ -46,7 +46,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       data: {
         shopDomain,
         accessToken: session.accessToken || '',
-        plan: 'starter',
+        plan: 'commission',
         billingStatus: 'active',
         storageProvider: 'r2',
         settings: {},
@@ -288,45 +288,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   })
 }
 
-function MetricCard({
-  title,
-  value,
-  subtitle,
-  tone,
-}: {
-  title: string
-  value: string | number
-  subtitle?: string
-  tone?: 'success' | 'critical' | 'warning'
-}) {
-  return (
-    <Card>
-      <BlockStack gap="200">
-        <Text as="h3" variant="headingSm" tone="subdued">
-          {title}
-        </Text>
-        <Text as="p" variant="headingXl" fontWeight="bold">
-          {tone ? (
-            <span
-              style={{
-                color: tone === 'success' ? '#008060' : tone === 'critical' ? '#D72C0D' : '#B98900',
-              }}
-            >
-              {value}
-            </span>
-          ) : (
-            value
-          )}
-        </Text>
-        {subtitle && (
-          <Text as="p" variant="bodySm" tone="subdued">
-            {subtitle}
-          </Text>
-        )}
-      </BlockStack>
-    </Card>
-  )
-}
+import { StatCard as MetricCard } from '~/components/StatCard'
 
 function ProgressBarCustom({ value, color }: { value: number; color: string }) {
   return (
