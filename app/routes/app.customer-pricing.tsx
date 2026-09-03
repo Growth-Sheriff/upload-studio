@@ -1456,8 +1456,46 @@ export default function CustomerPricingPage() {
   }
 
   return (
-    <Page title="Customer Pricing" backAction={{ content: 'Settings', url: '/app/settings' }}>
+    <Page title="Customer Special Pricing" backAction={{ content: 'Products', url: '/app/products' }}>
       <Layout>
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="300">
+              <InlineStack align="space-between" blockAlign="center">
+                <Text as="h2" variant="headingMd">How to use</Text>
+                <Badge tone="info">Works with: Custom Price Sheet Upload</Badge>
+              </InlineStack>
+              <Text as="p" variant="bodyMd">
+                This page gives chosen customers a special per-inch price instead of the normal sheet prices.
+                It only affects product pages that use the <strong>Custom Price Sheet Upload</strong> block
+                (the Variant Gang Sheet Upload block also honors it for assigned Business/VIP customers).
+                Everyone else keeps paying your normal Shopify prices.
+              </Text>
+              <BlockStack gap="150">
+                <Text as="p" variant="bodyMd">
+                  <strong>1. Put the block on the product page.</strong> Online Store → Themes → Customize → open
+                  the product page → Add block → <strong>Custom Price Sheet Upload</strong> → Save.
+                </Text>
+                <Text as="p" variant="bodyMd">
+                  <strong>2. Turn it on below</strong> with "Enable customer-specific pricing".
+                </Text>
+                <Text as="p" variant="bodyMd">
+                  <strong>3. Add a product rule:</strong> pick the product you put the block on and type the
+                  price per inch of sheet length (for example 0.85 means $0.85 for every inch of a 22" wide sheet).
+                  Do this once for Business and once for VIP if you want two different prices.
+                </Text>
+                <Text as="p" variant="bodyMd">
+                  <strong>4. Assign customers:</strong> search a customer by name or email and give them Business or
+                  VIP. From then on that customer sees and pays the per-inch price on that product.
+                </Text>
+              </BlockStack>
+              <Text as="p" variant="bodySm" tone="subdued">
+                Business keeps the sheet sizes but charges your per-inch rate on the chosen sheet length; VIP charges
+                the exact measured length of the uploaded file. Customers with no assignment are Standard and see no change.
+              </Text>
+            </BlockStack>
+          </Card>
+        </Layout.Section>
         <Layout.Section>
           {actionMessage ? <Banner tone="success">{actionMessage}</Banner> : null}
           {actionError ? <Banner tone="critical">{actionError}</Banner> : null}

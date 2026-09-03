@@ -9,9 +9,31 @@ import { useState } from "react";
 import { authenticate } from "~/shopify.server";
 import prisma from "~/lib/prisma.server";
 
+const SHOP_INFO_QUERY = `
+  query {
+    shop {
+      name
+      email
+    }
+  }
+`;
+
 export async function loader({ request }: LoaderFunctionArgs) {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const shopDomain = session.shop;
+
+  // Store details (name + notification email) moved here from the old
+  // General settings page; Shopify's values are the defaults.
+  let shopifyShopName = "";
+  let shopifyEmail = "";
+  try {
+    const response = await admin.graphql(SHOP_INFO_QUERY);
+    const data = await response.json();
+    shopifyShopName = data?.data?.shop?.name || "";
+    shopifyEmail = data?.data?.shop?.email || "";
+  } catch (e) {
+    console.warn("[Branding] Could not fetch shop info from Shopify");
+  }
 
   let shop = await prisma.shop.findUnique({
     where: { shopDomain },
@@ -36,8 +58,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     });
   }
 
+  const settings = (shop.settings as Record<string, unknown>) || {};
+
   return json({
     plan: shop.plan,
+    store: {
+      shopName: (settings.shopName as string) || shopifyShopName,
+      notificationEmail: (settings.notificationEmail as string) || shopifyEmail,
+    },
     config: shop.whiteLabelConfig || {
       enabled: false,
       logoUrl: null,
@@ -65,6 +93,16 @@ export async function action({ request }: ActionFunctionArgs) {
 
 
   const formData = await request.formData();
+
+  // Store details live in shop.settings (same keys the notification
+  // emails and storefront config already read).
+  const shopName = String(formData.get("shopName") || "").trim();
+  const notificationEmail = String(formData.get("notificationEmail") || "").trim();
+  const existingSettings = (shop.settings as Record<string, unknown>) || {};
+  await prisma.shop.update({
+    where: { id: shop.id },
+    data: { settings: { ...existingSettings, shopName, notificationEmail } },
+  });
 
   const enabled = formData.get("enabled") === "on";
   const logoUrl = formData.get("logoUrl") as string;
@@ -107,15 +145,17 @@ export async function action({ request }: ActionFunctionArgs) {
     },
   });
 
-  return json({ success: true, message: "White-label settings saved" });
+  return json({ success: true, message: "Branding settings saved" });
 }
 
 export default function WhiteLabelPage() {
-  const { plan, config } = useLoaderData<typeof loader>();
+  const { config, store } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
 
+  const [shopName, setShopName] = useState(store.shopName || "");
+  const [notificationEmail, setNotificationEmail] = useState(store.notificationEmail || "");
   const [enabled, setEnabled] = useState(config.enabled);
   const [logoUrl, setLogoUrl] = useState(config.logoUrl || "");
   const [primaryColor, setPrimaryColor] = useState(config.primaryColor || "#5c6ac4");
@@ -128,8 +168,8 @@ export default function WhiteLabelPage() {
 
   return (
     <Page
-      title="White-Label Settings"
-      backAction={{ content: "Settings", url: "/app/settings" }}
+      title="Branding"
+      backAction={{ content: "Dashboard", url: "/app" }}
     >
         <Layout>
 
@@ -159,6 +199,31 @@ export default function WhiteLabelPage() {
           )}
 
           <Form method="post">
+
+            <Layout.Section>
+              <Card>
+                <BlockStack gap="400">
+                  <Text as="h2" variant="headingMd">Store details</Text>
+                  <TextField
+                    label="Store name"
+                    name="shopName"
+                    value={shopName}
+                    onChange={setShopName}
+                    autoComplete="organization"
+                    helpText="Shown in customer emails and on identity pages."
+                  />
+                  <TextField
+                    label="Notification email"
+                    name="notificationEmail"
+                    type="email"
+                    value={notificationEmail}
+                    onChange={setNotificationEmail}
+                    autoComplete="email"
+                    helpText="Where upload and order notifications are sent."
+                  />
+                </BlockStack>
+              </Card>
+            </Layout.Section>
 
             <Layout.Section>
               <Card>

@@ -11,7 +11,6 @@ import {
   OrderIcon,
   PaintBrushFlatIcon,
   ProductIcon,
-  SettingsIcon,
 } from '@shopify/polaris-icons'
 import { useCallback, useState, type ReactNode } from 'react'
 
@@ -103,6 +102,10 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0, notice }:
             label: 'Products',
             icon: ProductIcon,
             selected: isSelected('/app/products'),
+            subNavigationItems: [
+              { url: '/app/products', label: 'All products' },
+              { url: '/app/customer-pricing', label: 'Customer Special Pricing' },
+            ],
           },
           {
             url: '/app/asset-sets',
@@ -125,22 +128,10 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0, notice }:
         separator
         items={[
           {
-            url: '/app/settings',
-            label: 'General',
-            icon: SettingsIcon,
-            selected: isSelected('/app/settings'),
-          },
-          {
             url: '/app/billing',
             label: 'Billing',
             icon: CreditCardIcon,
             selected: isSelected('/app/billing'),
-          },
-          {
-            url: '/app/customer-pricing',
-            label: 'Customer Pricing',
-            icon: CreditCardIcon,
-            selected: isSelected('/app/customer-pricing'),
           },
           {
             url: '/app/white-label',

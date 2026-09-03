@@ -797,7 +797,7 @@ export default function BillingPage() {
                 {paypalSuccess && (
                   <Banner tone="success" onDismiss={() => setPaypalSuccess(false)}>
                     <p>
-                      Payment successful. Your outstanding order fees have been updated. Page will refresh shortly.
+                      Payment successful. Your outstanding commission have been updated. Page will refresh shortly.
                     </p>
                   </Banner>
                 )}
@@ -813,7 +813,7 @@ export default function BillingPage() {
                 {stripeSuccess && (
                   <Banner tone="success" onDismiss={() => setStripeSuccess(false)}>
                     <p>
-                      Stripe payment successful. Your outstanding order fees have been updated. Page will refresh shortly.
+                      Stripe payment successful. Your outstanding commission have been updated. Page will refresh shortly.
                     </p>
                   </Banner>
                 )}
@@ -967,7 +967,7 @@ export default function BillingPage() {
                   </InlineStack>
                   <Text as="p" variant="bodySm" tone="subdued">
                     When enabled, we'll automatically charge your saved payment method when
-                    outstanding order fees reach ${autoChargeThreshold.toFixed(2)}.
+                    outstanding commission reach ${autoChargeThreshold.toFixed(2)}.
                   </Text>
                 </BlockStack>
               </InlineStack>
@@ -1164,7 +1164,7 @@ export default function BillingPage() {
                           <InlineStack gap="300" blockAlign="center">
                             <BlockStack gap="0">
                               <Text as="p" variant="bodyMd" fontWeight="semibold">
-                                {formatMoney(mb.totalAmount)} total fees
+                                {formatMoney(mb.totalAmount)} total commission
                               </Text>
                               <Text as="p" variant="bodySm" tone="subdued">
                                 {formatOrderCount(mb.totalOrders)} app-linked orders
@@ -1241,7 +1241,7 @@ export default function BillingPage() {
           <Card>
             <BlockStack gap="400">
               <Text as="h2" variant="headingMd">
-                Order Fee History
+                Commission History
               </Text>
 
               {records.length === 0 ? (
@@ -1250,7 +1250,7 @@ export default function BillingPage() {
                   image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
                 >
                   <p>
-                    When orders linked to Upload Studio are created, order fees will appear here.
+                    When an order contains a gang sheet uploaded through this app, its 4% commission will appear here.
                   </p>
                 </EmptyState>
               ) : (
@@ -1279,7 +1279,7 @@ export default function BillingPage() {
                   2. <strong>Commission Recorded</strong> - {Math.round(commissionPercent * 100)}% of the line items this app served in the order (net of line discounts). Orders without an app upload are never billed.
                 </Text>
                 <Text as="p" variant="bodyMd">
-                  3. <strong>Pay with Stripe or PayPal</strong> - Use the payment buttons to settle only the currently outstanding order fees.
+                  3. <strong>Pay with Stripe or PayPal</strong> - Use the payment buttons to settle only the currently outstanding commission.
                 </Text>
                 <Text as="p" variant="bodyMd">
                   4. <strong>Automatic Payments</strong> - After your first payment, auto-pay can charge your saved method when outstanding fees reach ${autoChargeThreshold.toFixed(2)}.
