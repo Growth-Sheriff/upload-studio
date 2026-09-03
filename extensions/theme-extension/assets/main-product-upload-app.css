@@ -420,6 +420,201 @@
   box-shadow: 0 12px 28px color-mix(in srgb, var(--ump-accent) 28%, transparent);
 }
 
+/* Live CTA: spans the card, breathes, and carries a moving sheen so the
+   upload action is unmissable; the whole card is the drop target. */
+.ump__upload-btn--live {
+  position: relative;
+  width: 100%;
+  min-height: 62px;
+  gap: 10px;
+  overflow: hidden;
+  font-size: 17px;
+  animation: ump-breathe 2.6s ease-in-out infinite;
+}
+
+.ump__upload-btn--live svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: ump-lift 1.6s ease-in-out infinite;
+}
+
+.ump__upload-btn--live em {
+  margin-left: 4px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.ump__upload-btn--live::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.35) 50%, transparent 70%);
+  transform: translateX(-120%);
+  animation: ump-sheen 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes ump-breathe {
+  0%, 100% { box-shadow: 0 12px 28px color-mix(in srgb, var(--ump-accent) 28%, transparent); }
+  50% { box-shadow: 0 16px 40px color-mix(in srgb, var(--ump-accent) 48%, transparent); }
+}
+
+@keyframes ump-lift {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes ump-sheen {
+  0%, 60% { transform: translateX(-120%); }
+  100% { transform: translateX(120%); }
+}
+
+/* Full-card drop feedback. */
+.ump__drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  border: 3px dashed var(--ump-accent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--ump-accent) 12%, #fff);
+  color: var(--ump-accent);
+  font-size: 22px;
+  font-weight: 900;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+.ump__drop.is-dragover .ump__drop-overlay {
+  opacity: 1;
+}
+
+@media (max-width: 520px) {
+  .ump__upload-btn--live {
+    flex-wrap: wrap;
+    min-height: 56px;
+    font-size: 16px;
+  }
+
+  .ump__upload-btn--live em {
+    display: none;
+  }
+}
+
+/* Variant price table under the upload card — the auto-selected sheet turns green. */
+.ump__price-table-wrap {
+  margin-top: 14px;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--ump-line);
+  border-radius: 14px;
+  background: var(--ump-panel);
+  box-shadow: 0 14px 36px rgba(33, 52, 84, 0.06);
+}
+
+.ump__price-table-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  color: var(--ump-ink);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.ump__price-table-head small {
+  color: var(--ump-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: none;
+}
+
+.ump__price-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+.ump__price-table th,
+.ump__price-table td {
+  padding: 9px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--ump-line);
+}
+
+.ump__price-table th {
+  color: var(--ump-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.ump__price-table td:last-child,
+.ump__price-table th:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ump__price-table td strong {
+  color: var(--ump-ink);
+  font-weight: 800;
+}
+
+.ump__price-table tr.is-selected td {
+  background: #e7f7ef;
+  color: var(--ump-success);
+}
+
+.ump__price-table tr.is-selected td strong {
+  color: var(--ump-success);
+}
+
+.ump__price-table tr.is-selected td:first-child {
+  border-left: 3px solid var(--ump-success);
+  border-radius: 8px 0 0 8px;
+}
+
+.ump__price-table tr.is-selected td:last-child {
+  border-radius: 0 8px 8px 0;
+}
+
+.ump__price-table .ump__price-check {
+  display: inline-block;
+  width: 16px;
+  margin-right: 6px;
+  color: var(--ump-success);
+  font-weight: 900;
+}
+
+.ump__price-table tr.is-unavailable td {
+  color: #a9b3c2;
+  text-decoration: line-through;
+}
+
+.ump__price-table td .ump__price-qty {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--ump-success);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
 .ump__hint {
   margin: 14px 0 0;
   color: var(--ump-muted);

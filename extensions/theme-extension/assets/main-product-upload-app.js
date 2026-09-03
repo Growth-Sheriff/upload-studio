@@ -480,6 +480,7 @@
     this.addButton = this.root.querySelector('[data-ump-add]');
     this.checkoutButton = this.root.querySelector('[data-ump-checkout]');
     this.priceStrip = this.root.querySelector('[data-ump-price-strip]');
+    this.priceTable = this.root.querySelector('[data-ump-price-table]');
     this.error = this.root.querySelector('[data-ump-error]');
     this.ensureCustomerPricingCard();
     this.ensureDiscountPanel();
@@ -924,33 +925,64 @@
       return;
     }
 
-    var variants = this.getPriceVariants();
-    if (!variants.length) {
-      this.priceStrip.hidden = true;
-      this.priceStrip.innerHTML = '';
+    // Standard variant pricing lives in the table under the upload card
+    // (renderPriceTable); the inspector strip is only for exact/linear modes.
+    this.priceStrip.hidden = true;
+    this.priceStrip.innerHTML = '';
+  };
+
+  // Variant price table: every Shopify sheet variant as a row; the sheet(s)
+  // auto-selected for the uploaded file(s) turn green with a quantity pill.
+  MainProductUpload.prototype.renderPriceTable = function() {
+    if (!this.priceTable) return;
+    if (this.isExactMeasuredMode() || this.isLinearInchPricing()) {
+      this.priceTable.hidden = true;
+      this.priceTable.innerHTML = '';
       return;
     }
+    var variants = (this.variants || []).filter(function(v) { return v && v.id; });
+    if (!variants.length) {
+      this.priceTable.hidden = true;
+      this.priceTable.innerHTML = '';
+      return;
+    }
+    var readyItems = this.getReadyItems();
+    var qtyByVariant = {};
+    readyItems.forEach(function(item) {
+      var result = item.selectedResult || {};
+      var qty = Math.max(1, Number(result.cartQuantity || result.sheetsNeeded) || 1);
+      var id = String(item.selectedVariantId || '');
+      if (id) qtyByVariant[id] = (qtyByVariant[id] || 0) + qty;
+    });
+    var pendingId = !readyItems.length && this.state.selectedVariantId ? String(this.state.selectedVariantId) : '';
+    var selectedCount = Object.keys(qtyByVariant).length;
 
-    var html = [
-      '<div class="ump__price-head">',
-        '<span>Sheet pricing</span>',
-        '<strong>Auto-selected after upload</strong>',
+    var rows = variants.map(function(variant) {
+      var id = String(variant.id);
+      var qty = qtyByVariant[id] || 0;
+      var selected = qty > 0 || (pendingId && pendingId === id);
+      var unavailable = variant.available === false || variant.availableForSale === false;
+      return [
+        '<tr class="', selected ? 'is-selected' : '', unavailable ? ' is-unavailable' : '', '">',
+          '<td>', selected ? '<span class="ump__price-check">✓</span>' : '', '<strong>', escapeHtml(getVariantLabel(variant)), '</strong>',
+            qty > 1 ? '<span class="ump__price-qty">×' + qty + '</span>' : '',
+          '</td>',
+          '<td>', escapeHtml(formatMoney(variant.price, this.currency)), '</td>',
+        '</tr>'
+      ].join('');
+    }, this).join('');
+
+    this.priceTable.innerHTML = [
+      '<div class="ump__price-table-head">',
+        '<span>Sheet sizes &amp; prices</span>',
+        '<small>', selectedCount ? (selectedCount === 1 ? 'Selected for your file' : selectedCount + ' sizes selected') : 'Auto-selected after upload', '</small>',
       '</div>',
-      '<div class="ump__price-row" role="list">'
-    ];
-
-    variants.forEach(function(variant) {
-      html.push(
-        '<span class="ump__price-chip" role="listitem">',
-          '<small>', escapeHtml(getVariantLabel(variant)), '</small>',
-          '<strong>', escapeHtml(formatMoney(variant.price, this.currency)), '</strong>',
-        '</span>'
-      );
-    }, this);
-
-    html.push('</div>');
-    this.priceStrip.innerHTML = html.join('');
-    this.priceStrip.hidden = false;
+      '<table class="ump__price-table">',
+        '<thead><tr><th>Sheet size</th><th>Price</th></tr></thead>',
+        '<tbody>', rows, '</tbody>',
+      '</table>'
+    ].join('');
+    this.priceTable.hidden = false;
   };
 
   MainProductUpload.prototype.loadCustomerPricingContext = async function() {
@@ -1153,19 +1185,33 @@
       event.target.value = '';
       if (files.length) self.startUploads(files);
     });
-    this.dropzone.addEventListener('dragover', function(event) {
-      event.preventDefault();
-      self.dropzone.classList.add('is-dragover');
+    // Drag & drop: capture phase + stopPropagation so document-level handlers
+    // from other storefront apps can neither swallow the drop nor navigate
+    // the browser to the file. dragenter/dragover must preventDefault for the
+    // drop event to fire at all.
+    ['dragenter', 'dragover'].forEach(function(type) {
+      self.dropzone.addEventListener(type, function(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+        self.dropzone.classList.add('is-dragover');
+      }, true);
     });
-    this.dropzone.addEventListener('dragleave', function() {
+    this.dropzone.addEventListener('dragleave', function(event) {
+      // Ignore leaves into child elements; only clear when leaving the card.
+      if (event.relatedTarget && self.dropzone.contains(event.relatedTarget)) return;
       self.dropzone.classList.remove('is-dragover');
-    });
+    }, true);
     this.dropzone.addEventListener('drop', function(event) {
       event.preventDefault();
+      event.stopPropagation();
       self.dropzone.classList.remove('is-dragover');
-      var files = toFileArray(event.dataTransfer.files);
+      var files = toFileArray(event.dataTransfer && event.dataTransfer.files);
       if (files.length) self.startUploads(files);
-    });
+    }, true);
+    // Dropping anywhere else on the page must not open the file in the tab.
+    window.addEventListener('dragover', function(event) { event.preventDefault(); });
+    window.addEventListener('drop', function(event) { event.preventDefault(); });
     this.addButton.addEventListener('click', function() {
       if (self.isExactMeasuredMode()) {
         self.addExactMeasuredToCart();
@@ -1917,6 +1963,7 @@
       : '--';
     this.renderQuality();
     this.renderPriceNow(readyItems);
+    this.renderPriceTable();
     this.method.textContent = this.getMethodText();
 
     var badgeLabel, badgeClass;

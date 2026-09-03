@@ -50,8 +50,10 @@
             <h2 class="ump__title">{{ block.settings.heading | default: 'Upload your gang sheet' }}</h2>
             <p class="ump__copy">{{ block.settings.subheading | default: 'We measure each file, select the right sheet, and unlock checkout when every gang sheet is ready.' }}</p>
           </div>
-          <button class="ump__upload-btn" type="button" data-ump-upload-trigger>
+          <button class="ump__upload-btn ump__upload-btn--live" type="button" data-ump-upload-trigger>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4"></path><path d="m6 10 6-6 6 6"></path><path d="M4 20h16"></path></svg>
             <span>{{ block.settings.upload_label | default: 'Upload files' }}</span>
+            <em>or drag &amp; drop here</em>
           </button>
           <p class="ump__hint">{{ block.settings.support_text | default: 'PNG, JPG, TIFF, PSD, PDF, AI, EPS and SVG are supported. You can upload one or more gang sheets.' }}</p>
           <ul class="ump__specs" aria-label="Upload specs">
@@ -59,7 +61,9 @@
             <li>PNG</li><li>JPG</li><li>TIFF</li><li>PSD</li><li>PDF</li><li>AI</li><li>EPS</li><li>SVG</li>
           </ul>
         </div>
+        <div class="ump__drop-overlay" aria-hidden="true"><span>Drop files to upload</span></div>
       </div>
+      <div class="ump__price-table-wrap" data-ump-price-table hidden></div>
       <div class="ump__status" data-ump-status-panel hidden>
         <div class="ump__file">
           <img class="ump__thumb" data-ump-thumb alt="" width="76" height="76" hidden>
