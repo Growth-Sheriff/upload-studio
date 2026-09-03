@@ -108,10 +108,6 @@
           </div>
           <span class="ump__badge" data-ump-badge>Waiting</span>
         </div>
-        <div class="ump__price-now" data-ump-price-now hidden>
-          <span>Total</span>
-          <strong data-ump-price-now-value></strong>
-        </div>
 
         {%- comment -%} Signature: true-scale roll preview. Tiles are drawn by JS at the printer's placement. {%- endcomment -%}
         <div class="ump__sheet" data-ump-sheet>
@@ -150,6 +146,15 @@
             <span>{{ block.settings.checkout_label | default: 'Checkout' }}</span>
           </button>
         {%- endif -%}
+      </div>
+      {%- comment -%} Cart total badge: Σ(variant price × sheets) — the exact Shopify cart amount. {%- endcomment -%}
+      <div class="ump__total" data-ump-total hidden>
+        <div class="ump__total-head">
+          <span class="ump__total-label">Cart total</span>
+          <span class="ump__total-meta" data-ump-total-meta></span>
+          <strong class="ump__total-value" data-ump-total-value></strong>
+        </div>
+        <ul class="ump__total-lines" data-ump-total-lines></ul>
       </div>
       <p class="ump__error" data-ump-error hidden></p>
     </aside>

@@ -182,6 +182,13 @@ model Upload {
 
   cartAddedAt   DateTime? @map("cart_added_at")
   cartToken     String?   @map("cart_token")
+  // Customer's nesting request, written at add-to-cart time and shown on the
+  // order line / identity page so the print shop knows how many copies to gang.
+  requestedCopies Int?    @map("requested_copies")
+  designsPerSheet Int?    @map("designs_per_sheet")
+  sheetsNeeded    Int?    @map("sheets_needed")
+  cartVariantId   String? @map("cart_variant_id")
+  cartSheetLabel  String? @map("cart_sheet_label")
   orderName     String?   @map("order_name")
   orderPaidAt   DateTime? @map("order_paid_at")
   orderTotal    Decimal?  @map("order_total") @db.Decimal(10, 2)

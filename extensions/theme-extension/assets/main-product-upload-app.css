@@ -139,11 +139,23 @@
 }
 
 .ump__btn span { color: inherit; font: inherit; }
-.ump__btn--primary { background: var(--ump-ink); color: #fff; }
-.ump__btn--primary span, .ump__btn--accent span, .ump__cart span, .ump__checkout span { color: #fff; }
-.ump__btn--primary:hover:not(:disabled) { background: #000; transform: translateY(-1px); }
-.ump__btn--accent { background: var(--ump-accent); color: #fff; }
-.ump__btn--accent:hover:not(:disabled) { filter: brightness(1.05); transform: translateY(-1px); }
+/* Filled buttons: the selector is deliberately specific (.ump .ump__btn--…)
+   so storefront theme rules on `button`/`span` can never turn the label dark. */
+.ump .ump__btn--primary,
+.ump .ump__btn--primary span { background-color: var(--ump-ink); color: #fff; }
+.ump .ump__btn--primary span { background: transparent; }
+.ump .ump__btn--primary:hover:not(:disabled) { background-color: #000; transform: translateY(-1px); }
+.ump .ump__btn--accent,
+.ump .ump__btn--accent span { background-color: var(--ump-accent); color: #fff; }
+.ump .ump__btn--accent span { background: transparent; }
+.ump .ump__btn--accent:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+/* Add to cart is the accent action; Checkout is the dark secondary. */
+.ump .ump__cart, .ump .ump__cart span { background-color: var(--ump-accent); color: #fff; }
+.ump .ump__cart span { background: transparent; }
+.ump .ump__cart:hover:not(:disabled) { filter: brightness(1.06); }
+.ump .ump__checkout, .ump .ump__checkout span { background-color: var(--ump-ink); color: #fff; }
+.ump .ump__checkout span { background: transparent; }
+.ump .ump__checkout:hover:not(:disabled) { background-color: #000; filter: none; }
 .ump__btn--danger { border-color: #f1c0bb; color: var(--ump-danger); }
 .ump__btn--danger:hover { background: var(--ump-danger-soft); }
 .ump__retry.ump__btn--primary { min-height: 36px; font-size: 13px; }
@@ -909,6 +921,60 @@
   gap: var(--ump-s1);
   margin-top: var(--ump-s3);
 }
+
+/* Cart total badge — orange so the amount that will be charged stands out. */
+.ump__total {
+  margin-top: var(--ump-s2);
+  padding: var(--ump-s2) var(--ump-s3);
+  border: 1px solid #f5c26b;
+  border-radius: var(--ump-radius-sm);
+  background: linear-gradient(180deg, #fff7e6, #ffefcf);
+  color: #7a4d00;
+}
+
+.ump__total-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--ump-s1);
+}
+
+.ump__total-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ump__total-meta { font-size: 12px; font-weight: 600; opacity: 0.85; }
+
+.ump__total-value {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ump__total-lines {
+  display: grid;
+  gap: 4px;
+  margin: var(--ump-s1) 0 0;
+  padding: var(--ump-s1) 0 0;
+  border-top: 1px dashed #f0c47a;
+  list-style: none;
+}
+
+.ump__total-lines li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  gap: var(--ump-s1);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ump__total-lines li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ump__total-lines li small { opacity: 0.8; }
+.ump__total-lines li strong { font-weight: 700; }
 
 .ump__error {
   margin: var(--ump-s2) 0 0;

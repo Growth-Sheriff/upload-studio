@@ -22,18 +22,25 @@
     return Math.abs(n - Math.round(n)) < 0.01 ? String(Math.round(n)) + '"' : n.toFixed(2) + '"';
   }
 
-  function normalizeVariantPrice(raw) {
+  // Shopify's storefront JSON (`product.variants | json`, `/products/x.js`,
+  // `/cart.js`) always carries prices as integer minor units (cents). Never
+  // guess: variant prices go through variantPriceToDollars, and formatMoney
+  // takes dollars. (The old "> 100 means cents" heuristic divided any total
+  // above $100 by 100 and multiplied sub-$1 variants by 100.)
+  function variantPriceToDollars(raw) {
     if (raw == null || raw === '') return 0;
     var numeric = Number(raw);
     if (!isFinite(numeric) || numeric <= 0) return 0;
-    return numeric > 100 ? numeric / 100 : numeric;
+    return numeric / 100;
   }
 
-  function formatMoney(value, currency) {
-    var n = normalizeVariantPrice(value);
-    if (!n) return '--';
+  // Fixed en-US digits so "$15.00" never becomes "$15,00" on a Turkish or
+  // German browser: the amount must read exactly as Shopify's cart shows it.
+  function formatMoney(dollars, currency) {
+    var n = Number(dollars);
+    if (!isFinite(n) || n <= 0) return '--';
     try {
-      return new Intl.NumberFormat(undefined, {
+      return new Intl.NumberFormat('en-US', {
         style: 'currency',
         currency: currency || 'USD'
       }).format(n);
@@ -113,7 +120,7 @@
 
   function exactCartTotal(entries) {
     return entries.reduce(function(sum, entry) {
-      return sum + normalizeVariantPrice(entry.totalPrice || entry.exactTotal || 0);
+      return sum + (Number(entry.totalPrice || entry.exactTotal || 0) || 0);
     }, 0);
   }
 
@@ -484,8 +491,10 @@
     this.artLabel = this.root.querySelector('[data-ump-art-label]');
     this.rulerTop = this.root.querySelector('[data-ump-ruler-top]');
     this.rulerSide = this.root.querySelector('[data-ump-ruler-side]');
-    this.priceNow = this.root.querySelector('[data-ump-price-now]');
-    this.priceNowValue = this.root.querySelector('[data-ump-price-now-value]');
+    this.total = this.root.querySelector('[data-ump-total]');
+    this.totalValue = this.root.querySelector('[data-ump-total-value]');
+    this.totalMeta = this.root.querySelector('[data-ump-total-meta]');
+    this.totalLines = this.root.querySelector('[data-ump-total-lines]');
     this.artDimW = this.root.querySelector('[data-ump-art-dim-w]');
     this.artDimH = this.root.querySelector('[data-ump-art-dim-h]');
     this.addButton = this.root.querySelector('[data-ump-add]');
@@ -1012,7 +1021,7 @@
             selected ? '<span class="ump__price-auto">' + (this.state.provisional && !qty ? 'Estimated' : 'Auto') + '</span>' : '',
             qty > 1 ? '<span class="ump__price-qty">×' + qty + '</span>' : '',
           '</td>',
-          '<td>', escapeHtml(formatMoney(variant.price, this.currency)), '</td>',
+          '<td>', escapeHtml(formatMoney(variantPriceToDollars(variant.price), this.currency)), '</td>',
         '</tr>'
       ].join(''));
     }, this);
@@ -2068,30 +2077,70 @@
     var id = String(this.state.selectedVariantId || '');
     if (!id) return 0;
     for (var i = 0; i < (this.variants || []).length; i += 1) {
-      if (String(this.variants[i] && this.variants[i].id) === id) return normalizeVariantPrice(this.variants[i].price);
+      if (String(this.variants[i] && this.variants[i].id) === id) return variantPriceToDollars(this.variants[i].price);
+    }
+    return 0;
+  };
+
+  // Cart total: exactly what Shopify will charge — Σ(variant price × sheets)
+  // over every ready gang sheet, with copies folded into the sheet count by
+  // the server nesting. Rendered as the orange badge under Add to cart, one
+  // line per file, and re-run on every render so it can never drift from the
+  // per-row copies.
+  MainProductUpload.prototype.computeCartTotal = function(readyItems) {
+    var lines = [];
+    var total = 0;
+    var sheets = 0;
+    var copies = 0;
+    (readyItems || []).forEach(function(item) {
+      var line = buildCartLineRequest(item);
+      var unit = this.getVariantPrice(line.variantId);
+      var subtotal = unit * line.sheetsNeeded;
+      lines.push({
+        fileName: item.fileName || 'Gang sheet',
+        sheetLabel: line.sheetLabel,
+        sheets: line.sheetsNeeded,
+        copies: line.copies,
+        perSheet: line.designsPerSheet,
+        unit: unit,
+        subtotal: subtotal
+      });
+      total += subtotal;
+      sheets += line.sheetsNeeded;
+      copies += line.copies;
+    }, this);
+    return { lines: lines, total: Math.round(total * 100) / 100, sheets: sheets, copies: copies };
+  };
+
+  MainProductUpload.prototype.getVariantPrice = function(variantId) {
+    var id = String(variantId || '');
+    for (var i = 0; i < (this.variants || []).length; i += 1) {
+      if (String(this.variants[i] && this.variants[i].id) === id) return variantPriceToDollars(this.variants[i].price);
     }
     return 0;
   };
 
   MainProductUpload.prototype.renderPriceNow = function(readyItems) {
-    if (!this.priceNow || !this.priceNowValue) return;
-    if (this.isExactMeasuredMode() || this.isLinearInchPricing()) { this.priceNow.hidden = true; return; }
-    var total = 0;
-    var count = 0;
-    (readyItems || []).forEach(function(item) {
-      var result = item.selectedResult || {};
-      var qty = Math.max(1, Number(result.cartQuantity || result.sheetsNeeded) || 1);
-      var variantId = String(item.selectedVariantId || '');
-      var price = 0;
-      for (var i = 0; i < (this.variants || []).length; i += 1) {
-        if (String(this.variants[i] && this.variants[i].id) === variantId) { price = normalizeVariantPrice(this.variants[i].price); break; }
-      }
-      if (price > 0) { total += price * qty; count += qty; }
-    }, this);
-    if (!(total > 0)) { this.priceNow.hidden = true; return; }
-    this.priceNow.hidden = false;
-    this.priceNowValue.innerHTML = escapeHtml(formatMoney(total, this.currency)) +
-      '<small>' + count + ' sheet' + (count === 1 ? '' : 's') + '</small>';
+    if (!this.total || !this.totalValue) return;
+    if (this.isExactMeasuredMode() || this.isLinearInchPricing()) { this.total.hidden = true; return; }
+    var summary = this.computeCartTotal(readyItems);
+    if (!(summary.total > 0)) { this.total.hidden = true; return; }
+    this.total.hidden = false;
+    this.totalValue.textContent = formatMoney(summary.total, this.currency);
+    if (this.totalMeta) {
+      this.totalMeta.textContent = summary.sheets + ' sheet' + (summary.sheets === 1 ? '' : 's') +
+        (summary.copies > summary.lines.length ? ' · ' + summary.copies + ' copies' : '');
+    }
+    if (this.totalLines) {
+      this.totalLines.innerHTML = summary.lines.map(function(line) {
+        return '<li>' +
+          '<span>' + escapeHtml(line.fileName) + '</span>' +
+          '<span>' + line.sheets + ' × ' + escapeHtml(line.sheetLabel || 'sheet') +
+            (line.copies > 1 ? ' <small>(' + line.copies + ' copies)</small>' : '') + '</span>' +
+          '<strong>' + escapeHtml(formatMoney(line.subtotal, this.currency)) + '</strong>' +
+        '</li>';
+      }, this).join('');
+    }
   };
 
   MainProductUpload.prototype.buildCustomItems = function(items) {
@@ -2850,12 +2899,12 @@
     }
   };
 
-  MainProductUpload.prototype.prepareCartProperties = async function(uploadIds) {
+  MainProductUpload.prototype.prepareCartProperties = async function(uploadIds, lines) {
     try {
       var response = await fetch(this.apiBase + '/api/cart/prepare', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shopDomain: this.shopDomain, uploadIds: uploadIds })
+        body: JSON.stringify({ shopDomain: this.shopDomain, uploadIds: uploadIds, lines: lines || [] })
       });
       if (!response.ok) throw new Error('prepare failed: ' + response.status);
       var data = await response.json();
@@ -2888,8 +2937,30 @@
     properties['_Print Ready File'] = item.originalUrl || identityUrl;
     // Customer-visible line (themes render non-underscore properties).
     properties['Uploaded File'] = item.originalUrl || identityUrl;
+    var line = buildCartLineRequest(item);
+    properties['Copies'] = line.copies === 1
+      ? '1'
+      : line.copies + ' (' + line.designsPerSheet + ' per sheet × ' + line.sheetsNeeded + ' sheet' + (line.sheetsNeeded === 1 ? '' : 's') + ')';
+    properties['_ul_copies'] = line.copies + '|' + line.designsPerSheet + '|' + line.sheetsNeeded;
     return properties;
   };
+
+  // What the customer asked for on this gang sheet, in the shape the server
+  // persists and writes into the visible `Copies` line property.
+  function buildCartLineRequest(item) {
+    var result = item.selectedResult || {};
+    var copies = Math.max(1, Number(item.copies) || 1);
+    var perSheet = Math.max(1, Number(result.designsPerSheet) || 1);
+    var sheets = Math.max(1, Number(result.cartQuantity || result.sheetsNeeded) || Math.ceil(copies / perSheet));
+    return {
+      uploadId: item.uploadId,
+      copies: copies,
+      designsPerSheet: perSheet,
+      sheetsNeeded: sheets,
+      variantId: String(item.selectedVariantId || ''),
+      sheetLabel: String(result.selectedSheetLabel || result.selectedVariantTitle || '')
+    };
+  }
 
   MainProductUpload.prototype.readCart = async function() {
     var response = await fetch('/cart.js', {
@@ -2907,16 +2978,44 @@
     return identity.indexOf('/i/' + uploadId) !== -1;
   }
 
-  function countCartQuantityForUpload(cart, variantId, uploadId) {
-    var items = (cart && cart.items) || [];
-    return items.reduce(function(total, line) {
-      var lineVariant = Number(line.variant_id || line.id);
-      if (lineVariant !== variantId) return total;
-      if (!cartLineMatchesUpload(line, uploadId)) return total;
-      return total + (Number(line.quantity) || 0);
-    }, 0);
+  function cartLinesForUpload(cart, uploadId) {
+    return ((cart && cart.items) || []).filter(function(line) { return cartLineMatchesUpload(line, uploadId); });
   }
 
+  // A line is "exactly what we want" when variant, quantity and the
+  // customer-facing copies property all match; anything else is stale.
+  function cartLineIsExact(line, cartItem) {
+    if (Number(line.variant_id || line.id) !== Number(cartItem.id)) return false;
+    if ((Number(line.quantity) || 0) !== cartItem.quantity) return false;
+    var props = line.properties || {};
+    var want = cartItem.properties || {};
+    return String(props['_ul_copies'] || '') === String(want['_ul_copies'] || '');
+  }
+
+  async function cartRequest(url, body) {
+    var response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+      var payload = await response.json().catch(function() { return {}; });
+      var error = new Error(payload.description || payload.message || ('Cart request failed with status ' + response.status));
+      error.status = response.status;
+      throw error;
+    }
+    return response.json().catch(function() { return {}; });
+  }
+
+  // Idempotent, Shopify-native cart sync for one gang sheet:
+  //   1. read the cart (/cart.js)
+  //   2. if a line for this upload already matches variant + quantity +
+  //      copies → done
+  //   3. otherwise drop every stale line for this upload (/cart/change.js by
+  //      line key, quantity 0 — never by index, which shifts)
+  //   4. add the desired line once (/cart/add.js)
+  //   5. re-read and verify the line is there with the right quantity.
+  // Quantity is the number of SHEETS Shopify bills; copies live in properties.
   MainProductUpload.prototype.ensureCartLine = async function(cartItem, uploadId) {
     var attempts = 0;
     var maxAttempts = 3;
@@ -2924,28 +3023,25 @@
       attempts += 1;
       try {
         var cart = await this.readCart();
-        var current = countCartQuantityForUpload(cart, cartItem.id, uploadId);
-        if (current >= cartItem.quantity) return cart;
-        var response = await fetch('/cart/add.js', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({
-            items: [{
-              id: cartItem.id,
-              quantity: cartItem.quantity - current,
-              properties: cartItem.properties
-            }]
-          })
-        });
-        if (!response.ok) {
-          var payload = await response.json().catch(function() { return {}; });
-          var error = new Error(payload.description || payload.message || ('Cart add failed with status ' + response.status));
-          error.status = response.status;
-          throw error;
+        var lines = cartLinesForUpload(cart, uploadId);
+        if (lines.length === 1 && cartLineIsExact(lines[0], cartItem)) return cart;
+
+        for (var i = 0; i < lines.length; i += 1) {
+          if (lines[i].key) await cartRequest('/cart/change.js', { id: lines[i].key, quantity: 0 });
         }
+
+        await cartRequest('/cart/add.js', {
+          items: [{
+            id: cartItem.id,
+            quantity: cartItem.quantity,
+            properties: cartItem.properties
+          }]
+        });
+
         var after = await this.readCart();
-        if (countCartQuantityForUpload(after, cartItem.id, uploadId) >= cartItem.quantity) return after;
-        throw new Error('Cart line not visible after add.');
+        var verified = cartLinesForUpload(after, uploadId);
+        if (verified.length === 1 && cartLineIsExact(verified[0], cartItem)) return after;
+        throw new Error('Cart line not verified after add.');
       } catch (error) {
         var status = Number(error && error.status);
         var terminal = status >= 400 && status < 500 && status !== 408 && status !== 429;
@@ -2991,13 +3087,14 @@
     try {
       var self = this;
       var uploadIds = readyItems.map(function(item) { return item.uploadId; });
-      var serverProperties = await this.prepareCartProperties(uploadIds);
+      var lineRequests = readyItems.map(buildCartLineRequest);
+      var serverProperties = await this.prepareCartProperties(uploadIds, lineRequests);
 
       var cartItems = readyItems.map(function(item) {
         var result = item.selectedResult || {};
         var variantId = parseInt(item.selectedVariantId, 10);
         if (!(variantId > 0)) throw new Error('A measured gang sheet has no matching variant.');
-        var quantity = Math.max(1, Number(result.cartQuantity || result.sheetsNeeded) || 1);
+        var quantity = buildCartLineRequest(item).sheetsNeeded;
         var properties = (serverProperties && serverProperties[item.uploadId]) ||
           self.fallbackCartProperties(item);
         var pageVariant = (self.variants || []).find(function(v) {

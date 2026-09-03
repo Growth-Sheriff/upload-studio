@@ -142,9 +142,21 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     variantId: upload.variantId,
     orderId: upload.orderId,
     orderName: upload.orderName,
+    requestedCopies: upload.requestedCopies,
+    designsPerSheet: upload.designsPerSheet,
+    sheetsNeeded: upload.sheetsNeeded,
+    cartSheetLabel: upload.cartSheetLabel,
     createdAt: upload.createdAt,
     items,
   }
+  const copiesBadge =
+    upload.requestedCopies && upload.requestedCopies > 0
+      ? `<span class="badge badge-copies">Copies ${escapeHtml(upload.requestedCopies)}` +
+        (upload.designsPerSheet ? ` · ${escapeHtml(upload.designsPerSheet)} per sheet` : '') +
+        (upload.sheetsNeeded ? ` · ${escapeHtml(upload.sheetsNeeded)} sheet${upload.sheetsNeeded === 1 ? '' : 's'}` : '') +
+        (upload.cartSheetLabel ? ` · ${escapeHtml(upload.cartSheetLabel)}` : '') +
+        '</span>'
+      : ''
 
   if (wantsJson) {
     return corsJson(payload, request, {
@@ -186,7 +198,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   header.page { margin-bottom: 20px; }
   header.page h1 { font-size: 20px; }
   header.page p { color: #6b7280; font-size: 13px; margin-top: 4px; word-break: break-all; }
-  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #e0e7ff; color: #3730a3; margin-top: 8px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #e0e7ff; color: #3730a3; margin-top: 8px; margin-right: 6px; }
+  .badge-copies { background: #fff3d6; color: #7a4d00; }
   .item { display: flex; gap: 16px; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
   .item img, .thumb-fallback { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb; flex-shrink: 0; }
   .thumb-fallback { display: flex; align-items: center; justify-content: center; background: #f3f4f6; color: #9ca3af; font-size: 11px; }
@@ -219,6 +232,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           ? '<span class="badge">Linked to an order</span>'
           : ''
     }
+    ${copiesBadge}
   </header>
   ${rows || '<p>No files attached to this design yet.</p>'}
   ${reorderUrl ? `<a class="reorder" href="${escapeHtml(reorderUrl)}">Order this design again</a>` : ''}

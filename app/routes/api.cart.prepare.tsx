@@ -6,8 +6,12 @@
 // transitional hidden id) while every fact lives in the DB and is served by
 // the /i/<uploadId> identity page.
 //
-// Request:  { shopDomain, uploadIds: string[] }
+// Request:  { shopDomain, uploadIds: string[], lines?: [{ uploadId, copies, designsPerSheet, sheetsNeeded, variantId, sheetLabel }] }
 // Response: { success, items: [{ uploadId, orderable, properties, fileName, thumbnailUrl }] }
+//
+// `lines` carries the customer's nesting request (copies of the design) so it
+// is persisted on the upload and written as a customer-visible `Copies` line
+// property — the print shop must know how many to gang on each sheet.
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from '@remix-run/node'
 import prisma from '~/lib/prisma.server'
@@ -40,7 +44,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const rateLimitResponse = await rateLimitGuard(identifier, 'adminApi')
   if (rateLimitResponse) return rateLimitResponse
 
-  let body: { shopDomain?: string; uploadIds?: unknown }
+  let body: { shopDomain?: string; uploadIds?: unknown; lines?: unknown }
   try {
     body = await request.json()
   } catch {
@@ -51,6 +55,29 @@ export async function action({ request }: ActionFunctionArgs) {
   const uploadIds = Array.isArray(body.uploadIds)
     ? body.uploadIds.filter((id): id is string => typeof id === 'string' && /^[A-Za-z0-9_-]{8,40}$/.test(id))
     : []
+
+  const toInt = (value: unknown, min: number, max: number): number | null => {
+    const n = Math.floor(Number(value))
+    return Number.isFinite(n) && n >= min && n <= max ? n : null
+  }
+  const lineByUpload = new Map<
+    string,
+    { copies: number; designsPerSheet: number | null; sheetsNeeded: number | null; variantId: string | null; sheetLabel: string | null }
+  >()
+  if (Array.isArray(body.lines)) {
+    for (const raw of body.lines as Array<Record<string, unknown>>) {
+      if (!raw || typeof raw !== 'object') continue
+      const uploadId = typeof raw.uploadId === 'string' ? raw.uploadId : ''
+      if (!uploadIds.includes(uploadId)) continue
+      lineByUpload.set(uploadId, {
+        copies: toInt(raw.copies, 1, 999) ?? 1,
+        designsPerSheet: toInt(raw.designsPerSheet, 1, 100000),
+        sheetsNeeded: toInt(raw.sheetsNeeded, 1, 100000),
+        variantId: raw.variantId != null && /^\d{1,20}$/.test(String(raw.variantId)) ? String(raw.variantId) : null,
+        sheetLabel: typeof raw.sheetLabel === 'string' ? raw.sheetLabel.slice(0, 80) : null,
+      })
+    }
+  }
 
   if (!shopDomain) {
     return corsJson({ success: false, error: 'shopDomain is required' }, request, { status: 400 })
@@ -85,6 +112,25 @@ export async function action({ request }: ActionFunctionArgs) {
   })
   const byId = new Map(uploads.map((u) => [u.id, u]))
   const storageConfig = storageConfigForShop(shop)
+
+  // Persist the nesting request before building properties, so the order
+  // line, the identity page and the merchant admin all read the same numbers.
+  await Promise.all(
+    Array.from(lineByUpload.entries())
+      .filter(([uploadId]) => byId.has(uploadId))
+      .map(([uploadId, line]) =>
+        prisma.upload.update({
+          where: { id: uploadId },
+          data: {
+            requestedCopies: line.copies,
+            designsPerSheet: line.designsPerSheet,
+            sheetsNeeded: line.sheetsNeeded,
+            cartVariantId: line.variantId,
+            cartSheetLabel: line.sheetLabel,
+          },
+        })
+      )
+  )
 
   const items = uploadIds.map((uploadId) => {
     const upload = byId.get(uploadId)
@@ -122,6 +168,20 @@ export async function action({ request }: ActionFunctionArgs) {
       '_Print Ready File': fileUrl || identityUrl,
       // Transition carrier: webhook's primary key until all readers migrate.
       [LEGACY_ID_PROPERTY]: upload.id,
+    }
+
+    // Copies: customer-visible so the buyer sees what they asked for and the
+    // print shop sees how many to gang per sheet. Hidden numeric twin for
+    // machine readers. Only written when the widget sent a line.
+    const line = lineByUpload.get(uploadId)
+    if (line) {
+      const perSheet = line.designsPerSheet || 1
+      const sheets = line.sheetsNeeded || Math.ceil(line.copies / perSheet)
+      properties['Copies'] =
+        line.copies === 1
+          ? '1'
+          : `${line.copies} (${perSheet} per sheet × ${sheets} sheet${sheets === 1 ? '' : 's'})`
+      properties['_ul_copies'] = `${line.copies}|${perSheet}|${sheets}`
     }
 
     return {

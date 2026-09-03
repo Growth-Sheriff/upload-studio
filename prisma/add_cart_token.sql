@@ -12,3 +12,10 @@ CREATE INDEX IF NOT EXISTS "upload_items_fingerprint_idx" ON upload_items (finge
 
 CREATE INDEX IF NOT EXISTS "uploads_shop_id_cart_token_idx"
   ON uploads (shop_id, cart_token);
+
+-- Copies / nesting request captured at add-to-cart time (additive).
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS requested_copies INTEGER;
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS designs_per_sheet INTEGER;
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS sheets_needed INTEGER;
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS cart_variant_id TEXT;
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS cart_sheet_label TEXT;
