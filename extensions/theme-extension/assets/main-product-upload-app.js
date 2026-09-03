@@ -369,6 +369,12 @@
     this.artLabel = this.root.querySelector('[data-ump-art-label]');
     this.rulerTop = this.root.querySelector('[data-ump-ruler-top]');
     this.rulerSide = this.root.querySelector('[data-ump-ruler-side]');
+    this.priceNow = this.root.querySelector('[data-ump-price-now]');
+    this.priceNowValue = this.root.querySelector('[data-ump-price-now-value]');
+    this.utilization = this.root.querySelector('[data-ump-utilization]');
+    this.utilizationText = this.root.querySelector('[data-ump-utilization-text]');
+    this.artDimW = this.root.querySelector('[data-ump-art-dim-w]');
+    this.artDimH = this.root.querySelector('[data-ump-art-dim-h]');
     this.addButton = this.root.querySelector('[data-ump-add]');
     this.checkoutButton = this.root.querySelector('[data-ump-checkout]');
     this.priceStrip = this.root.querySelector('[data-ump-price-strip]');
@@ -1481,8 +1487,9 @@
             ? formatInches(item.widthIn) + ' x ' + formatInches(item.heightIn)
             : 'Measuring';
           var thumbUrl = item.thumbnailUrl || item.localPreviewUrl || '';
+          var isBusy = !isReady && item.status !== 'error';
           return '' +
-            '<div class="ump__queue-item' + (isActive ? ' is-active' : '') + '">' +
+            '<div class="ump__queue-item' + (isActive ? ' is-active' : '') + (isBusy ? ' is-busy' : '') + (item.status === 'error' ? ' is-error' : '') + '">' +
               '<button class="ump__queue-main" type="button" data-ump-select-item="' + escapeHtml(item.uploadId || '') + '">' +
                 '<span class="ump__queue-index">' + (index + 1) + '</span>' +
                 (thumbUrl
@@ -1554,6 +1561,62 @@
     this.root.style.setProperty('--ump-art-h', artH.toFixed(2) + '%');
     this.rulerTop.setAttribute('data-label', formatInches(sheet.width));
     this.rulerSide.setAttribute('data-label', formatInches(sheet.height));
+
+    // Dimension callouts on the artwork and sheet utilization (design area
+    // over selected sheet area) — the two numbers a gang-sheet buyer checks
+    // before paying.
+    if (this.artDimW) {
+      this.artDimW.hidden = !hasSize;
+      if (hasSize) this.artDimW.textContent = formatInches(this.state.widthIn);
+    }
+    if (this.artDimH) {
+      this.artDimH.hidden = !hasSize;
+      if (hasSize) this.artDimH.textContent = formatInches(this.state.heightIn);
+    }
+    if (this.utilization) {
+      var sheetArea = sheet.width * sheet.height;
+      var showUtil = hasSize && sheetArea > 0 && !this.isExactMeasuredMode() && Boolean(this.state.selectedResult);
+      this.utilization.hidden = !showUtil;
+      if (showUtil) {
+        var util = Math.max(0, Math.min(100, ((this.state.widthIn * this.state.heightIn) / sheetArea) * 100));
+        var bar = this.utilization.querySelector('i');
+        if (bar) bar.style.setProperty('--ump-util', util.toFixed(0) + '%');
+        if (this.utilizationText) {
+          this.utilizationText.textContent = 'Sheet usage ' + util.toFixed(0) + '%' +
+            (util < 60 ? ' — room to add more designs' : util >= 92 ? ' — fully used' : '');
+        }
+      }
+    }
+  };
+
+  MainProductUpload.prototype.getSelectedVariantPrice = function() {
+    var id = String(this.state.selectedVariantId || '');
+    if (!id) return 0;
+    for (var i = 0; i < (this.variants || []).length; i += 1) {
+      if (String(this.variants[i] && this.variants[i].id) === id) return normalizeVariantPrice(this.variants[i].price);
+    }
+    return 0;
+  };
+
+  MainProductUpload.prototype.renderPriceNow = function(readyItems) {
+    if (!this.priceNow || !this.priceNowValue) return;
+    if (this.isExactMeasuredMode() || this.isLinearInchPricing()) { this.priceNow.hidden = true; return; }
+    var total = 0;
+    var count = 0;
+    (readyItems || []).forEach(function(item) {
+      var result = item.selectedResult || {};
+      var qty = Math.max(1, Number(result.cartQuantity || result.sheetsNeeded) || 1);
+      var variantId = String(item.selectedVariantId || '');
+      var price = 0;
+      for (var i = 0; i < (this.variants || []).length; i += 1) {
+        if (String(this.variants[i] && this.variants[i].id) === variantId) { price = normalizeVariantPrice(this.variants[i].price); break; }
+      }
+      if (price > 0) { total += price * qty; count += qty; }
+    }, this);
+    if (!(total > 0)) { this.priceNow.hidden = true; return; }
+    this.priceNow.hidden = false;
+    this.priceNowValue.innerHTML = escapeHtml(formatMoney(total, this.currency)) +
+      '<small>' + count + ' sheet' + (count === 1 ? '' : 's') + '</small>';
   };
 
   MainProductUpload.prototype.buildCustomItems = function(items) {
@@ -1763,6 +1826,7 @@
       ? (this.state.selectedResult.selectedSheetLabel || this.state.selectedResult.selectedVariantTitle || '--')
       : '--';
     this.renderQuality();
+    this.renderPriceNow(readyItems);
     this.method.textContent = this.getMethodText();
 
     var badgeLabel, badgeClass;

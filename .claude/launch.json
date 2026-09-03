@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ump-harness",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tmp/ump-harness/server.cjs"],
+      "port": 8765
+    }
+  ]
+}

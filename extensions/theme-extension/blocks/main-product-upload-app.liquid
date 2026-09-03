@@ -54,6 +54,10 @@
             <span>{{ block.settings.upload_label | default: 'Upload files' }}</span>
           </button>
           <p class="ump__hint">{{ block.settings.support_text | default: 'PNG, JPG, TIFF, PSD, PDF, AI, EPS and SVG are supported. You can upload one or more gang sheets.' }}</p>
+          <ul class="ump__specs" aria-label="Upload specs">
+            <li class="ump__spec--roll">{{ ump_roll_width }}&quot; roll width</li>
+            <li>PNG</li><li>JPG</li><li>TIFF</li><li>PSD</li><li>PDF</li><li>AI</li><li>EPS</li><li>SVG</li>
+          </ul>
         </div>
       </div>
       <div class="ump__status" data-ump-status-panel hidden>
@@ -97,6 +101,10 @@
           <div>
             <p class="ump__eyebrow">Detected size</p>
             <h3 class="ump__size" data-ump-size>-- x --</h3>
+            <div class="ump__price-now" data-ump-price-now hidden>
+              <span>Your price</span>
+              <strong data-ump-price-now-value></strong>
+            </div>
           </div>
           <span class="ump__badge" data-ump-badge>Locked</span>
         </div>
@@ -106,9 +114,15 @@
           <div class="ump__sheet-plane">
             <div class="ump__art" data-ump-art>
               <span data-ump-art-label>Upload preview</span>
+              <em class="ump__art-dim ump__art-dim--w" data-ump-art-dim-w hidden></em>
+              <em class="ump__art-dim ump__art-dim--h" data-ump-art-dim-h hidden></em>
             </div>
           </div>
         </div>
+        <p class="ump__utilization" data-ump-utilization hidden>
+          <span data-ump-utilization-text></span>
+          <i style="--ump-util: 0%"></i>
+        </p>
         <div class="ump__metrics">
           <div>
             <span>Width</span>
@@ -126,6 +140,7 @@
         <div class="ump__quality" data-ump-quality hidden>
           <span class="ump__quality-badge" data-ump-quality-badge></span>
           <span class="ump__quality-text" data-ump-quality-text></span>
+          <span class="ump__quality-meter" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
         </div>
         <p class="ump__method" data-ump-method>Upload required before this product can be added to cart.</p>
       </div>
