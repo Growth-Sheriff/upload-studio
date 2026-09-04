@@ -24,7 +24,7 @@
   }
 </style>
 
-<div class="w-full bg-[#f3f3f3] pb-10" id="{{ section_dom_id }}" data-ul-custom-price-mod2 data-section-id="{{ block.id }}" data-theme-color-primary="{{ settings.color_primary }}" data-theme-color-secondary="{{ settings.color_secondary }}" data-theme-color-link="{{ settings.color_link }}" data-theme-color-price="{{ settings.color_price }}" data-theme-color-success="{{ settings.color_success }}" data-theme-color-error="{{ settings.color_error }}" data-theme-color-warning="{{ settings.color_warning }}" data-theme-color-border="{{ settings.color_border }}" data-theme-font-body="{{ settings.font_body.family }}" data-theme-font-heading="{{ settings.font_heading.family }}" data-theme-border-radius="{{ settings.border_radius }}" data-product-id="{{ product.id }}" data-shop-domain="{{ shop.permanent_domain }}" data-api-base="/apps/customizer" data-customer-id="{{ customer.id | default: '' }}" data-customer-email="{{ customer.email | default: '' }}" data-customer-first-name="{{ customer.first_name | default: '' }}" data-customer-last-name="{{ customer.last_name | default: '' }}" data-customer-logged-in="{% if customer %}true{% else %}false{% endif %}">
+<div class="w-full bg-[#f3f3f3] pb-10" id="{{ section_dom_id }}" data-ul-custom-price-mod2 data-section-id="{{ block.id }}" data-account-desk="{% if block.settings.show_account_desk %}always{% else %}custom-only{% endif %}" data-theme-color-primary="{{ settings.color_primary }}" data-theme-color-secondary="{{ settings.color_secondary }}" data-theme-color-link="{{ settings.color_link }}" data-theme-color-price="{{ settings.color_price }}" data-theme-color-success="{{ settings.color_success }}" data-theme-color-error="{{ settings.color_error }}" data-theme-color-warning="{{ settings.color_warning }}" data-theme-color-border="{{ settings.color_border }}" data-theme-font-body="{{ settings.font_body.family }}" data-theme-font-heading="{{ settings.font_heading.family }}" data-theme-border-radius="{{ settings.border_radius }}" data-product-id="{{ product.id }}" data-shop-domain="{{ shop.permanent_domain }}" data-api-base="/apps/customizer" data-customer-id="{{ customer.id | default: '' }}" data-customer-email="{{ customer.email | default: '' }}" data-customer-first-name="{{ customer.first_name | default: '' }}" data-customer-last-name="{{ customer.last_name | default: '' }}" data-customer-logged-in="{% if customer %}true{% else %}false{% endif %}">
   <div class="ul-main-shell max-w-2k w-full mx-auto px-4 py-6 font-amazon bg-white mt-4 mb-8 rounded shadow-sm">
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
 
@@ -91,7 +91,7 @@
         <h1 class="text-2xl font-normal text-gray-900 leading-tight mb-1">
           {{ product.title }}
         </h1>
-        <div class="ul-main-customer-status relative mb-4 overflow-hidden rounded-[26px] border border-slate-200 bg-[linear-gradient(135deg,#fff7e6_0%,#ffffff_34%,#f8fafc_100%)] shadow-[0_22px_55px_rgba(15,23,42,0.08)]">
+        <div class="ul-main-customer-status{% unless block.settings.show_account_desk %} hidden{% endunless %} relative mb-4 overflow-hidden rounded-[26px] border border-slate-200 bg-[linear-gradient(135deg,#fff7e6_0%,#ffffff_34%,#f8fafc_100%)] shadow-[0_22px_55px_rgba(15,23,42,0.08)]">
           <div class="pointer-events-none absolute -right-10 -top-12 h-40 w-40 rounded-full bg-amber-200/35 blur-3xl"></div>
           <div class="pointer-events-none absolute -bottom-14 left-8 h-32 w-32 rounded-full bg-sky-200/35 blur-3xl"></div>
           <div class="relative flex flex-wrap items-start justify-between gap-4 px-5 py-5 sm:px-6">
@@ -450,6 +450,7 @@
       "content": "Full product page with customer-specific pricing. Use as the only app block on a product template; set prices in the app under Products → Customer Special Pricing."
     },
     { "type": "header", "content": "Product Information" },
+    { "type": "checkbox", "id": "show_account_desk", "label": "Show Account Pricing Desk card", "info": "Off: the login / account status card stays hidden for guests and standard customers. Customers with an assigned VIP or Business rate still see their pricing status.", "default": false },
     { "type": "checkbox", "id": "show_vendor", "label": "Show Vendor", "default": false },
     { "type": "text", "id": "fake_reviews_count", "label": "Fake Reviews Count (if no real reviews)", "default": "5,241" },
     { "type": "header", "content": "Custom DTF Features (Grid)" },

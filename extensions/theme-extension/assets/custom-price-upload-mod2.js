@@ -669,6 +669,11 @@
     var addToCartLabel = addToCartBtn ? addToCartBtn.textContent : 'Add to Cart';
     var buyNowLabel = buyNowBtn ? buyNowBtn.textContent : 'Buy Now';
     var detectedDefaultTitle = detectedTitle ? detectedTitle.textContent : 'Detected Gang Sheet Size';
+    var customerStatusCard = root.querySelector('.ul-main-customer-status');
+    // Block setting "Show Account Pricing Desk card": 'always' shows the card for
+    // everyone; 'custom-only' (default) keeps it hidden unless the logged-in
+    // customer actually has an assigned VIP/Business rate on this page.
+    var accountDeskMode = root.getAttribute('data-account-desk') === 'always' ? 'always' : 'custom-only';
     var customerStatusTitle = root.querySelector('.ul-main-customer-status-title');
     var customerStatusText = root.querySelector('.ul-main-customer-status-text');
     var customerStatusBadge = root.querySelector('.ul-main-customer-status-badge');
@@ -850,8 +855,21 @@
       });
     }
 
+    function setCustomerStatusCardVisible(visible) {
+      if (!customerStatusCard) return;
+      customerStatusCard.classList.toggle('hidden', !visible);
+    }
+
     function updateCustomerStatusUI() {
       if (!customerStatusTitle || !customerStatusText) return;
+
+      var hasAssignedRate = Boolean(
+        customerLoggedIn &&
+        customerPricing.status !== 'loading' &&
+        customerPricing.hasCustomPricing &&
+        (customerPricing.customerType === 'business' || customerPricing.customerType === 'vip')
+      );
+      setCustomerStatusCardVisible(accountDeskMode === 'always' || hasAssignedRate);
 
       if (!customerLoggedIn) {
         customerStatusTitle.textContent = 'Unlock your account pricing';
