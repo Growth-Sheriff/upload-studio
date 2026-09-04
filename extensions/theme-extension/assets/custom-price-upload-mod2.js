@@ -3438,11 +3438,16 @@
             var orderabilityStatus = data.orderabilityStatus || '';
             state.thumbnailUrl = firstItem.thumbnailUrl || data.thumbnailUrl || '';
             state.originalUrl = firstItem.originalUrl || data.downloadUrl || '';
-            applyServerMeasurement(firstItem);
-            if (state.provisional) {
-              // Server measurement replaces the header estimate entirely.
-              state.provisional = false;
-              state.selectedResult = null;
+            // Only a finished server measurement replaces the header estimate.
+            // Before that the status payload carries no inches, and clearing
+            // `provisional` here made the flow resolve on the estimate and stop
+            // polling while the file was still being measured.
+            if (measurementStatus === 'ready') {
+              applyServerMeasurement(firstItem);
+              if (state.provisional) {
+                state.provisional = false;
+                state.selectedResult = null;
+              }
             }
             if (measurementStatus === 'error' || orderabilityStatus === 'blocked' || data.status === 'error') {
               if (uploadLoading) uploadLoading.classList.add('hidden');
@@ -3453,7 +3458,7 @@
               showError(getPreflightErrorMessage(data, firstItem));
               return false;
             }
-            if (state.widthIn && state.heightIn && measurementStatus !== 'error') {
+            if (measurementStatus === 'ready' && state.widthIn && state.heightIn) {
               if (customerPricing.status === 'loading' && customerPricingPromise) {
                 await customerPricingPromise.catch(function() { return null; });
               }
@@ -3491,9 +3496,11 @@
           if (firstItem) {
             queueItem.thumbnailUrl = firstItem.thumbnailUrl || data.thumbnailUrl || queueItem.thumbnailUrl || '';
             queueItem.originalUrl = firstItem.originalUrl || data.downloadUrl || queueItem.originalUrl || '';
-            applyServerMeasurement(firstItem, queueItem);
             var measurementStatus = firstItem.measurementStatus || 'pending';
             var orderabilityStatus = data.orderabilityStatus || '';
+            if (measurementStatus === 'ready') {
+              applyServerMeasurement(firstItem, queueItem);
+            }
 
             if (measurementStatus === 'error' || orderabilityStatus === 'blocked' || data.status === 'error') {
               queueItem.uploadStatus = 'error';
@@ -3511,7 +3518,7 @@
               return false;
             }
 
-            if (queueItem.widthIn && queueItem.heightIn && measurementStatus !== 'error') {
+            if (measurementStatus === 'ready' && queueItem.widthIn && queueItem.heightIn) {
               queueItem.uploadStatus = 'ready';
               queueItem.quoteStatus = 'processing';
               queueItem.error = '';
