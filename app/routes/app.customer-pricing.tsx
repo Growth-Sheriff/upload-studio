@@ -1241,7 +1241,13 @@ export default function CustomerPricingPage() {
   const [newTagRule, setNewTagRule] = useState({ tag: '', statusKey: 'business' })
   const [simInches, setSimInches] = useState('100')
   const [simCopies, setSimCopies] = useState('1')
-  const [simWho, setSimWho] = useState('status:business')
+  const [simWho, setSimWho] = useState(() =>
+    modelState.statusRatesEnabled
+      ? `status:${config.statuses.find((status) => status.type !== 'standard' && status.active)?.key || 'business'}`
+      : modelState.volumeTiersEnabled
+        ? 'volume'
+        : 'standard'
+  )
 
   const resetFromLoader = useCallback(() => {
     setModel(modelState.model)
@@ -1394,6 +1400,21 @@ export default function CustomerPricingPage() {
   const setupComplete = completedSteps === setupSteps.length
 
   // ── simulator ──
+  const simOptions = useMemo(
+    () => [
+      { label: 'Standard customer', value: 'standard' },
+      ...(statusEngineOn ? assignableStatuses.map((status) => ({ label: `${status.label} (account rate)`, value: `status:${status.key}` })) : []),
+      ...(volumeEngineOn ? [{ label: `${volumeLabel || 'Volume tiers'} (volume tier)`, value: 'volume' }] : []),
+    ],
+    [statusEngineOn, volumeEngineOn, assignableStatuses, volumeLabel]
+  )
+  useEffect(() => {
+    // Keep the simulated customer valid when the model or statuses change.
+    if (!simOptions.some((option) => option.value === simWho)) {
+      setSimWho(simOptions[1]?.value || 'standard')
+    }
+  }, [simOptions, simWho])
+
   const simulation = useMemo(() => {
     const inches = parseLocalizedPositiveNumber(simInches, 0)
     const copies = Math.max(1, Math.round(parseLocalizedPositiveNumber(simCopies, 1)))
@@ -2223,16 +2244,7 @@ export default function CustomerPricingPage() {
                     <TextField label="Length (inches)" autoComplete="off" type="text" inputMode="decimal" value={simInches} onChange={setSimInches} />
                     <TextField label="Copies" autoComplete="off" type="text" inputMode="numeric" value={simCopies} onChange={setSimCopies} />
                   </InlineGrid>
-                  <Select
-                    label="Customer"
-                    options={[
-                      { label: 'Standard customer', value: 'standard' },
-                      ...(statusEngineOn ? assignableStatuses.map((status) => ({ label: `${status.label} (account rate)`, value: `status:${status.key}` })) : []),
-                      ...(volumeEngineOn ? [{ label: `${volumeLabel || 'Volume tiers'} (volume tier)`, value: 'volume' }] : []),
-                    ]}
-                    value={simWho}
-                    onChange={setSimWho}
-                  />
+                  <Select label="Customer" options={simOptions} value={simWho} onChange={setSimWho} />
                   {simulation ? (
                     <Box padding="300" background="bg-surface-secondary" borderRadius="200">
                       <BlockStack gap="100">

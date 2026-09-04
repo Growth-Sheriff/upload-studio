@@ -112,3 +112,9 @@
     display: inline-flex;
   }
 }
+
+/* Every admin page uses the full content width; Polaris' default page cap
+   (62.375rem) wastes the sides on wide screens. */
+.Polaris-Page {
+  max-width: none;
+}
