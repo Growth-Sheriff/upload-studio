@@ -429,16 +429,16 @@
 
     </div>
   </div>
-</div>
-
-<script type="application/json" id="{{ section_dom_id }}-product-json" data-ul-mod2-product-json>
+  {%- comment -%} Must stay inside the root: the script reads it with root.querySelector. {%- endcomment -%}
+  <script type="application/json" id="{{ section_dom_id }}-product-json" data-ul-mod2-product-json>
 {
   "productId": {{ product.id | json }},
   "title": {{ product.title | json }},
   "variants": {{ product.variants | json }},
   "selectedVariantId": {{ product.selected_or_first_available_variant.id | json }}
 }
-</script>
+  </script>
+</div>
 {% schema %}
 {
   "name": "Custom Price Upload Mod 2",

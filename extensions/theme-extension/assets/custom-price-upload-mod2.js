@@ -246,6 +246,189 @@
       return null;
     }
 
+    // ── Resumable multipart sessions (ported from Variant Gang Sheet Upload) ──
+    // Per-file (content fingerprint) record of an in-flight R2 multipart
+    // upload: which parts landed and the ids needed for fresh presigned URLs.
+    var MP_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+    var SINGLE_SHOT_FALLBACK_MAX_BYTES = 256 * 1024 * 1024;
+
+    function mpStorageOk() {
+      try { window.localStorage.setItem('__ul_t', '1'); window.localStorage.removeItem('__ul_t'); return true; } catch (_) { return false; }
+    }
+    function getMpSessionKey(fingerprint) {
+      return ['umpMp', shopDomain || 'shop', String(productData.productId || 'product'), fingerprint].join(':');
+    }
+    function loadMpSession(fingerprint, file) {
+      if (!fingerprint || !mpStorageOk()) return null;
+      var session = null;
+      try { session = JSON.parse(window.localStorage.getItem(getMpSessionKey(fingerprint)) || 'null'); } catch (_) { return null; }
+      if (!session || !session.uploadId || !session.multipartUploadId || !session.key) return null;
+      if (!(session.savedAt > 0) || Date.now() - session.savedAt > MP_SESSION_TTL_MS || (file && session.fileSize !== file.size)) {
+        clearMpSession(fingerprint);
+        return null;
+      }
+      return session;
+    }
+    function saveMpSession(fingerprint, session) {
+      if (!fingerprint || !mpStorageOk()) return;
+      session.savedAt = Date.now();
+      try { window.localStorage.setItem(getMpSessionKey(fingerprint), JSON.stringify(session)); } catch (_) {}
+    }
+    function clearMpSession(fingerprint) {
+      if (!fingerprint) return;
+      try { window.localStorage.removeItem(getMpSessionKey(fingerprint)); } catch (_) {}
+    }
+    async function requestMultipartResume(session) {
+      var response = await fetch(apiBase + '/api/upload/multipart-resume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shopDomain: shopDomain,
+          uploadId: session.uploadId,
+          key: session.key,
+          multipartUploadId: session.multipartUploadId,
+          totalParts: session.totalParts
+        })
+      });
+      var data = await response.json().catch(function() { return {}; });
+      if (!response.ok || !data.success) return null;
+      return data;
+    }
+
+    // Intent with dedupe + resume: same file again → resume the interrupted
+    // multipart upload (fresh URLs) or reuse the already-measured upload.
+    // Returns a Response-like object so the callers' `.ok/.json()` stay as is.
+    async function createOrResumeIntent(file) {
+      var fingerprint = await ulFingerprint(file);
+      var session = loadMpSession(fingerprint, file);
+      if (session) {
+        var resumeData = null;
+        try { resumeData = await requestMultipartResume(session); } catch (_) {}
+        if (resumeData) {
+          var resumed = {
+            uploadId: session.uploadId,
+            itemId: session.itemId,
+            key: session.key,
+            publicUrl: session.publicUrl,
+            storageProvider: 'r2',
+            multipart: {
+              uploadId: session.multipartUploadId,
+              key: session.key,
+              partSize: session.partSize,
+              totalParts: session.totalParts,
+              parts: resumeData.parts || [],
+              completeUrl: resumeData.completeUrl,
+              abortUrl: resumeData.abortUrl,
+              publicUrl: session.publicUrl
+            },
+            __fingerprint: fingerprint,
+            __session: session,
+            __resume: resumeData
+          };
+          try { console.log('[MainUpload] resuming multipart upload ' + session.uploadId + ': ' + (resumeData.uploadedParts || []).length + '/' + session.totalParts + ' parts already on R2'); } catch (_) {}
+          return { ok: true, json: function() { return Promise.resolve(resumed); } };
+        }
+        clearMpSession(fingerprint);
+      }
+      var intentRes = await fetch(apiBase + '/api/upload/intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shopDomain: shopDomain,
+          productId: String(productData.productId),
+          mode: 'dtf',
+          fileName: file.name,
+          contentType: file.type || 'application/octet-stream',
+          fileSize: file.size,
+          customerId: root.getAttribute('data-customer-id') || null,
+          customerEmail: root.getAttribute('data-customer-email') || null,
+          fingerprint: fingerprint || null,
+          partSizeMb: file.size < 64 * 1024 * 1024 ? 8 : file.size < 512 * 1024 * 1024 ? 16 : 32
+        })
+      });
+      if (!intentRes.ok) return intentRes;
+      var intent = await intentRes.json().catch(function() { return {}; });
+      intent.__fingerprint = fingerprint;
+      return { ok: true, json: function() { return Promise.resolve(intent); } };
+    }
+
+    // ── Shopify-native cart sync (ported from Variant Gang Sheet Upload) ──
+    function cartLineMatchesUpload(line, uploadId) {
+      var props = (line && line.properties) || {};
+      if (props['_ul_upload_id'] === uploadId) return true;
+      var identity = String(props['Sheet Identity'] || props['_ul_identity'] || props['Design Identity'] || '');
+      return identity.indexOf('/i/' + uploadId) !== -1;
+    }
+    function cartLinesForUpload(cart, uploadId) {
+      return ((cart && cart.items) || []).filter(function(line) { return cartLineMatchesUpload(line, uploadId); });
+    }
+    function cartLineIsExact(line, cartItem) {
+      if (Number(line.variant_id || line.id) !== Number(cartItem.id)) return false;
+      if ((Number(line.quantity) || 0) !== cartItem.quantity) return false;
+      var props = line.properties || {};
+      var want = cartItem.properties || {};
+      return String(props['Sheet Identity'] || '') === String(want['Sheet Identity'] || '');
+    }
+    async function readCart() {
+      var response = await fetch('/cart.js', { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
+      if (!response.ok) throw new Error('Cart read failed with status ' + response.status);
+      return response.json();
+    }
+    async function cartRequest(url, body) {
+      var response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!response.ok) {
+        var payload = await response.json().catch(function() { return {}; });
+        var error = new Error(payload.description || payload.message || ('Cart request failed with status ' + response.status));
+        error.status = response.status;
+        throw error;
+      }
+      return response.json().catch(function() { return {}; });
+    }
+    // Idempotent: keep an exact line, otherwise zero stale lines for this
+    // upload by key (/cart/change.js), add once (/cart/add.js), verify.
+    async function ensureCartLine(cartItem, uploadId) {
+      var attempts = 0;
+      while (true) {
+        attempts += 1;
+        try {
+          var cart = await readCart();
+          var lines = cartLinesForUpload(cart, uploadId);
+          if (lines.length === 1 && cartLineIsExact(lines[0], cartItem)) return cart;
+          for (var i = 0; i < lines.length; i += 1) {
+            if (lines[i].key) await cartRequest('/cart/change.js', { id: lines[i].key, quantity: 0 });
+          }
+          await cartRequest('/cart/add.js', { items: [{ id: cartItem.id, quantity: cartItem.quantity, properties: cartItem.properties }] });
+          var after = await readCart();
+          var verified = cartLinesForUpload(after, uploadId);
+          if (verified.length === 1 && cartLineIsExact(verified[0], cartItem)) return after;
+          throw new Error('Cart line not verified after add.');
+        } catch (error) {
+          var status = Number(error && error.status);
+          var terminal = status >= 400 && status < 500 && status !== 408 && status !== 429;
+          if (terminal || attempts >= 3) throw error;
+          await sleepMs(400 * Math.pow(2, attempts - 1));
+        }
+      }
+    }
+    async function bindCartToken(cart, uploadIds) {
+      try {
+        var token = cart && cart.token ? String(cart.token) : '';
+        if (!token) { var fresh = await readCart(); token = fresh && fresh.token ? String(fresh.token) : ''; }
+        if (!token) return;
+        await fetch(apiBase + '/api/cart/bind', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shopDomain: shopDomain, cartToken: token, uploadIds: uploadIds })
+        });
+      } catch (error) {
+        try { console.warn('[MainUpload] cart token bind failed (non-fatal):', error); } catch (_) {}
+      }
+    }
+
     async function performUploadWithRetry(file, intent, onProgress) {
       if (intent.deduplicated) {
         if (typeof onProgress === 'function') onProgress(file.size, file.size);
@@ -254,19 +437,60 @@
       // Upgrade from Variant Gang Sheet Upload: parallel multipart with
       // in-place resume for large files (R2), single-shot below the threshold.
       if (intent.multipart && window.ULMultipartUploader && window.ULMultipartUploader.tryUpload) {
-        try {
-          var mpResult = await window.ULMultipartUploader.tryUpload(file, intent, {
-            onProgress: onProgress,
-            shopDomain: shopDomain,
-            concurrency: window.ULMultipartUploader.DEFAULT_CONCURRENCY || 6
-          });
-          if (mpResult) {
-            intent.publicUrl = mpResult.fileUrl || intent.publicUrl;
-            intent.storageProvider = mpResult.storageProvider;
-            return { via: 'r2-multipart', attempt: 1 };
+        var mp = intent.multipart;
+        var fingerprint = intent.__fingerprint || '';
+        var session = intent.__session || null;
+        if (fingerprint && !session) {
+          session = {
+            uploadId: intent.uploadId, itemId: intent.itemId, key: mp.key,
+            multipartUploadId: mp.uploadId, partSize: mp.partSize, totalParts: mp.totalParts,
+            publicUrl: mp.publicUrl || intent.publicUrl || '', fileName: file.name, fileSize: file.size, parts: {}
+          };
+          saveMpSession(fingerprint, session);
+        }
+        var resume = intent.__resume || null;
+        var mpAttempt = 0;
+        while (true) {
+          mpAttempt += 1;
+          try {
+            var mpResult = await window.ULMultipartUploader.tryUpload(file, intent, {
+              onProgress: onProgress,
+              shopDomain: shopDomain,
+              concurrency: window.ULMultipartUploader.DEFAULT_CONCURRENCY || 6,
+              resume: resume,
+              onPartDone: function(partNumber, etag) {
+                if (!session) return;
+                session.parts[partNumber] = etag;
+                saveMpSession(fingerprint, session);
+              }
+            });
+            if (mpResult) {
+              intent.publicUrl = mpResult.fileUrl || intent.publicUrl;
+              intent.storageProvider = mpResult.storageProvider;
+              clearMpSession(fingerprint);
+              return { via: 'r2-multipart', attempt: mpAttempt };
+            }
+            break;
+          } catch (mpErr) {
+            // In-place resume with fresh URLs (twice) before giving up.
+            if (mpErr && mpErr.resumable && session && mpAttempt <= 2) {
+              await sleepMs(1500 * mpAttempt);
+              var fresh = null;
+              try { fresh = await requestMultipartResume(session); } catch (_) {}
+              if (fresh) {
+                resume = fresh;
+                intent.multipart.parts = fresh.parts && fresh.parts.length ? fresh.parts : intent.multipart.parts;
+                intent.multipart.completeUrl = fresh.completeUrl || intent.multipart.completeUrl;
+                intent.multipart.abortUrl = fresh.abortUrl || intent.multipart.abortUrl;
+                continue;
+              }
+            }
+            try { console.warn('[MainUpload] multipart failed: ' + (mpErr && mpErr.message ? mpErr.message : mpErr)); } catch (_) {}
+            if (file.size > SINGLE_SHOT_FALLBACK_MAX_BYTES) {
+              throw new Error('Connection interrupted. Drop the same file again to resume from where it stopped.');
+            }
+            break;
           }
-        } catch (mpErr) {
-          try { console.warn('[MainUpload] multipart failed, falling back to single-shot: ' + (mpErr && mpErr.message ? mpErr.message : mpErr)); } catch (_) {}
         }
       }
       var storageProvider = intent.storageProvider || 'local';
@@ -2075,7 +2299,8 @@
           setPurchaseButtonsDisabled(!(customQueueAllReady() && customerPricing.quoteStatus === 'ready' && customerPricing.quoteTotal != null));
           return;
         }
-        setPurchaseButtonsDisabled(!(state.uploadId && state.selectedResult && state.selectedVariantId));
+        // A provisional (header-probed) resolution never unlocks the cart.
+        setPurchaseButtonsDisabled(!(state.uploadId && state.selectedResult && state.selectedVariantId && !state.provisional));
         return;
       }
       setPurchaseButtonsDisabled(!state.selectedVariantId);
@@ -2879,7 +3104,12 @@
         if (hasSeparateArtworkBounds()) {
           notes.push('Artwork bounds were also detected for preview, but billing keeps the full uploaded page size.');
         }
-        notes.push(getSizingMethodText(state));
+        if (state.provisional) {
+          notes = ['Estimated from the file header — the server confirms the exact size once the upload lands.'];
+          if (state.selectedResult && state.selectedResult.selectedSheetLabel) notes.push('Estimated sheet: ' + state.selectedResult.selectedSheetLabel + '.');
+        } else {
+          notes.push(getSizingMethodText(state));
+        }
         detectedNote.textContent = notes.join(' ');
       }
     }
@@ -2969,9 +3199,68 @@
       }
     }
 
+    // ── Instant preview (ported from Variant Gang Sheet Upload) ──
+    // Header-only probe (first/last MB) gives size + DPI before the body is
+    // sent; the server resolves the same policy for a provisional sheet.
+    // Everything set here is provisional and replaced by the measurement.
+    async function applyProvisionalProbe(file, uploadToken) {
+      if (!window.ULFileProbe || !window.ULFileProbe.probe) return;
+      var probe = null;
+      try { probe = await window.ULFileProbe.probe(file); } catch (_) { return; }
+      if (uploadToken !== uploadFlowToken || !probe || !(probe.widthPx > 0) || !(probe.heightPx > 0)) return;
+      if (state.widthIn && !state.provisional) return; // server already answered
+      state.provisional = true;
+      state.widthPx = probe.widthPx;
+      state.heightPx = probe.heightPx;
+      if (probe.dpi > 0) state.embeddedDpi = probe.dpi;
+      state.sizingSource = 'client_probe';
+      if (probe.widthIn > 0 && probe.heightIn > 0) {
+        state.widthIn = probe.widthIn;
+        state.heightIn = probe.heightIn;
+      }
+      updateDetectedUI();
+      updatePreview();
+      try {
+        var response = await fetch(apiBase + '/api/upload/resolve-preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            shopDomain: shopDomain,
+            productId: String(productData.productId),
+            widthPx: probe.widthPx,
+            heightPx: probe.heightPx,
+            dpi: probe.dpi || null,
+            dpiSource: probe.dpiSource || null,
+            quantity: state.quantity,
+            selectedVariantId: getFallbackVariantId() || state.selectedVariantId || null,
+            customerId: root.getAttribute('data-customer-id') || null,
+            customerEmail: root.getAttribute('data-customer-email') || null,
+            measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
+            rollWidthIn: MAIN_PRODUCT_ROLL_WIDTH_IN,
+            maxUploadWidth: effectiveRules.maxUploadWidth
+          })
+        });
+        var data = await response.json().catch(function() { return {}; });
+        if (uploadToken !== uploadFlowToken || !state.provisional) return;
+        if (data && data.dimensions && data.dimensions.widthIn > 0 && data.dimensions.heightIn > 0) {
+          state.widthIn = data.dimensions.widthIn;
+          state.heightIn = data.dimensions.heightIn;
+          state.effectiveDpi = data.dimensions.effectiveDpi || state.effectiveDpi;
+        }
+        if (response.ok && data.resolution) {
+          state.selectedResult = data.resolution;
+          setSelectedVariant(data.resolution.selectedVariantId);
+          if (uploadStatus) uploadStatus.textContent = 'Estimated sheet: ' + (data.resolution.selectedSheetLabel || data.resolution.selectedVariantTitle || '') + ' — confirming on the server...';
+        }
+        updateDetectedUI();
+        syncPurchaseButtonsForCurrentState();
+      } catch (_) {}
+    }
+
     function resetUploadState() {
       resolveRequestToken += 1;
       uploadFlowToken += 1;
+      state.provisional = false;
       state.uploadId = '';
       state.originalUrl = '';
       state.thumbnailUrl = '';
@@ -3107,6 +3396,11 @@
             state.thumbnailUrl = firstItem.thumbnailUrl || data.thumbnailUrl || '';
             state.originalUrl = firstItem.originalUrl || data.downloadUrl || '';
             applyServerMeasurement(firstItem);
+            if (state.provisional) {
+              // Server measurement replaces the header estimate entirely.
+              state.provisional = false;
+              state.selectedResult = null;
+            }
             if (measurementStatus === 'error' || orderabilityStatus === 'blocked' || data.status === 'error') {
               if (uploadLoading) uploadLoading.classList.add('hidden');
               if (uploadStatus) uploadStatus.textContent = '';
@@ -3270,24 +3564,9 @@
           0.08,
           'Requesting a secure upload intent from the server.'
         );
-        var intentRes = await fetch(apiBase + '/api/upload/intent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            shopDomain: shopDomain,
-            productId: String(productData.productId),
-            mode: 'dtf',
-            fileName: file.name,
-            contentType: file.type || 'application/octet-stream',
-            fileSize: file.size,
-            customerId: root.getAttribute('data-customer-id') || null,
-            customerEmail: root.getAttribute('data-customer-email') || null,
-            // Upgrades: content fingerprint (instant re-upload for the same
-            // customer + file) and a part-size hint for multipart.
-            fingerprint: await ulFingerprint(file),
-            partSizeMb: file.size < 64 * 1024 * 1024 ? 8 : file.size < 512 * 1024 * 1024 ? 16 : 32
-          })
-        });
+        // Upgrade: dedupe (same customer + same file → reuse) and resume of an
+        // interrupted multipart upload happen inside createOrResumeIntent.
+        var intentRes = await createOrResumeIntent(file);
         if (!intentRes.ok) {
           var intentErr = await intentRes.json().catch(function() { return {}; });
           throw new Error(intentErr.error || 'Failed to create upload intent.');
@@ -3477,26 +3756,14 @@
       resetActionLabels();
       setSelectedVariant(getFallbackVariantId());
       updateVipPreviewUI();
+      state.provisional = false;
       syncPurchaseButtonsForCurrentState();
+      // Instant preview runs alongside the transfer; never blocks it.
+      applyProvisionalProbe(file, uploadToken);
       try {
-        var intentRes = await fetch(apiBase + '/api/upload/intent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            shopDomain: shopDomain,
-            productId: String(productData.productId),
-            mode: 'dtf',
-            fileName: file.name,
-            contentType: file.type || 'application/octet-stream',
-            fileSize: file.size,
-            customerId: root.getAttribute('data-customer-id') || null,
-            customerEmail: root.getAttribute('data-customer-email') || null,
-            // Upgrades: content fingerprint (instant re-upload for the same
-            // customer + file) and a part-size hint for multipart.
-            fingerprint: await ulFingerprint(file),
-            partSizeMb: file.size < 64 * 1024 * 1024 ? 8 : file.size < 512 * 1024 * 1024 ? 16 : 32
-          })
-        });
+        // Upgrade: dedupe (same customer + same file → reuse) and resume of an
+        // interrupted multipart upload happen inside createOrResumeIntent.
+        var intentRes = await createOrResumeIntent(file);
         if (!intentRes.ok) {
           var intentErr = await intentRes.json().catch(function() { return {}; });
           throw new Error(intentErr.error || 'Failed to create upload intent.');
@@ -3574,6 +3841,10 @@
     async function addConfiguredItem(redirectPath, triggerButton) {
       if (uploadRequired && !state.uploadId) {
         showError('Please upload your design first.');
+        return;
+      }
+      if (state.provisional) {
+        showError('Your file is still being measured. One moment.');
         return;
       }
       var isVip = isVipPricingActive();
@@ -3673,21 +3944,17 @@
             })
           : {};
 
-        var response = await fetch('/cart/add.js', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            items: [{
-              id: parseInt(variantId, 10),
-              quantity: state.selectedResult ? state.selectedResult.sheetsNeeded : quantityValue,
-              properties: properties
-            }]
-          })
-        });
-        if (!response.ok) {
-          var err = await response.json().catch(function() { return {}; });
-          throw new Error(err.description || 'Failed to add to cart.');
-        }
+        // Verified, idempotent cart sync (exact-line replace) + cart-token
+        // binding so the order webhook has a second carrier for this upload.
+        var cartItem = {
+          id: parseInt(variantId, 10),
+          quantity: Math.max(1, Number(state.selectedResult ? state.selectedResult.sheetsNeeded : quantityValue) || 1),
+          properties: properties
+        };
+        var syncedCart = uploadRequired && state.uploadId
+          ? await ensureCartLine(cartItem, state.uploadId)
+          : await cartRequest('/cart/add.js', { items: [cartItem] });
+        if (uploadRequired && state.uploadId) await bindCartToken(syncedCart, [state.uploadId]);
         window.location.href = redirectPath;
       } catch (error) {
         showError(error && error.message ? error.message : 'Failed to add to cart.');
@@ -3890,6 +4157,36 @@
       });
     }
 
+    // ── Reorder deep link (ported): ?ul_reorder=<uploadId> restores a
+    // previously measured upload so a repeat order needs no re-upload.
+    async function restoreReorderFromUrl() {
+      var uploadId = '';
+      try { uploadId = String(new URLSearchParams(window.location.search).get('ul_reorder') || '').trim(); } catch (_) { return; }
+      if (!uploadId || !/^[A-Za-z0-9_-]{8,40}$/.test(uploadId)) return;
+      if (hasCustomPricingActive() || isCustomerPricingLoading()) return; // VIP/Business use the customer workspace reorder flow
+      var uploadToken = ++uploadFlowToken;
+      try {
+        var response = await fetch(apiBase + '/api/upload/status/' + encodeURIComponent(uploadId) + '?shopDomain=' + encodeURIComponent(shopDomain));
+        if (!response.ok) return;
+        var data = await response.json();
+        var firstItem = data.items && data.items[0];
+        if (!firstItem || !(Number(firstItem.widthIn) > 0)) return;
+        if (data.capabilities && data.capabilities.canAddToCart === false) return;
+        if (uploadToken !== uploadFlowToken) return;
+        state.provisional = false;
+        state.uploadId = uploadId;
+        state.fileName = firstItem.fileName || firstItem.originalName || 'Previous design';
+        state.lastFile = null;
+        state.thumbnailUrl = firstItem.thumbnailUrl || data.thumbnailUrl || '';
+        state.originalUrl = firstItem.originalUrl || data.downloadUrl || '';
+        applyServerMeasurement(firstItem);
+        updatePreview();
+        await updateVariantResolution();
+        try { console.log('[MainUpload] reorder restored upload ' + uploadId); } catch (_) {}
+      } catch (error) {
+        try { console.warn('[MainUpload] reorder restore failed:', error && error.message); } catch (_) {}
+      }
+    }
     thumbButtons.forEach(function(button, index) {
       if (index === 0) setActiveThumbnail(button);
       button.addEventListener('click', function() {
@@ -3954,4 +4251,7 @@
     setSelectedVariant(getFallbackVariantId());
     updateVipPreviewUI();
     syncPurchaseButtonsForCurrentState();
+    // Reorder link is honoured once the customer's pricing context is known
+    // (VIP/Business customers reorder through their workspace instead).
+    Promise.resolve(customerPricingPromise).then(restoreReorderFromUrl, restoreReorderFromUrl);
   })();
