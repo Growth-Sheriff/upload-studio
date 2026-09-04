@@ -224,9 +224,11 @@ export async function action({ request }: ActionFunctionArgs) {
       : preparedItems.reduce((sum, item) => sum + item.quote.billableLengthIn, 0)
 
   const checkoutLabel =
-    firstItem.pricingContext.customerType === 'business'
-      ? 'Business custom checkout'
-      : 'VIP custom checkout'
+    firstItem.pricingSource === 'volume_tiers'
+      ? `${firstItem.pricingContext.statusLabel || 'Returning customer'} checkout`
+      : firstItem.pricingContext.customerType === 'business'
+        ? 'Business custom checkout'
+        : 'VIP custom checkout'
   const noteUploadIds = preparedItems.map((item) => item.upload.id).join(', ')
   const customerGid = toCustomerGid(loggedInCustomerId || firstItem.pricingContext.customerId)
 

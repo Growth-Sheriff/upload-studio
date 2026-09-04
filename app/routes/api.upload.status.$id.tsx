@@ -2,7 +2,7 @@ import type { LoaderFunctionArgs } from '@remix-run/node'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
-import { isDtfPrintHouseShop } from '~/lib/customerPricing.server'
+import { getPricingPolicy } from '~/lib/customerPricingModel.server'
 import {
   generateLocalFileToken,
   getStorageConfig,
@@ -303,7 +303,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       thumbnailKey: item.thumbnailKey,
     })
   )
-  const useFullCanvasMeasurement = isDtfPrintHouseShop(shop.shopDomain)
+  const useFullCanvasMeasurement = getPricingPolicy(shop.shopDomain, shop.settings).measurementBasis === 'full_page'
   const clientStatus = deriveUploadClientStatus(upload.status, lifecycleItems)
   const orderabilityStatus = deriveUploadOrderabilityStatus(lifecycleItems)
 

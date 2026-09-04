@@ -6,7 +6,7 @@
 // the authoritative answer after measurement.
 
 import { shopifyGraphQL } from '~/lib/shopify.server'
-import { getMaxWidthLimitForShop, isDtfPrintHouseShop } from '~/lib/customerPricing.server'
+import { getPricingPolicy } from '~/lib/customerPricingModel.server'
 import {
   resolveSheetVariant,
   type BuilderResolveConfig,
@@ -340,7 +340,8 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
   if (!productResolveData.productData.product) return { kind: 'product_not_found' }
 
   const baseBuilderConfig = (input.builderConfig || {}) as Record<string, unknown>
-  const appliedBuilderConfig = applyAlphaProBuilderDefaults(shopDomain, productId, baseBuilderConfig)
+  const policy = getPricingPolicy(shopDomain, shop.settings)
+  const appliedBuilderConfig = applyAlphaProBuilderDefaults(shopDomain, productId, baseBuilderConfig, shop.settings)
   const customerOffer = buildAlphaProCustomerOffer({
     shopDomain,
     productId,
@@ -352,7 +353,7 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
   const rawBuilderConfig = (customerOffer
     ? { ...appliedBuilderConfig, customerOffer }
     : appliedBuilderConfig) as Record<string, unknown>
-  const shopMaxWidthLimit = getMaxWidthLimitForShop(shopDomain)
+  const shopMaxWidthLimit = policy.maxSheetWidthIn
   const useMainPolicy = shouldUseMainProductMeasurementPolicy(input.measurementPolicy)
   const effectiveConfig: EffectiveResolveConfig = {
     sheetOptionName:
@@ -366,8 +367,13 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
       : [],
     artboardMarginIn: DEFAULT_RESOLVE_CONFIG.artboardMarginIn,
     imageMarginIn: DEFAULT_RESOLVE_CONFIG.imageMarginIn,
-    fitToleranceIn: isDtfPrintHouseShop(shopDomain) ? 0.5 : 0,
-    selectionStrategy: useMainPolicy ? 'smallest_fitting_sheet' : null,
+    fitToleranceIn: policy.fitToleranceIn,
+    selectionStrategy:
+      policy.sheetSelection !== 'block_default'
+        ? policy.sheetSelection
+        : useMainPolicy
+          ? 'smallest_fitting_sheet'
+          : null,
     maxWidthIn: Math.max(
       parsePositiveNumber(input.maxUploadWidth) || 0,
       parsePositiveNumber(rawBuilderConfig.maxWidthIn) || 0,
@@ -385,7 +391,7 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
         rollWidthIn: getMainProductRollWidth(input.rollWidthIn),
         sheetSizes: getMainProductSheetSizes(variants),
       })
-    : isDtfPrintHouseShop(shopDomain)
+    : policy.measurementBasis === 'full_page'
       ? applyFullCanvasMeasurementMetadata(input.rawMetadata)
       : input.rawMetadata
   const dimensions = metadataToUploadDimensions(resolvedMetadata)

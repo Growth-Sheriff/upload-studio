@@ -26,9 +26,8 @@ import {
 import {
   ALPHA_PRO_DISCOUNT_TIERS,
   applyAlphaProBuilderDefaults,
-  isAlphaPrintShop,
-  isAlphaProProduct,
 } from "~/lib/alphaProDiscounts";
+import { isVolumeProgramProduct, isVolumeTiersEnabled } from "~/lib/customerPricingModel.server";
 
 
 const ExtraQuestionSchema = z.object({
@@ -372,7 +371,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     conflictSignals,
   };
 
-  const alphaProDiscountProduct = isAlphaPrintShop(shopDomain) && isAlphaProProduct(product.id);
+  const alphaProDiscountProduct =
+    isVolumeTiersEnabled(shopDomain, shop.settings) && isVolumeProgramProduct(shopDomain, shop.settings, product.id);
   const existingBuilderConfig = config
     ? {
         ...DEFAULT_BUILDER_CONFIG,
@@ -390,7 +390,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const builderConfigForResponse = applyAlphaProBuilderDefaults(
     shopDomain,
     product.id,
-    existingBuilderConfig as unknown as Record<string, unknown>
+    existingBuilderConfig as unknown as Record<string, unknown>,
+    shop.settings
   ) as unknown as BuilderConfig;
 
   return json({
@@ -603,7 +604,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
     builderConfig = applyAlphaProBuilderDefaults(
       shopDomain,
       productGid,
-      builderConfig as unknown as Record<string, unknown>
+      builderConfig as unknown as Record<string, unknown>,
+      shop.settings
     ) as unknown as BuilderConfig;
 
     // Compatibility-mode keys are server-managed (set only via the compat-*
@@ -1021,12 +1023,12 @@ export default function ProductConfigurePage() {
                 <BlockStack gap="400">
                   <InlineStack align="space-between" blockAlign="center">
                     <BlockStack gap="100">
-                      <Text as="h2" variant="headingMd">Alpha Pro Inch Discounts</Text>
+                      <Text as="h2" variant="headingMd">Volume tiers for this product</Text>
                       <Text as="p" tone="subdued">
-                        These thresholds are billable gang-sheet inches, not cart copies. They are only shown for Alpha Print's DTF/UV Gang Sheet Pro products.
+                        Per-inch prices by order size for customers in your volume program. Thresholds are billable gang-sheet inches, not cart copies. The program itself (customers, products) lives under Products → Customer Special Pricing.
                       </Text>
                     </BlockStack>
-                    <Button onClick={resetAlphaProTiers}>Reset Alpha defaults</Button>
+                    <Button onClick={resetAlphaProTiers}>Reset to program defaults</Button>
                   </InlineStack>
 
                   <Banner tone="success">
@@ -1037,9 +1039,8 @@ export default function ProductConfigurePage() {
                   </Banner>
 
                   <InlineStack gap="300" blockAlign="center">
-                    <Badge tone="success">Alpha only</Badge>
-                    <Badge tone="info">1 / 250 / 500 inch breaks</Badge>
-                    <Badge tone="attention">Customer offer copy enabled</Badge>
+                    <Badge tone="success">Volume program product</Badge>
+                    <Badge tone="info">Tiers by billable inches</Badge>
                   </InlineStack>
 
                   <BlockStack gap="300">

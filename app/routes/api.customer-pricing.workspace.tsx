@@ -4,8 +4,8 @@ import {
   applyCustomerPricingDefaultsForShop,
   normalizeCustomerId,
   normalizeProductId,
-  resolveCustomerPricingContext,
 } from '~/lib/customerPricing.server'
+import { resolveEffectivePricingForShop } from '~/lib/customerPricingRuntime.server'
 import prisma from '~/lib/prisma.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
 import { getDownloadSignedUrl, getStorageConfig } from '~/lib/storage.server'
@@ -143,12 +143,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const settings = applyCustomerPricingDefaultsForShop(shop.shopDomain, shop.settings)
-  const pricingContext = resolveCustomerPricingContext(
+  const effective = await resolveEffectivePricingForShop({
+    shop,
     settings,
-    loggedInCustomerId,
+    customerId: loggedInCustomerId,
+    customerEmail: fallbackCustomerEmail,
     productId,
-    fallbackCustomerEmail
-  )
+  })
+  const pricingContext = effective.context
+  const pricingMeta = {
+    pricingSource: effective.source,
+    pricingModel: effective.model.model,
+    volumeTiers: effective.volumeTiers,
+    volumeOffer: effective.volumeOffer,
+  }
 
   if (
     !pricingContext.isStatusAssigned ||
@@ -161,6 +169,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       statusKey: pricingContext.statusKey,
       statusLabel: pricingContext.statusLabel,
       hasCustomPricing: pricingContext.hasCustomPricing,
+      ...pricingMeta,
     })
   }
 
@@ -232,7 +241,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
       customerType: pricingContext.customerType,
       statusKey: pricingContext.statusKey,
       statusLabel: pricingContext.statusLabel,
+      pricePerInch: pricingContext.pricePerInch,
+      pricingMode: pricingContext.pricingMode,
       hasCustomPricing: pricingContext.hasCustomPricing,
+      ...pricingMeta,
     })
   }
 
@@ -369,6 +381,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     pricePerInch: pricingContext.pricePerInch,
     pricingMode: pricingContext.pricingMode,
     hasCustomPricing: pricingContext.hasCustomPricing,
+    ...pricingMeta,
     items,
   })
 }

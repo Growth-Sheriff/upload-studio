@@ -2,7 +2,7 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, corsJson } from "~/lib/cors.server";
 import { rateLimitGuard, getIdentifier } from "~/lib/rateLimit.server";
 import prisma from "~/lib/prisma.server";
-import { getMaxWidthLimitForShop, isDtfPrintHouseShop } from "~/lib/customerPricing.server";
+import { getPricingPolicy } from "~/lib/customerPricingModel.server";
 import {
   applyAlphaProBuilderDefaults,
   buildAlphaProCustomerOffer,
@@ -134,8 +134,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const builderConfigRaw = productConfig
     ? (productConfig.builderConfig as Record<string, any>) || {}
     : {};
-  const shopMaxWidthLimit = getMaxWidthLimitForShop(shopDomain);
-  const isDtfPrintHouse = isDtfPrintHouseShop(shopDomain);
+  const pricingPolicy = getPricingPolicy(shopDomain, shop.settings);
+  const shopMaxWidthLimit = pricingPolicy.maxSheetWidthIn;
+  const defaultArtboardMarginIn = pricingPolicy.artboardMarginIn;
+  const defaultImageMarginIn = pricingPolicy.imageMarginIn;
 
   const rawBuilderConfigResponse = productConfig
     ? {
@@ -144,8 +146,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         widthOptionName: builderConfigRaw.widthOptionName ?? null,
         heightOptionName: builderConfigRaw.heightOptionName ?? null,
         modalOptionNames: Array.isArray(builderConfigRaw.modalOptionNames) ? builderConfigRaw.modalOptionNames : [],
-        artboardMarginIn: isDtfPrintHouse ? Math.max(0, Number(builderConfigRaw.artboardMarginIn ?? 0)) : Math.max(0.125, Number(builderConfigRaw.artboardMarginIn ?? 0.125)),
-        imageMarginIn: isDtfPrintHouse ? Math.max(0, Number(builderConfigRaw.imageMarginIn ?? 0)) : Math.max(0.125, Number(builderConfigRaw.imageMarginIn ?? 0.125)),
+        artboardMarginIn: Math.max(defaultArtboardMarginIn, Number(builderConfigRaw.artboardMarginIn ?? defaultArtboardMarginIn)),
+        imageMarginIn: Math.max(defaultImageMarginIn, Number(builderConfigRaw.imageMarginIn ?? defaultImageMarginIn)),
         maxWidthIn: Math.max(Number(builderConfigRaw.maxWidthIn ?? 0) || 0, shopMaxWidthLimit),
         maxHeightIn: builderConfigRaw.maxHeightIn ?? 35.75,
         minWidthIn: builderConfigRaw.minWidthIn ?? 1,
@@ -174,7 +176,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     customerName,
   });
   const builderConfigResponse = rawBuilderConfigResponse
-    ? applyAlphaProBuilderDefaults(shopDomain, normalizedProductIdForAlpha, rawBuilderConfigResponse)
+    ? applyAlphaProBuilderDefaults(shopDomain, normalizedProductIdForAlpha, rawBuilderConfigResponse, shop.settings)
     : null;
 
   const product = productConfig

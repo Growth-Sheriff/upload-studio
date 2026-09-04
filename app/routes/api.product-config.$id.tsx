@@ -13,7 +13,7 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, getCorsHeaders } from "~/lib/cors.server";
 import prisma from "~/lib/prisma.server";
-import { getMaxWidthLimitForShop, isDtfPrintHouseShop } from "~/lib/customerPricing.server";
+import { getPricingPolicy } from "~/lib/customerPricingModel.server";
 import {
   applyAlphaProBuilderDefaults,
   buildAlphaProCustomerOffer,
@@ -70,10 +70,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   try {
-    const shopMaxWidthLimit = getMaxWidthLimitForShop(shopDomain);
-    const isDtfPrintHouse = isDtfPrintHouseShop(shopDomain);
-
-
     const shop = await prisma.shop.findUnique({
       where: { shopDomain },
     });
@@ -81,6 +77,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     if (!shop) {
       return cachedCorsJson({ error: "Shop not found" }, request, { status: 404 });
     }
+
+    // Sheet policy (roll width, margins) is a merchant setting with per-shop
+    // defaults; nothing here depends on the shop domain any more.
+    const policy = getPricingPolicy(shopDomain, shop.settings);
+    const shopMaxWidthLimit = policy.maxSheetWidthIn;
+    const defaultArtboardMarginIn = policy.artboardMarginIn;
+    const defaultImageMarginIn = policy.imageMarginIn;
 
 
     const productGid = productId.startsWith("gid://")
@@ -106,8 +109,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         widthOptionName: null,
         heightOptionName: null,
         modalOptionNames: [],
-        artboardMarginIn: isDtfPrintHouse ? 0 : 0.125,
-        imageMarginIn: isDtfPrintHouse ? 0 : 0.125,
+        artboardMarginIn: defaultArtboardMarginIn,
+        imageMarginIn: defaultImageMarginIn,
         maxWidthIn: shopMaxWidthLimit,
         maxHeightIn: 35.75,
         minWidthIn: 1,
@@ -121,7 +124,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           { min_qty: 50, max_qty: 99, price_per_sqin: 0.051 },
           { min_qty: 100, max_qty: null, price_per_sqin: 0.0492 }
         ]
-      });
+      }, shop.settings);
       const customerOffer = buildAlphaProCustomerOffer({
         shopDomain,
         productId: productGid,
@@ -152,8 +155,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       widthOptionName: builderConfig.widthOptionName ?? null,
       heightOptionName: builderConfig.heightOptionName ?? null,
       modalOptionNames: Array.isArray(builderConfig.modalOptionNames) ? builderConfig.modalOptionNames : [],
-      artboardMarginIn: isDtfPrintHouse ? Math.max(0, Number(builderConfig.artboardMarginIn ?? 0)) : Math.max(0.125, Number(builderConfig.artboardMarginIn ?? 0.125)),
-      imageMarginIn: isDtfPrintHouse ? Math.max(0, Number(builderConfig.imageMarginIn ?? 0)) : Math.max(0.125, Number(builderConfig.imageMarginIn ?? 0.125)),
+      artboardMarginIn: Math.max(defaultArtboardMarginIn, Number(builderConfig.artboardMarginIn ?? defaultArtboardMarginIn)),
+      imageMarginIn: Math.max(defaultImageMarginIn, Number(builderConfig.imageMarginIn ?? defaultImageMarginIn)),
       maxWidthIn: Math.max(Number(builderConfig.maxWidthIn ?? 0) || 0, shopMaxWidthLimit),
       maxHeightIn: builderConfig.maxHeightIn ?? 35.75,
       minWidthIn: builderConfig.minWidthIn ?? 1,
@@ -172,7 +175,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         { min_qty: 50, max_qty: 99, price_per_sqin: 0.051 },
         { min_qty: 100, max_qty: null, price_per_sqin: 0.0492 }
       ]
-    });
+    }, shop.settings);
     const customerOffer = buildAlphaProCustomerOffer({
       shopDomain,
       productId: productGid,

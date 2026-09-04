@@ -44,12 +44,24 @@ export interface CustomerPricingAssignment {
   productOverrides: CustomerPricingProductOverride[]
 }
 
+export interface CustomerPricingTagRule {
+  tag: string
+  statusKey: string
+}
+
 export interface CustomerPricingSettings {
   version: number
   enabled: boolean
   businessPricePerInch: number
   statuses: CustomerPricingStatus[]
   assignments: CustomerPricingAssignment[]
+  /** Shopify customer tags that grant a status without a manual assignment. */
+  tagRules: CustomerPricingTagRule[]
+  /** Model, priority and policy are owned by customerPricingModel.server; they
+   *  are carried here verbatim so every save round-trips them untouched. */
+  model: string | null
+  priority: string | null
+  policy: Record<string, unknown> | null
 }
 
 export interface CustomerPricingContext {
@@ -285,7 +297,16 @@ export function buildDtfPrintHouseCustomerPricingSettings(): CustomerPricingSett
     businessPricePerInch: DEFAULT_BUSINESS_PRICE_PER_INCH,
     statuses: [standardStatus, businessStatus, vipStatus],
     assignments: [],
+    tagRules: [],
+    model: null,
+    priority: null,
+    policy: null,
   }
+}
+
+/** Default status set every shop starts from (Standard / Business / VIP). */
+export function buildDefaultCustomerPricingSettings(): CustomerPricingSettings {
+  return buildDtfPrintHouseCustomerPricingSettings()
 }
 
 export function normalizeCustomerPricingSettings(rawSettings: unknown): CustomerPricingSettings {
@@ -396,12 +417,35 @@ export function normalizeCustomerPricingSettings(rawSettings: unknown): Customer
     })
     .filter((assignment) => Boolean(assignment.customerId))
 
+  const rawTagRules = Array.isArray(rawPricing.tagRules) ? rawPricing.tagRules : []
+  const tagRules = rawTagRules
+    .map((entry) => {
+      const value = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : {}
+      const tag = String(value.tag || '').trim().toLowerCase()
+      const statusKey = slugifyKey(String(value.statusKey || ''))
+      if (!tag || !statusKey) return null
+      return { tag, statusKey } satisfies CustomerPricingTagRule
+    })
+    .filter((rule): rule is CustomerPricingTagRule => Boolean(rule))
+
+  const model = typeof rawPricing.model === 'string' && rawPricing.model.trim() ? rawPricing.model.trim() : null
+  const priority =
+    typeof rawPricing.priority === 'string' && rawPricing.priority.trim() ? rawPricing.priority.trim() : null
+  const policy =
+    rawPricing.policy && typeof rawPricing.policy === 'object' && !Array.isArray(rawPricing.policy)
+      ? (rawPricing.policy as Record<string, unknown>)
+      : null
+
   return {
     version,
     enabled: rawPricing.enabled !== false,
     businessPricePerInch,
     statuses,
     assignments,
+    tagRules,
+    model,
+    priority,
+    policy,
   }
 }
 
@@ -417,16 +461,18 @@ function coerceCustomerPricingSettings(rawSettings: unknown): CustomerPricingSet
     : normalizeCustomerPricingSettings(rawSettings)
 }
 
+/**
+ * Every shop gets the Standard / Business / VIP status set so the admin page
+ * and the storefront share one vocabulary. Existing statuses keep their
+ * labels and rates; only missing ones are added. (`shopDomain` is kept for
+ * call-site compatibility; defaults no longer depend on it.)
+ */
 export function applyCustomerPricingDefaultsForShop(
-  shopDomain: string | null | undefined,
+  _shopDomain: string | null | undefined,
   rawSettings: unknown
 ): CustomerPricingSettings {
   const current = normalizeCustomerPricingSettings(rawSettings)
-  if (!isDtfPrintHouseShop(shopDomain)) {
-    return current
-  }
-
-  const defaults = buildDtfPrintHouseCustomerPricingSettings()
+  const defaults = buildDefaultCustomerPricingSettings()
   let mergedStatuses = current.statuses
 
   for (const defaultStatus of defaults.statuses) {
@@ -464,6 +510,10 @@ export function buildCustomerPricingSettingsPayload(
   return {
     version: DEFAULT_CUSTOMER_PRICING_VERSION,
     enabled: settings.enabled,
+    ...(settings.model ? { model: settings.model } : {}),
+    ...(settings.priority ? { priority: settings.priority } : {}),
+    ...(settings.policy ? { policy: settings.policy } : {}),
+    tagRules: settings.tagRules.map((rule) => ({ tag: rule.tag, statusKey: rule.statusKey })),
     businessPricePerInch: settings.businessPricePerInch,
     statuses: settings.statuses.map((status) => ({
       id: status.id,
@@ -500,12 +550,16 @@ export function resolveCustomerPricingContext(
   rawSettings: unknown,
   loggedInCustomerId: string | number | null | undefined,
   productIdInput?: string | number | null,
-  customerEmailInput?: string | null
+  customerEmailInput?: string | null,
+  customerTagsInput?: string[] | null
 ): CustomerPricingContext {
   const settings = coerceCustomerPricingSettings(rawSettings)
   const customerId = normalizeCustomerId(loggedInCustomerId)
   const productId = normalizeProductId(productIdInput)
   const customerEmail = normalizeCustomerEmail(customerEmailInput)
+  const customerTags = Array.isArray(customerTagsInput)
+    ? customerTagsInput.map((tag) => String(tag || '').trim().toLowerCase()).filter(Boolean)
+    : []
 
   const standardStatus: CustomerPricingStatus = {
     id: 'standard',
@@ -567,7 +621,7 @@ export function resolveCustomerPricingContext(
         (entry) => entry.active && normalizeCustomerId(entry.customerId) === customerId
       ) || null
     : null
-  const assignment =
+  const assignmentByEmail =
     assignmentById ||
     (customerEmail
       ? settings.assignments.find(
@@ -575,6 +629,26 @@ export function resolveCustomerPricingContext(
             entry.active &&
             normalizeCustomerEmail(entry.customerEmail) === customerEmail
         ) || null
+      : null)
+
+  // Tag rules grant a status to every customer carrying the tag, without a
+  // per-customer assignment. A manual assignment always wins over a tag.
+  const tagRule =
+    !assignmentByEmail && customerTags.length
+      ? settings.tagRules.find((rule) => customerTags.includes(rule.tag)) || null
+      : null
+  const assignment: CustomerPricingAssignment | null =
+    assignmentByEmail ||
+    (tagRule
+      ? {
+          customerId: customerId || '',
+          customerEmail: customerEmail || null,
+          customerName: null,
+          statusKey: tagRule.statusKey,
+          active: true,
+          pricePerInchOverride: null,
+          productOverrides: [],
+        }
       : null)
 
   if (!assignment) {
@@ -653,11 +727,21 @@ export function resolveCustomerPricingContext(
   }
 }
 
+/**
+ * `basis` is the shop's measurement policy ('full_page' bills the whole
+ * uploaded page, 'artwork_bounds' only the artwork). A shop domain is still
+ * accepted for old call sites and maps to the legacy default for that shop.
+ */
 export function extractVipUploadMeasurement(
   uploadItems: Array<{ preflightStatus?: string | null; preflightResult?: unknown }>,
-  shopDomain?: string | null
+  basisOrShopDomain?: 'full_page' | 'artwork_bounds' | string | null
 ): VipUploadMeasurement | null {
-  const useFullCanvasMeasurement = isDtfPrintHouseShop(shopDomain)
+  const useFullCanvasMeasurement =
+    basisOrShopDomain === 'full_page'
+      ? true
+      : basisOrShopDomain === 'artwork_bounds'
+        ? false
+        : isDtfPrintHouseShop(basisOrShopDomain)
 
   for (const item of uploadItems) {
     const lifecycle = deriveUploadItemLifecycle(item)

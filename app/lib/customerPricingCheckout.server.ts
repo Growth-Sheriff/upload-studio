@@ -13,18 +13,22 @@ import {
   calculateVariantLengthQuote,
   deriveVariantBasedLimits,
   extractVipUploadMeasurement,
-  getMaxWidthLimitForShop,
-  isDtfPrintHouseShop,
   normalizeCustomerId,
   normalizeProductId,
   parseSheetSizeFromTitle,
-  resolveCustomerPricingContext,
   validateCustomQuoteAgainstLimits,
   type BuilderLimits,
   type CustomPricedQuote,
   type CustomerPricingContext,
   type VipUploadMeasurement,
 } from '~/lib/customerPricing.server'
+import {
+  getPricingPolicy,
+  type CustomerPricingPolicy,
+  type PricingSource,
+  type VolumeTier,
+} from '~/lib/customerPricingModel.server'
+import { resolveEffectivePricingForShop } from '~/lib/customerPricingRuntime.server'
 import {
   resolveSheetVariant,
   type BuilderResolveConfig,
@@ -105,6 +109,9 @@ export interface PreparedCustomPricingQuote {
     thumbnailUrl: string | null
   }
   pricingContext: CustomerPricingContext
+  /** Which engine produced the price: assigned status rate or a volume tier. */
+  pricingSource: PricingSource
+  volumeTier: VolumeTier | null
   measurement: VipUploadMeasurement
   quote: CustomPricedQuote
   currencyCode: string
@@ -150,10 +157,10 @@ function normalizeMeasurementPolicy(value: unknown): string | null {
 
 function buildEffectiveResolveConfig(
   builderConfig: Record<string, unknown> | null | undefined,
-  shopDomain: string
+  policy: CustomerPricingPolicy
 ): BuilderResolveConfig & { maxWidthIn: number } {
   const configuredMaxWidth = parsePositiveNumber(builderConfig?.maxWidthIn) || 0
-  const maxWidthLimit = getMaxWidthLimitForShop(shopDomain)
+  const maxWidthLimit = policy.maxSheetWidthIn
   return {
     sheetOptionName:
       typeof builderConfig?.sheetOptionName === 'string' ? builderConfig.sheetOptionName : null,
@@ -169,7 +176,7 @@ function buildEffectiveResolveConfig(
     artboardMarginIn: 0,
     imageMarginIn: 0,
     maxWidthIn: configuredMaxWidth > 0 ? Math.max(configuredMaxWidth, maxWidthLimit) : maxWidthLimit,
-    fitToleranceIn: isDtfPrintHouseShop(shopDomain) ? 0.5 : 0,
+    fitToleranceIn: policy.fitToleranceIn,
   }
 }
 
@@ -215,7 +222,7 @@ function buildVariantMatrix(
 function buildVariantLimits(
   product: ProductQueryResponse['product'],
   builderConfig: Record<string, unknown> | null | undefined,
-  shopDomain: string
+  policy: CustomerPricingPolicy
 ): BuilderLimits {
   const variantTitles = (product?.variants.edges || [])
     .map((edge) => edge.node?.title || '')
@@ -224,7 +231,7 @@ function buildVariantLimits(
     variantTitles,
     (builderConfig as BuilderLimits | null | undefined) || null
   )
-  const maxWidthLimit = getMaxWidthLimitForShop(shopDomain)
+  const maxWidthLimit = policy.maxSheetWidthIn
   return {
     ...limits,
     maxWidthIn: Math.max(parsePositiveNumber(limits.maxWidthIn) || 0, maxWidthLimit),
@@ -307,6 +314,7 @@ export async function prepareCustomPricingJobQuote({
   const activeShop = shop
   const normalizedLoggedInCustomerId = normalizeCustomerId(loggedInCustomerId)
   const settings = applyCustomerPricingDefaultsForShop(activeShop.shopDomain, activeShop.settings)
+  const policy = getPricingPolicy(activeShop.shopDomain, activeShop.settings)
   const storageConfig = getStorageConfig({
     storageProvider: activeShop.storageProvider,
     storageConfig: (activeShop.storageConfig as Record<string, string> | null) || null,
@@ -358,20 +366,30 @@ export async function prepareCustomPricingJobQuote({
       throw new Error('Upload does not belong to the logged in customer')
     }
 
-    const pricingContext = resolveCustomerPricingContext(
+    const rawMeasurement = extractVipUploadMeasurement(upload.items, policy.measurementBasis)
+    if (!rawMeasurement) {
+      throw new Error('Upload measurement is not ready')
+    }
+
+    // Volume tiers pick their rate from the measured length × copies of this
+    // item, so the measurement must exist before the pricing is resolved.
+    const measuredLengthIn = Math.max(rawMeasurement.widthIn, rawMeasurement.heightIn)
+    const effective = await resolveEffectivePricingForShop({
+      shop: activeShop,
       settings,
-      normalizedLoggedInCustomerId,
-      upload.productId,
-      loggedInCustomerEmail
-    )
+      customerId: normalizedLoggedInCustomerId,
+      customerEmail: loggedInCustomerEmail,
+      productId: upload.productId,
+      billableInches: Number((measuredLengthIn * itemInput.quantity).toFixed(2)),
+    })
+    const pricingContext = effective.context
+    const volumeTier =
+      effective.source === 'volume_tiers' && pricingContext.pricePerInch
+        ? effective.volumeTiers.find((tier) => tier.price_per_inch === pricingContext.pricePerInch) || null
+        : null
 
     if (!pricingContext.hasCustomPricing || pricingContext.pricingMode === 'standard_variant') {
       throw new Error('Custom pricing is not active for this customer and product')
-    }
-
-    const rawMeasurement = extractVipUploadMeasurement(upload.items, activeShop.shopDomain)
-    if (!rawMeasurement) {
-      throw new Error('Upload measurement is not ready')
     }
 
     const productId = normalizeProductId(upload.productId)
@@ -417,7 +435,7 @@ export async function prepareCustomPricingJobQuote({
       const builderConfig =
         (productConfig?.builderConfig as Record<string, unknown> | null) || null
       const { optionDefs, variants } = buildVariantMatrix(productData.product)
-      const variantLimits = buildVariantLimits(productData.product, builderConfig, activeShop.shopDomain)
+      const variantLimits = buildVariantLimits(productData.product, builderConfig, policy)
 
       cachedProduct = {
         builderConfig,
@@ -457,10 +475,13 @@ export async function prepareCustomPricingJobQuote({
         optionDefs: cachedProduct.optionDefs,
         selectedVariantId: itemInput.selectedVariantId || null,
         config: {
-          ...buildEffectiveResolveConfig(cachedProduct.builderConfig, activeShop.shopDomain),
-          selectionStrategy: shouldUseMainProductMeasurementPolicy(itemInput.measurementPolicy)
-            ? 'smallest_fitting_sheet'
-            : null,
+          ...buildEffectiveResolveConfig(cachedProduct.builderConfig, policy),
+          selectionStrategy:
+            policy.sheetSelection !== 'block_default'
+              ? policy.sheetSelection
+              : shouldUseMainProductMeasurementPolicy(itemInput.measurementPolicy)
+                ? 'smallest_fitting_sheet'
+                : null,
         },
       })
 
@@ -484,7 +505,7 @@ export async function prepareCustomPricingJobQuote({
       const parsedSheetSize = parseSheetSizeFromTitle(resolution.selectedVariantTitle)
       const selectedSheetMaxWidth =
         parsedSheetSize?.widthIn != null
-          ? Math.max(parsedSheetSize.widthIn, getMaxWidthLimitForShop(activeShop.shopDomain))
+          ? Math.max(parsedSheetSize.widthIn, policy.maxSheetWidthIn)
           : 0
       const validationWidthIn =
         normalizeMeasurementPolicy(itemInput.measurementPolicy) === MAIN_PRODUCT_MEASUREMENT_POLICY
@@ -520,6 +541,8 @@ export async function prepareCustomPricingJobQuote({
         thumbnailUrl,
       },
       pricingContext,
+      pricingSource: effective.source,
+      volumeTier,
       measurement,
       quote,
       currencyCode: String(cachedProduct.productData.shop?.currencyCode || 'USD').toUpperCase(),
