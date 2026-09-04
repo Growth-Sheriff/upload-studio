@@ -24,7 +24,7 @@ import {
   MAIN_PRODUCT_MEASUREMENT_POLICY,
   shouldUseMainProductMeasurementPolicy,
 } from '~/lib/mainProductMeasurement.server'
-import { applyAlphaProBuilderDefaults, buildAlphaProCustomerOffer } from '~/lib/alphaProDiscounts'
+import { applyAlphaProBuilderDefaults, buildAlphaProCustomerOffer } from '~/lib/alphaProDiscounts.server'
 
 const PRODUCT_VARIANTS_QUERY = `
   query ResolveProductVariants($id: ID!) {

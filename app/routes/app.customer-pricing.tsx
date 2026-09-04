@@ -33,20 +33,16 @@ import type {
 import {
   CUSTOMER_PRICING_TEMPLATES,
   buildVolumeProgramPayload,
-  isCustomerPricingModel,
   normalizePolicy,
   normalizeVolumeProgram,
   normalizeVolumeTiers,
-  pickVolumeTier,
   resolveCustomerPricingModelState,
   derivePolicyDefaults,
-  type CustomerPricingModel,
-  type CustomerPricingModelState,
   type CustomerPricingPolicy,
   type VolumeProgram,
   type VolumeProgramCustomer,
-  type VolumeTier,
 } from '~/lib/customerPricingModel.server'
+import { isCustomerPricingModel, pickVolumeTier, type CustomerPricingModel, type VolumeTier } from '~/lib/customerPricingShared'
 import { invalidatePricingRuntimeCaches } from '~/lib/customerPricingRuntime.server'
 import { applyFullCanvasMeasurementMetadata, deriveUploadItemLifecycle } from '~/lib/uploadLifecycle.server'
 import { authenticate } from '~/shopify.server'

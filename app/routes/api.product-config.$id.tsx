@@ -17,7 +17,7 @@ import { getPricingPolicy } from "~/lib/customerPricingModel.server";
 import {
   applyAlphaProBuilderDefaults,
   buildAlphaProCustomerOffer,
-} from "~/lib/alphaProDiscounts";
+} from "~/lib/alphaProDiscounts.server";
 
 
 function cachedCorsJson<T>(data: T, request: Request, options: { status?: number } = {}) {

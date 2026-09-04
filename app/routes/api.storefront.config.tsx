@@ -6,7 +6,7 @@ import { getPricingPolicy } from "~/lib/customerPricingModel.server";
 import {
   applyAlphaProBuilderDefaults,
   buildAlphaProCustomerOffer,
-} from "~/lib/alphaProDiscounts";
+} from "~/lib/alphaProDiscounts.server";
 
 
 

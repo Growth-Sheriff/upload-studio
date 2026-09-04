@@ -25,8 +25,8 @@ import {
 } from "~/lib/compatibilityTwin.server";
 import {
   ALPHA_PRO_DISCOUNT_TIERS,
-  applyAlphaProBuilderDefaults,
 } from "~/lib/alphaProDiscounts";
+import { applyAlphaProBuilderDefaults } from "~/lib/alphaProDiscounts.server";
 import { isVolumeProgramProduct, isVolumeTiersEnabled } from "~/lib/customerPricingModel.server";
 
 
