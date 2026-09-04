@@ -55,7 +55,7 @@ export function PaymentSetupBanner({
   }
 
   return (
-    <Banner tone="info" title="Outstanding commission" onDismiss={dismiss}>
+    <Banner tone="info" title="Outstanding order fees" onDismiss={dismiss}>
       <p>
         <strong>${pendingAmount}</strong> across {pendingOrderCount}{' '}
         {pendingOrderCount === 1 ? 'order' : 'orders'} is waiting to be settled.{' '}
