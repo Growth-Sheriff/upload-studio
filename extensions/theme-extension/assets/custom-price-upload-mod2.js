@@ -3144,6 +3144,13 @@
         syncPurchaseButtonsForCurrentState();
         return;
       }
+      if (state.provisional) {
+        // Only the header estimate is known so far; the server has not measured
+        // the file yet. Asking it to resolve now only yields "not ready".
+        if (uploadStatus) uploadStatus.textContent = 'Measuring your file on the server...';
+        syncPurchaseButtonsForCurrentState();
+        return;
+      }
 
       var requestToken = ++resolveRequestToken;
       clearError();
@@ -3178,10 +3185,18 @@
         }
 
         if (!response.ok) {
+          var resolveError = data && data.error ? String(data.error) : 'Failed to resolve product variant.';
+          if (/not ready/i.test(resolveError)) {
+            // Measurement still running (large file): keep what we have and
+            // let the status poll finish instead of showing a dead end.
+            if (uploadStatus) uploadStatus.textContent = 'Still measuring your file on the server. This can take a few minutes for large files.';
+            syncPurchaseButtonsForCurrentState();
+            return;
+          }
           state.selectedResult = null;
           updateDetectedUI();
           setSelectedVariant(null);
-          showError(data && data.error ? data.error : 'Failed to resolve product variant.');
+          showError(resolveError);
           if (uploadStatus) uploadStatus.textContent = '';
           syncPurchaseButtonsForCurrentState();
           return;
@@ -3400,8 +3415,18 @@
       return 'Upload processing failed on the server. Please try another file or contact support.';
     }
 
+    // Large gang sheets (100+ MB) take the server a few minutes to measure:
+    // poll for up to ~8 minutes, slowing down after the first minute.
+    var STATUS_POLL_MAX_ATTEMPTS = 200;
+    function statusPollDelay(attempts) { return attempts < 40 ? 1500 : 3000; }
+    function statusPollMessage(attempts) {
+      return attempts < 40
+        ? 'Waiting for server-confirmed print size...'
+        : 'Large file: measuring can take a few minutes. Please keep this page open.';
+    }
+
     async function pollUploadStatus(uploadId, uploadToken) {
-      for (var attempts = 0; attempts < 60; attempts++) {
+      for (var attempts = 0; attempts < STATUS_POLL_MAX_ATTEMPTS; attempts++) {
         if (uploadToken !== uploadFlowToken) return false;
         var response = await fetch(apiBase + '/api/upload/status/' + encodeURIComponent(uploadId) + '?shopDomain=' + encodeURIComponent(shopDomain));
         if (response.ok) {
@@ -3446,9 +3471,9 @@
             }
           }
         }
-        if (uploadLoadingText) uploadLoadingText.textContent = 'Waiting for server-confirmed print size...';
-        if (uploadProgress) uploadProgress.style.width = Math.min(92, 25 + attempts) + '%';
-        await new Promise(function(resolve) { setTimeout(resolve, 1500); });
+        if (uploadLoadingText) uploadLoadingText.textContent = statusPollMessage(attempts);
+        if (uploadProgress) uploadProgress.style.width = Math.min(92, 25 + Math.floor(attempts / 3)) + '%';
+        await new Promise(function(resolve) { setTimeout(resolve, statusPollDelay(attempts)); });
       }
       if (uploadLoading) uploadLoading.classList.add('hidden');
       showError('Upload finished, but the server did not confirm print size in time. Please try again.');
@@ -3456,7 +3481,7 @@
     }
 
     async function pollCustomQueueItemStatus(queueItem, uploadToken, batchMeta) {
-      for (var attempts = 0; attempts < 60; attempts++) {
+      for (var attempts = 0; attempts < STATUS_POLL_MAX_ATTEMPTS; attempts++) {
         if (!queueItem || queueItem.uploadToken !== uploadToken) return false;
         var response = await fetch(apiBase + '/api/upload/status/' + encodeURIComponent(queueItem.uploadId) + '?shopDomain=' + encodeURIComponent(shopDomain));
         if (response.ok) {
@@ -3530,11 +3555,13 @@
         updateCustomBatchProgressForFile(
           batchMeta,
           'Measuring ' + (queueItem.fileName || 'uploaded file'),
-          Math.min(0.92, 0.82 + (attempts * 0.01)),
-          'Waiting for the server to confirm the exact billed page size.'
+          Math.min(0.92, 0.82 + (Math.floor(attempts / 3) * 0.01)),
+          attempts < 40
+            ? 'Waiting for the server to confirm the exact billed page size.'
+            : 'Large file: measuring can take a few minutes. Please keep this page open.'
         );
         renderCustomQueue();
-        await new Promise(function(resolve) { setTimeout(resolve, 1500); });
+        await new Promise(function(resolve) { setTimeout(resolve, statusPollDelay(attempts)); });
       }
 
       queueItem.uploadStatus = 'error';

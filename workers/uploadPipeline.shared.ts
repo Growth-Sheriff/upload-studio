@@ -571,7 +571,9 @@ export async function prepareUploadJobContext(
   tempPrefix: string
 ): Promise<PreparedUploadJobContext> {
   const { uploadId, shopId, itemId, storageKey } = jobData
-  const tempDir = path.join(os.tmpdir(), `${tempPrefix}-${itemId}`)
+  // Unique per run: a stalled re-run of the same item must never share (and
+  // delete) the directory of a run that is still working.
+  const tempDir = path.join(os.tmpdir(), `${tempPrefix}-${itemId}-${process.pid}-${Date.now().toString(36)}`)
   await fs.mkdir(tempDir, { recursive: true })
 
   const shop = await prisma.shop.findUnique({

@@ -64,6 +64,23 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
     let tempDir = ''
 
     try {
+      // A retry or stalled re-run must not measure again if the first run
+      // already finished: it would race the first run's temp files and
+      // overwrite a good result.
+      if (job.attemptsMade > 0) {
+        const alreadyMeasured = await prisma.uploadItem.findUnique({
+          where: { id: itemId },
+          select: { preflightResult: true },
+        })
+        const stages = getResultRecord(alreadyMeasured?.preflightResult).stages as
+          | Record<string, { status?: string } | undefined>
+          | undefined
+        if (stages?.measurement?.status === 'ready') {
+          workerLog.info('MEASURE_JOB_SKIPPED_ALREADY_READY', { jobId: job.id, uploadId, itemId, attempt: job.attemptsMade })
+          return { skipped: true }
+        }
+      }
+
       const context = await prepareUploadJobContext(job.data, 'measure-preflight')
       tempDir = context.tempDir
 
@@ -304,6 +321,12 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
   {
     connection,
     concurrency: 3,
+    // Huge gang sheets (100+ MB PNGs) take minutes in ImageMagick. With the
+    // default 30 s lock the job was marked stalled mid-measurement, re-queued
+    // and run twice (2026-09-04, dtfprinthouse). Hold the lock for the whole run.
+    lockDuration: 10 * 60 * 1000,
+    stalledInterval: 5 * 60 * 1000,
+    maxStalledCount: 2,
     limiter: {
       max: 20,
       duration: 60000,

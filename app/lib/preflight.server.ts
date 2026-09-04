@@ -1077,14 +1077,27 @@ async function getTrimmedImageBounds(
   }
 
   try {
+    // Gang sheets above ~30 megapixels are trimmed on a 1/4 sample: the bounds
+    // are only needed to the nearest few pixels and this cuts a 150 s
+    // measurement of a 160 MP file to well under 30 s.
+    const pixels = imageInfo.width * imageInfo.height
+    const sampleFactor = pixels > 30_000_000 ? 4 : 1
+    const sampleFlag = sampleFactor > 1 ? ` -sample ${Math.round(100 / sampleFactor)}%` : ''
     const { stdout } = await execAsync(
-      `convert "${filePath}[0]" -alpha extract -auto-level -threshold 0 -trim -format "%@" info:`
+      `convert -limit memory 1GiB -limit map 2GiB "${filePath}[0]"${sampleFlag} -alpha extract -auto-level -threshold 0 -trim -format "%@" info:`,
+      { maxBuffer: 1024 * 1024 }
     )
     const bounds = stdout.trim().match(/^(\d+)x(\d+)\+(-?\d+)\+(-?\d+)$/)
-    const trimmedWidth = bounds ? parseInt(bounds[1], 10) : 0
-    const trimmedHeight = bounds ? parseInt(bounds[2], 10) : 0
-    const trimmedOffsetX = bounds ? parseInt(bounds[3], 10) : 0
-    const trimmedOffsetY = bounds ? parseInt(bounds[4], 10) : 0
+    let trimmedWidth = bounds ? parseInt(bounds[1], 10) : 0
+    let trimmedHeight = bounds ? parseInt(bounds[2], 10) : 0
+    let trimmedOffsetX = bounds ? parseInt(bounds[3], 10) : 0
+    let trimmedOffsetY = bounds ? parseInt(bounds[4], 10) : 0
+    if (sampleFactor > 1 && trimmedWidth > 0 && trimmedHeight > 0) {
+      trimmedOffsetX = Math.max(0, trimmedOffsetX * sampleFactor - sampleFactor)
+      trimmedOffsetY = Math.max(0, trimmedOffsetY * sampleFactor - sampleFactor)
+      trimmedWidth = Math.min(imageInfo.width - trimmedOffsetX, trimmedWidth * sampleFactor + sampleFactor * 2)
+      trimmedHeight = Math.min(imageInfo.height - trimmedOffsetY, trimmedHeight * sampleFactor + sampleFactor * 2)
+    }
 
     if (trimmedWidth > 0 && trimmedHeight > 0) {
       return {

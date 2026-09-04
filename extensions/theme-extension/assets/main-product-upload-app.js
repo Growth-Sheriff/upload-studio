@@ -250,7 +250,8 @@
     if (attempt < 6) return 350;
     if (attempt < 14) return 700;
     if (attempt < 28) return 1000;
-    return 1500;
+    if (attempt < 60) return 1500;
+    return 3000;
   }
 
   function MainProductUpload(root) {
@@ -2815,7 +2816,8 @@
   };
 
   MainProductUpload.prototype.pollStatus = async function(currentToken) {
-    for (var attempt = 0; attempt < 60; attempt += 1) {
+    // Large gang sheets can take the server minutes to measure: ~8 minutes budget.
+    for (var attempt = 0; attempt < 200; attempt += 1) {
       if (currentToken !== this.token) return;
       var response = await fetch(this.apiBase + '/api/upload/status/' + encodeURIComponent(this.state.uploadId) + '?shopDomain=' + encodeURIComponent(this.shopDomain));
       if (response.ok) {
