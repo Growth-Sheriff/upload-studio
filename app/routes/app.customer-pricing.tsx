@@ -1463,13 +1463,19 @@ export default function CustomerPricingPage() {
             <BlockStack gap="300">
               <InlineStack align="space-between" blockAlign="center">
                 <Text as="h2" variant="headingMd">How to use</Text>
-                <Badge tone="info">Works with: Custom Price Sheet Upload</Badge>
+                <Badge tone="info">Works with: Custom Price Sheet Upload · Custom Price Upload Mod 2</Badge>
               </InlineStack>
               <Text as="p" variant="bodyMd">
                 This page gives chosen customers a special per-inch price instead of the normal sheet prices.
-                It only affects product pages that use the <strong>Custom Price Sheet Upload</strong> block
-                (the Variant Gang Sheet Upload block also honors it for assigned Business/VIP customers).
-                Everyone else keeps paying your normal Shopify prices.
+                It affects product pages that use the <strong>Custom Price Sheet Upload</strong> block or the
+                <strong> Custom Price Upload Mod 2</strong> block (the full product page layout with gallery,
+                accordion and price table; the Variant Gang Sheet Upload block also honors it for assigned
+                Business/VIP customers). Everyone else keeps paying your normal Shopify prices.
+              </Text>
+              <Text as="p" variant="bodySm" tone="subdued">
+                Mod 2 replaces the whole product page: add it as the only app block on a product template
+                (Online Store → Themes → Customize → product template → Add block → Custom Price Upload Mod 2)
+                and remove the theme's own product section from that template.
               </Text>
               <BlockStack gap="150">
                 <Text as="p" variant="bodyMd">

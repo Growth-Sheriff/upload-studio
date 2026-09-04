@@ -1,0 +1,479 @@
+
+
+{%- comment -%} Custom Price Upload Mod 2: app-block port of the theme section "Main Product"; JS/CSS in assets/custom-price-upload-mod2.* {%- endcomment -%}
+{%- liquid
+  assign section_dom_id = 'ul-main-product-' | append: block.id
+  assign upload_input_id = section_dom_id | append: '-upload-input'
+-%}
+<script src="{{ 'ul-file-probe.js' | asset_url }}" defer></script>
+<script src="{{ 'ul-multipart-uploader.js' | asset_url }}" defer></script>
+<script src="{{ 'ul-line-properties.js' | asset_url }}" defer></script>
+<script src="{{ 'custom-price-upload-mod2.js' | asset_url }}" defer></script>
+{{ 'custom-price-upload-mod2.css' | asset_url | stylesheet_tag }}
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="{{ 'custom-price-upload-mod2-tailwind.js' | asset_url }}" defer></script>
+<style>
+  {{ settings.font_body | font_face: font_display: 'swap' }}
+  {{ settings.font_heading | font_face: font_display: 'swap' }}
+  [data-ul-custom-price-mod2] {
+    --ul-mod2-font-body: {{ settings.font_body.family | default: "Arial" }}, sans-serif;
+    --ul-mod2-font-heading: {{ settings.font_heading.family | default: "Arial" }}, sans-serif;
+    --ul-mod2-font-size: {{ settings.font_size_base | default: 14 }}px;
+    --ul-mod2-color-text: {{ settings.color_text | default: "#0f1111" }};
+    --ul-mod2-color-primary: {{ settings.color_primary | default: "#ff9900" }};
+  }
+</style>
+
+<div class="w-full bg-[#f3f3f3] pb-10" id="{{ section_dom_id }}" data-ul-custom-price-mod2 data-section-id="{{ block.id }}" data-theme-color-primary="{{ settings.color_primary }}" data-theme-color-secondary="{{ settings.color_secondary }}" data-theme-color-link="{{ settings.color_link }}" data-theme-color-price="{{ settings.color_price }}" data-theme-color-success="{{ settings.color_success }}" data-theme-color-error="{{ settings.color_error }}" data-theme-color-warning="{{ settings.color_warning }}" data-theme-color-border="{{ settings.color_border }}" data-theme-font-body="{{ settings.font_body.family }}" data-theme-font-heading="{{ settings.font_heading.family }}" data-theme-border-radius="{{ settings.border_radius }}" data-product-id="{{ product.id }}" data-shop-domain="{{ shop.permanent_domain }}" data-api-base="/apps/customizer" data-customer-id="{{ customer.id | default: '' }}" data-customer-email="{{ customer.email | default: '' }}" data-customer-first-name="{{ customer.first_name | default: '' }}" data-customer-last-name="{{ customer.last_name | default: '' }}" data-customer-logged-in="{% if customer %}true{% else %}false{% endif %}">
+  <div class="ul-main-shell max-w-2k w-full mx-auto px-4 py-6 font-amazon bg-white mt-4 mb-8 rounded shadow-sm">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+      <div class="lg:col-span-4">
+        <div class="ul-main-gallery-panel">
+          <div class="aspect-square bg-gray-50 mb-4 relative border border-gray-200 p-2">
+            {% if product.featured_image %}
+              <img src="{{ product.featured_image | image_url: width: 800 }}" alt="{{ product.title | escape }}" class="ul-main-product-image w-full h-full object-contain mix-blend-multiply">
+            {% else %}
+              {{ 'product-1' | placeholder_svg_tag: 'w-full h-full object-contain' }}
+            {% endif %}
+            <div class="absolute top-2 left-2 bg-amazon-dark text-white text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg> Works with Any Design
+            </div>
+          </div>
+
+          <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+            {% for image in product.images %}
+              <button type="button" class="ul-main-thumb w-12 h-12 flex-shrink-0 border border-gray-300 hover:border-amazon-orange cursor-pointer js-thumb-click" data-image-url="{{ image | image_url: width: 800 }}" aria-label="Show product image {{ forloop.index }}">
+                <img src="{{ image | image_url: width: 100 }}" alt="{{ product.title | escape }}" class="w-full h-full object-cover">
+              </button>
+            {% else %}
+              {% for i in (1..4) %}
+                <div class="w-12 h-12 flex-shrink-0 border border-gray-300">
+                  {{ 'product-1' | placeholder_svg_tag: 'w-full h-full object-contain' }}
+                </div>
+              {% endfor %}
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="ul-main-customer-workspace hidden">
+          <div class="ul-main-customer-workspace-hero overflow-hidden rounded-[28px] border border-slate-200 bg-slate-950 text-white shadow-[0_24px_60px_rgba(15,23,42,0.22)]">
+            <div class="ul-main-customer-workspace-hero-top flex items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
+              <div>
+                <div class="ul-main-customer-workspace-kicker text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-200/90">Private reorder desk</div>
+                <div class="ul-main-customer-workspace-subtitle mt-1 text-sm text-slate-300">Saved print-ready files for your assigned pricing profile.</div>
+              </div>
+              <span class="ul-main-customer-workspace-status hidden rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white"></span>
+            </div>
+            <div class="ul-main-customer-workspace-hero-body px-5 py-5">
+              <div class="ul-main-customer-workspace-title text-[1.7rem] font-semibold leading-tight tracking-[-0.03em] text-white">Welcome back.</div>
+              <div class="ul-main-customer-workspace-copy mt-3 max-w-[28rem] text-sm leading-6 text-slate-300">
+                This page has been personalized for your account. Reorder your saved print-ready uploads with your assigned pricing already applied.
+              </div>
+              <div class="ul-main-customer-workspace-meta mt-4 flex flex-wrap gap-2"></div>
+            </div>
+          </div>
+
+          <div class="ul-main-customer-workspace-panel mt-4 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
+            <div class="ul-main-customer-workspace-panel-head flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+              <div>
+                <div class="ul-main-customer-workspace-panel-title text-sm font-semibold text-slate-900">Your recent ordered uploads</div>
+                <div class="ul-main-customer-workspace-panel-copy mt-1 text-xs text-slate-500">Use your last paid files as a fast starting point for a new custom-priced order.</div>
+              </div>
+              <span class="ul-main-customer-workspace-count rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-700">0 files</span>
+            </div>
+            <div class="ul-main-customer-workspace-list max-h-[840px] overflow-y-auto bg-slate-50 p-4"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="lg:col-span-5">
+        <h1 class="text-2xl font-normal text-gray-900 leading-tight mb-1">
+          {{ product.title }}
+        </h1>
+        <div class="ul-main-customer-status relative mb-4 overflow-hidden rounded-[26px] border border-slate-200 bg-[linear-gradient(135deg,#fff7e6_0%,#ffffff_34%,#f8fafc_100%)] shadow-[0_22px_55px_rgba(15,23,42,0.08)]">
+          <div class="pointer-events-none absolute -right-10 -top-12 h-40 w-40 rounded-full bg-amber-200/35 blur-3xl"></div>
+          <div class="pointer-events-none absolute -bottom-14 left-8 h-32 w-32 rounded-full bg-sky-200/35 blur-3xl"></div>
+          <div class="relative flex flex-wrap items-start justify-between gap-4 px-5 py-5 sm:px-6">
+            <div class="flex min-w-0 flex-1 items-start gap-4">
+              <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white/90 shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
+                <svg class="h-5 w-5 text-slate-900" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 3l7 4v5c0 4.5-2.8 7.9-7 9-4.2-1.1-7-4.5-7-9V7l7-4z"></path>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.5 12.5l1.8 1.8 3.7-4"></path>
+                </svg>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">Account Pricing Desk</div>
+                <div class="ul-main-customer-status-title mt-2 text-[1.15rem] font-semibold leading-tight tracking-[-0.03em] text-slate-950">Customer status</div>
+                <div class="ul-main-customer-status-text mt-2 max-w-[42rem] text-sm leading-6 text-slate-600">
+                  Log in to check whether your account has an assigned custom status before upload.
+                </div>
+                <div class="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-medium text-slate-500">
+                  <span class="rounded-full border border-slate-200 bg-white/80 px-3 py-1">Secure account-based pricing</span>
+                  <span class="rounded-full border border-slate-200 bg-white/80 px-3 py-1">Instant status sync before upload</span>
+                </div>
+              </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 sm:justify-end">
+              <span class="ul-main-customer-status-badge hidden rounded-full border border-amber-300/70 bg-amber-100/90 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-900 shadow-[0_10px_24px_rgba(251,191,36,0.18)]"></span>
+              <a href="{{ routes.storefront_login_url }}" class="ul-main-customer-login inline-flex items-center justify-center gap-2 rounded-full bg-slate-950 px-4 py-2.5 text-xs font-semibold text-white shadow-[0_14px_35px_rgba(15,23,42,0.2)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-900">
+                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 3h4a2 2 0 012 2v4m-8 10H9a6 6 0 010-12h4m2 5H8m0 0l3-3m-3 3l3 3"></path>
+                </svg>
+                Log In
+              </a>
+              <a href="{{ routes.account_url }}" class="ul-main-customer-account hidden inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white/90 px-4 py-2.5 text-xs font-semibold text-slate-900 shadow-[0_10px_24px_rgba(15,23,42,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white">
+                <svg class="h-3.5 w-3.5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A10.96 10.96 0 0112 15.5c2.6 0 4.99.9 6.879 2.304M15 8a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+                My Account
+              </a>
+            </div>
+          </div>
+        </div>
+
+        {% if block.settings.show_vendor %}
+          <div class="text-sm text-amazon-link hover:text-amazon-link-hover hover:underline mb-2">
+            Visit the {{ product.vendor }} Store
+          </div>
+        {% endif %}
+
+        <div class="flex items-center gap-4 mb-2 border-b border-gray-200 pb-2">
+          <div class="flex items-center gap-1">
+            <span class="text-sm text-amazon-link hover:text-amazon-link-hover hover:underline cursor-pointer"></span>
+          </div>
+        </div>
+
+        <div class="mb-2">
+          <span class="ul-main-product-price text-3xl font-medium text-gray-900">{{ product.price | money }}</span>
+        </div>
+        <p class="text-sm text-gray-500 mb-4">Shipping calculated at checkout.</p>
+
+        <div class="text-sm text-gray-900 mb-6">
+          {{ product.description | strip_html | truncatewords: 40 }}
+        </div>
+
+        {% if block.settings.show_dtf_features %}
+          <div class="grid grid-cols-2 gap-y-3 gap-x-4 mb-6 text-sm text-gray-900">
+            <div class="flex items-center gap-2"><span class="w-4 h-4 bg-gray-200 rounded-sm flex items-center justify-center text-[10px] font-semibold">A</span> {{ block.settings.feature_1_text | escape }}</div>
+            <div class="flex items-center gap-2"><span class="w-4 h-4 bg-gradient-to-br from-red-400 via-green-400 to-blue-400 rounded-full"></span> {{ block.settings.feature_2_text | escape }}</div>
+            <div class="flex items-center gap-2"><span class="w-4 h-4 bg-orange-100 text-orange-600 rounded-sm flex items-center justify-center text-[10px] font-semibold">H</span> {{ block.settings.feature_3_text | escape }}</div>
+            <div class="flex items-center gap-2"><span class="w-4 h-4 bg-blue-100 text-blue-600 rounded-sm flex items-center justify-center text-[10px] font-semibold">W</span> {{ block.settings.feature_4_text | escape }}</div>
+          </div>
+        {% endif %}
+
+        {% if block.settings.show_upload_section %}
+          <div class="border-2 border-dashed border-gray-300 bg-gray-50 rounded p-6 text-center mb-4 ul-main-upload-box">
+            <input id="{{ upload_input_id }}" type="file" class="ul-main-upload-input sr-only" accept=".png,image/png" multiple>
+            <div class="ul-main-upload-trigger-row mb-2 inline-flex flex-wrap items-center justify-center gap-3">
+              <div class="ul-main-custom-batch-inline hidden">
+                <span class="ul-main-custom-batch-inline-current">1</span>/<span class="ul-main-custom-batch-inline-total">1</span>
+              </div>
+              <label for="{{ upload_input_id }}" class="ul-main-upload-trigger inline-flex items-center justify-center bg-amazon-yellow hover:brightness-95 text-black border border-black/20 shadow-sm font-medium py-2 px-6 rounded-full text-sm cursor-pointer" tabindex="0" role="button">
+                {{ block.settings.upload_button_text | escape }}
+              </label>
+              <div class="ul-main-inline-pricing hidden">
+                <div class="ul-main-inline-pricing-copy">
+                  <div class="ul-main-inline-pricing-kicker">Custom pricing</div>
+                  <div class="ul-main-inline-pricing-total">$0.00</div>
+                  <div class="ul-main-inline-pricing-meta">Waiting for your measured quote.</div>
+                </div>
+                <button type="button" class="ul-main-inline-pricing-button" disabled aria-disabled="true">
+                  Create Custom Checkout
+                </button>
+              </div>
+            </div>
+            <p class="text-xs text-gray-500">PNG only. Drag & drop your file here.</p>
+            <div class="ul-main-custom-batch-progress hidden mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left shadow-sm">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <div class="ul-main-custom-batch-step text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">File 1 of 1</div>
+                  <div class="ul-main-custom-batch-text mt-1 truncate text-sm font-semibold text-slate-900">Preparing upload queue...</div>
+                  <div class="ul-main-custom-batch-meta mt-1 text-xs text-slate-500">Your files are being uploaded one by one and measured on the server.</div>
+                </div>
+                <div class="ul-main-custom-batch-count text-right">
+                  <div class="ul-main-custom-batch-count-text text-2xl font-semibold leading-none text-slate-900">1/1</div>
+                  <div class="ul-main-custom-batch-count-caption mt-1 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">Batch progress</div>
+                </div>
+              </div>
+              <div class="mt-3 h-2 overflow-hidden bg-slate-200">
+                <div class="ul-main-custom-batch-bar h-full w-0 bg-amazon-orange transition-all duration-300"></div>
+              </div>
+            </div>
+            <div class="ul-main-upload-feedback hidden mt-4 text-left">
+              <div class="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3">
+                <img class="ul-main-upload-thumb hidden h-16 w-16 rounded object-cover border border-gray-200" alt="Upload preview">
+                <div class="min-w-0 flex-1">
+                  <div class="ul-main-upload-name truncate text-sm font-medium text-gray-900"></div>
+                  <div class="ul-main-upload-meta text-xs text-gray-500 mt-1"></div>
+                  <div class="ul-main-upload-status text-xs text-green-700 mt-1"></div>
+                </div>
+                <button type="button" class="ul-main-upload-remove rounded bg-red-500 px-3 py-2 text-xs font-semibold text-white">Remove</button>
+              </div>
+            </div>
+            <div class="ul-main-custom-queue hidden mt-4 text-left"></div>
+            <div class="ul-main-upload-loading hidden mt-4 rounded-lg border border-gray-200 bg-white px-4 py-3 text-left text-sm text-gray-700">
+              <div class="font-medium">Processing upload...</div>
+              <div class="ul-main-upload-loading-text mt-1 text-xs text-gray-500">Preparing file</div>
+              <div class="mt-3 h-2 overflow-hidden rounded-full bg-gray-200">
+                <div class="ul-main-upload-progress h-full w-[12%] rounded-full bg-amazon-orange transition-all duration-300"></div>
+              </div>
+            </div>
+            <div class="ul-main-upload-error hidden mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-left text-xs text-red-700"></div>
+            <div class="ul-main-detected hidden mt-4 rounded-lg border border-gray-200 bg-white p-4 text-left">
+              <div class="ul-main-detected-title text-xs font-semibold uppercase tracking-wide text-gray-500">Detected Gang Sheet Size</div>
+              <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">Width (Inches)</label>
+                  <input type="text" class="ul-main-detected-width w-full rounded border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900" readonly>
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">Height (Inches)</label>
+                  <input type="text" class="ul-main-detected-height w-full rounded border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900" readonly>
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-500 mb-1">Selected Variant</label>
+                  <input type="text" class="ul-main-selected-variant w-full rounded border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900" readonly>
+                </div>
+              </div>
+              <div class="ul-main-detected-note mt-2 text-xs text-gray-500"></div>
+            </div>
+          </div>
+        {% endif %}
+<div class="mt-8 border-t border-gray-200">
+          {%- comment -%}
+            App blocks cannot carry child blocks, so the accordion items are
+            block settings (up to four). Empty items are skipped.
+          {%- endcomment -%}
+          {%- assign upl_accordion_count = 0 -%}
+          {%- for upl_i in (1..4) -%}
+            {%- case upl_i -%}
+              {%- when 1 -%}{%- assign upl_acc_title = block.settings.accordion_1_title -%}{%- assign upl_acc_content = block.settings.accordion_1_content -%}
+              {%- when 2 -%}{%- assign upl_acc_title = block.settings.accordion_2_title -%}{%- assign upl_acc_content = block.settings.accordion_2_content -%}
+              {%- when 3 -%}{%- assign upl_acc_title = block.settings.accordion_3_title -%}{%- assign upl_acc_content = block.settings.accordion_3_content -%}
+              {%- else -%}{%- assign upl_acc_title = block.settings.accordion_4_title -%}{%- assign upl_acc_content = block.settings.accordion_4_content -%}
+            {%- endcase -%}
+            {%- if upl_acc_content != blank -%}
+              {%- assign upl_accordion_count = upl_accordion_count | plus: 1 -%}
+              <div class="border-b border-gray-200">
+                <button type="button" class="js-accordion-trigger w-full py-3 flex justify-between items-center font-bold text-sm text-gray-900 hover:text-amazon-orange cursor-pointer" onclick="var content = document.getElementById('acc-{{ section_dom_id }}-{{ upl_i }}'); content.classList.toggle('hidden'); this.querySelector('svg').classList.toggle('rotate-180')">
+                  {{ upl_acc_title | escape }}
+                  <svg class="w-4 h-4 js-accordion-icon transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </button>
+                <div id="acc-{{ section_dom_id }}-{{ upl_i }}" class="hidden pb-3 text-sm text-gray-700 prose prose-sm">
+                  {{ upl_acc_content }}
+                </div>
+              </div>
+            {%- endif -%}
+          {%- endfor -%}
+
+          {%- if upl_accordion_count == 0 -%}
+            <div class="border-b border-gray-200">
+              <button type="button" class="js-accordion-trigger w-full py-3 flex justify-between items-center font-bold text-sm text-gray-900 hover:text-amazon-orange cursor-pointer" onclick="var content = document.getElementById('acc-details'); content.classList.toggle('hidden'); this.querySelector('svg').classList.toggle('rotate-180')">
+                Product Details
+                <svg class="w-4 h-4 js-accordion-icon transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+              </button>
+              <div id="acc-details" class="hidden pb-3 text-sm text-gray-700">
+                {{ product.description }}
+              </div>
+            </div>
+          {%- endif -%}
+        </div>
+
+      </div>
+      
+
+{%comment %}  kod sonu {%endcomment %}
+      <div class="lg:col-span-3">
+
+        {% if block.settings.show_pricing_table %}
+          <div class="ul-main-variant-pricing border border-gray-200 rounded-md overflow-hidden mb-6">
+            <div class="bg-amazon-yellow px-4 py-2">
+              <h3 class="text-sm font-bold text-gray-900">{{ block.settings.pricing_table_title | escape }}</h3>
+            </div>
+            <table class="w-full text-sm text-left">
+              <thead class="bg-gray-100 text-gray-900 border-b border-gray-200">
+                <tr>
+                  <th class="px-4 py-2 font-bold text-xs">Size</th>
+                  <th class="px-4 py-2 font-bold text-xs text-right">Total Price</th>
+                </tr>
+              </thead>
+              <tbody class="ul-main-variant-table divide-y divide-gray-200 bg-white">
+                {% for variant in product.variants %}
+                  <tr class="ul-main-variant-row hover:bg-gray-50" data-variant-id="{{ variant.id }}" data-variant-title="{{ variant.title | escape }}" data-variant-price="{{ variant.price }}" {% unless variant.available %}data-variant-unavailable="true"{% endunless %}>
+                    <td class="px-4 py-1.5 text-gray-700 text-xs">{{ variant.title }}</td>
+                    <td class="px-4 py-1.5 text-right font-medium text-gray-900 text-xs">{{ variant.price | money }}</td>
+                  </tr>
+                {% else %}
+                  <tr>
+                    <td class="px-4 py-2 text-xs text-gray-500" colspan="2">No variants found for this product.</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+
+        <div class="ul-main-buybox-card border border-gray-200 rounded-lg p-4 bg-white mb-6">
+          <div class="ul-main-buybox-price text-2xl font-medium text-gray-900 mb-2">{{ product.price | money }}</div>
+          <div class="ul-main-vip-pricing hidden mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+            <div class="ul-main-vip-pricing-title font-semibold"></div>
+            <div class="ul-main-vip-pricing-rate mt-1 text-xs"></div>
+            <div class="ul-main-vip-pricing-length mt-1 text-xs"></div>
+            <div class="ul-main-vip-pricing-total mt-2 font-semibold"></div>
+          </div>
+
+          <div class="text-lg text-green-700 font-medium mb-4">In Stock.</div>
+
+          <div class="ul-main-buybox-form flex flex-col gap-3" data-ul-buybox>
+            <input type="hidden" class="ul-main-variant-input" value="{{ product.selected_or_first_available_variant.id }}">
+
+            <div class="ul-main-quantity-row flex items-center gap-2 mb-2">
+              <label class="text-sm text-gray-900">Qty:</label>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value="1"
+                inputmode="numeric"
+                class="ul-main-quantity w-20 bg-gray-100 border border-gray-300 rounded px-2 py-1 shadow-sm outline-none focus:ring-2 focus:ring-amazon-orange text-sm"
+              >
+            </div>
+
+            <button type="button" class="ul-main-add-to-cart w-full bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-sm font-medium py-2 rounded-full shadow-sm border border-[#1e40af]/30 cursor-pointer transition-colors duration-200">
+              Add to Cart
+            </button>
+            <button type="button" class="ul-main-buy-now w-full bg-[#1e3a8a] hover:bg-[#1e40af] text-white text-sm font-medium py-2 rounded-full shadow-sm border border-[#172554]/30 cursor-pointer transition-colors duration-200">
+              Buy Now
+            </button>
+          </div>
+        </div>
+
+        <div class="ul-main-vip-preview-card hidden mb-6 overflow-hidden rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-semibold text-slate-900">Custom quote preview</div>
+              <div class="ul-main-vip-preview-summary mt-1 text-xs leading-5 text-slate-600">
+                Upload a PNG to see the billed page with live ruler guides.
+              </div>
+            </div>
+            <span class="rounded-full bg-slate-900 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white">
+              Ruler View
+            </span>
+          </div>
+
+          <div class="mt-3 flex flex-wrap gap-2">
+            <span class="ul-main-vip-preview-chip ul-main-vip-preview-billing-chip">Billing page pending</span>
+            <span class="ul-main-vip-preview-chip ul-main-vip-preview-artwork-chip">Artwork bounds pending</span>
+            <span class="ul-main-vip-preview-chip ul-main-vip-preview-mode-chip">Full canvas billing</span>
+          </div>
+
+          <div class="ul-main-vip-preview-selector hidden mt-4">
+            <label class="ul-main-vip-preview-selector-label mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Focus Design
+            </label>
+            <div class="ul-main-vip-preview-selector-wrap">
+              <select class="ul-main-vip-preview-select" aria-label="Select a queued design"></select>
+            </div>
+          </div>
+
+          <div class="ul-main-vip-preview-active hidden mt-4 rounded-[22px] border border-slate-200 bg-white/80 p-4 shadow-sm">
+            <div class="ul-main-vip-preview-active-top">
+              <div class="ul-main-vip-preview-active-copy">
+                <div class="ul-main-vip-preview-active-label text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Focused design</div>
+                <div class="ul-main-vip-preview-active-title mt-1 truncate text-sm font-semibold text-slate-900"></div>
+                <div class="ul-main-vip-preview-active-meta mt-1 text-xs leading-5 text-slate-500"></div>
+                <div class="ul-main-vip-preview-active-note hidden mt-2 text-[11px] leading-5 text-slate-500"></div>
+              </div>
+              <div class="ul-main-vip-preview-active-pills flex flex-wrap items-center justify-end gap-2"></div>
+            </div>
+          </div>
+
+          <div class="ul-main-vip-preview-empty mt-4 rounded-[22px] border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
+            <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-900 shadow-sm">
+              <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 7h10M7 12h6m-6 5h10M4 4v16m16-5V4M8 4v4m8 7v5"></path>
+              </svg>
+            </div>
+            <div class="ul-main-vip-preview-empty-title text-sm font-semibold text-slate-900">Full-page quote preview</div>
+            <div class="ul-main-vip-preview-empty-body mt-2 text-xs leading-5 text-slate-500">
+              We will render the uploaded page against a scrollable inch ruler. Pricing uses the full uploaded page, not trimmed artwork bounds.
+            </div>
+          </div>
+
+          <div class="ul-main-vip-preview-canvas hidden mt-4">
+            <div class="ul-main-vip-preview-ruler-shell">
+              <div class="ul-main-vip-preview-corner"></div>
+              <div class="ul-main-vip-preview-top-ruler">
+                <div class="ul-main-vip-preview-top-track"></div>
+              </div>
+              <div class="ul-main-vip-preview-left-ruler">
+                <div class="ul-main-vip-preview-left-track"></div>
+              </div>
+              <div class="ul-main-vip-preview-stage-wrap">
+                <div class="ul-main-vip-preview-stage-rail">
+                  <div class="ul-main-vip-preview-stage">
+                    <img class="ul-main-vip-preview-image hidden" alt="VIP uploaded page preview">
+                    <div class="ul-main-vip-preview-artwork hidden"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ul-main-vip-preview-footnote mt-3 text-[11px] leading-5 text-slate-500">
+            Billing uses the full uploaded page size. When detected, the dashed frame marks artwork bounds inside that page.
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script type="application/json" id="{{ section_dom_id }}-product-json" data-ul-mod2-product-json>
+{
+  "productId": {{ product.id | json }},
+  "title": {{ product.title | json }},
+  "variants": {{ product.variants | json }},
+  "selectedVariantId": {{ product.selected_or_first_available_variant.id | json }}
+}
+</script>
+{% schema %}
+{
+  "name": "Custom Price Upload Mod 2",
+  "target": "section",
+  "templates": ["product"],
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Full product page with customer-specific pricing. Use as the only app block on a product template; set prices in the app under Products → Customer Special Pricing."
+    },
+    { "type": "header", "content": "Product Information" },
+    { "type": "checkbox", "id": "show_vendor", "label": "Show Vendor", "default": false },
+    { "type": "text", "id": "fake_reviews_count", "label": "Fake Reviews Count (if no real reviews)", "default": "5,241" },
+    { "type": "header", "content": "Custom DTF Features (Grid)" },
+    { "type": "checkbox", "id": "show_dtf_features", "label": "Show DTF Features Grid", "default": true },
+    { "type": "text", "id": "feature_1_text", "label": "Feature 1 Text", "default": "Applies to every fabric" },
+    { "type": "text", "id": "feature_2_text", "label": "Feature 2 Text", "default": "Vibrant Colors" },
+    { "type": "text", "id": "feature_3_text", "label": "Feature 3 Text", "default": "Hot Peel" },
+    { "type": "text", "id": "feature_4_text", "label": "Feature 4 Text", "default": "Guaranteed 100 Washes" },
+    { "type": "header", "content": "Upload Section" },
+    { "type": "checkbox", "id": "show_upload_section", "label": "Show File Upload Box", "default": true },
+    { "type": "text", "id": "upload_button_text", "label": "Upload Button Text", "default": "Upload Your Image" },
+    { "type": "header", "content": "Pricing Table" },
+    { "type": "checkbox", "id": "show_pricing_table", "label": "Show Gang Sheet Pricing Table", "default": true },
+    { "type": "text", "id": "pricing_table_title", "label": "Pricing Table Title", "default": "DTF Gang Sheet Pricing" },
+    { "type": "header", "content": "Accordion (leave content empty to hide an item)" },
+    { "type": "text", "id": "accordion_1_title", "label": "Item 1 heading", "default": "Product Details" },
+    { "type": "richtext", "id": "accordion_1_content", "label": "Item 1 content", "default": "<p>Add your product details here.</p>" },
+    { "type": "text", "id": "accordion_2_title", "label": "Item 2 heading", "default": "Shipping" },
+    { "type": "richtext", "id": "accordion_2_content", "label": "Item 2 content" },
+    { "type": "text", "id": "accordion_3_title", "label": "Item 3 heading", "default": "Returns" },
+    { "type": "richtext", "id": "accordion_3_content", "label": "Item 3 content" },
+    { "type": "text", "id": "accordion_4_title", "label": "Item 4 heading", "default": "FAQ" },
+    { "type": "richtext", "id": "accordion_4_content", "label": "Item 4 content" }
+  ]
+}
+{% endschema %}
+
