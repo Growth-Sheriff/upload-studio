@@ -27,9 +27,10 @@ function buildOrderFeeDescription(
   monthKey?: string | null
 ): string {
   const appName = process.env.APP_NAME || "Upload Studio";
-  const prefix = monthKey ? `${appName} commission (${monthKey})` : `${appName} commission`;
+  // Shown to the merchant on Stripe/PayPal checkout and receipts: plain "order fees".
+  const prefix = monthKey ? `${appName} order fees (${monthKey})` : `${appName} order fees`;
   const total = feeAmounts.reduce((sum, amount) => sum + amount, 0);
-  return `${prefix}: ${feeAmounts.length} order${feeAmounts.length === 1 ? "" : "s"} @ ${Math.round(COMMISSION_PERCENT * 100)}% ($${total.toFixed(2)})`;
+  return `${prefix}: ${feeAmounts.length} order${feeAmounts.length === 1 ? "" : "s"} ($${total.toFixed(2)})`;
 }
 
 export async function getOutstandingFeeSelection(
