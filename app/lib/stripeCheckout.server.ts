@@ -62,7 +62,7 @@ async function saveStripePaymentMethod(
 ) {
   if (!paymentMethodId) return
 
-  const ensuredCustomerId = customerId || (await getOrCreateCustomer(shopDomain, customerEmail))
+  let ensuredCustomerId = customerId || (await getOrCreateCustomer(shopDomain, customerEmail))
 
   // Fetch card brand/last4/exp from Stripe so billing UI can display it inline
   let cardSnapshot: {
@@ -76,6 +76,23 @@ async function saveStripePaymentMethod(
   try {
     const stripe = getStripeClient()
     const pm = await stripe.paymentMethods.retrieve(paymentMethodId)
+
+    // The card must live on the customer we charge later. If the session
+    // attached it elsewhere, follow the card; if it is loose, attach it.
+    const pmCustomer = typeof pm.customer === 'string' ? pm.customer : pm.customer?.id || null
+    if (pmCustomer && pmCustomer !== ensuredCustomerId) {
+      ensuredCustomerId = pmCustomer
+    } else if (!pmCustomer) {
+      await stripe.paymentMethods.attach(paymentMethodId, { customer: ensuredCustomerId })
+    }
+    try {
+      await stripe.customers.update(ensuredCustomerId, {
+        invoice_settings: { default_payment_method: paymentMethodId },
+      })
+    } catch (defaultErr) {
+      console.warn('[stripeCheckout] default payment method update failed:', defaultErr)
+    }
+
     const card = pm.card
     if (card) {
       cardSnapshot = {

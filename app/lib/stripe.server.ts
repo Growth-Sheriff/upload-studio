@@ -85,7 +85,8 @@ export async function createCheckoutSession(
   description: string,
   referenceId: string,
   hasExistingPaymentMethod: boolean,
-  customerEmail?: string | null
+  customerEmail?: string | null,
+  customerId?: string | null
 ): Promise<StripeCheckoutResult> {
   const stripe = getStripeClient();
   const amountCents = Math.round(parseFloat(amount) * 100);
@@ -119,8 +120,14 @@ export async function createCheckoutSession(
     client_reference_id: referenceId,
   };
 
-  if (customerEmail) {
+  // Always bind the session to the merchant's Stripe customer: the card saved
+  // via setup_future_usage is attached to the session's customer, and the
+  // off-session auto charge later needs the card on that same customer.
+  if (customerId) {
+    sessionParams.customer = customerId;
+  } else if (customerEmail) {
     sessionParams.customer_email = customerEmail;
+    sessionParams.customer_creation = 'always';
   }
 
   if (!hasExistingPaymentMethod) {

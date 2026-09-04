@@ -47,6 +47,34 @@ async function clearBillingState(shopId: string, current: Record<string, any>) {
   await prisma.shop.update({ where: { id: shopId }, data: { settings: merged } });
 }
 
+/**
+ * Errors that say nothing about the merchant's card: our own API key, Stripe or
+ * PayPal being unreachable, rate limits, server errors. These must never count
+ * as a failed attempt and must never forget the saved card (on 2026-07-20 an
+ * expired Stripe key wiped every tenant's card after three "attempts").
+ */
+function isInfrastructureError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('api key') ||
+    lower.includes('invalid_client') ||
+    lower.includes('authentication_error') ||
+    lower.includes('unauthorized') ||
+    lower.includes('rate limit') ||
+    lower.includes('rate_limit') ||
+    lower.includes('econnre') ||
+    lower.includes('etimedout') ||
+    lower.includes('enotfound') ||
+    lower.includes('fetch failed') ||
+    lower.includes('socket hang up') ||
+    lower.includes('api_connection_error') ||
+    lower.includes('api_error') ||
+    /\b5\d\d\b/.test(lower) ||
+    lower.includes('bad gateway') ||
+    lower.includes('service unavailable')
+  );
+}
+
 function isHardDecline(message: string): boolean {
   const lower = message.toLowerCase();
   for (const code of HARD_DECLINE_STRIPE_CODES) {
@@ -191,6 +219,27 @@ export async function runShopAutoCharge(shopId: string): Promise<ChargeOutcome> 
     console.error(`[AutoCharge] ❌ ${shop.shopDomain}: ${errMsg}`);
 
     const attemptNumber = state.retryCount || 0;
+
+    if (isInfrastructureError(errMsg)) {
+      // Not the merchant's fault: keep the card, keep the attempt counter,
+      // try again on the next worker run.
+      await prisma.auditLog.create({
+        data: {
+          shopId: shop.id,
+          action: 'auto_charge_failed_infrastructure',
+          resourceType: 'auto_charge',
+          resourceId: 'error',
+          metadata: { error: errMsg, attempt: attemptNumber, keptVault: true },
+        },
+      });
+      await setBillingState(shop.id, currentSettings, {
+        retryCount: attemptNumber,
+        lastError: errMsg,
+        lastErrorAt: new Date().toISOString(),
+      });
+      return { status: 'retry_scheduled', nextRetryAt: new Date(Date.now() + 6 * 60 * 60 * 1000), attemptNumber, reason: errMsg };
+    }
+
     const hardDecline = isHardDecline(errMsg);
     const exhausted = attemptNumber + 1 >= MAX_RETRY_ATTEMPTS;
     const shouldGiveUp = hardDecline || exhausted;

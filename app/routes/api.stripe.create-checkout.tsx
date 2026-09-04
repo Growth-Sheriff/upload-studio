@@ -6,7 +6,7 @@
 
 import type { ActionFunctionArgs } from '@remix-run/node';
 import { json } from '@remix-run/node';
-import { createCheckoutSession, isStripeConfigured } from '~/lib/stripe.server';
+import { createCheckoutSession, getOrCreateCustomer, isStripeConfigured } from '~/lib/stripe.server';
 import prisma from '~/lib/prisma.server';
 import { authenticate } from '~/shopify.server';
 import { getOutstandingFeeSelection } from '~/lib/billing.server';
@@ -76,13 +76,27 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const hasExistingPaymentMethod = Boolean(shop.stripePaymentMethodId);
 
+    // One Stripe customer per shop, created up front so the saved card lands
+    // on the customer we will charge off-session later.
+    let stripeCustomerId = shop.stripeCustomerId || null;
+    if (!stripeCustomerId) {
+      try {
+        stripeCustomerId = await getOrCreateCustomer(shopDomain, shop.stripeEmail);
+        await prisma.shop.update({ where: { id: shop.id }, data: { stripeCustomerId } });
+      } catch (customerError) {
+        console.warn('[Stripe] customer ensure failed, falling back to email session:', customerError);
+        stripeCustomerId = null;
+      }
+    }
+
     const result = await createCheckoutSession(
       totalAmount,
       shopDomain,
       description,
       auditEntry.id,
       hasExistingPaymentMethod,
-      shop.stripeEmail
+      shop.stripeEmail,
+      stripeCustomerId
     );
 
 
