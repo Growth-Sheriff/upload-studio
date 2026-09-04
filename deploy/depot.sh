@@ -94,7 +94,10 @@ cmd_deploy() {
     docker pull '$IMAGE:$sha'
     docker tag '$IMAGE:$sha' upload-studio:latest
     cd '$REMOTE_DIR'
-    docker compose up -d --remove-orphans
+    # No --remove-orphans: the Caddy reverse proxy lives in docker-compose.caddy.yml
+    # under the same project name and would be deleted as an orphan (2026-09-04 outage).
+    docker compose up -d
+    docker compose -f docker-compose.caddy.yml up -d
     sleep 10
     docker compose ps"
   echo "✔ Deploy complete ($sha). Verify tenant health before walking away."
