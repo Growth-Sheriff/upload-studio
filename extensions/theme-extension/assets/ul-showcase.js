@@ -29,6 +29,7 @@
     if (modal.classList.contains('active')) return;
 
     ulShowcaseData[bid] = {
+      pid: c.dataset.productId,
       vid: c.dataset.variantId,
       file: null,
       size: '22x12',
@@ -115,27 +116,32 @@
 
     var qty = parseInt(qtyInput ? qtyInput.value : 1) || 1;
 
+    if (!ulShowcaseData[bid].file) { alert('Please choose a design file first.'); return; }
+    if (!window.ULLineProperties || !window.ULLineProperties.uploadAndBuild) { alert('Upload service is not available. Please refresh the page.'); return; }
+
     btn.disabled = true;
-    btn.textContent = 'Adding...';
+    btn.textContent = 'Uploading...';
 
-    fetch('/cart/add.js', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        items: [{
-          id: ulShowcaseData[bid].vid,
-          quantity: qty,
-          properties: {
-
-            '_ul_upload_id': 'showcase_' + Date.now(),
-
-            'File Name': ulShowcaseData[bid].file ? ulShowcaseData[bid].file.name : '',
-            'Sheet Size': ulShowcaseData[bid].size,
-            'Unit Price': '$' + ulShowcaseData[bid].price,
-            'Design Type': 'DTF Transfer'
-          }
-        }]
-      })
+    // Real upload through the app, then the same three line properties every
+    // block writes (Print Ready, Sheet Identity, DPI).
+    window.ULLineProperties.uploadAndBuild({
+      file: ulShowcaseData[bid].file,
+      productId: ulShowcaseData[bid].pid,
+      variantId: ulShowcaseData[bid].vid
+    })
+    .then(function(result) {
+      btn.textContent = 'Adding...';
+      return fetch('/cart/add.js', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          items: [{
+            id: ulShowcaseData[bid].vid,
+            quantity: qty,
+            properties: result.properties
+          }]
+        })
+      });
     })
     .then(function(r) { return r.json(); })
     .then(function() {

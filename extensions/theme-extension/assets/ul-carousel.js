@@ -34,6 +34,7 @@
     if (modal.classList.contains('active')) return;
 
     ul3dData[bid] = {
+      pid: c.dataset.productId,
       vid: c.dataset.variantId,
       file: null,
       size: '22x12',
@@ -120,27 +121,32 @@
 
     var qty = parseInt(qtyInput ? qtyInput.value : 1) || 1;
 
+    if (!ul3dData[bid].file) { alert('Please choose a design file first.'); return; }
+    if (!window.ULLineProperties || !window.ULLineProperties.uploadAndBuild) { alert('Upload service is not available. Please refresh the page.'); return; }
+
     btn.disabled = true;
-    btn.textContent = 'Adding...';
+    btn.textContent = 'Uploading...';
 
-    fetch('/cart/add.js', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        items: [{
-          id: ul3dData[bid].vid,
-          quantity: qty,
-          properties: {
-
-            '_ul_upload_id': 'carousel_' + Date.now(),
-
-            'File Name': ul3dData[bid].file ? ul3dData[bid].file.name : '',
-            'Sheet Size': ul3dData[bid].size,
-            'Unit Price': '$' + ul3dData[bid].price,
-            'Design Type': 'DTF Transfer'
-          }
-        }]
-      })
+    // Real upload through the app, then the same three line properties every
+    // block writes (Print Ready, Sheet Identity, DPI).
+    window.ULLineProperties.uploadAndBuild({
+      file: ul3dData[bid].file,
+      productId: ul3dData[bid].pid,
+      variantId: ul3dData[bid].vid
+    })
+    .then(function(result) {
+      btn.textContent = 'Adding...';
+      return fetch('/cart/add.js', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          items: [{
+            id: ul3dData[bid].vid,
+            quantity: qty,
+            properties: result.properties
+          }]
+        })
+      });
     })
     .then(function(r) { return r.json(); })
     .then(function() {

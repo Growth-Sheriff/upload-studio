@@ -2052,19 +2052,13 @@
 
       try {
 
-        const properties = {
-
-          _ul_upload_id: upload.uploadId,
-          _ul_thumbnail: upload.result.thumbnailUrl,
-
-          'Uploaded File': upload.result.originalUrl,
-          'Design Type': 'DTF Transfer',
-          'File Name': upload.file.name,
-        }
-
-        if (upload.result.width && upload.result.height) {
-          properties['Dimensions'] = `${upload.result.width}x${upload.result.height}`
-        }
+        // Exactly the three properties every block writes (server-built);
+        // merchant-defined extra questions are appended as their own labels.
+        const properties = await window.ULLineProperties.build({
+          uploadId: upload.uploadId,
+          fileUrl: upload.result.originalUrl,
+          dpi: upload.result.dpi || upload.result.effectiveDpi,
+        })
 
         for (const [key, value] of Object.entries(form.extraAnswers)) {
           if (value && value !== '') {

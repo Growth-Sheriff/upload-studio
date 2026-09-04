@@ -70,7 +70,7 @@
           itemCount: this.cartData.item_count,
           cartTotal: this.cartData.total_price,
           hasUploadLiftItems: this.cartData.items.some(item =>
-            item.properties && (item.properties['_ul_upload_id'] || item.properties['_ul_is_tshirt'])
+            item.properties && (item.properties['Sheet Identity'] || item.properties['_ul_upload_id'] || item.properties['_ul_is_tshirt'])
           )
         });
       }
@@ -137,6 +137,8 @@
     },
     renderItem(item) {
       const isUploadLift = item.properties && (
+        item.properties['Sheet Identity'] ||
+        item.properties['Print Ready'] ||
         item.properties['_ul_upload_id'] ||
         item.properties['_ul_is_tshirt'] ||
         item.properties['_upload_id'] ||

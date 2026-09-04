@@ -6,6 +6,9 @@ import {
 } from '~/lib/customerPricingCheckout.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
 import { authenticate } from '~/shopify.server'
+import prisma from '~/lib/prisma.server'
+import { DPI_PROPERTY, PRINT_READY_PROPERTY, SHEET_IDENTITY_PROPERTY } from '~/lib/orderMatching.server'
+import { buildIdentityUrl } from '~/lib/uploadUrls.server'
 
 const DRAFT_ORDER_CREATE_MUTATION = `
   mutation CustomPricingDraftOrderCreate($input: DraftOrderInput!) {
@@ -227,6 +230,28 @@ export async function action({ request }: ActionFunctionArgs) {
   const noteUploadIds = preparedItems.map((item) => item.upload.id).join(', ')
   const customerGid = toCustomerGid(loggedInCustomerId || firstItem.pricingContext.customerId)
 
+  // Persist the nesting request on the upload rows (same fields the cart
+  // path writes) so the identity page and admin show copies/sheets even
+  // though the order line carries only the three visible properties.
+  await Promise.all(
+    preparedItems.map((item) =>
+      prisma.upload
+        .update({
+          where: { id: item.upload.id },
+          data: {
+            requestedCopies: Math.max(1, item.requestedQuantity),
+            sheetsNeeded: Number(item.resolvedVariant?.sheetsNeeded || item.quote.sheetsNeeded || 1) || 1,
+            designsPerSheet: Number(item.resolvedVariant?.designsPerSheet || 0) || null,
+            cartSheetLabel:
+              item.pricingContext.pricingMode === 'measured_length'
+                ? 'Exact measured length'
+                : item.resolvedVariant?.selectedSheetLabel || null,
+          },
+        })
+        .catch((error) => console.warn('[VIP Checkout] copies persist failed:', error))
+    )
+  )
+
   const draftOrderInput: Record<string, unknown> = {
     acceptAutomaticDiscounts: body.acceptAutomaticDiscounts !== false,
     allowDiscountCodesInCheckout: true,
@@ -279,57 +304,20 @@ export async function action({ request }: ActionFunctionArgs) {
             }),
         quantity: requestedCopies,
         requiresShipping: true,
+        // Exactly the three customer-visible line properties every block
+        // writes. Quote facts (per-inch price, billable length, copies) are
+        // persisted on the upload row + order note, not as line properties.
         customAttributes: [
-          { key: '_ul_upload_id', value: item.upload.id },
-          { key: '_ul_uploaded', value: 'true' },
-          { key: '_ul_shop_domain', value: item.shop.shopDomain },
-          { key: '_ul_customer_id', value: loggedInCustomerId || '' },
-          { key: '_ul_customer_type', value: item.pricingContext.customerType },
-          { key: '_ul_status_key', value: item.pricingContext.statusKey },
-          { key: '_ul_status_label', value: item.pricingContext.statusLabel },
-          { key: '_ul_pricing_mode', value: item.pricingContext.pricingMode },
-          { key: '_ul_price_per_inch', value: item.quote.pricePerInch.toFixed(4) },
-          { key: '_ul_page_width_in', value: item.quote.pageWidthIn.toFixed(2) },
-          { key: '_ul_page_length_in', value: item.quote.pageLengthIn.toFixed(2) },
-          { key: '_ul_billable_length_in', value: item.quote.billableLengthIn.toFixed(2) },
-          { key: '_ul_measurement_mode', value: item.measurement.measurementMode || '' },
-          { key: '_ul_product_id', value: item.upload.productId || '' },
-          { key: '_ul_variant_id', value: item.upload.variantId || '' },
-          { key: '_ul_requested_copies', value: String(item.requestedQuantity) },
-          { key: 'Requested Copies', value: String(item.requestedQuantity) },
-          { key: 'Print READY', value: item.upload.uploadUrl || '' },
-          { key: 'Design File', value: item.upload.fileName || '' },
-          { key: 'Customer Note', value: customerNote },
-          { key: '_ul_customer_note', value: customerNote },
-          { key: '_ul_discount_codes', value: discountCodes.join(', ') },
-          { key: '_ul_accepts_automatic_discounts', value: body.acceptAutomaticDiscounts === false ? 'false' : 'true' },
+          { key: PRINT_READY_PROPERTY, value: item.upload.uploadUrl || buildIdentityUrl(item.upload.id) },
+          { key: SHEET_IDENTITY_PROPERTY, value: buildIdentityUrl(item.upload.id) },
           {
-            key: '_ul_selected_variant_id',
-            value: isMeasuredLength
-              ? ''
-              : item.resolvedVariant?.selectedVariantId || normalizedItems[index]?.selectedVariantId || '',
+            key: DPI_PROPERTY,
+            value: (() => {
+              const dpi = Number((item.measurement as { effectiveDpi?: number; dpi?: number })?.effectiveDpi || (item.measurement as { dpi?: number })?.dpi || 0)
+              return dpi > 0 ? String(Math.round(dpi)) : 'n/a'
+            })(),
           },
-          {
-            key: '_ul_selected_variant_title',
-            value: isMeasuredLength
-              ? ''
-              : item.resolvedVariant?.selectedVariantTitle ||
-                item.quote.sheetVariantTitle ||
-                '',
-          },
-          {
-            key: '_ul_selected_sheet_label',
-            value: isMeasuredLength ? 'Exact measured length' : item.resolvedVariant?.selectedSheetLabel || '',
-          },
-          {
-            key: '_ul_sheets_needed',
-            value: String(item.resolvedVariant?.sheetsNeeded || item.quote.sheetsNeeded || 1),
-          },
-          {
-            key: '_ul_designs_per_sheet',
-            value: String(item.resolvedVariant?.designsPerSheet || ''),
-          },
-        ].filter((entry) => entry.value !== ''),
+        ],
       }
     }),
   }

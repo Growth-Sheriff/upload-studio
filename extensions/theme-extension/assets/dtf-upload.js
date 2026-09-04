@@ -2137,28 +2137,18 @@
       var tierBasis = self.getTierBasisForFile(item);
       var activeTier = self.getActiveTier(tierBasis);
       var lineQuantity = self.getCartQuantityForFile(item);
+      // Exactly the three properties every block writes; built locally here
+      // (same keys as /api/cart/prepare) because this flow adds several
+      // lines in one request. The nesting request (copies) is persisted by
+      // the server through the identity page, not as line properties.
       var lineItem = {
         id: itemVariantId,
         quantity: lineQuantity,
-        properties: {
-          '_file_url': item.cdnUrl || '',
-          '_file_name': item.fileName,
-          '_width_in': String(item.widthIn),
-          '_height_in': String(item.heightIn),
-          '_total_area_sqin': String((item.widthIn * item.heightIn).toFixed(2)),
-          '_price_per_sqin': String(activeTier.price_per_sqin),
-          '_price_per_inch': String(getTierUnitPrice(activeTier) || ''),
-          '_billable_length_in': priceData && priceData.billableInches ? String(priceData.billableInches) : '',
-          '_requested_copies': String(item.quantity),
-          '_remove_background': String(item.removeBg),
-          '_upscale_quality': String(item.upscale),
-          '_halftone': String(item.halftone),
-          '_color_profile': self.getEffectiveColorProfile(),
-          '_resolution_dpi': String(item.dpi || 300),
-          '_upload_id': item.uploadId || '',
-          '_mode': self.isLinearInchPricing() ? 'dtf_by_size_linear_inches' : 'dtf_by_size'
-        }
+        properties: window.ULLineProperties
+          ? window.ULLineProperties.fallback({ uploadId: item.uploadId || '', fileUrl: item.cdnUrl || '', dpi: item.dpi })
+          : { 'Print Ready': item.cdnUrl || '', 'DPI': String(item.dpi || 'n/a') }
       };
+      void priceData; void activeTier;
       for (var optionName in self.selectedServiceOptions) {
         if (Object.prototype.hasOwnProperty.call(self.selectedServiceOptions, optionName)) {
           lineItem.properties[optionName] = self.selectedServiceOptions[optionName];
