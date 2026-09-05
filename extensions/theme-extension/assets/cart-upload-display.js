@@ -122,14 +122,46 @@
       font-weight: 600;
       text-decoration: none;
     }
-    .ul-cart-checkout-blocked {
-      margin: 10px 0;
-      padding: 10px 12px;
-      background: #fef2f2;
-      border: 1px solid #fca5a5;
+    .ul-cart-missing-design .ul-cart-inline-link {
+      display: inline;
+      margin: 0;
+      padding: 0;
+      background: none;
+      color: #b91c1c !important;
+      text-decoration: underline;
+      font-weight: 600;
+    }
+    .ul-cart-design-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+    .ul-cart-design-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 8px;
+      background: #fff;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: left;
+      font: inherit;
+      color: #111827;
+    }
+    .ul-cart-design-option:hover { border-color: #b91c1c; }
+    .ul-cart-design-option img, .ul-cart-design-thumb {
+      width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: #e5e7eb; flex-shrink: 0;
+    }
+    .ul-cart-design-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .ul-cart-design-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ul-cart-design-order { font-size: 11px; color: #6b7280; }
+    .ul-cart-design-use { font-size: 12px; font-weight: 600; color: #b91c1c; white-space: nowrap; }
+    .ul-cart-attached-note {
+      margin-top: 8px;
+      padding: 8px 12px;
+      background: #f0fdf4;
+      border: 1px solid #86efac;
       border-radius: 8px;
       font-size: 13px;
-      color: #7f1d1d;
+      color: #14532d;
     }
   `;
 
@@ -200,63 +232,142 @@
     return uploadProductsPromise;
   }
 
-  function createMissingDesignElement(item) {
+  // "Buy it again" lands the variant in the cart without our properties. The
+  // exact source order is only known when the customer came from that order's
+  // page (referrer / the account page we passed through), and only then is the
+  // design re-attached automatically. Otherwise the customer picks from their
+  // own previous designs; nothing is guessed.
+  const REORDER_SOURCE_KEY = 'ul_reorder_source_order';
+
+  function rememberReorderSource() {
+    try {
+      const fromPath = window.location.pathname.match(/\/account\/orders\/(\d+)/);
+      if (fromPath) sessionStorage.setItem(REORDER_SOURCE_KEY, fromPath[1]);
+    } catch (_e) { /* storage unavailable */ }
+  }
+
+  function getReorderSourceOrderId() {
+    const fromReferrer = (document.referrer || '').match(/\/account\/orders\/(\d+)/);
+    if (fromReferrer) return fromReferrer[1];
+    try {
+      return sessionStorage.getItem(REORDER_SOURCE_KEY) || '';
+    } catch (_e) {
+      return '';
+    }
+  }
+
+  async function fetchReorderDesigns(item, sourceOrderId) {
+    const shopDomain = (window.Shopify && window.Shopify.shop) || '';
+    const params = new URLSearchParams({
+      shop: shopDomain,
+      productId: String(item.product_id || ''),
+      variantId: String(item.variant_id || ''),
+    });
+    if (sourceOrderId) params.set('orderId', sourceOrderId);
+    try {
+      const res = await fetch(`${CONFIG.apiBase}/api/storefront/reorder-designs?${params.toString()}`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  async function attachDesignToLine(item, design) {
+    const res = await fetch('/cart/change.js', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: item.key, quantity: item.quantity, properties: design.properties }),
+    });
+    if (!res.ok) throw new Error('Cart update failed');
+    try {
+      sessionStorage.setItem('ul_reorder_attached', JSON.stringify({ key: item.key, fileName: design.fileName, orderName: design.orderName || '' }));
+    } catch (_e) { /* ignore */ }
+    window.location.reload();
+  }
+
+  function formatShortDate(iso) {
+    try {
+      return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch (_e) {
+      return '';
+    }
+  }
+
+  function createDesignPickerElement(item, data) {
     const div = document.createElement('div');
     div.className = 'ul-cart-missing-design';
     div.dataset.cartKey = item.key || '';
     const productUrl = item.url || (item.handle ? `/products/${item.handle}` : '/');
+
+    if (!data || data.customer === false) {
+      div.innerHTML = `
+        <strong>No design attached to this gang sheet</strong>
+        Log in to reuse a design from a previous order, or upload a new one from the product page.
+        <a href="/account/login">Log in</a> <a href="${productUrl}">Upload a design</a>
+      `;
+      return div;
+    }
+
+    const history = Array.isArray(data.history) ? data.history : [];
+    if (!history.length) {
+      div.innerHTML = `
+        <strong>No design attached to this gang sheet</strong>
+        Upload the design you want printed from the product page.
+        <a href="${productUrl}">Upload a design</a>
+      `;
+      return div;
+    }
+
+    const rows = history.map((design, index) => `
+      <button type="button" class="ul-cart-design-option" data-index="${index}">
+        ${design.thumbnailUrl ? `<img src="${design.thumbnailUrl}" alt="">` : '<span class="ul-cart-design-thumb"></span>'}
+        <span class="ul-cart-design-meta">
+          <span class="ul-cart-design-name">${escapeHtml(design.fileName)}</span>
+          <span class="ul-cart-design-order">${escapeHtml(design.orderName || '')} · ${formatShortDate(design.orderedAt)}</span>
+        </span>
+        <span class="ul-cart-design-use">Use this design</span>
+      </button>
+    `).join('');
     div.innerHTML = `
-      <strong>No design attached to this gang sheet</strong>
-      It was added without an uploaded file (for example through "Buy it again"), so there is nothing to print.
-      Remove it and upload your design from the product page.
-      <a href="${productUrl}">Upload the design</a>
+      <strong>Which design should we print on this sheet?</strong>
+      This line was added without a file. Pick one of your previous designs or <a class="ul-cart-inline-link" href="${productUrl}">upload a new one</a>.
+      <div class="ul-cart-design-list">${rows}</div>
     `;
+    div.querySelectorAll('.ul-cart-design-option').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const design = history[Number(button.dataset.index)];
+        if (!design) return;
+        button.disabled = true;
+        button.querySelector('.ul-cart-design-use').textContent = 'Attaching…';
+        try {
+          await attachDesignToLine(item, design);
+        } catch (error) {
+          button.disabled = false;
+          button.querySelector('.ul-cart-design-use').textContent = 'Try again';
+          log('attach failed', error);
+        }
+      });
+    });
     return div;
   }
 
-  function setCheckoutBlocked(blocked, missingCount) {
-    const controls = Array.from(document.querySelectorAll(
-      'button[name="checkout"], input[name="checkout"], a[href*="/checkout"], button[form="cart"][type="submit"], .cart__checkout-button, .cart__checkout, [data-checkout-button]'
-    ));
-    controls.forEach((el) => {
-      if (blocked) {
-        if (!el.dataset.ulBlocked) {
-          el.dataset.ulBlocked = '1';
-          el.setAttribute('aria-disabled', 'true');
-          el.style.opacity = '0.5';
-          el.style.pointerEvents = 'none';
-          if ('disabled' in el) el.disabled = true;
-        }
-      } else if (el.dataset.ulBlocked) {
-        delete el.dataset.ulBlocked;
-        el.removeAttribute('aria-disabled');
-        el.style.opacity = '';
-        el.style.pointerEvents = '';
-        if ('disabled' in el) el.disabled = false;
-      }
-    });
-    const existing = document.querySelector('.ul-cart-checkout-blocked');
-    if (!blocked) {
-      if (existing) existing.remove();
-      return;
-    }
-    const message = missingCount === 1
-      ? 'One gang sheet in your cart has no design attached. Remove it or upload its design before checking out.'
-      : `${missingCount} gang sheets in your cart have no design attached. Remove them or upload their designs before checking out.`;
-    if (existing) {
-      existing.textContent = message;
-      return;
-    }
-    const anchor = controls[0];
-    const notice = document.createElement('div');
-    notice.className = 'ul-cart-checkout-blocked';
-    notice.textContent = message;
-    if (anchor && anchor.parentElement) {
-      anchor.parentElement.insertBefore(notice, anchor);
-    } else {
-      const form = document.querySelector('form[action*="/cart"]') || document.body;
-      form.insertBefore(notice, form.firstChild);
-    }
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  }
+
+  function showAttachedNotice(lineItem, key) {
+    try {
+      const raw = sessionStorage.getItem('ul_reorder_attached');
+      if (!raw) return;
+      const info = JSON.parse(raw);
+      if (info.key !== key) return;
+      sessionStorage.removeItem('ul_reorder_attached');
+      const note = document.createElement('div');
+      note.className = 'ul-cart-attached-note';
+      note.textContent = `Design from ${info.orderName ? 'order ' + info.orderName : 'your previous order'} attached: ${info.fileName}`;
+      findAppendTarget(lineItem).appendChild(note);
+    } catch (_e) { /* ignore */ }
   }
 
   async function getUploadStatus(uploadId, shopDomain) {
@@ -523,7 +634,28 @@
       log('Found upload:', item.key, '→', uploadId);
     });
 
-    setCheckoutBlocked(uploadProducts.requireUpload && missingByKey.size > 0, missingByKey.size);
+    // Exact source order known (came from that order's page): re-attach the
+    // design of that order for this product/variant, then reload once.
+    if (missingByKey.size > 0) {
+      const sourceOrderId = getReorderSourceOrderId();
+      for (const [key, item] of missingByKey.entries()) {
+        if (!sourceOrderId) break;
+        let handled = false;
+        try { handled = sessionStorage.getItem('ul_reorder_tried_' + key) === '1'; } catch (_e) { /* ignore */ }
+        if (handled) continue;
+        const data = await fetchReorderDesigns(item, sourceOrderId);
+        try { sessionStorage.setItem('ul_reorder_tried_' + key, '1'); } catch (_e) { /* ignore */ }
+        if (data && data.match) {
+          log('Re-attaching design from source order', sourceOrderId, '→', data.match.uploadId);
+          try {
+            await attachDesignToLine(item, data.match);
+            return;
+          } catch (error) {
+            log('automatic re-attach failed', error);
+          }
+        }
+      }
+    }
 
     if (uploadsByKey.size === 0 && missingByKey.size === 0) {
       log('No upload items in cart');
@@ -538,19 +670,23 @@
       return;
     }
 
-    // Lines of upload products that carry no design: warn right under the line.
-    lineItemElements.forEach((lineItem) => {
-      if (lineItem.querySelector('.ul-cart-missing-design')) return;
+    // Lines of upload products that carry no design: let the customer pick
+    // one of their previous designs right under the line.
+    for (const lineItem of lineItemElements) {
       const key = lineItem.dataset.key ||
                   lineItem.dataset.lineItemKey ||
                   lineItem.dataset.cartItemKey ||
                   lineItem.getAttribute('data-key') ||
                   lineItem.getAttribute('data-line-item-key') ||
                   lineItem.querySelector('[data-key]')?.dataset.key;
-      const missingItem = key ? missingByKey.get(key) : null;
-      if (!missingItem) return;
-      findAppendTarget(lineItem).appendChild(createMissingDesignElement(missingItem));
-    });
+      if (!key) continue;
+      if (!lineItem.querySelector('.ul-cart-attached-note')) showAttachedNotice(lineItem, key);
+      if (lineItem.querySelector('.ul-cart-missing-design')) continue;
+      const missingItem = missingByKey.get(key);
+      if (!missingItem) continue;
+      const data = await fetchReorderDesigns(missingItem, '');
+      findAppendTarget(lineItem).appendChild(createDesignPickerElement(missingItem, data));
+    }
 
     log('Found', lineItemElements.length, 'line item elements');
 
@@ -613,6 +749,7 @@
   }
 
   function init() {
+    rememberReorderSource();
     const isCartPage = window.location.pathname.includes('/cart') ||
                        document.querySelector('[data-cart-form]') ||
                        document.querySelector('form[action="/cart"]') ||
