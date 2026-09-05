@@ -210,6 +210,7 @@ export async function reconcileOrder(
             thumbnailKey: true,
             transform: true,
             preflightStatus: true,
+            storageKey: true,
           },
         },
       },
@@ -220,6 +221,13 @@ export async function reconcileOrder(
       )
       return false
     }
+
+    // A ghost record (created below for a line that reached the order without
+    // any file) has no stored file. It keeps its order link so the merchant
+    // sees the gap, but it is never a served line: no commission, no design
+    // manifest. Without this guard the paid webhook re-applied the ghost via
+    // Pass 2 and billed 4% on an order this app never handled.
+    const isGhost = upload.items.length > 0 && upload.items.every((item) => !item.storageKey)
 
     await prisma.orderLink.upsert({
       where: { orderId_uploadId: { orderId, uploadId } },
@@ -274,7 +282,7 @@ export async function reconcileOrder(
       },
     })
 
-    if (facts.paid) {
+    if (facts.paid && !isGhost) {
       for (const item of upload.items) {
         designManifest.push({
           lineItemId: lineItemId || `order-${orderId}`,
@@ -290,6 +298,11 @@ export async function reconcileOrder(
 
     processed.add(uploadId)
     unconsumedTokenUploads.delete(uploadId)
+    if (isGhost) {
+      summary.affectedUploadIds.push(uploadId)
+      console.log(`[Reconcile] Ghost upload ${uploadId} refreshed for order ${orderId} (source=${matchSource}); not billable`)
+      return true
+    }
     summary.linked.push({ uploadId, matchSource })
     if (lineItemId && !summary.servedLineItemIds.includes(lineItemId)) summary.servedLineItemIds.push(lineItemId)
     summary.affectedUploadIds.push(uploadId)

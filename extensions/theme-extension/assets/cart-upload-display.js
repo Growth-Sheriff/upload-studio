@@ -101,6 +101,36 @@
       font-weight: 600;
       text-transform: uppercase;
     }
+    .ul-cart-missing-design {
+      margin-top: 8px;
+      padding: 10px 12px;
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #7f1d1d;
+      line-height: 1.4;
+    }
+    .ul-cart-missing-design strong { display: block; margin-bottom: 2px; }
+    .ul-cart-missing-design a {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 6px 12px;
+      background: #b91c1c;
+      color: #fff !important;
+      border-radius: 6px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .ul-cart-checkout-blocked {
+      margin: 10px 0;
+      padding: 10px 12px;
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #7f1d1d;
+    }
   `;
 
   function injectStyles() {
@@ -150,6 +180,82 @@
     } catch (error) {
       console.error('[Upload Studio Cart] Failed to get cart:', error);
       return null;
+    }
+  }
+
+  // Products that must carry an uploaded design (from the app's product
+  // settings) and whether checkout should wait for one. Cached per page.
+  let uploadProductsPromise = null;
+  function getUploadProducts() {
+    if (!uploadProductsPromise) {
+      const shopDomain = (window.Shopify && window.Shopify.shop) || '';
+      uploadProductsPromise = fetch(`${CONFIG.apiBase}/api/storefront/upload-products?shop=${encodeURIComponent(shopDomain)}`)
+        .then((res) => (res.ok ? res.json() : { productIds: [], requireUpload: false }))
+        .then((data) => ({
+          productIds: new Set((data && data.productIds ? data.productIds : []).map(String)),
+          requireUpload: Boolean(data && data.requireUpload),
+        }))
+        .catch(() => ({ productIds: new Set(), requireUpload: false }));
+    }
+    return uploadProductsPromise;
+  }
+
+  function createMissingDesignElement(item) {
+    const div = document.createElement('div');
+    div.className = 'ul-cart-missing-design';
+    div.dataset.cartKey = item.key || '';
+    const productUrl = item.url || (item.handle ? `/products/${item.handle}` : '/');
+    div.innerHTML = `
+      <strong>No design attached to this gang sheet</strong>
+      It was added without an uploaded file (for example through "Buy it again"), so there is nothing to print.
+      Remove it and upload your design from the product page.
+      <a href="${productUrl}">Upload the design</a>
+    `;
+    return div;
+  }
+
+  function setCheckoutBlocked(blocked, missingCount) {
+    const controls = Array.from(document.querySelectorAll(
+      'button[name="checkout"], input[name="checkout"], a[href*="/checkout"], button[form="cart"][type="submit"], .cart__checkout-button, .cart__checkout, [data-checkout-button]'
+    ));
+    controls.forEach((el) => {
+      if (blocked) {
+        if (!el.dataset.ulBlocked) {
+          el.dataset.ulBlocked = '1';
+          el.setAttribute('aria-disabled', 'true');
+          el.style.opacity = '0.5';
+          el.style.pointerEvents = 'none';
+          if ('disabled' in el) el.disabled = true;
+        }
+      } else if (el.dataset.ulBlocked) {
+        delete el.dataset.ulBlocked;
+        el.removeAttribute('aria-disabled');
+        el.style.opacity = '';
+        el.style.pointerEvents = '';
+        if ('disabled' in el) el.disabled = false;
+      }
+    });
+    const existing = document.querySelector('.ul-cart-checkout-blocked');
+    if (!blocked) {
+      if (existing) existing.remove();
+      return;
+    }
+    const message = missingCount === 1
+      ? 'One gang sheet in your cart has no design attached. Remove it or upload its design before checking out.'
+      : `${missingCount} gang sheets in your cart have no design attached. Remove them or upload their designs before checking out.`;
+    if (existing) {
+      existing.textContent = message;
+      return;
+    }
+    const anchor = controls[0];
+    const notice = document.createElement('div');
+    notice.className = 'ul-cart-checkout-blocked';
+    notice.textContent = message;
+    if (anchor && anchor.parentElement) {
+      anchor.parentElement.insertBefore(notice, anchor);
+    } else {
+      const form = document.querySelector('form[action*="/cart"]') || document.body;
+      form.insertBefore(notice, form.firstChild);
     }
   }
 
@@ -376,11 +482,19 @@
     log('Processing cart with', cart.items.length, 'items');
 
     const uploadsByKey = new Map();
+    const missingByKey = new Map();
+    const uploadProducts = await getUploadProducts();
 
     cart.items.forEach((item, index) => {
       const uploadId = extractUploadId(item.properties);
 
-      if (!uploadId) return;
+      if (!uploadId) {
+        if (uploadProducts.productIds.has(String(item.product_id))) {
+          missingByKey.set(item.key, item);
+          log('Upload product without a design in cart:', item.key, item.product_id);
+        }
+        return;
+      }
 
       const rawDesignFile = item.properties?.['Print Ready'] ||
                             item.properties?.[CONFIG.designFileKey] ||
@@ -409,18 +523,34 @@
       log('Found upload:', item.key, '→', uploadId);
     });
 
-    if (uploadsByKey.size === 0) {
+    setCheckoutBlocked(uploadProducts.requireUpload && missingByKey.size > 0, missingByKey.size);
+
+    if (uploadsByKey.size === 0 && missingByKey.size === 0) {
       log('No upload items in cart');
       return;
     }
 
-    log('Total uploads found:', uploadsByKey.size);
+    log('Total uploads found:', uploadsByKey.size, 'missing designs:', missingByKey.size);
 
     const lineItemElements = findCartLineItems();
     if (lineItemElements.length === 0) {
       log('No cart line items found in DOM');
       return;
     }
+
+    // Lines of upload products that carry no design: warn right under the line.
+    lineItemElements.forEach((lineItem) => {
+      if (lineItem.querySelector('.ul-cart-missing-design')) return;
+      const key = lineItem.dataset.key ||
+                  lineItem.dataset.lineItemKey ||
+                  lineItem.dataset.cartItemKey ||
+                  lineItem.getAttribute('data-key') ||
+                  lineItem.getAttribute('data-line-item-key') ||
+                  lineItem.querySelector('[data-key]')?.dataset.key;
+      const missingItem = key ? missingByKey.get(key) : null;
+      if (!missingItem) return;
+      findAppendTarget(lineItem).appendChild(createMissingDesignElement(missingItem));
+    });
 
     log('Found', lineItemElements.length, 'line item elements');
 
