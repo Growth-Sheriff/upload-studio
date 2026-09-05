@@ -681,11 +681,17 @@
                   lineItem.querySelector('[data-key]')?.dataset.key;
       if (!key) continue;
       if (!lineItem.querySelector('.ul-cart-attached-note')) showAttachedNotice(lineItem, key);
-      if (lineItem.querySelector('.ul-cart-missing-design')) continue;
+      if (lineItem.querySelector('.ul-cart-missing-design') || lineItem.dataset.ulPickerPending === '1') continue;
       const missingItem = missingByKey.get(key);
       if (!missingItem) continue;
+      // processCart re-runs on cart mutations; flag the line before awaiting so
+      // a second pass cannot append a second picker.
+      lineItem.dataset.ulPickerPending = '1';
       const data = await fetchReorderDesigns(missingItem, '');
-      findAppendTarget(lineItem).appendChild(createDesignPickerElement(missingItem, data));
+      if (!lineItem.querySelector('.ul-cart-missing-design')) {
+        findAppendTarget(lineItem).appendChild(createDesignPickerElement(missingItem, data));
+      }
+      delete lineItem.dataset.ulPickerPending;
     }
 
     log('Found', lineItemElements.length, 'line item elements');
