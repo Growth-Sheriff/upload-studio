@@ -537,7 +537,7 @@ export function BillingPageView(data: BillingPageData) {
               <BlockStack gap="200">
                 <Text as="h2" variant="headingMd">How fees work</Text>
                 <Text as="p" variant="bodySm">
-                  Only orders that contain a gang sheet uploaded through this app are billed. The fee is {Math.round(commissionPercent * 100)}% of the app's own line items on that order, after discounts.
+                  Only orders that contain a gang sheet uploaded through this app are billed. The fee is {Math.round(commissionPercent * 100)}% of the app's own line items on that order, after discounts, and never more than $6.00 per order. Orders the customer paid $0 for are not billed.
                 </Text>
                 <Text as="p" variant="bodySm">
                   Fees are tracked per order. Pay everything due at once, pay a single month, or let auto-pay settle them at {formatMoney(autoChargeThreshold)}.

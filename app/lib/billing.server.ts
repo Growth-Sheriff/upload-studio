@@ -4,6 +4,8 @@ import prisma from "~/lib/prisma.server";
 // served by this app is billed 4% of the app's own line items (net of line
 // discounts); orders the app did not serve are never billed.
 export const COMMISSION_PERCENT = 0.04;
+/** Per-order ceiling: the 4% fee never exceeds this amount (merchant rule, 2026-09-12). */
+export const COMMISSION_CAP_USD = 6;
 export const COMMISSION_RATES = {
   default: COMMISSION_PERCENT,
   builder: COMMISSION_PERCENT,
@@ -16,10 +18,20 @@ export function getCommissionRate(_mode: string): number {
   return COMMISSION_PERCENT;
 }
 
-/** 4% of the served amount, rounded to cents. */
+/** 4% of the served amount, rounded to cents, capped at COMMISSION_CAP_USD. */
 export function calculateCommissionAmount(servedAmount: number): number {
   const base = Number.isFinite(servedAmount) && servedAmount > 0 ? servedAmount : 0;
-  return Math.round(base * COMMISSION_PERCENT * 100) / 100;
+  const raw = Math.round(base * COMMISSION_PERCENT * 100) / 100;
+  return Math.min(raw, COMMISSION_CAP_USD);
+}
+
+/** Orders the customer paid nothing for (free, 100% discounted, $0 test orders) are never billed. */
+export function isZeroPaymentOrder(order: {
+  total_price?: string | number | null;
+  current_total_price?: string | number | null;
+}): boolean {
+  const total = parseFloat(String(order.current_total_price ?? order.total_price ?? '0')) || 0;
+  return total <= 0;
 }
 
 function buildOrderFeeDescription(

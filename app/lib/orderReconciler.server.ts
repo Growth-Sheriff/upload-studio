@@ -23,7 +23,7 @@
 import crypto from 'crypto'
 import { Decimal } from '@prisma/client/runtime/library'
 import prisma from '~/lib/prisma.server'
-import { COMMISSION_PERCENT, calculateCommissionAmount } from '~/lib/billing.server'
+import { COMMISSION_PERCENT, calculateCommissionAmount, isZeroPaymentOrder } from '~/lib/billing.server'
 import { recordOrderForVisitor } from '~/lib/visitor.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
 import {
@@ -474,28 +474,46 @@ export async function reconcileOrder(
     if (servedAmount <= 0) {
       servedAmount = parseFloat(String(order.subtotal_price ?? order.total_line_items_price ?? order.total_price ?? '0')) || 0
     }
-    const commissionAmount = calculateCommissionAmount(servedAmount)
+    // A $0 order (free, fully discounted, test) is never billed: the row is
+    // kept as void so the merchant sees it was considered and skipped.
+    const zeroPayment = isZeroPaymentOrder(order)
+    const commissionAmount = zeroPayment ? 0 : calculateCommissionAmount(servedAmount)
+    const commissionStatus = zeroPayment ? 'void' : 'pending'
 
-    await prisma.commission.upsert({
+    const existingCommission = await prisma.commission.findUnique({
       where: { commission_shop_order: { shopId: shop.id, orderId } },
-      create: {
-        shopId: shop.id,
-        orderId,
-        orderNumber: order.name || order.order_number?.toString(),
-        orderTotal: new Decimal(order.total_price || '0'),
-        orderCurrency,
-        commissionRate: new Decimal(COMMISSION_PERCENT),
-        commissionAmount: new Decimal(commissionAmount),
-        status: 'pending',
-      },
-      update: {
-        orderTotal: new Decimal(order.total_price || '0'),
-        orderCurrency,
-        commissionRate: new Decimal(COMMISSION_PERCENT),
-        commissionAmount: new Decimal(commissionAmount),
-      },
+      select: { status: true },
     })
-    console.log(`[Reconcile] Commission upserted (${Math.round(COMMISSION_PERCENT * 100)}% of $${servedAmount.toFixed(2)} = $${commissionAmount.toFixed(2)}) for order ${orderId}`)
+    // Never reopen a settled or voided row; only pending rows follow the order.
+    const canRewrite = !existingCommission || existingCommission.status === 'pending'
+
+    if (canRewrite) {
+      await prisma.commission.upsert({
+        where: { commission_shop_order: { shopId: shop.id, orderId } },
+        create: {
+          shopId: shop.id,
+          orderId,
+          orderNumber: order.name || order.order_number?.toString(),
+          orderTotal: new Decimal(order.total_price || '0'),
+          orderCurrency,
+          commissionRate: new Decimal(COMMISSION_PERCENT),
+          commissionAmount: new Decimal(commissionAmount),
+          status: commissionStatus,
+        },
+        update: {
+          orderTotal: new Decimal(order.total_price || '0'),
+          orderCurrency,
+          commissionRate: new Decimal(COMMISSION_PERCENT),
+          commissionAmount: new Decimal(commissionAmount),
+          status: commissionStatus,
+        },
+      })
+    }
+    console.log(
+      zeroPayment
+        ? `[Reconcile] Order ${orderId} paid $0; fee voided`
+        : `[Reconcile] Commission upserted (${Math.round(COMMISSION_PERCENT * 100)}% of $${servedAmount.toFixed(2)} = $${commissionAmount.toFixed(2)}, cap applied=${commissionAmount < servedAmount * COMMISSION_PERCENT - 0.005}) for order ${orderId}`
+    )
   }
 
   // ── Metafield mirrors (best-effort, never fail the webhook) ──────────────
