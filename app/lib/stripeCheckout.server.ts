@@ -73,40 +73,60 @@ async function saveStripePaymentMethod(
     funding: string | null
     capturedAt: string
   } | null = null
+
+  // Only a card attached to a Stripe customer can be charged off-session later.
+  // A card from a one-off payment (no setup_future_usage, e.g. a shop that
+  // already had a saved card paying again) is not reusable: saving it would
+  // replace the good saved card and break auto-pay, as happened to alpha on
+  // 2026-09-04. In that case the existing saved card is kept untouched.
+  let reusable = false
   try {
     const stripe = getStripeClient()
     const pm = await stripe.paymentMethods.retrieve(paymentMethodId)
 
-    // The card must live on the customer we charge later. If the session
-    // attached it elsewhere, follow the card; if it is loose, attach it.
     const pmCustomer = typeof pm.customer === 'string' ? pm.customer : pm.customer?.id || null
-    if (pmCustomer && pmCustomer !== ensuredCustomerId) {
+    if (pmCustomer) {
+      // The session attached the card to a customer; follow that customer.
       ensuredCustomerId = pmCustomer
-    } else if (!pmCustomer) {
-      await stripe.paymentMethods.attach(paymentMethodId, { customer: ensuredCustomerId })
-    }
-    try {
-      await stripe.customers.update(ensuredCustomerId, {
-        invoice_settings: { default_payment_method: paymentMethodId },
-      })
-    } catch (defaultErr) {
-      console.warn('[stripeCheckout] default payment method update failed:', defaultErr)
+      reusable = true
+    } else {
+      try {
+        await stripe.paymentMethods.attach(paymentMethodId, { customer: ensuredCustomerId })
+        reusable = true
+      } catch (attachErr) {
+        console.warn(
+          `[stripeCheckout] ${shopDomain}: payment card ${paymentMethodId} is single-use; keeping the saved card`,
+          attachErr instanceof Error ? attachErr.message : attachErr
+        )
+      }
     }
 
-    const card = pm.card
-    if (card) {
-      cardSnapshot = {
-        brand: card.brand || null,
-        last4: card.last4 || null,
-        expMonth: card.exp_month ?? null,
-        expYear: card.exp_year ?? null,
-        funding: card.funding || null,
-        capturedAt: new Date().toISOString(),
+    if (reusable) {
+      try {
+        await stripe.customers.update(ensuredCustomerId, {
+          invoice_settings: { default_payment_method: paymentMethodId },
+        })
+      } catch (defaultErr) {
+        console.warn('[stripeCheckout] default payment method update failed:', defaultErr)
+      }
+
+      const card = pm.card
+      if (card) {
+        cardSnapshot = {
+          brand: card.brand || null,
+          last4: card.last4 || null,
+          expMonth: card.exp_month ?? null,
+          expYear: card.exp_year ?? null,
+          funding: card.funding || null,
+          capturedAt: new Date().toISOString(),
+        }
       }
     }
   } catch (cardErr) {
-    console.warn('[stripeCheckout] Failed to retrieve card snapshot:', cardErr)
+    console.warn('[stripeCheckout] Failed to retrieve payment card; keeping the saved card:', cardErr)
   }
+
+  if (!reusable) return
 
   const existingShop = await prisma.shop.findUnique({
     where: { id: shopId },
