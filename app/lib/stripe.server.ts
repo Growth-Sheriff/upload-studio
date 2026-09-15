@@ -202,25 +202,31 @@ export async function chargeWithSavedMethod(
   amount: string,
   shopDomain: string,
   description: string,
-  receiptEmail?: string | null
+  receiptEmail?: string | null,
+  idempotencyKey?: string
 ): Promise<StripeAutoChargeResult> {
   const stripe = getStripeClient();
   const amountCents = Math.round(parseFloat(amount) * 100);
 
-  const paymentIntent = await stripe.paymentIntents.create({
-    amount: amountCents,
-    currency: 'usd',
-    customer: customerId,
-    payment_method: paymentMethodId,
-    off_session: true,
-    confirm: true,
-    description,
-    ...(receiptEmail ? { receipt_email: receiptEmail } : {}),
-    metadata: {
-      shopDomain,
-      type: 'auto_charge_commission',
+  const paymentIntent = await stripe.paymentIntents.create(
+    {
+      amount: amountCents,
+      currency: 'usd',
+      customer: customerId,
+      payment_method: paymentMethodId,
+      off_session: true,
+      confirm: true,
+      description,
+      ...(receiptEmail ? { receipt_email: receiptEmail } : {}),
+      metadata: {
+        shopDomain,
+        type: 'auto_charge_commission',
+        ...(idempotencyKey ? { orderSetKey: idempotencyKey } : {}),
+      },
     },
-  });
+    // Same key → Stripe returns the first PaymentIntent instead of charging again.
+    idempotencyKey ? { idempotencyKey } : undefined
+  );
 
   if (paymentIntent.status !== 'succeeded') {
     throw new Error(`Auto-charge failed. Status: ${paymentIntent.status}`);

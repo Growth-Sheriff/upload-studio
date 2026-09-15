@@ -1,6 +1,10 @@
 import type { Shop } from '@prisma/client';
 import prisma from '~/lib/prisma.server';
-import { getOutstandingFeeSelection } from '~/lib/billing.server';
+import {
+  buildAutoChargeIdempotencyKey,
+  buildOrderFeeDescription,
+  getOutstandingFeeSelection,
+} from '~/lib/billing.server';
 import { chargeWithSavedMethod, isStripeConfigured } from '~/lib/stripe.server';
 import { chargeWithVault, isPayPalConfigured } from '~/lib/paypal.server';
 import {
@@ -106,21 +110,64 @@ export async function runShopAutoCharge(shopId: string): Promise<ChargeOutcome> 
   const hasPaypal = !!(shop.paypalVaultId && shop.paypalAutoCharge && isPayPalConfigured());
   if (!hasStripe && !hasPaypal) return { status: 'skipped', reason: 'no_vault_or_disabled' };
 
-  const {
-    orderIds: pendingOrderIds,
-    totalAmount: pendingAmount,
-    feeByOrderId,
-    description,
-  } = await getOutstandingFeeSelection(shop.id);
+  // Another run already holds this shop's fees (a parallel scheduler tick, the
+  // 6-hour worker, a retry): never charge while a claim exists.
+  const inFlight = await prisma.$queryRaw<Array<{ n: number; oldest: Date | null }>>`
+    select count(*)::int as n, min(updated_at) as oldest from commissions
+    where shop_id = ${shop.id} and status = 'charging'`;
+  if (inFlight[0]?.n) {
+    const oldest = inFlight[0].oldest ? new Date(inFlight[0].oldest) : null;
+    const stale = oldest ? Date.now() - oldest.getTime() > 30 * 60 * 1000 : false;
+    if (stale) {
+      // A run stopped between claiming and settling. The payment may or may
+      // not exist, so a person must check Stripe/PayPal before releasing.
+      console.error(
+        `[AutoCharge] ${shop.shopDomain}: ${inFlight[0].n} fee rows stuck in 'charging' since ${oldest?.toISOString()}; manual review needed`
+      );
+      await prisma.auditLog.create({
+        data: {
+          shopId: shop.id,
+          action: 'auto_charge_stale_claim',
+          resourceType: 'auto_charge',
+          resourceId: 'charging',
+          metadata: { rows: inFlight[0].n, oldest: oldest?.toISOString() ?? null },
+        },
+      });
+    }
+    return { status: 'skipped', reason: stale ? 'stale_claim_needs_review' : 'charge_in_progress' };
+  }
 
+  const { totalAmount: pendingPreview } = await getOutstandingFeeSelection(shop.id);
+  if (pendingPreview < AUTO_CHARGE_THRESHOLD) {
+    return { status: 'below_threshold', amount: pendingPreview.toFixed(2) };
+  }
+
+  // Atomic claim. Under concurrent runs Postgres lets exactly one UPDATE move
+  // each pending row to 'charging'; every other run re-checks the row, finds it
+  // no longer pending and gets nothing back. Only the claimed rows are charged.
+  const claimRef = `claim_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  const claimedRows = await prisma.$queryRaw<Array<{ order_id: string; commission_amount: unknown }>>`
+    update commissions set status = 'charging', payment_ref = ${claimRef}, updated_at = now()
+    where shop_id = ${shop.id} and status = 'pending'
+    returning order_id, commission_amount`;
+  const pendingOrderIds = claimedRows.map((row) => String(row.order_id));
+  const feeAmounts = claimedRows.map((row) => Number(row.commission_amount));
+  const pendingAmount = feeAmounts.reduce((sum, amount) => sum + amount, 0);
+  const releaseClaim = () => prisma.$executeRaw`
+    update commissions set status = 'pending', payment_ref = null, updated_at = now()
+    where shop_id = ${shop.id} and status = 'charging' and payment_ref = ${claimRef}`;
+
+  if (pendingOrderIds.length === 0) {
+    return { status: 'skipped', reason: 'claimed_by_another_run' };
+  }
   if (pendingAmount < AUTO_CHARGE_THRESHOLD) {
+    await releaseClaim();
     return { status: 'below_threshold', amount: pendingAmount.toFixed(2) };
   }
-  if (pendingOrderIds.length === 0) {
-    return { status: 'skipped', reason: 'no_pending_orders' };
-  }
 
-  const totalAmount = pendingAmount.toFixed(2);
+  const totalAmount = (Math.round(pendingAmount * 100) / 100).toFixed(2);
+  const description = buildOrderFeeDescription(feeAmounts);
+  const idempotencyKey = buildAutoChargeIdempotencyKey(shop.shopDomain, pendingOrderIds, totalAmount);
 
   const auditEntry = await prisma.auditLog.create({
     data: {
@@ -134,9 +181,15 @@ export async function runShopAutoCharge(shopId: string): Promise<ChargeOutcome> 
         orderCount: pendingOrderIds.length,
         threshold: AUTO_CHARGE_THRESHOLD,
         attempt: (state.retryCount || 0) + 1,
+        claimRef,
+        idempotencyKey,
       },
     },
   });
+
+  // Set once the provider has taken the money; from then on the claim must
+  // never be released, even if settling the rows fails.
+  let chargedCaptureId: string | null = null;
 
   try {
     let captureId: string;
@@ -149,7 +202,8 @@ export async function runShopAutoCharge(shopId: string): Promise<ChargeOutcome> 
         totalAmount,
         shop.shopDomain,
         description,
-        shop.stripeEmail
+        shop.stripeEmail,
+        idempotencyKey
       );
       captureId = result.paymentIntentId;
       provider = 'stripe';
@@ -160,7 +214,7 @@ export async function runShopAutoCharge(shopId: string): Promise<ChargeOutcome> 
         totalAmount,
         shop.shopDomain,
         description,
-        auditEntry.id
+        idempotencyKey
       );
       if (capture.status !== 'COMPLETED') {
         throw new Error(`Capture status: ${capture.status}`);
@@ -170,31 +224,13 @@ export async function runShopAutoCharge(shopId: string): Promise<ChargeOutcome> 
       provider = 'paypal';
     }
 
-    for (const orderId of pendingOrderIds) {
-      const rate = feeByOrderId.get(orderId) || 0.1;
-      await prisma.commission.upsert({
-        where: { commission_shop_order: { shopId: shop.id, orderId } },
-        create: {
-          shopId: shop.id,
-          orderId,
-          orderNumber: `#${orderId.slice(-6)}`,
-          orderTotal: 0,
-          orderCurrency: 'USD',
-          commissionRate: 0,
-          commissionAmount: rate,
-          status: 'paid',
-          paidAt: new Date(),
-          paymentRef: captureId,
-          paymentProvider: provider,
-        },
-        update: {
-          status: 'paid',
-          paidAt: new Date(),
-          paymentRef: captureId,
-          paymentProvider: provider,
-        },
-      });
-    }
+    chargedCaptureId = captureId;
+
+    // Settle exactly the rows this run claimed.
+    await prisma.$executeRaw`
+      update commissions
+      set status = 'paid', paid_at = now(), payment_ref = ${captureId}, payment_provider = ${provider}, updated_at = now()
+      where shop_id = ${shop.id} and status = 'charging' and payment_ref = ${claimRef}`;
 
     await prisma.auditLog.update({
       where: { id: auditEntry.id },
@@ -205,7 +241,10 @@ export async function runShopAutoCharge(shopId: string): Promise<ChargeOutcome> 
           captureId,
           amount: totalAmount,
           orderCount: pendingOrderIds.length,
+          orderIds: pendingOrderIds,
           provider,
+          claimRef,
+          idempotencyKey,
         },
       },
     });
@@ -217,6 +256,28 @@ export async function runShopAutoCharge(shopId: string): Promise<ChargeOutcome> 
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
     console.error(`[AutoCharge] ❌ ${shop.shopDomain}: ${errMsg}`);
+
+    if (chargedCaptureId) {
+      // Money was taken but the rows could not be settled. Keep them in
+      // 'charging' (blocks any further charge) and leave it to manual review.
+      await prisma.auditLog
+        .create({
+          data: {
+            shopId: shop.id,
+            action: 'auto_charge_settle_failed',
+            resourceType: 'auto_charge',
+            resourceId: chargedCaptureId,
+            metadata: { claimRef, error: errMsg, orderIds: pendingOrderIds, amount: totalAmount },
+          },
+        })
+        .catch(() => undefined);
+      return { status: 'skipped', reason: 'charged_but_settle_failed' };
+    }
+
+    // Nothing was charged: give the rows back so the next run can bill them.
+    await releaseClaim().catch((releaseError: unknown) =>
+      console.error(`[AutoCharge] ${shop.shopDomain}: failed to release claim ${claimRef}:`, releaseError)
+    );
 
     const attemptNumber = state.retryCount || 0;
 

@@ -5,7 +5,7 @@ import {
   BILLING_CRON_QUEUE_NAME,
   BILLING_CRON_REPEAT_PATTERN,
 } from '~/lib/billingQueues';
-import { TENANT_SLUGS, getTenantInternalUrl, type TenantSlug } from '~/lib/tenants.server';
+import { runTenantAutoCharge } from '~/lib/billingRunner.server';
 
 let initialized = false;
 
@@ -56,18 +56,15 @@ export function initBillingScheduler() {
     BILLING_CRON_QUEUE_NAME,
     async (job: Job) => {
       if (job.name !== BILLING_CRON_JOB_NAME) return;
-      console.log(`[BillingScheduler] Daily fanout starting (job ${job.id})`);
-      const results = await Promise.allSettled(
-        TENANT_SLUGS.map((slug) => fireTenantCron(slug, cronSecret))
-      );
-      const summary = results.map((r, i) => ({
-        slug: TENANT_SLUGS[i],
-        ok: r.status === 'fulfilled' && r.value.ok,
-        status: r.status === 'fulfilled' ? r.value.status : 'rejected',
-        error: r.status === 'rejected' ? String(r.reason) : undefined,
-      }));
-      console.log('[BillingScheduler] Fanout result:', JSON.stringify(summary));
-      return summary;
+      // Every container has its own Redis database, so this job exists once per
+      // tenant. It must bill only its own tenant: fanning out to all tenants
+      // ran each shop once per container and charged dtfprinthouse 10 times
+      // on 2026-09-15.
+      console.log(`[BillingScheduler] Daily auto-charge starting (job ${job.id})`);
+      const summary = await runTenantAutoCharge();
+      const outcomes = summary.results.map((r) => ({ shop: r.shop, status: r.outcome.status }));
+      console.log('[BillingScheduler] Result:', JSON.stringify(outcomes));
+      return { total: summary.total, outcomes };
     },
     { connection }
   );
@@ -77,23 +74,6 @@ export function initBillingScheduler() {
   });
 
   console.log(
-    `[BillingScheduler] Initialized (pattern="${BILLING_CRON_REPEAT_PATTERN}" tz=Europe/Berlin, ${TENANT_SLUGS.length} tenants)`
+    `[BillingScheduler] Initialized (pattern="${BILLING_CRON_REPEAT_PATTERN}" tz=Europe/Berlin, this tenant only)`
   );
-}
-
-async function fireTenantCron(slug: TenantSlug, secret: string) {
-  const url = getTenantInternalUrl(slug, '/api/cron/billing/run');
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60_000);
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'x-cron-secret': secret, 'content-type': 'application/json' },
-      body: '{}',
-      signal: controller.signal,
-    });
-    return { ok: res.ok, status: res.status };
-  } finally {
-    clearTimeout(timeout);
-  }
 }

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import prisma from "~/lib/prisma.server";
 
 // Single commercial model (2026-09): no plans, no upload limits. Every order
@@ -34,7 +35,26 @@ export function isZeroPaymentOrder(order: {
   return total <= 0;
 }
 
-function buildOrderFeeDescription(
+/**
+ * Idempotency key for one automatic charge: the same shop, the same set of
+ * orders and the same amount on the same UTC day always yield the same key,
+ * so Stripe/PayPal return the first payment instead of charging again.
+ */
+export function buildAutoChargeIdempotencyKey(
+  shopDomain: string,
+  orderIds: string[],
+  amount: string,
+  now: Date = new Date()
+): string {
+  const day = now.toISOString().slice(0, 10);
+  const digest = createHash("sha256")
+    .update([shopDomain, day, amount, ...orderIds.map(String).sort()].join("|"))
+    .digest("hex")
+    .slice(0, 40);
+  return `us-autocharge-${digest}`;
+}
+
+export function buildOrderFeeDescription(
   feeAmounts: number[],
   monthKey?: string | null
 ): string {
