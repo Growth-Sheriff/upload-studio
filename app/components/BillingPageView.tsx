@@ -94,6 +94,9 @@ const formatDate = (iso: string | null) =>
 function orderStatus(status: string): { tone: 'success' | 'info' | 'attention'; label: string } {
   if (status === 'paid') return { tone: 'success', label: 'Settled' }
   if (status === 'waived') return { tone: 'info', label: 'Waived' }
+  if (status === 'void') return { tone: 'info', label: 'Not billed' }
+  if (status === 'checkout_reserved') return { tone: 'attention', label: 'Checkout pending' }
+  if (status === 'charging') return { tone: 'attention', label: 'Payment review' }
   return { tone: 'attention', label: 'Due' }
 }
 
@@ -193,6 +196,9 @@ export function BillingPageView(data: BillingPageData) {
   const hasMethod = stripeSaved || paypalVaulted
   const autoPayOn = stripeAutoCharge || autoChargeEnabled
   const pendingOrderIds = records.filter((r) => r.status === 'pending').map((r) => r.orderId).join(',')
+  const chargingOrderCount = records.filter(
+    (r) => r.status === 'charging' || r.status === 'checkout_reserved'
+  ).length
 
   const toggleMonth = useCallback((monthKey: string) => {
     setExpandedMonths((prev) => {
@@ -386,9 +392,18 @@ export function BillingPageView(data: BillingPageData) {
               <BlockStack gap="300">
                 <InlineStack align="space-between" blockAlign="center">
                   <Text as="h2" variant="headingMd">Amount due</Text>
-                  <Badge tone={summary.pendingAmount > 0 ? 'attention' : 'success'}>
-                    {summary.pendingAmount > 0 ? `${formatCount(summary.pendingOrders)} orders` : 'All settled'}
-                  </Badge>
+                  <InlineStack gap="100">
+                    <Badge tone={summary.pendingAmount > 0 || chargingOrderCount > 0 ? 'attention' : 'success'}>
+                      {summary.pendingAmount > 0
+                        ? `${formatCount(summary.pendingOrders)} orders`
+                        : chargingOrderCount > 0
+                          ? 'Payment review'
+                          : 'All settled'}
+                    </Badge>
+                    {summary.pendingAmount > 0 && chargingOrderCount > 0 ? (
+                      <Badge tone="attention">Payment review</Badge>
+                    ) : null}
+                  </InlineStack>
                 </InlineStack>
                 <Text as="p" variant="heading2xl" tone={summary.pendingAmount > 0 ? 'critical' : 'success'}>
                   {formatMoney(summary.pendingAmount)}
@@ -429,7 +444,11 @@ export function BillingPageView(data: BillingPageData) {
                     </Collapsible>
                   </BlockStack>
                 ) : (
-                  <Text as="p" variant="bodySm" tone="subdued">Nothing to pay right now. New fees appear here as orders come in.</Text>
+                  <Text as="p" variant="bodySm" tone="subdued">
+                    {chargingOrderCount > 0
+                      ? 'A payment is awaiting review.'
+                      : 'Nothing to pay right now. New fees appear here as orders come in.'}
+                  </Text>
                 )}
               </BlockStack>
             </Card>
@@ -454,12 +473,20 @@ export function BillingPageView(data: BillingPageData) {
               {monthlyBreakdowns.map((month) => {
                 const expanded = expandedMonths.has(month.monthKey)
                 const monthPendingIds = month.orders.filter((o) => o.status === 'pending').map((o) => o.orderId)
+                const monthChargingOrders = month.orders.filter(
+                  (o) => o.status === 'charging' || o.status === 'checkout_reserved'
+                ).length
+                const monthVoidOrders = month.orders.filter((o) => o.status === 'void').length
                 const status =
                   month.pendingOrders > 0
                     ? { tone: 'attention' as const, label: `${formatCount(month.pendingOrders)} due` }
-                    : month.waivedOrders === month.totalOrders
-                      ? { tone: 'info' as const, label: 'Waived' }
-                      : { tone: 'success' as const, label: 'Settled' }
+                    : monthChargingOrders > 0
+                      ? { tone: 'attention' as const, label: 'Payment review' }
+                      : monthVoidOrders === month.totalOrders
+                        ? { tone: 'info' as const, label: 'Not billed' }
+                        : month.waivedOrders === month.totalOrders
+                          ? { tone: 'info' as const, label: 'Waived' }
+                          : { tone: 'success' as const, label: 'Settled' }
                 const rows = month.orders.map((order) => [
                   order.orderNumber || order.orderId,
                   formatDate(order.createdAt),
@@ -477,6 +504,12 @@ export function BillingPageView(data: BillingPageData) {
                           </Button>
                           <Text as="span" variant="bodySm" tone="subdued">{formatCount(month.totalOrders)} orders</Text>
                           <Badge tone={status.tone}>{status.label}</Badge>
+                          {monthChargingOrders > 0 && status.label !== 'Payment review' ? (
+                            <Badge tone="attention">Payment review</Badge>
+                          ) : null}
+                          {monthVoidOrders > 0 && status.label !== 'Not billed' ? (
+                            <Badge tone="info">Not billed</Badge>
+                          ) : null}
                         </InlineStack>
                         <InlineStack gap="200">
                           <Button size="slim" onClick={() => downloadMonthCsv(month, shopDomain)}>Download for Excel</Button>

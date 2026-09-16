@@ -5,10 +5,17 @@ import prisma from '~/lib/prisma.server'
 import { isPayPalConfigured } from '~/lib/paypal.server'
 import { isStripeConfigured } from '~/lib/stripe.server'
 import { authenticate } from '~/shopify.server'
-import { COMMISSION_PERCENT, getOutstandingFeeSelection } from '~/lib/billing.server'
+import { COMMISSION_PERCENT } from '~/lib/billing.server'
 import { BillingPageView, type BillingMonth, type BillingOrderRecord } from '~/components/BillingPageView'
 
 const PAYPAL_EMAIL = process.env.PAYPAL_EMAIL || 'billing@techifyboost.com'
+
+class CommissionPaymentConflictError extends Error {
+  constructor() {
+    super('One or more fees changed while this payment was being recorded.')
+    this.name = 'CommissionPaymentConflictError'
+  }
+}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request)
@@ -192,48 +199,82 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: 'Payment reference and order IDs required' }, { status: 400 })
     }
 
-    const ids = orderIds.split(',').filter(Boolean)
-    const outstandingSelection = await getOutstandingFeeSelection(shop.id, ids)
-    if (outstandingSelection.orderIds.length === 0) {
-      return json({ error: 'No outstanding fees found for this payment' }, { status: 400 })
+    const ids = [...new Set(orderIds.split(',').map((value) => value.trim()).filter(Boolean))]
+    if (ids.length === 0) {
+      return json({ error: 'No order IDs were supplied' }, { status: 400 })
     }
 
-    for (const orderId of outstandingSelection.orderIds) {
-      const rate = outstandingSelection.feeByOrderId.get(orderId) || 0
-      await prisma.commission.upsert({
-        where: { commission_shop_order: { shopId: shop.id, orderId } },
-        create: {
-          shopId: shop.id,
-          orderId,
-          orderNumber: `#${orderId.slice(-6)}`,
-          orderTotal: 0,
-          orderCurrency: 'USD',
-          commissionRate: 0,
-          commissionAmount: rate,
-          status: 'paid',
-          paidAt: new Date(),
-          paymentRef,
-        },
-        update: { status: 'paid', paidAt: new Date(), paymentRef },
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        const rows = await tx.commission.findMany({
+          where: { shopId: shop.id, orderId: { in: ids } },
+          select: {
+            orderId: true,
+            status: true,
+            paymentRef: true,
+            commissionAmount: true,
+          },
+        })
+        if (rows.length !== ids.length) throw new CommissionPaymentConflictError()
+
+        const replay = rows.every(
+          (row) => row.status === 'paid' && row.paymentRef === paymentRef
+        )
+        if (replay) {
+          return { count: rows.length, alreadyProcessed: true }
+        }
+
+        if (rows.some((row) => row.status !== 'pending' || row.paymentRef !== null)) {
+          throw new CommissionPaymentConflictError()
+        }
+
+        const updated = await tx.commission.updateMany({
+          where: {
+            shopId: shop.id,
+            orderId: { in: ids },
+            status: 'pending',
+            paymentRef: null,
+          },
+          data: { status: 'paid', paidAt: new Date(), paymentRef },
+        })
+        if (updated.count !== ids.length) throw new CommissionPaymentConflictError()
+
+        const totalAmount = rows.reduce(
+          (sum, row) => sum + Number(row.commissionAmount),
+          0
+        )
+        await tx.auditLog.create({
+          data: {
+            shopId: shop.id,
+            action: 'commissions_marked_paid',
+            resourceType: 'commission',
+            resourceId: paymentRef,
+            metadata: {
+              orderIds: ids,
+              paymentRef,
+              count: ids.length,
+              totalAmount,
+            },
+          },
+        })
+
+        return { count: ids.length, alreadyProcessed: false }
       })
+
+      return json({
+        success: true,
+        alreadyProcessed: result.alreadyProcessed,
+        message: `${result.count} orders marked as paid`,
+      })
+    } catch (error) {
+      if (error instanceof CommissionPaymentConflictError) {
+        return json(
+          { error: 'Some fees are already being charged or were changed. Refresh before recording payment.' },
+          { status: 409 }
+        )
+      }
+      throw error
     }
-
-    await prisma.auditLog.create({
-      data: {
-        shopId: shop.id,
-        action: 'commissions_marked_paid',
-        resourceType: 'commission',
-        resourceId: paymentRef,
-        metadata: {
-          orderIds: outstandingSelection.orderIds,
-          paymentRef,
-          count: outstandingSelection.orderIds.length,
-          totalAmount: outstandingSelection.totalAmount,
-        },
-      },
-    })
-
-    return json({ success: true, message: `${outstandingSelection.orderIds.length} orders marked as paid` })
   }
 
   return json({ error: 'Unknown action' }, { status: 400 })

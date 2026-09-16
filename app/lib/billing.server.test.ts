@@ -3,23 +3,41 @@ import {
   COMMISSION_CAP_USD,
   buildAutoChargeIdempotencyKey,
   calculateCommissionAmount,
+  centsToMoney,
+  isSupportedBillingCurrency,
   isZeroPaymentOrder,
+  moneyToCents,
+  sumMoneyCents,
 } from './billing.server'
 
 describe('auto-charge idempotency key', () => {
-  const day = new Date('2026-09-15T01:00:00Z')
-  it('is identical for the same shop, order set and amount regardless of order', () => {
-    const a = buildAutoChargeIdempotencyKey('e3bd2d-3.myshopify.com', ['3', '1', '2'], '50.37', day)
-    const b = buildAutoChargeIdempotencyKey('e3bd2d-3.myshopify.com', ['1', '2', '3'], '50.37', day)
+  it('is identical for retries of the same logical attempt regardless of order', () => {
+    const a = buildAutoChargeIdempotencyKey(
+      'e3bd2d-3.myshopify.com',
+      ['3', '1', '2'],
+      '50.37',
+      'claim-1'
+    )
+    const b = buildAutoChargeIdempotencyKey(
+      'e3bd2d-3.myshopify.com',
+      ['1', '2', '3'],
+      '50.37',
+      'claim-1'
+    )
     expect(a).toBe(b)
     expect(a.startsWith('us-autocharge-')).toBe(true)
   })
-  it('changes when the orders, amount, shop or day change', () => {
-    const base = buildAutoChargeIdempotencyKey('e3bd2d-3.myshopify.com', ['1', '2'], '50.37', day)
-    expect(buildAutoChargeIdempotencyKey('e3bd2d-3.myshopify.com', ['1', '2', '4'], '50.37', day)).not.toBe(base)
-    expect(buildAutoChargeIdempotencyKey('e3bd2d-3.myshopify.com', ['1', '2'], '50.38', day)).not.toBe(base)
-    expect(buildAutoChargeIdempotencyKey('fast-dtf-az.myshopify.com', ['1', '2'], '50.37', day)).not.toBe(base)
-    expect(buildAutoChargeIdempotencyKey('e3bd2d-3.myshopify.com', ['1', '2'], '50.37', new Date('2026-09-16T01:00:00Z'))).not.toBe(base)
+  it('changes for a new attempt, order set, amount or shop', () => {
+    const base = buildAutoChargeIdempotencyKey(
+      'e3bd2d-3.myshopify.com',
+      ['1', '2'],
+      '50.37',
+      'claim-1'
+    )
+    expect(buildAutoChargeIdempotencyKey('e3bd2d-3.myshopify.com', ['1', '2', '4'], '50.37', 'claim-1')).not.toBe(base)
+    expect(buildAutoChargeIdempotencyKey('e3bd2d-3.myshopify.com', ['1', '2'], '50.38', 'claim-1')).not.toBe(base)
+    expect(buildAutoChargeIdempotencyKey('fast-dtf-az.myshopify.com', ['1', '2'], '50.37', 'claim-1')).not.toBe(base)
+    expect(buildAutoChargeIdempotencyKey('e3bd2d-3.myshopify.com', ['1', '2'], '50.37', 'claim-2')).not.toBe(base)
   })
 })
 
@@ -47,5 +65,28 @@ describe('order fee', () => {
     expect(isZeroPaymentOrder({ total_price: '36.00', current_total_price: '0.00' })).toBe(true)
     expect(isZeroPaymentOrder({ total_price: '36.00' })).toBe(false)
     expect(isZeroPaymentOrder({})).toBe(true)
+  })
+})
+
+describe('money totals', () => {
+  it('sums persisted fee rows in integer cents at the auto-charge threshold', () => {
+    const totalCents = sumMoneyCents(Array.from({ length: 4_999 }, () => 0.01))
+
+    expect(totalCents).toBe(4_999)
+    expect(centsToMoney(totalCents)).toBe(49.99)
+  })
+
+  it('rounds each fee row to its persisted cent value', () => {
+    expect(moneyToCents(1.01)).toBe(101)
+    expect(sumMoneyCents([10.1, 20.2, 19.69])).toBe(4_999)
+  })
+})
+
+describe('billing currency', () => {
+  it('allows only USD until an explicit FX policy exists', () => {
+    expect(isSupportedBillingCurrency('USD')).toBe(true)
+    expect(isSupportedBillingCurrency(' usd ')).toBe(true)
+    expect(isSupportedBillingCurrency('CAD')).toBe(false)
+    expect(isSupportedBillingCurrency(null)).toBe(false)
   })
 })

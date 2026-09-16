@@ -26,6 +26,28 @@ export function calculateCommissionAmount(servedAmount: number): number {
   return Math.min(raw, COMMISSION_CAP_USD);
 }
 
+/** Convert a persisted two-decimal money amount to integer cents. */
+export function moneyToCents(amount: number): number {
+  return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
+}
+
+/** Sum money without accumulating IEEE-754 drift across many fee rows. */
+export function sumMoneyCents(amounts: Iterable<number>): number {
+  let totalCents = 0;
+  for (const amount of amounts) totalCents += moneyToCents(amount);
+  return totalCents;
+}
+
+export function centsToMoney(cents: number): number {
+  return cents / 100;
+}
+
+/** Providers in this app currently create USD charges only. Never reinterpret
+ * an order-currency amount as USD without an explicit FX policy. */
+export function isSupportedBillingCurrency(value: unknown): boolean {
+  return String(value || '').trim().toUpperCase() === 'USD';
+}
+
 /** Orders the customer paid nothing for (free, 100% discounted, $0 test orders) are never billed. */
 export function isZeroPaymentOrder(order: {
   total_price?: string | number | null;
@@ -36,19 +58,18 @@ export function isZeroPaymentOrder(order: {
 }
 
 /**
- * Idempotency key for one automatic charge: the same shop, the same set of
- * orders and the same amount on the same UTC day always yield the same key,
- * so Stripe/PayPal return the first payment instead of charging again.
+ * Provider idempotency key for one persisted logical charge attempt. Retries
+ * of the same claim reuse the key; a confirmed failure followed by a new
+ * attempt gets a new key even when the order set and amount are unchanged.
  */
 export function buildAutoChargeIdempotencyKey(
   shopDomain: string,
   orderIds: string[],
   amount: string,
-  now: Date = new Date()
+  attemptRef: string
 ): string {
-  const day = now.toISOString().slice(0, 10);
   const digest = createHash("sha256")
-    .update([shopDomain, day, amount, ...orderIds.map(String).sort()].join("|"))
+    .update([shopDomain, attemptRef, amount, ...orderIds.map(String).sort()].join("|"))
     .digest("hex")
     .slice(0, 40);
   return `us-autocharge-${digest}`;
@@ -61,17 +82,19 @@ export function buildOrderFeeDescription(
   const appName = process.env.APP_NAME || "Upload Studio";
   // Shown to the merchant on Stripe/PayPal checkout and receipts: plain "order fees".
   const prefix = monthKey ? `${appName} order fees (${monthKey})` : `${appName} order fees`;
-  const total = feeAmounts.reduce((sum, amount) => sum + amount, 0);
+  const total = centsToMoney(sumMoneyCents(feeAmounts));
   return `${prefix}: ${feeAmounts.length} order${feeAmounts.length === 1 ? "" : "s"} ($${total.toFixed(2)})`;
 }
 
 export async function getOutstandingFeeSelection(
   shopId: string,
   requestedOrderIds?: string[] | null,
-  monthKey?: string | null
+  monthKey?: string | null,
+  options: { orderCurrency?: string | null } = {}
 ): Promise<{
   orderIds: string[];
   feeByOrderId: Map<string, number>;
+  totalCents: number;
   totalAmount: number;
   description: string;
 }> {
@@ -79,7 +102,11 @@ export async function getOutstandingFeeSelection(
     where: {
       shopId,
       status: "pending",
+      paymentRef: null,
       ...(requestedOrderIds?.length ? { orderId: { in: requestedOrderIds } } : {}),
+      ...(options.orderCurrency
+        ? { orderCurrency: { equals: options.orderCurrency, mode: 'insensitive' as const } }
+        : {}),
     },
     select: {
       orderId: true,
@@ -98,20 +125,18 @@ export async function getOutstandingFeeSelection(
     ])
   );
   const feeAmounts = pendingCommissions.map((commission) => Number(commission.commissionAmount));
-  const totalAmount = feeAmounts.reduce((sum, amount) => sum + amount, 0);
+  const totalCents = sumMoneyCents(feeAmounts);
+  const totalAmount = centsToMoney(totalCents);
   const description = buildOrderFeeDescription(feeAmounts, monthKey);
 
   return {
     orderIds,
     feeByOrderId,
+    totalCents,
     totalAmount,
     description,
   };
 }
-
-
-
-
 
 export async function calculatePendingCommissions(
   shopId: string,
@@ -132,7 +157,7 @@ export async function calculatePendingCommissions(
   const orderRates = new Map<string, number>();
   for (const row of rows) orderRates.set(row.orderId, Number(row.commissionAmount));
   const amounts = Array.from(orderRates.values());
-  const totalAmount = amounts.reduce((sum, r) => sum + r, 0);
+  const totalAmount = centsToMoney(sumMoneyCents(amounts));
   return { totalAmount, orderRates, description: buildOrderFeeDescription(amounts, monthKey) };
 }
 
