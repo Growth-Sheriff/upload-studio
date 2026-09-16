@@ -127,6 +127,77 @@ describe('resolveSheetVariant', () => {
     expect(result?.sheetsNeeded).toBe(1)
   })
 
+  it('preserves service options when Shopify sends the selected variant as a GID', () => {
+    const optionDefs: ProductOptionDef[] = [
+      { name: 'Size', values: ['22 x 12', '22 x 24'] },
+      { name: 'Finish', values: ['Matte', 'Gloss'] },
+    ]
+    const variants = [
+      buildVariant('101', '22 x 12 / Matte', '12.00', [
+        { name: 'Size', value: '22 x 12' },
+        { name: 'Finish', value: 'Matte' },
+      ]),
+      buildVariant('102', '22 x 24 / Matte', '20.00', [
+        { name: 'Size', value: '22 x 24' },
+        { name: 'Finish', value: 'Matte' },
+      ]),
+      buildVariant('103', '22 x 12 / Gloss', '13.00', [
+        { name: 'Size', value: '22 x 12' },
+        { name: 'Finish', value: 'Gloss' },
+      ]),
+      buildVariant('104', '22 x 24 / Gloss', '21.00', [
+        { name: 'Size', value: '22 x 24' },
+        { name: 'Finish', value: 'Gloss' },
+      ]),
+    ]
+
+    const result = resolveSheetVariant({
+      widthIn: 10,
+      heightIn: 10,
+      quantity: 3,
+      variants,
+      optionDefs,
+      selectedVariantId: 'gid://shopify/ProductVariant/103',
+      config: { sheetOptionName: 'Size', modalOptionNames: ['Finish'] },
+    })
+
+    expect(result?.selectedVariantId).toBe('104')
+  })
+
+  it('does not silently change the selected service when a fitting size lacks that service', () => {
+    const optionDefs: ProductOptionDef[] = [
+      { name: 'Size', values: ['22 x 12', '22 x 24'] },
+      { name: 'Finish', values: ['Matte', 'Gloss'] },
+    ]
+    const variants: ProductVariantDef[] = [
+      buildVariant('251', '22 x 12 / Gloss', '13.00', [
+        { name: 'Size', value: '22 x 12' },
+        { name: 'Finish', value: 'Gloss' },
+      ]),
+      buildVariant('252', '22 x 24 / Matte', '20.00', [
+        { name: 'Size', value: '22 x 24' },
+        { name: 'Finish', value: 'Matte' },
+      ]),
+    ]
+
+    const result = resolveSheetVariant({
+      widthIn: 20,
+      heightIn: 20,
+      quantity: 1,
+      variants,
+      optionDefs,
+      selectedVariantId: '251',
+      config: {
+        sheetOptionName: 'Size',
+        modalOptionNames: ['Finish'],
+        artboardMarginIn: 0,
+        imageMarginIn: 0,
+      },
+    })
+
+    expect(result).toBeNull()
+  })
+
   it('returns null when no available sheet can fit the uploaded design', () => {
     const optionDefs: ProductOptionDef[] = [{ name: 'Size', values: ['10 x 10'] }]
     const variants: ProductVariantDef[] = [
@@ -177,6 +248,31 @@ describe('resolveSheetVariant', () => {
     expect(result?.sheetsNeeded).toBeLessThanOrEqual(2)
   })
 
+  it('finds the best bounded mix of normal and rotated rows', () => {
+    const optionDefs: ProductOptionDef[] = [{ name: 'Size', values: ['22 x 24'] }]
+    const variants = [
+      buildVariant('450', '22 x 24', '20.00', [{ name: 'Size', value: '22 x 24' }]),
+    ]
+
+    const result = resolveSheetVariant({
+      widthIn: 5,
+      heightIn: 6.35,
+      quantity: 14,
+      variants,
+      optionDefs,
+      selectedVariantId: '450',
+      config: {
+        sheetOptionName: 'Size',
+        artboardMarginIn: 0,
+        imageMarginIn: 0,
+      },
+    })
+
+    expect(result?.placementMode).toBe('mixed')
+    expect(result?.designsPerSheet).toBe(14)
+    expect(result?.sheetsNeeded).toBe(1)
+  })
+
   it('can prefer the smallest fitting sheet for main-product uploads', () => {
     const optionDefs: ProductOptionDef[] = [{ name: 'Size', values: ['22 x 12', '22 x 60'] }]
     const variants: ProductVariantDef[] = [
@@ -200,5 +296,101 @@ describe('resolveSheetVariant', () => {
     expect(result).not.toBeNull()
     expect(result?.selectedVariantId).toBe('501')
     expect(result?.selectedSheetLabel).toContain('22 x 12')
+  })
+
+  it('allows an over-roll uploaded width only when rotating puts the other edge across the roll', () => {
+    const optionDefs: ProductOptionDef[] = [{ name: 'Size', values: ['22 x 24'] }]
+    const variants: ProductVariantDef[] = [
+      buildVariant('601', '22 x 24', '20.00', [{ name: 'Size', value: '22 x 24' }]),
+    ]
+
+    const result = resolveSheetVariant({
+      widthIn: 23.91,
+      heightIn: 21.14,
+      quantity: 1,
+      variants,
+      optionDefs,
+      config: {
+        sheetOptionName: 'Size',
+        maxDesignWidthIn: 22,
+      },
+    })
+
+    expect(result?.placementMode).toBe('rotated')
+    expect(result?.rotationApplied).toBe(true)
+    expect(result?.rotationRequired).toBe(true)
+    expect(result?.placedWidthIn).toBe(21.14)
+    expect(result?.placedHeightIn).toBe(23.91)
+    expect(result?.productionNote).toContain('Rotate artwork 90°')
+  })
+
+  it('rejects artwork when neither orientation fits the configured cross-roll width', () => {
+    const optionDefs: ProductOptionDef[] = [{ name: 'Size', values: ['22 x 24'] }]
+    const variants: ProductVariantDef[] = [
+      buildVariant('602', '22 x 24', '20.00', [{ name: 'Size', value: '22 x 24' }]),
+    ]
+
+    const result = resolveSheetVariant({
+      widthIn: 23,
+      heightIn: 22.75,
+      quantity: 1,
+      variants,
+      optionDefs,
+      config: {
+        sheetOptionName: 'Size',
+        maxDesignWidthIn: 22,
+        fitToleranceIn: 0.5,
+      },
+    })
+
+    expect(result).toBeNull()
+  })
+
+  it('reports dimensions clamped by configured margins and tolerance', () => {
+    const optionDefs: ProductOptionDef[] = [{ name: 'Size', values: ['22 x 240'] }]
+    const variants: ProductVariantDef[] = [
+      buildVariant('603', '22 x 240', '120.00', [{ name: 'Size', value: '22 x 240' }]),
+    ]
+
+    const result = resolveSheetVariant({
+      widthIn: 21.98,
+      heightIn: 237.99,
+      quantity: 1,
+      variants,
+      optionDefs,
+      config: {
+        sheetOptionName: 'Size',
+        artboardMarginIn: 0.125,
+        maxDesignWidthIn: 21.75,
+        fitToleranceIn: 0.5,
+      },
+    })
+
+    expect(result?.placementMode).toBe('normal')
+    expect(result?.toleranceApplied).toBe(true)
+    expect(result?.placedWidthIn).toBe(21.75)
+    expect(result?.placedHeightIn).toBe(237.99)
+    expect(result?.productionNote).toContain('Fit tolerance applied')
+  })
+
+  it('does not offer a sheet whose physical short edge exceeds the policy roll width', () => {
+    const optionDefs: ProductOptionDef[] = [{ name: 'Size', values: ['24 x 24'] }]
+    const variants: ProductVariantDef[] = [
+      buildVariant('604', '24 x 24', '25.00', [{ name: 'Size', value: '24 x 24' }]),
+    ]
+
+    const result = resolveSheetVariant({
+      widthIn: 23,
+      heightIn: 23,
+      quantity: 1,
+      variants,
+      optionDefs,
+      config: {
+        sheetOptionName: 'Size',
+        maxSheetWidthIn: 22,
+      },
+    })
+
+    expect(result).toBeNull()
   })
 })

@@ -1,5 +1,17 @@
 const MIN_MARGIN_IN = 0
 
+export function variantIdsEqual(left: unknown, right: unknown): boolean {
+  const normalize = (value: unknown) => {
+    const text = String(value ?? '').trim()
+    const gidMatch = text.match(/\/ProductVariant\/(\d+)$/)
+    return gidMatch ? gidMatch[1] : text
+  }
+
+  const normalizedLeft = normalize(left)
+  const normalizedRight = normalize(right)
+  return normalizedLeft.length > 0 && normalizedLeft === normalizedRight
+}
+
 export interface ProductOptionDef {
   name: string
   values: string[]
@@ -31,6 +43,11 @@ export interface BuilderResolveConfig {
   artboardMarginIn?: number | null
   imageMarginIn?: number | null
   fitToleranceIn?: number | null
+  /** Maximum cross-roll artwork width. Rotation may make the uploaded height
+   * the cross-roll edge. */
+  maxDesignWidthIn?: number | null
+  /** Maximum physical roll/sheet short edge offered by this shop. */
+  maxSheetWidthIn?: number | null
   selectionStrategy?: 'lowest_total_cost' | 'smallest_fitting_sheet' | null
 }
 
@@ -61,6 +78,12 @@ interface VariantMatrix {
 interface FitGridResult {
   count: number
   efficiency: number
+  placementMode: 'normal' | 'rotated' | 'mixed'
+  rotationApplied: boolean
+  rotationRequired: boolean
+  toleranceApplied: boolean
+  placedWidthIn: number
+  placedHeightIn: number
 }
 
 export interface SheetVariantResolution {
@@ -72,6 +95,15 @@ export interface SheetVariantResolution {
   requestedQuantity: number
   widthIn: number
   heightIn: number
+  sheetWidthIn: number
+  sheetHeightIn: number
+  placementMode: 'normal' | 'rotated' | 'mixed'
+  rotationApplied: boolean
+  rotationRequired: boolean
+  toleranceApplied: boolean
+  placedWidthIn: number
+  placedHeightIn: number
+  productionNote: string | null
 }
 
 function normalizeMarginIn(value: number | null | undefined): number {
@@ -423,7 +455,7 @@ function getSelectedServiceOptionValues(
 ): Record<number, string> {
   const values: Record<number, string> = {}
   const selectedVariant = selectedVariantId
-    ? variants.find((variant) => String(variant.id) === String(selectedVariantId))
+    ? variants.find((variant) => variantIdsEqual(variant.id, selectedVariantId))
     : null
 
   if (!selectedVariant) return values
@@ -453,70 +485,93 @@ function resolveVariantForFamily(
     if (matched) return variant
   }
 
+  if (Object.keys(selectedServiceValues).length > 0) return null
   return family.variants[0] || null
 }
 
-function fitGrid(
+interface OrientationFit {
+  count: number
+  placedWidthIn: number
+  placedHeightIn: number
+  toleranceApplied: boolean
+}
+
+function clampWithinTolerance(value: number, limit: number, tolerance: number) {
+  if (!(value > 0) || !(limit > 0)) return { value, fits: false, clamped: false }
+  if (value <= limit) return { value, fits: true, clamped: false }
+  if (value <= limit + tolerance) return { value: limit, fits: true, clamped: true }
+  return { value, fits: false, clamped: false }
+}
+
+function fitOrientation(
   designWidth: number,
   designHeight: number,
   usableWidth: number,
   usableHeight: number,
-  gap: number
-): number {
-  if (designWidth <= 0 || designHeight <= 0 || designWidth > usableWidth || designHeight > usableHeight) {
-    return 0
+  gap: number,
+  tolerance: number,
+  maxDesignWidth: number | null
+): OrientationFit {
+  const crossRollLimit = maxDesignWidth && maxDesignWidth > 0
+    ? Math.min(usableWidth, maxDesignWidth)
+    : usableWidth
+  const width = clampWithinTolerance(designWidth, crossRollLimit, tolerance)
+  const height = clampWithinTolerance(designHeight, usableHeight, tolerance)
+  if (!width.fits || !height.fits) {
+    return {
+      count: 0,
+      placedWidthIn: designWidth,
+      placedHeightIn: designHeight,
+      toleranceApplied: false,
+    }
   }
 
-  const cols = Math.floor((usableWidth + gap) / (designWidth + gap))
-  const rows = Math.floor((usableHeight + gap) / (designHeight + gap))
-  if (cols <= 0 || rows <= 0) return 0
-
-  return cols * rows
+  const cols = Math.floor((usableWidth + gap) / (width.value + gap))
+  const rows = Math.floor((usableHeight + gap) / (height.value + gap))
+  return {
+    count: cols > 0 && rows > 0 ? cols * rows : 0,
+    placedWidthIn: width.value,
+    placedHeightIn: height.value,
+    toleranceApplied: width.clamped || height.clamped,
+  }
 }
 
 function fitGridMixed(
-  designWidth: number,
-  designHeight: number,
+  normal: OrientationFit,
+  rotated: OrientationFit,
   usableWidth: number,
   usableHeight: number,
   gap: number
 ): number {
-  let count = 0
-  let y = 0
-  const normalCols = designWidth > 0 ? Math.floor((usableWidth + gap) / (designWidth + gap)) : 0
-  const rotatedCols = designHeight > 0 ? Math.floor((usableWidth + gap) / (designHeight + gap)) : 0
+  if (normal.count <= 0 || rotated.count <= 0) return 0
+  const normalCols = Math.floor((usableWidth + gap) / (normal.placedWidthIn + gap))
+  const rotatedCols = Math.floor((usableWidth + gap) / (rotated.placedWidthIn + gap))
+  if (normalCols <= 0 || rotatedCols <= 0) return 0
 
-  while (y < usableHeight) {
-    const normalFits = y + designHeight <= usableHeight && normalCols > 0
-    const rotatedFits = y + designWidth <= usableHeight && rotatedCols > 0
-
-    if (!normalFits && !rotatedFits) break
-
-    let useRotated = false
-    let rowHeight = designHeight
-    let rowCols = normalCols
-
-    if (normalFits && rotatedFits) {
-      const normalDensity = normalCols / designHeight
-      const rotatedDensity = rotatedCols / designWidth
-      if (rotatedDensity > normalDensity) {
-        useRotated = true
-        rowHeight = designWidth
-        rowCols = rotatedCols
-      }
-    } else if (rotatedFits) {
-      useRotated = true
-      rowHeight = designWidth
-      rowCols = rotatedCols
-    }
-
-    count += rowCols
-    y += rowHeight + gap
-    if (useRotated && rowHeight <= 0) break
-    if (!useRotated && rowHeight <= 0) break
+  // A per-row density choice is not globally optimal because the final strip
+  // can fit rows of the other orientation. Enumerate the bounded number of
+  // normal rows and fill the remaining height with rotated rows.
+  const maxNormalRows = Math.floor(
+    (usableHeight + gap) / (normal.placedHeightIn + gap)
+  )
+  let bestCount = 0
+  for (let normalRows = 0; normalRows <= maxNormalRows; normalRows += 1) {
+    const normalHeight =
+      normalRows * normal.placedHeightIn + Math.max(0, normalRows - 1) * gap
+    const remainingHeight = usableHeight - normalHeight
+    const rotatedRows =
+      normalRows > 0
+        ? Math.max(0, Math.floor((remainingHeight + 1e-9) / (rotated.placedHeightIn + gap)))
+        : Math.max(
+            0,
+            Math.floor((remainingHeight + gap + 1e-9) / (rotated.placedHeightIn + gap))
+          )
+    bestCount = Math.max(
+      bestCount,
+      normalRows * normalCols + rotatedRows * rotatedCols
+    )
   }
-
-  return count
+  return bestCount
 }
 
 function calculateGridFit(
@@ -526,43 +581,92 @@ function calculateGridFit(
 ): FitGridResult {
   const gap = normalizeMarginIn(config.imageMarginIn)
   const margin = normalizeMarginIn(config.artboardMarginIn)
-  const usableWidth = sheet.widthInch - 2 * margin
-  const usableHeight = sheet.heightInch - 2 * margin
+  // Treat the short sheet edge as cross-roll regardless of how a merchant's
+  // variant title happens to order its dimensions.
+  const usableWidth = Math.min(sheet.widthInch, sheet.heightInch) - 2 * margin
+  const usableHeight = Math.max(sheet.widthInch, sheet.heightInch) - 2 * margin
   const tolerance = normalizeToleranceIn(config.fitToleranceIn)
+  const configuredMaxDesignWidth = Number(config.maxDesignWidthIn)
+  const maxDesignWidth = Number.isFinite(configuredMaxDesignWidth) && configuredMaxDesignWidth > 0
+    ? configuredMaxDesignWidth
+    : null
 
   if (usableWidth <= 0 || usableHeight <= 0) {
-    return { count: 0, efficiency: 0 }
+    return {
+      count: 0,
+      efficiency: 0,
+      placementMode: 'normal',
+      rotationApplied: false,
+      rotationRequired: false,
+      toleranceApplied: false,
+      placedWidthIn: design.widthInch,
+      placedHeightIn: design.heightInch,
+    }
   }
 
-  const effectiveDesign = {
-    widthInch:
-      design.widthInch > usableWidth && design.widthInch <= usableWidth + tolerance
-        ? usableWidth
-        : design.widthInch,
-    heightInch:
-      design.heightInch > usableHeight && design.heightInch <= usableHeight + tolerance
-        ? usableHeight
-        : design.heightInch,
+  const normal = fitOrientation(
+    design.widthInch,
+    design.heightInch,
+    usableWidth,
+    usableHeight,
+    gap,
+    tolerance,
+    maxDesignWidth
+  )
+  const rotated = design.widthInch !== design.heightInch
+    ? fitOrientation(
+        design.heightInch,
+        design.widthInch,
+        usableWidth,
+        usableHeight,
+        gap,
+        tolerance,
+        maxDesignWidth
+      )
+    : { ...normal, count: 0 }
+  const mixedCount = design.widthInch !== design.heightInch
+    ? fitGridMixed(normal, rotated, usableWidth, usableHeight, gap)
+    : 0
+
+  const candidates = [
+    { mode: 'normal' as const, ...normal },
+    { mode: 'rotated' as const, ...rotated },
+    {
+      mode: 'mixed' as const,
+      count: mixedCount,
+      placedWidthIn: normal.placedWidthIn,
+      placedHeightIn: normal.placedHeightIn,
+      toleranceApplied: normal.toleranceApplied || rotated.toleranceApplied,
+    },
+  ].sort((a, b) => b.count - a.count)
+  const selected = candidates[0]
+  if (selected.count <= 0) {
+    return {
+      count: 0,
+      efficiency: 0,
+      placementMode: 'normal',
+      rotationApplied: false,
+      rotationRequired: false,
+      toleranceApplied: false,
+      placedWidthIn: design.widthInch,
+      placedHeightIn: design.heightInch,
+    }
   }
-
-  const normalCount = fitGrid(effectiveDesign.widthInch, effectiveDesign.heightInch, usableWidth, usableHeight, gap)
-  const rotatedCount =
-    effectiveDesign.widthInch !== effectiveDesign.heightInch
-      ? fitGrid(effectiveDesign.heightInch, effectiveDesign.widthInch, usableWidth, usableHeight, gap)
-      : 0
-  const mixedCount =
-    effectiveDesign.widthInch !== effectiveDesign.heightInch
-      ? fitGridMixed(effectiveDesign.widthInch, effectiveDesign.heightInch, usableWidth, usableHeight, gap)
-      : 0
-
-  const count = Math.max(normalCount, rotatedCount, mixedCount)
-  if (count <= 0) return { count: 0, efficiency: 0 }
 
   const designArea = design.widthInch * design.heightInch
   const sheetArea = sheet.widthInch * sheet.heightInch
-  const efficiency = sheetArea > 0 ? (count * designArea) / sheetArea : 0
+  const efficiency = sheetArea > 0 ? (selected.count * designArea) / sheetArea : 0
 
-  return { count, efficiency }
+  return {
+    count: selected.count,
+    efficiency,
+    placementMode: selected.mode,
+    rotationApplied: selected.mode !== 'normal',
+    rotationRequired: normal.count <= 0 && selected.mode !== 'normal',
+    toleranceApplied: selected.toleranceApplied,
+    placedWidthIn: selected.placedWidthIn,
+    placedHeightIn: selected.placedHeightIn,
+  }
 }
 
 export function resolveSheetVariant({
@@ -590,9 +694,16 @@ export function resolveSheetVariant({
   const selectedServiceValues = getSelectedServiceOptionValues(matrix, variants, selectedVariantId)
   const design = { widthInch: widthIn, heightInch: heightIn }
   const requestedQuantity = Math.max(1, Math.floor(quantity))
+  const configuredMaxSheetWidth = Number(config.maxSheetWidthIn)
+  const maxSheetWidth = Number.isFinite(configuredMaxSheetWidth) && configuredMaxSheetWidth > 0
+    ? configuredMaxSheetWidth
+    : null
 
   const validResults = matrix.sheetFamilies
     .map((family) => {
+      if (maxSheetWidth && Math.min(family.widthInch, family.heightInch) > maxSheetWidth + 0.001) {
+        return null
+      }
       const variant = resolveVariantForFamily(family, matrix, selectedServiceValues)
       if (!variant) return null
 
@@ -606,6 +717,7 @@ export function resolveSheetVariant({
       return {
         family,
         variant,
+        gridFit,
         designsPerSheet: gridFit.count,
         sheetsNeeded,
         totalCost,
@@ -630,6 +742,14 @@ export function resolveSheetVariant({
   if (!validResults.length) return null
 
   const selected = validResults[0]
+  const notes: string[] = []
+  if (selected.gridFit.placementMode === 'rotated') notes.push('Rotate artwork 90°')
+  if (selected.gridFit.placementMode === 'mixed') notes.push('Use mixed normal/rotated placement')
+  if (selected.gridFit.toleranceApplied) {
+    notes.push(
+      `Fit tolerance applied at ${selected.gridFit.placedWidthIn.toFixed(2)}" × ${selected.gridFit.placedHeightIn.toFixed(2)}"`
+    )
+  }
   return {
     selectedVariantId: selected.variant.id,
     selectedVariantTitle: selected.variant.title,
@@ -639,5 +759,14 @@ export function resolveSheetVariant({
     requestedQuantity,
     widthIn,
     heightIn,
+    sheetWidthIn: selected.family.widthInch,
+    sheetHeightIn: selected.family.heightInch,
+    placementMode: selected.gridFit.placementMode,
+    rotationApplied: selected.gridFit.rotationApplied,
+    rotationRequired: selected.gridFit.rotationRequired,
+    toleranceApplied: selected.gridFit.toleranceApplied,
+    placedWidthIn: selected.gridFit.placedWidthIn,
+    placedHeightIn: selected.gridFit.placedHeightIn,
+    productionNote: notes.length ? notes.join('; ') : null,
   }
 }

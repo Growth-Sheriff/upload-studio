@@ -6,15 +6,16 @@
 // the authoritative answer after measurement.
 
 import { shopifyGraphQL } from '~/lib/shopify.server'
-import { getPricingPolicy } from '~/lib/customerPricingModel.server'
+import { resolveCustomerPricingModelState } from '~/lib/customerPricingModel.server'
 import {
   resolveSheetVariant,
+  variantIdsEqual,
   type BuilderResolveConfig,
   type ProductOptionDef,
   type ProductVariantDef,
 } from '~/lib/dtfSheetResolver.server'
 import {
-  applyFullCanvasMeasurementMetadata,
+  applyMeasurementBasisMetadata,
   type UploadLifecycleMetadata,
 } from '~/lib/uploadLifecycle.server'
 import {
@@ -25,9 +26,10 @@ import {
   shouldUseMainProductMeasurementPolicy,
 } from '~/lib/mainProductMeasurement.server'
 import { applyAlphaProBuilderDefaults, buildAlphaProCustomerOffer } from '~/lib/alphaProDiscounts.server'
+import { collectShopifyConnectionPages } from '~/lib/shopifyVariantPagination.server'
 
 const PRODUCT_VARIANTS_QUERY = `
-  query ResolveProductVariants($id: ID!) {
+  query ResolveProductVariants($id: ID!, $after: String) {
     product(id: $id) {
       id
       title
@@ -35,7 +37,7 @@ const PRODUCT_VARIANTS_QUERY = `
         name
         values
       }
-      variants(first: 100) {
+      variants(first: 250, after: $after) {
         edges {
           node {
             id
@@ -48,6 +50,10 @@ const PRODUCT_VARIANTS_QUERY = `
               value
             }
           }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
         }
       }
     }
@@ -76,6 +82,10 @@ interface ProductQueryResponse {
           selectedOptions: Array<{ name: string; value: string }>
         }
       }>
+      pageInfo: {
+        hasNextPage: boolean
+        endCursor: string | null
+      }
     }
   } | null
 }
@@ -90,10 +100,17 @@ interface ProductResolveData {
 const PRODUCT_RESOLVE_CACHE_TTL_MS = 5 * 60 * 1000
 const PRODUCT_RESOLVE_CACHE_MAX_SIZE = 250
 const productResolveCache = new Map<string, ProductResolveData>()
+const productResolveInFlight = new Map<string, Promise<ProductResolveData>>()
 
 export function parsePositiveNumber(value: unknown): number | null {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed <= 0) return null
+  return parsed
+}
+
+function parseNonNegativeNumber(value: unknown): number | null {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) return null
   return parsed
 }
 
@@ -138,6 +155,54 @@ function isLinearInchBuilderConfig(builderConfig: Record<string, unknown>): bool
   return false
 }
 
+function parseVariantDimensionPair(value: unknown): [number, number] | null {
+  const cleaned = String(value || '')
+    .replace(/["'\u2032\u2033]/g, '')
+    .replace(/\binch(es)?\b/gi, '')
+    .trim()
+  const match = cleaned.match(/(\d+(?:\.\d+)?)\s*(?:x|\u00d7|by)\s*(\d+(?:\.\d+)?)/i)
+  if (!match) return null
+  const first = Number(match[1])
+  const second = Number(match[2])
+  return first > 0 && second > 0 ? [first, second] : null
+}
+
+function isLinearInchCarrier(variant: ProductVariantDef): boolean {
+  const combinedValues = [
+    variant.title,
+    ...(variant.options || []),
+    ...(variant.selectedOptions || []).map((option) => option.value),
+  ]
+  for (const value of combinedValues) {
+    const pair = parseVariantDimensionPair(value)
+    if (pair && Math.abs(Math.min(...pair) - 1) <= 0.001 && Math.max(...pair) > 1) {
+      return true
+    }
+  }
+
+  const dimensions = (variant.selectedOptions || [])
+    .filter((option) => /width|height|length/i.test(option.name))
+    .map((option) => Number(String(option.value).replace(/[^\d.]/g, '')))
+    .filter((value) => Number.isFinite(value) && value > 0)
+  return (
+    dimensions.length >= 2 &&
+    Math.abs(Math.min(...dimensions) - 1) <= 0.001 &&
+    Math.max(...dimensions) > 1
+  )
+}
+
+function getServiceSelections(variant: ProductVariantDef | null): Array<{ name: string; value: string }> {
+  if (!variant) return []
+  return (variant.selectedOptions || []).filter((option) => {
+    if (parseVariantDimensionPair(option.value)) return false
+    const dimensionName = /^(?:size|sheet(?:\s+size)?|width|height|length|dimensions?)$/i.test(
+      option.name.trim()
+    )
+    const numericValue = Number(String(option.value).replace(/[^\d.]/g, ''))
+    return !(dimensionName && Number.isFinite(numericValue) && numericValue > 0)
+  })
+}
+
 function findUnitVariant(
   variants: ProductVariantDef[],
   selectedVariantId?: string | null
@@ -145,32 +210,41 @@ function findUnitVariant(
   const availableVariants = variants.filter(
     (variant) => variant.available !== false && variant.availableForSale !== false
   )
-  const pool = availableVariants.length ? availableVariants : variants
+  const pool = availableVariants
   if (!pool.length) return null
 
+  // Read service choices from the complete variant list. A saved page-size
+  // variant can become unavailable while its matching one-inch carrier is
+  // still sellable; dropping the saved finish/material here would silently
+  // switch price and service.
   const selected = selectedVariantId
-    ? pool.find((variant) => String(variant.id) === String(selectedVariantId))
+    ? variants.find((variant) => variantIdsEqual(variant.id, selectedVariantId))
     : null
-  if (selected) return selected
+  const selectedAvailable = selected
+    ? pool.find((variant) => variantIdsEqual(variant.id, selected.id))
+    : null
+  if (selectedAvailable && isLinearInchCarrier(selectedAvailable)) return selectedAvailable
 
-  const inchUnit = pool.find((variant) => {
-    const haystack = [
-      variant.title,
-      variant.option1,
-      variant.option2,
-      variant.option3,
-      ...(variant.options || []),
-      ...(variant.selectedOptions || []).map((option) => option.value),
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
-      .replace(/\s+/g, '')
+  const inchUnits = pool.filter(isLinearInchCarrier)
+  if (!inchUnits.length) return null
 
-    return /22["']?x1|22["']?×1|\(22["']?x1\)/.test(haystack)
-  })
+  const selectedServices = getServiceSelections(selected || null)
+  if (selectedServices.length) {
+    const matchingServiceUnit = inchUnits.find((variant) => {
+      const options = variant.selectedOptions || []
+      return selectedServices.every((selection) =>
+        options.some(
+          (option) =>
+            option.name.toLowerCase() === selection.name.toLowerCase() &&
+            option.value.toLowerCase() === selection.value.toLowerCase()
+        )
+      )
+    })
+    if (matchingServiceUnit) return matchingServiceUnit
+    return null
+  }
 
-  return inchUnit || pool[0]
+  return inchUnits[0]
 }
 
 function normalizeVariantPriceToDollars(rawPrice: string | number | null | undefined): number {
@@ -185,22 +259,53 @@ function normalizeVariantPriceToDollars(rawPrice: string | number | null | undef
   return Number.isFinite(numeric) ? numeric / 100 : 0
 }
 
-function resolveLinearInchVariant({
+export function resolveLinearInchVariant({
   dimensions,
   quantity,
   variants,
   selectedVariantId,
+  maxCrossRollWidthIn,
+  maxDesignWidthIn,
+  artboardMarginIn,
+  fitToleranceIn,
 }: {
   dimensions: UploadDimensions
   quantity: number
   variants: ProductVariantDef[]
   selectedVariantId?: string | null
+  maxCrossRollWidthIn?: number | null
+  maxDesignWidthIn?: number | null
+  artboardMarginIn?: number | null
+  fitToleranceIn?: number | null
 }) {
   const variant = findUnitVariant(variants, selectedVariantId)
   if (!variant) return null
 
   const pageWidthIn = Math.min(dimensions.widthIn, dimensions.heightIn)
   const pageLengthIn = Math.max(dimensions.widthIn, dimensions.heightIn)
+  const configuredCrossRollWidth = Number(maxCrossRollWidthIn)
+  const configuredDesignWidth = Number(maxDesignWidthIn)
+  const sheetMargin = Math.max(0, Number(artboardMarginIn) || 0)
+  const fitTolerance = Math.max(0, Number(fitToleranceIn) || 0)
+  const physicalUsableCrossRollWidth =
+    Number.isFinite(configuredCrossRollWidth) && configuredCrossRollWidth > 0
+      ? configuredCrossRollWidth - 2 * sheetMargin
+      : null
+  const usableCrossRollWidth =
+    Number.isFinite(configuredDesignWidth) && configuredDesignWidth > 0
+      ? physicalUsableCrossRollWidth == null
+        ? configuredDesignWidth
+        : Math.min(physicalUsableCrossRollWidth, configuredDesignWidth)
+      : physicalUsableCrossRollWidth
+  if (
+    usableCrossRollWidth != null &&
+    (usableCrossRollWidth <= 0 || pageWidthIn > usableCrossRollWidth + fitTolerance)
+  ) {
+    return null
+  }
+  const toleranceApplied =
+    usableCrossRollWidth != null && pageWidthIn > usableCrossRollWidth
+  const rotationApplied = dimensions.widthIn > dimensions.heightIn
   const requestedQuantity = Math.max(1, Math.floor(quantity))
   const billableLengthIn = Number((pageLengthIn * requestedQuantity).toFixed(2))
   const cartQuantity = Math.max(1, Math.ceil(billableLengthIn))
@@ -211,12 +316,26 @@ function resolveLinearInchVariant({
     selectedVariantTitle: variant.title || 'Measured inch unit',
     selectedSheetLabel: `${cartQuantity} billable inches`,
     designsPerSheet: 1,
-    sheetsNeeded: cartQuantity,
+    // Shopify quantity is an integer-inch billing carrier. It is not a count
+    // of physical sheets; production prints one measured sheet per copy.
+    sheetsNeeded: requestedQuantity,
     requestedQuantity,
     widthIn: dimensions.widthIn,
     heightIn: dimensions.heightIn,
     pageWidthIn,
     pageLengthIn,
+    placedWidthIn:
+      toleranceApplied && usableCrossRollWidth != null ? usableCrossRollWidth : pageWidthIn,
+    placedHeightIn: pageLengthIn,
+    rotationApplied,
+    rotationRequired: rotationApplied,
+    toleranceApplied,
+    productionNote: [
+      rotationApplied ? 'Rotate artwork 90°' : '',
+      toleranceApplied && usableCrossRollWidth != null
+        ? `Fit tolerance applied at ${usableCrossRollWidth.toFixed(2)}\" cross-roll`
+        : '',
+    ].filter(Boolean).join('; ') || null,
     billableLengthIn,
     cartQuantity,
     pricingMode: 'linear_inches',
@@ -285,15 +404,43 @@ export async function getProductResolveData(
   if (cached && now - cached.cachedAt <= PRODUCT_RESOLVE_CACHE_TTL_MS && cached.productData.product) {
     return cached
   }
-  const productData = await shopifyGraphQL<ProductQueryResponse>(shopDomain, accessToken, PRODUCT_VARIANTS_QUERY, {
-    id: productId,
-  })
-  const mapped = mapProductResolveData(productData)
-  if (productData.product) {
-    productResolveCache.set(cacheKey, mapped)
-    pruneProductResolveCache(now)
+  const inFlight = productResolveInFlight.get(cacheKey)
+  if (inFlight) return inFlight
+
+  const request = (async () => {
+    const paginated = await collectShopifyConnectionPages({
+      fetchPage: (after) =>
+        shopifyGraphQL<ProductQueryResponse>(
+          shopDomain,
+          accessToken,
+          PRODUCT_VARIANTS_QUERY,
+          { id: productId, after }
+        ),
+      getConnection: (page) => page.product?.variants,
+    })
+    const productData =
+      paginated.firstPage.product && paginated.connection
+        ? {
+            ...paginated.firstPage,
+            product: {
+              ...paginated.firstPage.product,
+              variants: paginated.connection,
+            },
+          }
+        : paginated.firstPage
+    const mapped = mapProductResolveData(productData)
+    if (productData.product) {
+      productResolveCache.set(cacheKey, mapped)
+      pruneProductResolveCache(now)
+    }
+    return mapped
+  })()
+  productResolveInFlight.set(cacheKey, request)
+  try {
+    return await request
+  } finally {
+    productResolveInFlight.delete(cacheKey)
   }
-  return mapped
 }
 
 export interface ResolveForMetadataInput {
@@ -308,6 +455,7 @@ export interface ResolveForMetadataInput {
   customerEmail?: string | null
   customerName?: string | null
   measurementPolicy?: string | null
+  measurementBasis?: 'full_page' | 'artwork_bounds' | null
   rollWidthIn?: number | string | null
   maxUploadWidth?: number | string | null
 }
@@ -322,10 +470,16 @@ export type EffectiveResolveConfig = BuilderResolveConfig & {
 export type ResolveForMetadataResult =
   | { kind: 'product_not_found' }
   | { kind: 'not_ready' }
-  | { kind: 'no_fit'; dimensions: UploadDimensions; config: EffectiveResolveConfig }
+  | {
+      kind: 'no_fit'
+      dimensions: UploadDimensions
+      canonicalMetadata: UploadLifecycleMetadata
+      config: EffectiveResolveConfig
+    }
   | {
       kind: 'ok'
       dimensions: UploadDimensions
+      canonicalMetadata: UploadLifecycleMetadata
       resolution: Record<string, unknown>
       config: EffectiveResolveConfig
       pricingMode: 'sheet' | 'linear_inches'
@@ -340,7 +494,11 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
   if (!productResolveData.productData.product) return { kind: 'product_not_found' }
 
   const baseBuilderConfig = (input.builderConfig || {}) as Record<string, unknown>
-  const policy = getPricingPolicy(shopDomain, shop.settings)
+  const pricingModel = resolveCustomerPricingModelState(shopDomain, shop.settings)
+  const policy = pricingModel.policy
+  const measurementBasis =
+    input.measurementBasis ||
+    (pricingModel.policyExplicit ? policy.measurementBasis : 'full_page')
   const appliedBuilderConfig = applyAlphaProBuilderDefaults(shopDomain, productId, baseBuilderConfig, shop.settings)
   const customerOffer = buildAlphaProCustomerOffer({
     shopDomain,
@@ -355,6 +513,27 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
     : appliedBuilderConfig) as Record<string, unknown>
   const shopMaxWidthLimit = policy.maxSheetWidthIn
   const useMainPolicy = shouldUseMainProductMeasurementPolicy(input.measurementPolicy)
+  const sheetWidthLimits = [
+    ...(useMainPolicy ? [getMainProductRollWidth(input.rollWidthIn)] : []),
+    ...(pricingModel.policyExplicit ? [shopMaxWidthLimit] : []),
+  ].filter((value): value is number => Number.isFinite(value) && value > 0)
+  const maxSheetWidthIn = sheetWidthLimits.length ? Math.min(...sheetWidthLimits) : null
+  const builderMaxWidth = parsePositiveNumber(rawBuilderConfig.maxWidthIn)
+  const requestMaxWidth = parsePositiveNumber(input.maxUploadWidth)
+  const configuredDesignWidths = [
+    builderMaxWidth,
+    requestMaxWidth,
+    ...(pricingModel.policyExplicit ? [shopMaxWidthLimit] : []),
+  ].filter(
+    (value): value is number => value != null
+  )
+  const maxDesignWidthIn = configuredDesignWidths.length
+    ? Math.min(...configuredDesignWidths)
+    : pricingModel.policyExplicit
+      ? shopMaxWidthLimit
+      : null
+  const configuredArtboardMargin = parseNonNegativeNumber(rawBuilderConfig.artboardMarginIn)
+  const configuredImageMargin = parseNonNegativeNumber(rawBuilderConfig.imageMarginIn)
   const effectiveConfig: EffectiveResolveConfig = {
     sheetOptionName:
       typeof rawBuilderConfig.sheetOptionName === 'string' ? rawBuilderConfig.sheetOptionName : null,
@@ -365,8 +544,12 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
     modalOptionNames: Array.isArray(rawBuilderConfig.modalOptionNames)
       ? rawBuilderConfig.modalOptionNames.map((value) => String(value || '').trim()).filter(Boolean)
       : [],
-    artboardMarginIn: DEFAULT_RESOLVE_CONFIG.artboardMarginIn,
-    imageMarginIn: DEFAULT_RESOLVE_CONFIG.imageMarginIn,
+    artboardMarginIn: pricingModel.policyExplicit
+      ? Math.max(configuredArtboardMargin ?? 0, policy.artboardMarginIn)
+      : configuredArtboardMargin ?? DEFAULT_RESOLVE_CONFIG.artboardMarginIn,
+    imageMarginIn: pricingModel.policyExplicit
+      ? Math.max(configuredImageMargin ?? 0, policy.imageMarginIn)
+      : configuredImageMargin ?? DEFAULT_RESOLVE_CONFIG.imageMarginIn,
     fitToleranceIn: policy.fitToleranceIn,
     selectionStrategy:
       policy.sheetSelection !== 'block_default'
@@ -374,12 +557,9 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
         : useMainPolicy
           ? 'smallest_fitting_sheet'
           : null,
-    maxWidthIn: Math.max(
-      parsePositiveNumber(input.maxUploadWidth) || 0,
-      parsePositiveNumber(rawBuilderConfig.maxWidthIn) || 0,
-      shopMaxWidthLimit || 0,
-      DEFAULT_RESOLVE_CONFIG.maxWidthIn
-    ),
+    maxDesignWidthIn,
+    maxSheetWidthIn,
+    maxWidthIn: maxDesignWidthIn || shopMaxWidthLimit || DEFAULT_RESOLVE_CONFIG.maxWidthIn,
   }
 
   const optionDefs = productResolveData.optionDefs
@@ -391,9 +571,8 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
         rollWidthIn: getMainProductRollWidth(input.rollWidthIn),
         sheetSizes: getMainProductSheetSizes(variants),
       })
-    : policy.measurementBasis === 'full_page'
-      ? applyFullCanvasMeasurementMetadata(input.rawMetadata)
-      : input.rawMetadata
+    : applyMeasurementBasisMetadata(input.rawMetadata, measurementBasis)
+  if (!resolvedMetadata) return { kind: 'not_ready' }
   const dimensions = metadataToUploadDimensions(resolvedMetadata)
   if (!dimensions) return { kind: 'not_ready' }
 
@@ -405,15 +584,26 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
       quantity,
       variants,
       selectedVariantId: input.selectedVariantId,
+      maxCrossRollWidthIn: effectiveConfig.maxSheetWidthIn || effectiveConfig.maxWidthIn,
+      maxDesignWidthIn: effectiveConfig.maxDesignWidthIn,
+      artboardMarginIn: effectiveConfig.artboardMarginIn,
+      fitToleranceIn: effectiveConfig.fitToleranceIn,
     })
-    if (linear) {
+    if (!linear) {
       return {
-        kind: 'ok',
+        kind: 'no_fit',
         dimensions,
-        resolution: linear,
-        config: { ...effectiveConfig, pricingMode: 'linear_inches', volumeDiscountTierUnit: 'linear_inches' },
-        pricingMode: 'linear_inches',
+        canonicalMetadata: resolvedMetadata,
+        config: effectiveConfig,
       }
+    }
+    return {
+      kind: 'ok',
+      dimensions,
+      canonicalMetadata: resolvedMetadata,
+      resolution: linear,
+      config: { ...effectiveConfig, pricingMode: 'linear_inches', volumeDiscountTierUnit: 'linear_inches' },
+      pricingMode: 'linear_inches',
     }
   }
 
@@ -426,9 +616,23 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
     selectedVariantId: input.selectedVariantId,
     config: effectiveConfig,
   })
-  if (!resolution) return { kind: 'no_fit', dimensions, config: effectiveConfig }
+  if (!resolution) {
+    return {
+      kind: 'no_fit',
+      dimensions,
+      canonicalMetadata: resolvedMetadata,
+      config: effectiveConfig,
+    }
+  }
 
-  return { kind: 'ok', dimensions, resolution: resolution as unknown as Record<string, unknown>, config: effectiveConfig, pricingMode: 'sheet' }
+  return {
+    kind: 'ok',
+    dimensions,
+    canonicalMetadata: resolvedMetadata,
+    resolution: resolution as unknown as Record<string, unknown>,
+    config: effectiveConfig,
+    pricingMode: 'sheet',
+  }
 }
 
 const ADOBE_DEFAULT_DPI = 72
