@@ -3,6 +3,8 @@ import {
   buildVolumeProgramPayload,
   deriveCustomerPricingModel,
   getPricingPolicy,
+  getRuntimeMeasurementBasis,
+  getRuntimePricingPolicy,
   normalizeVolumeProgram,
   pickVolumeTier,
   resolveCustomerPricingModelState,
@@ -76,6 +78,35 @@ describe('model derivation keeps legacy tenants on their engine', () => {
     expect(deriveCustomerPricingModel(OTHER, {})).toBe('off')
     expect(getPricingPolicy(OTHER, {}).measurementBasis).toBe('artwork_bounds')
     expect(getPricingPolicy(OTHER, {}).maxSheetWidthIn).toBe(22)
+  })
+
+  it('does not opt a legacy tenant into artwork-bounds measurement until policy is saved', () => {
+    expect(getPricingPolicy(ALPHA, alphaSettings).measurementBasis).toBe('artwork_bounds')
+    expect(getRuntimeMeasurementBasis(ALPHA, alphaSettings)).toBe('full_page')
+    expect(
+      getRuntimeMeasurementBasis(ALPHA, {
+        ...alphaSettings,
+        customerPricing: { policy: { measurementBasis: 'artwork_bounds' } },
+      })
+    ).toBe('artwork_bounds')
+    expect(getRuntimePricingPolicy(ALPHA, alphaSettings)).toMatchObject({
+      measurementBasis: 'full_page',
+      artboardMarginIn: 0,
+      imageMarginIn: 0,
+    })
+  })
+
+  it('does not treat a corrupt array policy as an explicit sizing opt-in', () => {
+    const state = resolveCustomerPricingModelState(OTHER, {
+      customerPricing: { policy: [] },
+    })
+
+    expect(state.policyExplicit).toBe(false)
+    expect(getRuntimePricingPolicy(OTHER, { customerPricing: { policy: [] } })).toMatchObject({
+      measurementBasis: 'full_page',
+      artboardMarginIn: 0,
+      imageMarginIn: 0,
+    })
   })
 
   it('an explicit model wins over derivation', () => {

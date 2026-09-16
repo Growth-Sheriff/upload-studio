@@ -4,14 +4,15 @@ import fs from 'fs/promises'
 import path from 'path'
 import { promisify } from 'util'
 import { inflateSync } from 'zlib'
+import {
+  computeSheetAnchoredInches,
+  resolveBestDimensions,
+} from './uploadLifecycle.server'
 
 const execAsync = promisify(exec)
-
-
-
-
-
-
+const IMAGE_COMMAND_TIMEOUT_MS = 10 * 60 * 1000
+const FAST_METADATA_PREFIX_BYTES = 2 * 1024 * 1024
+const MAX_EMBEDDED_TEXT_BYTES = 4 * 1024 * 1024
 
 const DEFAULT_SHEET_WIDTH_IN = 22
 
@@ -143,7 +144,9 @@ function parsePngTextChunk(chunkType: string, data: Buffer): string | null {
     if (chunkType === 'zTXt') {
       const separator = data.indexOf(0)
       if (separator < 0 || data[separator + 1] !== 0) return null
-      return inflateSync(data.subarray(separator + 2)).toString('utf8')
+      const compressed = data.subarray(separator + 2)
+      if (compressed.length > MAX_EMBEDDED_TEXT_BYTES) return null
+      return inflateSync(compressed, { maxOutputLength: MAX_EMBEDDED_TEXT_BYTES }).toString('utf8')
     }
 
     if (chunkType === 'iTXt') {
@@ -162,10 +165,11 @@ function parsePngTextChunk(chunkType: string, data: Buffer): string | null {
 
       const textBuffer = data.subarray(offset)
       if (compressionFlag === 1 && compressionMethod === 0) {
-        return inflateSync(textBuffer).toString('utf8')
+        if (textBuffer.length > MAX_EMBEDDED_TEXT_BYTES) return null
+        return inflateSync(textBuffer, { maxOutputLength: MAX_EMBEDDED_TEXT_BYTES }).toString('utf8')
       }
       if (compressionFlag === 0) {
-        return textBuffer.toString('utf8')
+        return textBuffer.subarray(0, MAX_EMBEDDED_TEXT_BYTES).toString('utf8')
       }
     }
   } catch {
@@ -652,7 +656,79 @@ function parseSvgLength(rawValue: string | undefined, fallback: number): number 
               ? numeric / 6
               : null
 
-  return Math.round(inches != null ? inches * 72 : numeric)
+  // Unitless SVG lengths and viewBox coordinates are CSS pixels (96/in).
+  // Normalize physical units into the same coordinate system so the stored
+  // pixel dimensions and DPI produce the same inches as the browser probe.
+  return Math.round(inches != null ? inches * 96 : numeric)
+}
+
+export function parseSvgDocumentInfo(source: string) {
+  const svgTag = source.match(/<svg\b[^>]*>/i)?.[0] || source
+  const widthMatch = svgTag.match(/\bwidth\s*=\s*["']([^"']+)["']/i)
+  const heightMatch = svgTag.match(/\bheight\s*=\s*["']([^"']+)["']/i)
+  const viewBoxMatch = svgTag.match(
+    /\bviewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)\s*["']/i
+  )
+  const fallbackWidth = viewBoxMatch ? parseFloat(viewBoxMatch[1]) : 0
+  const fallbackHeight = viewBoxMatch ? parseFloat(viewBoxMatch[2]) : 0
+  return {
+    width: parseSvgLength(widthMatch?.[1], fallbackWidth),
+    height: parseSvgLength(heightMatch?.[1], fallbackHeight),
+    dpi: 96,
+    dpiSource: 'svg_document_size',
+    colorspace: 'sRGB',
+    hasAlpha: true,
+    format: 'SVG',
+  }
+}
+
+/** Read only enough file prefix to decide whether a raster needs the shared
+ * large-image slot. Full metadata extraction and decode validation happen
+ * after the lease is acquired. */
+export async function getImageDimensionsFast(
+  filePath: string,
+  mimeType: string
+): Promise<{ width: number; height: number } | null> {
+  if (
+    ![
+      'image/png',
+      'image/jpeg',
+      'image/webp',
+      'image/tiff',
+      'image/vnd.adobe.photoshop',
+      'application/x-photoshop',
+      'image/x-psd',
+    ].includes(mimeType)
+  ) {
+    return null
+  }
+
+  const stats = await fs.stat(filePath)
+  const bytesToRead = Math.min(stats.size, FAST_METADATA_PREFIX_BYTES)
+  if (bytesToRead < 24) return null
+
+  const buffer = Buffer.alloc(bytesToRead)
+  const handle = await fs.open(filePath, 'r')
+  try {
+    await handle.read(buffer, 0, bytesToRead, 0)
+  } finally {
+    await handle.close()
+  }
+
+  const info =
+    mimeType === 'image/png'
+      ? parsePngInfo(buffer)
+      : mimeType === 'image/jpeg'
+        ? parseJpegInfo(buffer)
+        : mimeType === 'image/webp'
+          ? parseWebpInfo(buffer)
+          : mimeType === 'image/tiff'
+            ? parseTiffInfo(buffer)
+            : parsePsdInfo(buffer)
+
+  return info && info.width > 0 && info.height > 0
+    ? { width: info.width, height: info.height }
+    : null
 }
 
 async function getImageInfoWithoutImagemagick(filePath: string, mimeType: string) {
@@ -677,7 +753,10 @@ async function getImageInfoWithoutImagemagick(filePath: string, mimeType: string
       // DOS EPS wrapper: measure the extracted pure PostScript instead.
       const extractedForBbox = await extractDosEpsPostScript(filePath).catch(() => null)
       if (extractedForBbox) filePath = extractedForBbox
-      const { stdout, stderr } = await execAsync(`gs -q -dNOPAUSE -dBATCH -sDEVICE=bbox "${filePath}"`)
+      const { stdout, stderr } = await execAsync(
+        `gs -q -dNOPAUSE -dBATCH -sDEVICE=bbox "${filePath}"`,
+        { timeout: IMAGE_COMMAND_TIMEOUT_MS }
+      )
       const output = `${stdout}\n${stderr}`
       const match =
         output.match(/%%HiResBoundingBox:\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)/) ||
@@ -731,21 +810,7 @@ async function getImageInfoWithoutImagemagick(filePath: string, mimeType: string
   }
 
   if (mimeType === 'image/svg+xml') {
-    const source = buffer.toString('utf8')
-    const widthMatch = source.match(/\bwidth="([^"]+)"/i)
-    const heightMatch = source.match(/\bheight="([^"]+)"/i)
-    const viewBoxMatch = source.match(/\bviewBox="[^"]*?(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)"/i)
-    const fallbackWidth = viewBoxMatch ? parseFloat(viewBoxMatch[1]) : 0
-    const fallbackHeight = viewBoxMatch ? parseFloat(viewBoxMatch[2]) : 0
-    return {
-      width: parseSvgLength(widthMatch?.[1], fallbackWidth),
-      height: parseSvgLength(heightMatch?.[1], fallbackHeight),
-      dpi: 72,
-      dpiSource: 'svg_document_size',
-      colorspace: 'sRGB',
-      hasAlpha: true,
-      format: 'SVG',
-    }
+    return parseSvgDocumentInfo(buffer.toString('utf8'))
   }
 
   return null
@@ -793,6 +858,11 @@ export interface PreflightConfig {
   maxPages: number
   allowedFormats: string[]
   requireTransparency: boolean
+
+  /** Trim analysis is expensive and is only needed after a merchant explicitly
+   * opts into artwork-bounds measurement. Raw metadata remains full-page so
+   * each downstream surface can apply the same policy projection. */
+  measurementBasis?: 'full_page' | 'artwork_bounds'
 
 
 
@@ -982,19 +1052,11 @@ export async function getImageInfo(filePath: string): Promise<{
     ? await getImageInfoWithoutImagemagick(filePath, detectedType).catch(() => null)
     : null
 
-  if (
-    nativeInfo &&
-    nativeInfo.width > 0 &&
-    nativeInfo.height > 0 &&
-    (detectedType === 'image/png' || detectedType === 'image/jpeg' || detectedType === 'image/webp')
-  ) {
-    return nativeInfo
-  }
-
   try {
 
     const { stdout } = await execAsync(
-      `identify -format "%w|%h|%x|%y|%U|%[colorspace]|%[channels]|%m" "${filePath}[0]"`
+      `identify -format "%w|%h|%x|%y|%U|%[colorspace]|%[channels]|%m" "${filePath}[0]"`,
+      { timeout: IMAGE_COMMAND_TIMEOUT_MS }
     )
 
     const parts = stdout.trim().split('|')
@@ -1043,22 +1105,31 @@ export async function getImageInfo(filePath: string): Promise<{
     }
   } catch (error) {
     console.error('[Preflight] ImageMagick identify failed:', error)
-
-    if (detectedType) {
-      const fallbackInfo = await getImageInfoWithoutImagemagick(filePath, detectedType)
-      if (fallbackInfo && fallbackInfo.width > 0 && fallbackInfo.height > 0) {
-        console.warn('[Preflight] Falling back to native image metadata parser:', detectedType)
-        return fallbackInfo
-      }
-    }
-
-    throw new Error('Failed to analyze image')
+    // Native parsers establish document dimensions/DPI, but do not prove the
+    // raster is complete. Never turn a valid-looking truncated header into an
+    // orderable upload when ImageMagick cannot decode the file.
+    throw new ImageAnalysisError('Failed to analyze image', { cause: error })
   }
 }
 
-async function getTrimmedImageBounds(
+export class ImageAnalysisError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options)
+    this.name = 'ImageAnalysisError'
+  }
+}
+
+export class ArtworkBoundsAnalysisError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options)
+    this.name = 'ArtworkBoundsAnalysisError'
+  }
+}
+
+export async function getTrimmedImageBounds(
   filePath: string,
-  imageInfo: Pick<MeasuredImageInfo, 'width' | 'height' | 'hasAlpha'>
+  imageInfo: Pick<MeasuredImageInfo, 'width' | 'height' | 'hasAlpha'>,
+  executeCommand: typeof execAsync = execAsync
 ): Promise<{
   trimmedWidth: number
   trimmedHeight: number
@@ -1077,28 +1148,15 @@ async function getTrimmedImageBounds(
   }
 
   try {
-    // Gang sheets above ~30 megapixels are trimmed on a 1/4 sample: the bounds
-    // are only needed to the nearest few pixels and this cuts a 150 s
-    // measurement of a 160 MP file to well under 30 s.
-    const pixels = imageInfo.width * imageInfo.height
-    const sampleFactor = pixels > 30_000_000 ? 4 : 1
-    const sampleFlag = sampleFactor > 1 ? ` -sample ${Math.round(100 / sampleFactor)}%` : ''
-    const { stdout } = await execAsync(
-      `convert -limit memory 1GiB -limit map 2GiB "${filePath}[0]"${sampleFlag} -alpha extract -auto-level -threshold 0 -trim -format "%@" info:`,
-      { maxBuffer: 1024 * 1024 }
+    const { stdout } = await executeCommand(
+      `convert -limit memory 1GiB -limit map 2GiB "${filePath}[0]" -alpha extract -auto-level -threshold 0 -trim -format "%@" info:`,
+      { maxBuffer: 1024 * 1024, timeout: IMAGE_COMMAND_TIMEOUT_MS }
     )
     const bounds = stdout.trim().match(/^(\d+)x(\d+)\+(-?\d+)\+(-?\d+)$/)
     let trimmedWidth = bounds ? parseInt(bounds[1], 10) : 0
     let trimmedHeight = bounds ? parseInt(bounds[2], 10) : 0
     let trimmedOffsetX = bounds ? parseInt(bounds[3], 10) : 0
     let trimmedOffsetY = bounds ? parseInt(bounds[4], 10) : 0
-    if (sampleFactor > 1 && trimmedWidth > 0 && trimmedHeight > 0) {
-      trimmedOffsetX = Math.max(0, trimmedOffsetX * sampleFactor - sampleFactor)
-      trimmedOffsetY = Math.max(0, trimmedOffsetY * sampleFactor - sampleFactor)
-      trimmedWidth = Math.min(imageInfo.width - trimmedOffsetX, trimmedWidth * sampleFactor + sampleFactor * 2)
-      trimmedHeight = Math.min(imageInfo.height - trimmedOffsetY, trimmedHeight * sampleFactor + sampleFactor * 2)
-    }
-
     if (trimmedWidth > 0 && trimmedHeight > 0) {
       return {
         trimmedWidth,
@@ -1109,16 +1167,13 @@ async function getTrimmedImageBounds(
           trimmedWidth !== imageInfo.width || trimmedHeight !== imageInfo.height ? 'trimmed' : 'full',
       }
     }
+    throw new ArtworkBoundsAnalysisError('Artwork bounds analysis returned no visible pixels')
   } catch (error) {
-    console.warn('[Preflight] Transparent trim analysis failed:', error)
-  }
-
-  return {
-    trimmedWidth: imageInfo.width,
-    trimmedHeight: imageInfo.height,
-    trimmedOffsetX: 0,
-    trimmedOffsetY: 0,
-    measurementMode: 'full',
+    console.warn('[Preflight] Required artwork-bounds analysis failed:', error)
+    if (error instanceof ArtworkBoundsAnalysisError) throw error
+    throw new ArtworkBoundsAnalysisError('Artwork bounds analysis failed', {
+      cause: error,
+    })
   }
 }
 
@@ -1130,7 +1185,9 @@ export async function getPdfInfo(filePath: string): Promise<{
 }> {
   try {
 
-    const { stdout } = await execAsync(`pdfinfo "${filePath}"`)
+    const { stdout } = await execAsync(`pdfinfo "${filePath}"`, {
+      timeout: IMAGE_COMMAND_TIMEOUT_MS,
+    })
 
     const pagesMatch = stdout.match(/Pages:\s+(\d+)/)
     const sizeMatch = stdout.match(/Page size:\s+([\d.]+)\s+x\s+([\d.]+)/)
@@ -1170,7 +1227,7 @@ export async function convertPdfToPng(
   for (const cmd of commands) {
     try {
 
-      await execAsync(cmd)
+      await execAsync(cmd, { timeout: IMAGE_COMMAND_TIMEOUT_MS })
 
       const stats = await fs.stat(outputPath).catch(() => null)
       if (stats && stats.size > 100) {
@@ -1193,13 +1250,15 @@ export async function getPdfPageCount(inputPath: string): Promise<number> {
 
   try {
 
-    const { stdout } = await execAsync(cmd)
+    const { stdout } = await execAsync(cmd, { timeout: IMAGE_COMMAND_TIMEOUT_MS })
     const pageCount = parseInt(stdout.trim(), 10)
     return isNaN(pageCount) ? 1 : pageCount
   } catch (error) {
 
     try {
-      const { stdout } = await execAsync(`pdfinfo "${inputPath}" | grep Pages`)
+      const { stdout } = await execAsync(`pdfinfo "${inputPath}" | grep Pages`, {
+        timeout: IMAGE_COMMAND_TIMEOUT_MS,
+      })
       const match = stdout.match(/Pages:\s*(\d+)/)
       return match ? parseInt(match[1], 10) : 1
     } catch {
@@ -1236,7 +1295,7 @@ export async function convertEpsToPng(
   for (const cmd of commands) {
     try {
 
-      await execAsync(cmd)
+      await execAsync(cmd, { timeout: IMAGE_COMMAND_TIMEOUT_MS })
 
       const stats = await fs.stat(outputPath).catch(() => null)
       if (stats && stats.size > 100) {
@@ -1261,7 +1320,7 @@ export async function convertTiffToPng(inputPath: string, outputPath: string): P
 
   try {
 
-    await execAsync(cmd)
+    await execAsync(cmd, { timeout: IMAGE_COMMAND_TIMEOUT_MS })
   } catch (error) {
     console.error('[Preflight] TIFF conversion failed:', error)
     throw new Error('TIFF conversion failed')
@@ -1277,7 +1336,7 @@ export async function convertPsdToPng(inputPath: string, outputPath: string): Pr
 
   try {
 
-    await execAsync(cmd)
+    await execAsync(cmd, { timeout: IMAGE_COMMAND_TIMEOUT_MS })
   } catch (error) {
     console.error('[Preflight] PSD conversion failed:', error)
     throw new Error('PSD conversion failed')
@@ -1294,7 +1353,7 @@ export async function generateThumbnail(
 
   try {
 
-    await execAsync(cmd)
+    await execAsync(cmd, { timeout: IMAGE_COMMAND_TIMEOUT_MS })
 
     const stats = await fs.stat(outputPath).catch(() => null)
     if (!stats || stats.size < 100) {
@@ -1302,21 +1361,9 @@ export async function generateThumbnail(
     }
   } catch (error) {
     console.error('[Preflight] Thumbnail generation failed:', error)
-
-
-    try {
-      console.log('[Preflight] Creating fallback placeholder thumbnail with file format label')
-
-      const ext = path.extname(inputPath).toLowerCase().replace('.', '').toUpperCase() || 'FILE'
-      const fallbackCmd = `convert -size ${maxSize}x${maxSize} xc:#f3f4f6 -gravity center -pointsize 64 -fill "#6b7280" -font "DejaVu-Sans-Bold" -annotate 0 "${ext}" -quality 85 "${outputPath}"`
-      await execAsync(fallbackCmd)
-      console.log('[Preflight] Fallback thumbnail created successfully with label:', ext)
-      return
-    } catch (fallbackError) {
-      console.error('[Preflight] Fallback thumbnail also failed:', fallbackError)
-    }
-
-    throw new Error('Thumbnail generation failed')
+    // The preview worker owns placeholder generation so it can persist a
+    // truthful placeholder warning and a distinguishable storage key.
+    throw new Error('Thumbnail generation failed', { cause: error })
   }
 }
 
@@ -1411,7 +1458,16 @@ export async function runPreflightChecks(
 
   try {
     const imageInfo = await getImageInfo(filePath)
-    const trimmedBounds = await getTrimmedImageBounds(filePath, imageInfo)
+    const trimmedBounds =
+      config.measurementBasis === 'artwork_bounds'
+        ? await getTrimmedImageBounds(filePath, imageInfo)
+        : {
+            trimmedWidth: imageInfo.width,
+            trimmedHeight: imageInfo.height,
+            trimmedOffsetX: 0,
+            trimmedOffsetY: 0,
+            measurementMode: 'full' as const,
+          }
     const measurementWidth = imageInfo.width
     const measurementHeight = imageInfo.height
 
@@ -1433,28 +1489,26 @@ export async function runPreflightChecks(
 
 
 
-    const shortSheetIn =
-      sheetLengthIn !== undefined ? Math.min(sheetWidthIn, sheetLengthIn) : sheetWidthIn
-    const shortSidePx = Math.min(measurementWidth, measurementHeight)
-    const longSidePx = Math.max(measurementWidth, measurementHeight)
-    const isPortrait = measurementHeight >= measurementWidth
-    const longSideIn = shortSidePx > 0
-      ? (longSidePx / shortSidePx) * shortSheetIn
-      : shortSheetIn
-    const widthIn = Number((isPortrait ? shortSheetIn : longSideIn).toFixed(2))
-    const heightIn = Number((isPortrait ? longSideIn : shortSheetIn).toFixed(2))
-
-
-
-
-    const effectiveDpi = shortSidePx > 0
-      ? Math.round(shortSidePx / shortSheetIn)
-      : 0
-    const sizingSource = 'sheet_width_anchor'
+    const anchored = computeSheetAnchoredInches(
+      measurementWidth,
+      measurementHeight,
+      sheetWidthIn,
+      sheetLengthIn
+    )
+    const resolvedDimensions = resolveBestDimensions(
+      measurementWidth,
+      measurementHeight,
+      imageInfo.dpi,
+      anchored,
+      'sheet_width_anchor'
+    )
+    const { widthIn, heightIn, effectiveDpi, sizingSource } = resolvedDimensions
     const sizingSourceDetail =
-      imageInfo.dpi > 0
-        ? `sheet_anchor (embedded_dpi=${imageInfo.dpi}, source=${imageInfo.dpiSource || 'unknown'})`
-        : 'sheet_anchor (no_embedded_dpi)'
+      sizingSource === 'document_dpi'
+        ? `document_dpi (${imageInfo.dpi}, source=${imageInfo.dpiSource || 'unknown'})`
+        : sizingSource === 'adobe_default_dpi'
+          ? 'adobe_default_dpi (72)'
+          : 'sheet_anchor (no_embedded_dpi)'
 
 
     if (effectiveDpi <= 0) {
@@ -1538,6 +1592,12 @@ export async function runPreflightChecks(
     })
     if (!colorOk && overall === 'ok') overall = 'warning'
   } catch (error) {
+    // An explicitly selected artwork-bounds policy is a billing rule. A trim
+    // timeout or parse failure must retry/fail closed, never silently publish
+    // the larger full page as if the requested measurement succeeded.
+    if (error instanceof ArtworkBoundsAnalysisError || error instanceof ImageAnalysisError) {
+      throw error
+    }
     checks.push({
       name: 'imageAnalysis',
       status: 'error',

@@ -384,7 +384,9 @@ export function resolveCustomerPricingModelState(
   const model = explicit ? (pricing.model as CustomerPricingModel) : deriveCustomerPricingModel(shopDomain, settings)
   const priority = text(pricing.priority) === 'volume_first' ? 'volume_first' : 'status_first'
   const defaults = derivePolicyDefaults(shopDomain)
-  const policyExplicit = Boolean(pricing.policy && typeof pricing.policy === 'object')
+  const policyExplicit = Boolean(
+    pricing.policy && typeof pricing.policy === 'object' && !Array.isArray(pricing.policy)
+  )
 
   return {
     model,
@@ -399,6 +401,36 @@ export function resolveCustomerPricingModelState(
 
 export function getPricingPolicy(shopDomain: string | null | undefined, rawSettings: unknown): CustomerPricingPolicy {
   return resolveCustomerPricingModelState(shopDomain, rawSettings).policy
+}
+
+/**
+ * Older tenants predate the policy object and have always been measured as a
+ * full page, even when their newly-derived UI default says artwork bounds.
+ * Only an explicitly saved policy opts a tenant into trim-based billing.
+ */
+export function getRuntimeMeasurementBasis(
+  shopDomain: string | null | undefined,
+  rawSettings: unknown
+): MeasurementBasis {
+  const state = resolveCustomerPricingModelState(shopDomain, rawSettings)
+  return state.policyExplicit ? state.policy.measurementBasis : 'full_page'
+}
+
+/** The policy shape a legacy tenant must see before its first explicit save.
+ * Older resolver paths used full-page sizing with zero implicit margins; the
+ * editor must not turn an unrelated rate edit into a sizing-policy opt-in. */
+export function getRuntimePricingPolicy(
+  shopDomain: string | null | undefined,
+  rawSettings: unknown
+): CustomerPricingPolicy {
+  const state = resolveCustomerPricingModelState(shopDomain, rawSettings)
+  if (state.policyExplicit) return state.policy
+  return {
+    ...state.policy,
+    measurementBasis: 'full_page',
+    artboardMarginIn: 0,
+    imageMarginIn: 0,
+  }
 }
 
 export function isVolumeTiersEnabled(shopDomain: string | null | undefined, rawSettings: unknown): boolean {
@@ -617,4 +649,3 @@ export function resolveEffectivePricing({
   }
   return { source: 'none', context: statusContext, volumeOffer, volumeTiers: volumeOffer ? volumeOffer.tiers : [], model }
 }
-

@@ -1,11 +1,121 @@
 import { describe, expect, it } from 'vitest'
 import {
+  applyArtworkBoundsMeasurementMetadata,
   applyFullCanvasMeasurementMetadata,
   computeDocumentDpiInches,
   computeRollWidthAnchoredInches,
   computeSheetAnchoredInches,
+  deriveUploadClientStatus,
   deriveUploadItemLifecycle,
+  getStoredMeasurementBasis,
 } from './uploadLifecycle.server'
+
+describe('getStoredMeasurementBasis', () => {
+  it('keeps the basis captured when the upload was created', () => {
+    expect(getStoredMeasurementBasis({ measurementBasis: 'full_page' }, 'artwork_bounds')).toBe(
+      'full_page'
+    )
+    expect(getStoredMeasurementBasis({ measurementBasis: 'artwork_bounds' }, 'full_page')).toBe(
+      'artwork_bounds'
+    )
+  })
+
+  it('freezes legacy rows without a valid snapshot to their historical full-page basis', () => {
+    expect(getStoredMeasurementBasis(null, 'full_page')).toBe('full_page')
+    expect(getStoredMeasurementBasis({ measurementBasis: 'trimmed' }, 'artwork_bounds')).toBe(
+      'full_page'
+    )
+    expect(getStoredMeasurementBasis(null, 'artwork_bounds')).toBe('full_page')
+  })
+})
+
+describe('stored main-product projection', () => {
+  it('keeps the persisted sheet snap on later lifecycle reads', () => {
+    const lifecycle = deriveUploadItemLifecycle({
+      preflightStatus: 'ok',
+      thumbnailKey: 'thumb.webp',
+      preflightResult: {
+        measurementBasis: 'full_page',
+        measurementProjection: {
+          version: 1,
+          policy: 'main_product_roll_width',
+          rollWidthIn: 22,
+        },
+        metadata: {
+          widthPx: 2200,
+          heightPx: 2385,
+          measurementWidthPx: 2200,
+          measurementHeightPx: 2385,
+          effectiveDpi: 100,
+          sizingSource: 'sheet_width_anchor',
+          sheetWidthIn: 22,
+          sheetLengthIn: 24,
+          widthIn: 22,
+          heightIn: 24,
+          measurementMode: 'full',
+        },
+      },
+    })
+
+    const applied = applyFullCanvasMeasurementMetadata(lifecycle.metadata)
+    expect(applied?.widthIn).toBe(22)
+    expect(applied?.heightIn).toBe(24)
+  })
+})
+
+describe('orderability safety', () => {
+  it('blocks a policy error even when usable measurement metadata exists', () => {
+    const lifecycle = deriveUploadItemLifecycle({
+      preflightStatus: 'error',
+      preflightResult: {
+        metadata: {
+          widthPx: 6600,
+          heightPx: 3600,
+          measurementWidthPx: 6600,
+          measurementHeightPx: 3600,
+          widthIn: 22,
+          heightIn: 12,
+          effectiveDpi: 300,
+          sizingSource: 'document_dpi',
+        },
+        problems: [
+          {
+            scope: 'policy',
+            code: 'fileSize',
+            severity: 'error',
+            message: 'File exceeds the configured size limit.',
+          },
+        ],
+      },
+      thumbnailKey: 'upload_thumb.webp',
+    })
+
+    expect(lifecycle.measurementStatus).toBe('ready')
+    expect(lifecycle.orderabilityStatus).toBe('blocked')
+    expect(lifecycle.canAddToCart).toBe(false)
+  })
+
+  it('does not report a blocked parent upload as ready', () => {
+    const readyItem = deriveUploadItemLifecycle({
+      preflightStatus: 'ok',
+      preflightResult: {
+        metadata: {
+          widthPx: 3000,
+          heightPx: 6000,
+          measurementWidthPx: 3000,
+          measurementHeightPx: 6000,
+          widthIn: 10,
+          heightIn: 20,
+          effectiveDpi: 300,
+          sizingSource: 'document_dpi',
+        },
+      },
+      thumbnailKey: 'upload_thumb.webp',
+    })
+
+    expect(deriveUploadClientStatus('blocked', [readyItem])).toBe('error')
+  })
+})
 
 describe('computeSheetAnchoredInches', () => {
 
@@ -437,5 +547,59 @@ describe('applyFullCanvasMeasurementMetadata — uses documentDpi when present',
     expect(result?.widthIn).toBe(54.77)
     expect(result?.heightIn).toBe(22)
     expect(result?.sizingSource).toBe('document_dpi')
+  })
+})
+
+describe('applyArtworkBoundsMeasurementMetadata', () => {
+  it('crops transparent whitespace without changing the established physical scale', () => {
+    const result = applyArtworkBoundsMeasurementMetadata({
+      widthPx: 3000,
+      heightPx: 6000,
+      dpi: 300,
+      documentDpi: 300,
+      documentDpiSource: 'png_phys',
+      trimmedWidthPx: 2400,
+      trimmedHeightPx: 5100,
+      trimmedOffsetXPx: 300,
+      trimmedOffsetYPx: 450,
+      measurementWidthPx: 3000,
+      measurementHeightPx: 6000,
+      effectiveDpi: 300,
+      sizingSource: 'document_dpi',
+      sheetWidthIn: 22,
+      widthIn: 10,
+      heightIn: 20,
+      measurementMode: 'full',
+    })
+
+    expect(result?.measurementWidthPx).toBe(2400)
+    expect(result?.measurementHeightPx).toBe(5100)
+    expect(result?.widthIn).toBe(8)
+    expect(result?.heightIn).toBe(17)
+    expect(result?.measurementMode).toBe('trimmed')
+  })
+
+  it('uses the full-page anchor scale instead of stretching trimmed art to roll width', () => {
+    const result = applyArtworkBoundsMeasurementMetadata({
+      widthPx: 2200,
+      heightPx: 6000,
+      dpi: 0,
+      documentDpi: 0,
+      trimmedWidthPx: 1100,
+      trimmedHeightPx: 3000,
+      trimmedOffsetXPx: 550,
+      trimmedOffsetYPx: 1500,
+      measurementWidthPx: 2200,
+      measurementHeightPx: 6000,
+      effectiveDpi: 100,
+      sizingSource: 'sheet_width_anchor',
+      sheetWidthIn: 22,
+      widthIn: 22,
+      heightIn: 60,
+      measurementMode: 'full',
+    })
+
+    expect(result?.widthIn).toBe(11)
+    expect(result?.heightIn).toBe(30)
   })
 })

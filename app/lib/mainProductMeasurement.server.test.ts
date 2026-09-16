@@ -3,6 +3,8 @@ import {
   applyMainProductMeasurementPolicy,
   getMainProductSheetSizes,
   MAIN_PRODUCT_MEASUREMENT_POLICY,
+  resolveUploadIntentMeasurementBasis,
+  resolveServerMainProductRollWidth,
 } from './mainProductMeasurement.server'
 import {
   resolveSheetVariant,
@@ -34,6 +36,16 @@ function measurement(overrides: Partial<UploadLifecycleMetadata>): UploadLifecyc
     ...overrides,
   }
 }
+
+describe('resolveUploadIntentMeasurementBasis', () => {
+  it('lets only the exact main-product marker select full-page intent', () => {
+    expect(resolveUploadIntentMeasurementBasis('artwork_bounds', MAIN_PRODUCT_MEASUREMENT_POLICY)).toBe(
+      'full_page'
+    )
+    expect(resolveUploadIntentMeasurementBasis('artwork_bounds', 'other')).toBe('artwork_bounds')
+    expect(resolveUploadIntentMeasurementBasis('full_page', null)).toBe('full_page')
+  })
+})
 
 describe('applyMainProductMeasurementPolicy', () => {
   it('preserves document-DPI truth for metreicin-style uploads', () => {
@@ -187,6 +199,61 @@ describe('applyMainProductMeasurementPolicy', () => {
     expect(result?.widthIn).toBe(54.77)
     expect(result?.heightIn).toBe(22)
     expect(result?.sizingSource).toBe('sheet_width_anchor')
+  })
+
+  it('inherits the server-measured roll width when no provisional width is supplied', () => {
+    const result = applyMainProductMeasurementPolicy(
+      measurement({
+        widthPx: 2250,
+        heightPx: 4500,
+        measurementWidthPx: 2250,
+        measurementHeightPx: 4500,
+        sheetWidthIn: 22.5,
+        sizingSource: 'sheet_width_anchor',
+        widthIn: 22.5,
+        heightIn: 45,
+      }),
+      { measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY }
+    )
+
+    expect(result?.sheetWidthIn).toBe(22.5)
+    expect(result?.widthIn).toBe(22.5)
+    expect(result?.heightIn).toBe(45)
+  })
+})
+
+describe('resolveServerMainProductRollWidth', () => {
+  it('preserves the legacy 22-inch main-product default', () => {
+    expect(resolveServerMainProductRollWidth(null)).toBe(22)
+  })
+
+  it('uses a dedicated server-side roll width instead of maxWidthIn', () => {
+    expect(resolveServerMainProductRollWidth({ rollWidthIn: 24, maxWidthIn: 1 })).toBe(24)
+  })
+
+  it('keeps the legacy maxWidthIn roll anchor until rollWidthIn is explicitly saved', () => {
+    expect(resolveServerMainProductRollWidth({ maxWidthIn: 22.5 })).toBe(22.5)
+    expect(resolveServerMainProductRollWidth({ maxWidthIn: 60, maxHeightIn: 35.75 })).toBe(35.75)
+  })
+
+  it('enforces an explicitly saved shop width limit', () => {
+    expect(
+      resolveServerMainProductRollWidth(
+        { rollWidthIn: 24 },
+        { policyExplicit: true, maxSheetWidthIn: 22.5 }
+      )
+    ).toBe(22.5)
+  })
+
+  it('rejects corrupt roll widths outside the admin contract', () => {
+    expect(resolveServerMainProductRollWidth({ rollWidthIn: 0.01 })).toBe(22)
+    expect(resolveServerMainProductRollWidth({ rollWidthIn: 121 })).toBe(22)
+    expect(
+      resolveServerMainProductRollWidth(
+        { rollWidthIn: 24 },
+        { policyExplicit: true, maxSheetWidthIn: 0.01 }
+      )
+    ).toBe(24)
   })
 })
 

@@ -39,6 +39,30 @@ describe('ULFileProbe.parseBytes', () => {
     expect(r.confident).toBe(true)
   })
 
+  it('PNG: prefers Adobe XMP resolution over a conflicting pHYs default', () => {
+    const ihdr = [...u32(13), ...ascii('IHDR'), ...u32(6600), ...u32(3600), 8, 6, 0, 0, 0, 0, 0, 0, 0]
+    const ppm = Math.round(72 / 0.0254)
+    const phys = [...u32(9), ...ascii('pHYs'), ...u32(ppm), ...u32(ppm), 1, 0, 0, 0, 0]
+    const xmp = ascii('XML:com.adobe.xmp\0<rdf:Description tiff:XResolution="300/1" tiff:YResolution="300/1" tiff:ResolutionUnit="2"/>')
+    const text = [...u32(xmp.length), ...ascii('tEXt'), ...xmp, 0, 0, 0, 0]
+    const r = probe.parseBytes(buf([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...ihdr, ...phys, ...text]))
+
+    expect(r.dpi).toBe(300)
+    expect(r.dpiSource).toBe('xmp_resolution')
+    expect(r.widthIn).toBe(22)
+  })
+
+  it('PNG: ignores anisotropic pHYs density like the server', () => {
+    const ihdr = [...u32(13), ...ascii('IHDR'), ...u32(6600), ...u32(3600), 8, 6, 0, 0, 0, 0, 0, 0, 0]
+    const xPpm = Math.round(300 / 0.0254)
+    const yPpm = Math.round(150 / 0.0254)
+    const phys = [...u32(9), ...ascii('pHYs'), ...u32(xPpm), ...u32(yPpm), 1, 0, 0, 0, 0]
+    const r = probe.parseBytes(buf([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...ihdr, ...phys]))
+
+    expect(r.dpi).toBe(0)
+    expect(r.dpiSource).toBeNull()
+  })
+
   it('JPEG: SOF0 size + JFIF dpi', () => {
     const jfif = [0xff, 0xe0, 0x00, 0x10, ...ascii('JFIF'), 0, 1, 1, 1, 0x00, 0x96, 0x00, 0x96, 0, 0] // 150 dpi
     const sof0 = [0xff, 0xc0, 0x00, 0x11, 8, 0x04, 0xb0, 0x06, 0x40, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1] // 1200x1600
@@ -48,6 +72,15 @@ describe('ULFileProbe.parseBytes', () => {
     expect(r.heightPx).toBe(1200)
     expect(r.dpi).toBe(150)
     expect(r.widthIn).toBeCloseTo(10.67, 1)
+  })
+
+  it('JPEG: ignores anisotropic JFIF density like the server', () => {
+    const jfif = [0xff, 0xe0, 0x00, 0x10, ...ascii('JFIF'), 0, 1, 1, 1, 0x00, 0x96, 0x00, 0x48, 0, 0]
+    const sof0 = [0xff, 0xc0, 0x00, 0x11, 8, 0x04, 0xb0, 0x06, 0x40, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]
+    const r = probe.parseBytes(buf([0xff, 0xd8, ...jfif, ...sof0, 0xff, 0xd9]))
+
+    expect(r.dpi).toBe(0)
+    expect(r.dpiSource).toBeNull()
   })
 
   it('TIFF little-endian: IFD size + resolution', () => {

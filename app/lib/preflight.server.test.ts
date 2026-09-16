@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { parsePngInfo } from './preflight.server'
+import {
+  ArtworkBoundsAnalysisError,
+  getTrimmedImageBounds,
+  parsePngInfo,
+  parseSvgDocumentInfo,
+} from './preflight.server'
+
+describe('SVG physical sizing', () => {
+  it('uses the CSS 96 px/in convention for unitless dimensions and viewBox', () => {
+    const viewBox = parseSvgDocumentInfo('<svg viewBox="0 0 960 480"></svg>')
+    expect(viewBox).toMatchObject({ width: 960, height: 480, dpi: 96 })
+    expect(viewBox.width / viewBox.dpi).toBe(10)
+    expect(viewBox.height / viewBox.dpi).toBe(5)
+
+    const physical = parseSvgDocumentInfo("<svg width='11in' height='6in'></svg>")
+    expect(physical).toMatchObject({ width: 1056, height: 576, dpi: 96 })
+  })
+})
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
@@ -80,5 +97,39 @@ describe('parsePngInfo', () => {
 
     expect(info?.dpi).toBe(0)
     expect(info?.dpiSource).toBeNull()
+  })
+})
+
+describe('required artwork-bounds analysis', () => {
+  it('fails closed when transparent trim analysis cannot run', async () => {
+    const failingExecutor = (async () => {
+      throw new Error('convert timed out')
+    }) as unknown as Parameters<typeof getTrimmedImageBounds>[2]
+
+    await expect(
+      getTrimmedImageBounds(
+        'transparent.png',
+        { width: 3000, height: 6000, hasAlpha: true },
+        failingExecutor
+      )
+    ).rejects.toBeInstanceOf(ArtworkBoundsAnalysisError)
+  })
+
+  it('does not invoke trim for an image without an alpha channel', async () => {
+    const unexpectedExecutor = (async () => {
+      throw new Error('should not be called')
+    }) as unknown as Parameters<typeof getTrimmedImageBounds>[2]
+
+    await expect(
+      getTrimmedImageBounds(
+        'opaque.jpg',
+        { width: 3000, height: 6000, hasAlpha: false },
+        unexpectedExecutor
+      )
+    ).resolves.toMatchObject({
+      trimmedWidth: 3000,
+      trimmedHeight: 6000,
+      measurementMode: 'full',
+    })
   })
 })

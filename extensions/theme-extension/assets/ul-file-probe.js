@@ -43,6 +43,45 @@
     return px > 0 && dpi > 0 ? Math.round((px / dpi) * 100) / 100 : 0;
   }
 
+  function parseResolutionNumber(value) {
+    var text = String(value || '').trim();
+    var fraction = text.match(/^([\d.]+)\s*\/\s*([\d.]+)$/);
+    if (fraction) {
+      var denominator = Number(fraction[2]);
+      return denominator > 0 ? Number(fraction[1]) / denominator : 0;
+    }
+    var parsed = Number(text);
+    return isFinite(parsed) && parsed > 0 ? parsed : 0;
+  }
+
+  function getXmlField(source, fieldName) {
+    var attr = source.match(new RegExp('\\b(?:[A-Za-z0-9_-]+:)?' + fieldName + '\\s*=\\s*["\\\']([^"\\\']+)["\\\']', 'i'));
+    if (attr) return attr[1];
+    var tag = source.match(new RegExp('<[^>]*?(?:[A-Za-z0-9_-]+:)?' + fieldName + '[^>]*>([^<]+)<\\/[^>]+>', 'i'));
+    return tag ? tag[1] : null;
+  }
+
+  function dpiCandidate(dpi, source, priority) {
+    return dpi > 1 && dpi <= 10000 ? { dpi: dpi, source: source, priority: priority } : null;
+  }
+
+  function parseXmpDpi(source) {
+    if (!source || !/xmp|rdf|resolution/i.test(source)) return null;
+    var x = parseResolutionNumber(getXmlField(source, 'XResolution'));
+    var y = parseResolutionNumber(getXmlField(source, 'YResolution')) || x;
+    if (!(x > 0 && y > 0) || Math.max(x, y) / Math.min(x, y) > 1.05) return null;
+    var unit = String(getXmlField(source, 'ResolutionUnit') || '2').toLowerCase();
+    var factor = unit === '3' || unit.indexOf('centimeter') >= 0 ? 2.54 : 1;
+    return dpiCandidate(Math.round((((x + y) / 2) * factor) * 10000) / 10000, 'xmp_resolution', 95);
+  }
+
+  function chooseDpiCandidate(candidates) {
+    var valid = candidates.filter(Boolean).sort(function (a, b) {
+      return b.priority - a.priority || b.dpi - a.dpi;
+    });
+    return valid.length ? valid[0] : null;
+  }
+
   function result(fields) {
     var r = {
       format: fields.format || 'unknown',
@@ -68,28 +107,35 @@
     var heightPx = view.getUint32(20);
     var colorType = bytes[25];
     var hasAlpha = colorType === 4 || colorType === 6;
-    var dpi = 0, dpiSource = null;
+    var dpiCandidates = [];
     var pos = 8;
     while (pos + 12 <= bytes.length) {
       var len = view.getUint32(pos);
       var type = latin1(bytes, pos + 4, pos + 8);
+      if (pos + 12 + len > bytes.length) break;
       if (type === 'pHYs' && pos + 8 + 9 <= bytes.length) {
         var ppuX = view.getUint32(pos + 8);
+        var ppuY = view.getUint32(pos + 12);
         var unit = bytes[pos + 16];
-        if (unit === 1 && ppuX > 0) { dpi = Math.round(ppuX * 0.0254 * 100) / 100; dpiSource = 'png_phys'; }
-        break;
+        if (unit === 1 && ppuX > 0 && ppuY > 0 && Math.max(ppuX, ppuY) / Math.min(ppuX, ppuY) <= 1.05) {
+          dpiCandidates.push(dpiCandidate(Math.round((((ppuX + ppuY) / 2) * 0.0254) * 100) / 100, 'png_phys', 80));
+        }
+      } else if (type === 'tEXt' || type === 'iTXt') {
+        var chunkText = latin1(bytes, pos + 8, pos + 8 + len);
+        dpiCandidates.push(parseXmpDpi(chunkText));
       }
       if (type === 'IDAT' || type === 'IEND') break;
       pos += 12 + len;
     }
-    return result({ format: 'PNG', widthPx: widthPx, heightPx: heightPx, dpi: dpi, dpiSource: dpiSource, hasAlpha: hasAlpha, confident: true });
+    var chosenDpi = chooseDpiCandidate(dpiCandidates);
+    return result({ format: 'PNG', widthPx: widthPx, heightPx: heightPx, dpi: chosenDpi ? chosenDpi.dpi : 0, dpiSource: chosenDpi ? chosenDpi.source : null, hasAlpha: hasAlpha, confident: true });
   }
 
   // ── JPEG: SOFn for size, JFIF APP0 or EXIF XResolution for DPI ───────────
   function parseJpeg(bytes) {
     if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
     var view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    var pos = 2, widthPx = 0, heightPx = 0, dpi = 0, dpiSource = null;
+    var pos = 2, widthPx = 0, heightPx = 0, dpiCandidates = [];
     while (pos + 4 <= bytes.length) {
       if (bytes[pos] !== 0xff) { pos++; continue; }
       var marker = bytes[pos + 1];
@@ -100,12 +146,16 @@
       if (marker === 0xe0 && latin1(bytes, segStart, segStart + 4) === 'JFIF' && segStart + 12 <= bytes.length) {
         var units = bytes[segStart + 7];
         var xd = view.getUint16(segStart + 8);
-        if (units === 1 && xd > 0) { dpi = xd; dpiSource = 'jfif'; }
-        else if (units === 2 && xd > 0) { dpi = Math.round(xd * 2.54); dpiSource = 'jfif_cm'; }
-      } else if (marker === 0xe1 && latin1(bytes, segStart, segStart + 4) === 'Exif' && !dpi) {
+        var yd = view.getUint16(segStart + 10);
+        var densityConsistent = xd > 0 && yd > 0 && Math.max(xd, yd) / Math.min(xd, yd) <= 1.05;
+        if (units === 1 && densityConsistent) dpiCandidates.push(dpiCandidate(Math.round((xd + yd) / 2), 'jfif', 75));
+        else if (units === 2 && densityConsistent) dpiCandidates.push(dpiCandidate(Math.round(((xd + yd) / 2) * 2.54), 'jfif_cm', 75));
+      } else if (marker === 0xe1 && latin1(bytes, segStart, segStart + 4) === 'Exif') {
         var tiffStart = segStart + 6;
         var exifDpi = readTiffResolution(bytes, tiffStart, segStart + segLen - 2);
-        if (exifDpi > 0) { dpi = exifDpi; dpiSource = 'exif'; }
+        if (exifDpi > 0) dpiCandidates.push(dpiCandidate(exifDpi, 'exif', 90));
+      } else if (marker === 0xe1) {
+        dpiCandidates.push(parseXmpDpi(latin1(bytes, segStart, segStart + segLen - 2)));
       } else if ((marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) || (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf)) {
         if (segStart + 5 <= bytes.length) {
           heightPx = view.getUint16(segStart + 1);
@@ -116,7 +166,8 @@
       pos = segStart + segLen - 2;
     }
     if (!widthPx || !heightPx) return null;
-    return result({ format: 'JPG', widthPx: widthPx, heightPx: heightPx, dpi: dpi, dpiSource: dpiSource, hasAlpha: false, confident: true });
+    var chosenDpi = chooseDpiCandidate(dpiCandidates);
+    return result({ format: 'JPG', widthPx: widthPx, heightPx: heightPx, dpi: chosenDpi ? chosenDpi.dpi : 0, dpiSource: chosenDpi ? chosenDpi.source : null, hasAlpha: false, confident: true });
   }
 
   // ── TIFF (and EXIF IFD0): 256/257 size, 282/283 resolution, 296 unit ─────

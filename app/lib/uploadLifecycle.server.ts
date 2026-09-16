@@ -46,6 +46,8 @@ export interface UploadLifecycleMetadata {
   widthIn: number
   heightIn: number
   measurementMode: string | null
+  measurementProjectionVersion?: number
+  measurementProjectionPolicy?: string | null
 }
 
 export interface UploadLifecycleState {
@@ -61,7 +63,7 @@ export interface UploadLifecycleState {
   canResolveProduct: boolean
 }
 
-interface UploadItemLike {
+export interface UploadItemLike {
   preflightStatus?: string | null
   preflightResult?: unknown
   thumbnailKey?: string | null
@@ -165,7 +167,7 @@ export interface RollWidthSheetSize {
   heightIn: number
 }
 
-interface ResolvedDimensions {
+export interface ResolvedDimensions {
   widthIn: number
   heightIn: number
   effectiveDpi: number
@@ -180,7 +182,7 @@ interface ResolvedDimensions {
 // expect when picking a sheet variant.
 const ADOBE_DEFAULT_DPI = 72
 
-function resolveBestDimensions(
+export function resolveBestDimensions(
   widthPx: number,
   heightPx: number,
   documentDpi: number,
@@ -441,6 +443,10 @@ function extractMetadataFromChecks(checks: Array<Record<string, unknown>>): Uplo
 
 function extractMetadata(preflightResult: unknown, checks: Array<Record<string, unknown>>): UploadLifecycleMetadata | null {
   const result = getResultRecord(preflightResult)
+  const projection =
+    result.measurementProjection && typeof result.measurementProjection === 'object'
+      ? (result.measurementProjection as Record<string, unknown>)
+      : null
   const metadata =
     result.metadata && typeof result.metadata === 'object'
       ? (result.metadata as Record<string, unknown>)
@@ -468,6 +474,17 @@ function extractMetadata(preflightResult: unknown, checks: Array<Record<string, 
         sheetLengthInStored || undefined
       )
       const storedSizingSource = normalizeSizingSource(metadata.sizingSource)
+      const projectionVersion = Number(projection?.version)
+      const projectionPolicy =
+        typeof projection?.policy === 'string' ? projection.policy : null
+      const storedWidthIn = parsePositiveNumber(metadata.widthIn)
+      const storedHeightIn = parsePositiveNumber(metadata.heightIn)
+      const storedEffectiveDpi = parsePositiveNumber(metadata.effectiveDpi)
+      const hasCanonicalProjection =
+        projectionVersion === 1 &&
+        projectionPolicy === 'main_product_roll_width' &&
+        storedWidthIn > 0 &&
+        storedHeightIn > 0
       const resolved = resolveBestDimensions(
         measurementWidthPx,
         measurementHeightPx,
@@ -488,16 +505,28 @@ function extractMetadata(preflightResult: unknown, checks: Array<Record<string, 
         trimmedOffsetYPx: parsePositiveNumber(metadata.trimmedOffsetYPx),
         measurementWidthPx,
         measurementHeightPx,
-        effectiveDpi: resolved.effectiveDpi,
-        sizingSource: resolved.sizingSource,
-        sheetWidthIn: resolved.sheetWidthIn,
-        sheetLengthIn: resolved.sheetLengthIn,
-        widthIn: resolved.widthIn,
-        heightIn: resolved.heightIn,
+        effectiveDpi: hasCanonicalProjection
+          ? storedEffectiveDpi || resolved.effectiveDpi
+          : resolved.effectiveDpi,
+        sizingSource: hasCanonicalProjection ? storedSizingSource : resolved.sizingSource,
+        sheetWidthIn: hasCanonicalProjection
+          ? sheetWidthInStored || resolved.sheetWidthIn
+          : resolved.sheetWidthIn,
+        sheetLengthIn: hasCanonicalProjection
+          ? sheetLengthInStored || resolved.sheetLengthIn
+          : resolved.sheetLengthIn,
+        widthIn: hasCanonicalProjection ? storedWidthIn : resolved.widthIn,
+        heightIn: hasCanonicalProjection ? storedHeightIn : resolved.heightIn,
         measurementMode:
           typeof metadata.measurementMode === 'string' && metadata.measurementMode
             ? metadata.measurementMode
             : null,
+        ...(hasCanonicalProjection
+          ? {
+              measurementProjectionVersion: projectionVersion,
+              measurementProjectionPolicy: projectionPolicy,
+            }
+          : {}),
       }
     }
   }
@@ -509,6 +538,15 @@ export function applyFullCanvasMeasurementMetadata(
   metadata: UploadLifecycleMetadata | null
 ): UploadLifecycleMetadata | null {
   if (!metadata) return null
+
+  if (
+    metadata.measurementProjectionVersion === 1 &&
+    metadata.measurementProjectionPolicy === 'main_product_roll_width' &&
+    metadata.widthIn > 0 &&
+    metadata.heightIn > 0
+  ) {
+    return { ...metadata, measurementMode: 'full' }
+  }
 
   const fullWidthPx = metadata.widthPx > 0 ? metadata.widthPx : metadata.measurementWidthPx
   const fullHeightPx = metadata.heightPx > 0 ? metadata.heightPx : metadata.measurementHeightPx
@@ -539,6 +577,66 @@ export function applyFullCanvasMeasurementMetadata(
     heightIn: resolved.heightIn,
     measurementMode: 'full',
   }
+}
+
+export function applyArtworkBoundsMeasurementMetadata(
+  metadata: UploadLifecycleMetadata | null
+): UploadLifecycleMetadata | null {
+  if (!metadata) return null
+
+  const fullWidthPx = metadata.widthPx > 0 ? metadata.widthPx : metadata.measurementWidthPx
+  const fullHeightPx = metadata.heightPx > 0 ? metadata.heightPx : metadata.measurementHeightPx
+  const trimmedWidthPx = metadata.trimmedWidthPx > 0 ? metadata.trimmedWidthPx : fullWidthPx
+  const trimmedHeightPx = metadata.trimmedHeightPx > 0 ? metadata.trimmedHeightPx : fullHeightPx
+
+  // Preserve the physical scale established by the base measurement. In
+  // particular, a no-DPI file is first anchored using its full page; trimming
+  // whitespace must not stretch the remaining artwork back out to roll width.
+  const baseWidthPx = metadata.measurementWidthPx > 0 ? metadata.measurementWidthPx : fullWidthPx
+  const baseHeightPx = metadata.measurementHeightPx > 0 ? metadata.measurementHeightPx : fullHeightPx
+  const widthInPerPixel = baseWidthPx > 0 && metadata.widthIn > 0 ? metadata.widthIn / baseWidthPx : 0
+  const heightInPerPixel = baseHeightPx > 0 && metadata.heightIn > 0 ? metadata.heightIn / baseHeightPx : 0
+  const fallbackDpi = parsePositiveNumber(metadata.documentDpi) || parsePositiveNumber(metadata.effectiveDpi)
+
+  const widthIn = widthInPerPixel > 0
+    ? trimmedWidthPx * widthInPerPixel
+    : fallbackDpi > 0
+      ? trimmedWidthPx / fallbackDpi
+      : 0
+  const heightIn = heightInPerPixel > 0
+    ? trimmedHeightPx * heightInPerPixel
+    : fallbackDpi > 0
+      ? trimmedHeightPx / fallbackDpi
+      : 0
+
+  return {
+    ...metadata,
+    measurementWidthPx: trimmedWidthPx,
+    measurementHeightPx: trimmedHeightPx,
+    widthIn: Number(widthIn.toFixed(2)),
+    heightIn: Number(heightIn.toFixed(2)),
+    measurementMode:
+      trimmedWidthPx !== fullWidthPx || trimmedHeightPx !== fullHeightPx ? 'trimmed' : 'full',
+  }
+}
+
+export function applyMeasurementBasisMetadata(
+  metadata: UploadLifecycleMetadata | null,
+  basis: 'full_page' | 'artwork_bounds'
+): UploadLifecycleMetadata | null {
+  return basis === 'artwork_bounds'
+    ? applyArtworkBoundsMeasurementMetadata(metadata)
+    : applyFullCanvasMeasurementMetadata(metadata)
+}
+
+export function getStoredMeasurementBasis(
+  preflightResult: unknown,
+  _fallback: 'full_page' | 'artwork_bounds'
+): 'full_page' | 'artwork_bounds' {
+  const result = getResultRecord(preflightResult)
+  return result.measurementBasis === 'full_page' || result.measurementBasis === 'artwork_bounds'
+    ? result.measurementBasis
+    : 'full_page'
 }
 
 function deriveProblems(preflightResult: unknown, checks: Array<Record<string, unknown>>): UploadLifecycleProblem[] {
@@ -649,10 +747,11 @@ export function deriveUploadItemLifecycle(item: UploadItemLike): UploadLifecycle
     previewStatus = 'error'
   }
 
+  const hasBlockingProblem = problems.some((problem) => problem.severity === 'error')
   const orderabilityStatus: UploadOrderabilityStatus =
     measurementStatus === 'pending'
       ? 'processing'
-      : measurementStatus === 'error'
+      : measurementStatus === 'error' || legacyStatus === 'error' || hasBlockingProblem
         ? 'blocked'
         : 'ready'
 
@@ -685,15 +784,15 @@ export function deriveUploadClientStatus(
     return uploadStatus === 'blocked' || uploadStatus === 'rejected' ? 'error' : 'processing'
   }
 
+  if (uploadStatus === 'blocked' || uploadStatus === 'rejected') {
+    return 'error'
+  }
+
   if (itemStates.every((itemState) => itemState.orderabilityStatus === 'ready')) {
     return 'ready'
   }
 
   if (itemStates.some((itemState) => itemState.orderabilityStatus === 'blocked')) {
-    return 'error'
-  }
-
-  if (uploadStatus === 'blocked' || uploadStatus === 'rejected') {
     return 'error'
   }
 
