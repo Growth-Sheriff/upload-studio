@@ -1,6 +1,7 @@
 import {
-  applyFullCanvasMeasurementMetadata,
+  applyMeasurementBasisMetadata,
   deriveUploadItemLifecycle,
+  getStoredMeasurementBasis,
 } from '~/lib/uploadLifecycle.server'
 
 export const DTF_PRINTHOUSE_SHOP_DOMAIN = 'e3bd2d-3.myshopify.com'
@@ -246,6 +247,31 @@ function normalizeCustomerEmail(value: string | null | undefined): string {
   return String(value || '')
     .trim()
     .toLowerCase()
+}
+
+export interface MeasuredCrossRollFitResult extends QuoteValidationResult {
+  crossRollLimitIn: number
+  placedWidthIn: number
+  rotationApplied: boolean
+  toleranceApplied: boolean
+  productionNote: string | null
+}
+
+export function matchesTrustedUploadOwner(input: {
+  loggedInCustomerId: string | number | null | undefined
+  trustedCustomerEmail?: string | null
+  uploadCustomerId?: string | number | null
+  uploadCustomerEmail?: string | null
+}): boolean {
+  const loggedInCustomerId = normalizeCustomerId(input.loggedInCustomerId)
+  if (!loggedInCustomerId) return false
+
+  const uploadCustomerId = normalizeCustomerId(input.uploadCustomerId)
+  if (uploadCustomerId) return uploadCustomerId === loggedInCustomerId
+
+  const trustedEmail = normalizeCustomerEmail(input.trustedCustomerEmail)
+  const uploadEmail = normalizeCustomerEmail(input.uploadCustomerEmail)
+  return Boolean(trustedEmail && uploadEmail && trustedEmail === uploadEmail)
 }
 
 export function normalizeProductId(value: string | number | null | undefined): string | null {
@@ -736,18 +762,22 @@ export function extractVipUploadMeasurement(
   uploadItems: Array<{ preflightStatus?: string | null; preflightResult?: unknown }>,
   basisOrShopDomain?: 'full_page' | 'artwork_bounds' | string | null
 ): VipUploadMeasurement | null {
-  const useFullCanvasMeasurement =
+  const fallbackBasis: 'full_page' | 'artwork_bounds' =
     basisOrShopDomain === 'full_page'
-      ? true
+      ? 'full_page'
       : basisOrShopDomain === 'artwork_bounds'
-        ? false
+        ? 'artwork_bounds'
         : isDtfPrintHouseShop(basisOrShopDomain)
+          ? 'full_page'
+          : 'artwork_bounds'
 
   for (const item of uploadItems) {
     const lifecycle = deriveUploadItemLifecycle(item)
-    const metadata = useFullCanvasMeasurement
-      ? applyFullCanvasMeasurementMetadata(lifecycle.metadata)
-      : lifecycle.metadata
+    const measurementBasis = getStoredMeasurementBasis(item.preflightResult, fallbackBasis)
+    const metadata = applyMeasurementBasisMetadata(
+      lifecycle.metadata,
+      measurementBasis
+    )
 
     if (lifecycle.measurementStatus !== 'ready' || !metadata) {
       continue
@@ -774,11 +804,13 @@ export function extractVipUploadMeasurement(
 
 export function calculateMeasuredLengthQuote(
   measurement: VipUploadMeasurement,
-  pricePerInch: number
+  pricePerInch: number,
+  requestedQuantity = 1
 ): CustomPricedQuote {
   const pageWidthIn = Number(Math.min(measurement.widthIn, measurement.heightIn).toFixed(2))
   const pageLengthIn = Number(Math.max(measurement.widthIn, measurement.heightIn).toFixed(2))
-  const billableLengthIn = Number(pageLengthIn.toFixed(2))
+  const sheetsNeeded = Math.max(1, Math.floor(Number(requestedQuantity) || 1))
+  const billableLengthIn = Number((pageLengthIn * sheetsNeeded).toFixed(2))
   const rate = Number(pricePerInch) || DEFAULT_BUSINESS_PRICE_PER_INCH
   const totalPrice = Number((billableLengthIn * rate).toFixed(2))
 
@@ -789,6 +821,51 @@ export function calculateMeasuredLengthQuote(
     pricePerInch: Number(rate.toFixed(4)),
     totalPrice,
     formattedTotalPrice: totalPrice.toFixed(2),
+    sheetsNeeded,
+  }
+}
+
+export function validateMeasuredCrossRollFit(input: {
+  measurement: Pick<VipUploadMeasurement, 'widthIn' | 'heightIn'>
+  rollWidthIn: number
+  maxDesignWidthIn?: number | null
+  artboardMarginIn?: number | null
+  fitToleranceIn?: number | null
+}): MeasuredCrossRollFitResult {
+  const rollWidth = toPositiveNumber(input.rollWidthIn)
+  const margin = Math.max(0, Number(input.artboardMarginIn) || 0)
+  const tolerance = Math.max(0, Number(input.fitToleranceIn) || 0)
+  const designLimit = Number(input.maxDesignWidthIn)
+  const physicalLimit = Math.max(0, rollWidth - 2 * margin)
+  const crossRollLimitIn =
+    Number.isFinite(designLimit) && designLimit > 0
+      ? Math.min(physicalLimit, designLimit)
+      : physicalLimit
+  const pageWidthIn = Math.min(input.measurement.widthIn, input.measurement.heightIn)
+  const rotationApplied = input.measurement.widthIn > input.measurement.heightIn
+  const toleranceApplied =
+    crossRollLimitIn > 0 &&
+    pageWidthIn > crossRollLimitIn &&
+    pageWidthIn <= crossRollLimitIn + tolerance
+  const ok = crossRollLimitIn > 0 && pageWidthIn <= crossRollLimitIn + tolerance
+  const productionNote = [
+    rotationApplied ? 'Rotate artwork 90°' : '',
+    toleranceApplied ? `Fit tolerance applied at ${crossRollLimitIn.toFixed(2)}\" cross-roll` : '',
+  ]
+    .filter(Boolean)
+    .join('; ') || null
+
+  return {
+    ok,
+    code: ok ? null : 'WIDTH_TOO_LARGE',
+    reason: ok
+      ? null
+      : `Design width exceeds the usable roll width of ${crossRollLimitIn.toFixed(2)}\".`,
+    crossRollLimitIn,
+    placedWidthIn: toleranceApplied ? crossRollLimitIn : pageWidthIn,
+    rotationApplied,
+    toleranceApplied,
+    productionNote,
   }
 }
 
@@ -836,7 +913,11 @@ export function calculateVariantLengthQuote({
   const pageWidthIn = Number(Math.min(measurement.widthIn, measurement.heightIn).toFixed(2))
   const pageLengthIn = Number(Math.max(measurement.widthIn, measurement.heightIn).toFixed(2))
   const safeSheetsNeeded = Math.max(1, Math.floor(Number(sheetsNeeded) || 1))
-  const billableLengthIn = Number((parsedVariant.lengthIn * safeSheetsNeeded).toFixed(2))
+  // Shopify option titles are merchant-authored and appear in both
+  // "width x length" and "length x width" order. Billing must follow the
+  // physical long edge, not the title's second token.
+  const sheetLengthIn = Math.max(parsedVariant.widthIn, parsedVariant.lengthIn)
+  const billableLengthIn = Number((sheetLengthIn * safeSheetsNeeded).toFixed(2))
   const rate = Number(pricePerInch) || DEFAULT_BUSINESS_PRICE_PER_INCH
   const totalPrice = Number((billableLengthIn * rate).toFixed(2))
 
@@ -870,8 +951,11 @@ export function deriveVariantBasedLimits(
   }
 
   return {
-    maxWidthIn: Math.max(...parsedSizes.map((size) => size.widthIn)),
-    maxHeightIn: Math.max(...parsedSizes.map((size) => size.lengthIn)),
+    // Variant option labels are merchant-authored and may be written as
+    // width x length or length x width. Limits describe the physical short
+    // (cross-roll) and long edges, so normalize every pair before aggregating.
+    maxWidthIn: Math.max(...parsedSizes.map((size) => Math.min(size.widthIn, size.lengthIn))),
+    maxHeightIn: Math.max(...parsedSizes.map((size) => Math.max(size.widthIn, size.lengthIn))),
     minWidthIn: 1,
     minHeightIn: 1,
   }

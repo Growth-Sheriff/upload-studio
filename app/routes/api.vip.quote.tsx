@@ -36,14 +36,11 @@ function parsePositiveInteger(value: unknown, fallback = 1): number {
 
 function normalizeQuoteItems(body: Record<string, unknown>) {
   const rawItems = Array.isArray(body.items) ? body.items : []
-  const fallbackMeasurementPolicy = String(body.measurementPolicy || '').trim() || null
-  const fallbackRollWidthIn = Number(body.rollWidthIn)
   const normalizedItems = rawItems
     .map((entry) => {
       const item = (entry || {}) as Record<string, unknown>
       const uploadId = String(item.uploadId || '').trim()
       if (!uploadId) return null
-      const itemRollWidthIn = Number(item.rollWidthIn)
       return {
         uploadId,
         quantity: parsePositiveInteger(item.quantity, 1),
@@ -51,14 +48,8 @@ function normalizeQuoteItems(body: Record<string, unknown>) {
           item.selectedVariantId != null && String(item.selectedVariantId).trim()
             ? String(item.selectedVariantId).trim()
             : null,
-        measurementPolicy:
-          String(item.measurementPolicy || '').trim() || fallbackMeasurementPolicy,
-        rollWidthIn:
-          Number.isFinite(itemRollWidthIn) && itemRollWidthIn > 0
-            ? itemRollWidthIn
-            : Number.isFinite(fallbackRollWidthIn) && fallbackRollWidthIn > 0
-              ? fallbackRollWidthIn
-              : null,
+        measurementPolicy: null,
+        rollWidthIn: null,
       }
     })
     .filter(Boolean) as Array<{
@@ -82,18 +73,19 @@ function normalizeQuoteItems(body: Record<string, unknown>) {
         body.selectedVariantId != null && String(body.selectedVariantId).trim()
           ? String(body.selectedVariantId).trim()
           : null,
-      measurementPolicy: fallbackMeasurementPolicy,
-      rollWidthIn:
-        Number.isFinite(fallbackRollWidthIn) && fallbackRollWidthIn > 0 ? fallbackRollWidthIn : null,
+      measurementPolicy: null,
+      rollWidthIn: null,
     },
   ]
 }
 
 function errorStatusFromMessage(message: string): number {
+  if (message === 'Customer profile lookup is temporarily unavailable') return 503
   if (message === 'Shop not found') return 404
   if (message === 'Upload not found') return 404
   if (message === 'Product not found') return 404
   if (message === 'Upload measurement is not ready') return 409
+  if (message === 'Upload is blocked by preflight checks') return 422
   if (message === 'Upload does not belong to the logged in customer') return 403
   if (message === 'Custom pricing is not active for this customer and product') return 403
   if (message === 'Upload product is missing') return 422
@@ -119,14 +111,9 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const body = await parseBody(request)
-  const fallbackCustomerEmail = String(body.customerEmail || '').trim()
-  const loggedInCustomerId =
-    normalizeCustomerId(url.searchParams.get('logged_in_customer_id')) ||
-    normalizeCustomerId(
-      typeof body.customerId === 'string' || typeof body.customerId === 'number'
-        ? body.customerId
-        : null
-    )
+  const loggedInCustomerId = normalizeCustomerId(
+    url.searchParams.get('logged_in_customer_id')
+  )
   const normalizedItems = normalizeQuoteItems(body)
 
   if (!normalizedItems.length) {
@@ -141,7 +128,6 @@ export async function action({ request }: ActionFunctionArgs) {
               await prepareCustomPricingQuote({
                 shopDomain,
                 loggedInCustomerId,
-                loggedInCustomerEmail: fallbackCustomerEmail,
                 uploadId: normalizedItems[0].uploadId,
                 quantity: normalizedItems[0].quantity,
                 selectedVariantId: normalizedItems[0].selectedVariantId,
@@ -153,7 +139,6 @@ export async function action({ request }: ActionFunctionArgs) {
         : await prepareCustomPricingJobQuote({
             shopDomain,
             loggedInCustomerId,
-            loggedInCustomerEmail: fallbackCustomerEmail,
             items: normalizedItems,
           })
 
@@ -196,6 +181,7 @@ export async function action({ request }: ActionFunctionArgs) {
         firstItem.quote.sheetsNeeded ||
         firstItem.requestedQuantity,
       designsPerSheet: firstItem.resolvedVariant?.designsPerSheet || null,
+      productionNote: firstItem.productionNote,
       totalRequestedQuantity,
       items: preparedItems.map((item) => ({
         uploadId: item.upload.id,
@@ -221,6 +207,7 @@ export async function action({ request }: ActionFunctionArgs) {
         sheetsNeeded:
           item.resolvedVariant?.sheetsNeeded || item.quote.sheetsNeeded || item.requestedQuantity,
         designsPerSheet: item.resolvedVariant?.designsPerSheet || null,
+        productionNote: item.productionNote,
         measurement: {
           dpi: item.measurement.dpi,
           effectiveDpi: item.measurement.effectiveDpi,

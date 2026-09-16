@@ -14,11 +14,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const url = new URL(request.url)
   const shopDomain = url.searchParams.get('shop')?.trim() || ''
-  const fallbackCustomerId = normalizeCustomerId(url.searchParams.get('customerId'))
-  const fallbackCustomerEmail = String(url.searchParams.get('customerEmail') || '').trim()
-  const customerName = String(url.searchParams.get('customerName') || '').trim() || null
-  const loggedInCustomerId =
-    normalizeCustomerId(url.searchParams.get('logged_in_customer_id')) || fallbackCustomerId
+  const loggedInCustomerId = normalizeCustomerId(
+    url.searchParams.get('logged_in_customer_id')
+  )
   const productId = normalizeProductId(url.searchParams.get('productId'))
 
   if (!shopDomain) {
@@ -42,8 +40,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const effective = await resolveEffectivePricingForShop({
     shop,
     customerId: loggedInCustomerId,
-    customerEmail: fallbackCustomerEmail,
-    customerName,
     productId,
   })
   const context = effective.context
@@ -69,7 +65,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     isStatusAssigned: context.isStatusAssigned,
     status: context.status,
     assignment: context.assignment,
-    customerName: context.assignment?.customerName || effective.volumeOffer?.customerName || customerName,
-    customerEmail: context.assignment?.customerEmail || fallbackCustomerEmail || null,
+    customerName: context.assignment?.customerName || effective.volumeOffer?.customerName || null,
+    customerEmail: context.assignment?.customerEmail || null,
   })
 }

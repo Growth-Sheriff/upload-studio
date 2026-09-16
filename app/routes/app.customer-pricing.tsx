@@ -36,6 +36,7 @@ import {
   normalizePolicy,
   normalizeVolumeProgram,
   normalizeVolumeTiers,
+  getRuntimePricingPolicy,
   resolveCustomerPricingModelState,
   derivePolicyDefaults,
   type CustomerPricingPolicy,
@@ -44,7 +45,11 @@ import {
 } from '~/lib/customerPricingModel.server'
 import { isCustomerPricingModel, pickVolumeTier, type CustomerPricingModel, type VolumeTier } from '~/lib/customerPricingShared'
 import { invalidatePricingRuntimeCaches } from '~/lib/customerPricingRuntime.server'
-import { applyFullCanvasMeasurementMetadata, deriveUploadItemLifecycle } from '~/lib/uploadLifecycle.server'
+import {
+  applyMeasurementBasisMetadata,
+  deriveUploadItemLifecycle,
+  getStoredMeasurementBasis,
+} from '~/lib/uploadLifecycle.server'
 import { authenticate } from '~/shopify.server'
 
 // ── Shopify queries ────────────────────────────────────────────────────────
@@ -666,7 +671,10 @@ async function findVolumeCandidates(
     const item = upload.items[0]
     if (!item) continue
     const lifecycle = deriveUploadItemLifecycle(item)
-    const metadata = basis === 'full_page' ? applyFullCanvasMeasurementMetadata(lifecycle.metadata) : lifecycle.metadata
+    const metadata = applyMeasurementBasisMetadata(
+      lifecycle.metadata,
+      getStoredMeasurementBasis(item.preflightResult, basis)
+    )
     if (!metadata || lifecycle.measurementStatus !== 'ready') continue
     const lengthIn = Math.max(Number(metadata.widthIn) || 0, Number(metadata.heightIn) || 0)
     const copies = Math.max(1, Number(upload.requestedCopies) || Number(upload.sheetsNeeded) || 1)
@@ -747,7 +755,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   const shopSettings = (shop?.settings as Record<string, unknown> | null) || {}
   const config = applyCustomerPricingDefaultsForShop(session.shop, shopSettings)
-  const modelState = resolveCustomerPricingModelState(session.shop, shopSettings)
+  const rawModelState = resolveCustomerPricingModelState(session.shop, shopSettings)
+  const modelState = rawModelState.policyExplicit
+    ? rawModelState
+    : { ...rawModelState, policy: getRuntimePricingPolicy(session.shop, shopSettings) }
   const program = normalizeVolumeProgram(shopSettings, session.shop)
   const productCatalog = await loadProductCatalog(admin, config, program)
   const url = new URL(request.url)
@@ -781,7 +792,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   const candidates = suggest && shop
-    ? await findVolumeCandidates(shop.id, program.autoEligibility.months, program.autoEligibility.minInches, modelState.policy.measurementBasis, program)
+    ? await findVolumeCandidates(
+        shop.id,
+        program.autoEligibility.months,
+        program.autoEligibility.minInches,
+        modelState.policy.measurementBasis,
+        program
+      )
     : null
 
   const [uploadCount, recentUploadCount] = shop
@@ -889,7 +906,16 @@ export async function action({ request }: ActionFunctionArgs) {
       }
       const model = isCustomerPricingModel(parsed.model) ? (parsed.model as CustomerPricingModel) : existingModel.model
       const priority = parsed.priority === 'volume_first' ? 'volume_first' : 'status_first'
-      const policy = normalizePolicy(parsed.policy, derivePolicyDefaults(session.shop))
+      const parsedPolicy = normalizePolicy(parsed.policy, derivePolicyDefaults(session.shop))
+      const legacyRuntimePolicy = getRuntimePricingPolicy(session.shop, existingSettings)
+      const policyWasChanged = (
+        Object.keys(legacyRuntimePolicy) as Array<keyof CustomerPricingPolicy>
+      ).some((key) => parsedPolicy[key] !== legacyRuntimePolicy[key])
+      // A legacy tenant has no explicit sizing policy. Keep that distinction
+      // until the merchant actually changes a policy field; otherwise an
+      // unrelated rate edit would activate width limits and margins that were
+      // previously only editor defaults.
+      const policy = existingModel.policyExplicit || policyWasChanged ? parsedPolicy : null
       const statuses = Array.isArray(parsed.statuses) ? parsed.statuses : existingConfig.statuses
       const tagRules = Array.isArray(parsed.tagRules) ? parsed.tagRules : existingConfig.tagRules
       const volume = parsed.volume && typeof parsed.volume === 'object' ? (parsed.volume as Record<string, unknown>) : null
@@ -923,7 +949,7 @@ export async function action({ request }: ActionFunctionArgs) {
         enabled: parsed.enabled !== false,
         model,
         priority,
-        policy: policy as unknown as Record<string, unknown>,
+        policy: policy as unknown as Record<string, unknown> | null,
         statuses: statuses as CustomerPricingSettings['statuses'],
         tagRules: tagRules as CustomerPricingSettings['tagRules'],
       })

@@ -4,15 +4,18 @@ import {
   applyCustomerPricingDefaultsForShop,
   normalizeCustomerId,
   normalizeProductId,
+  parseSheetSizeFromTitle,
 } from '~/lib/customerPricing.server'
 import { resolveEffectivePricingForShop } from '~/lib/customerPricingRuntime.server'
 import prisma from '~/lib/prisma.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
 import { getDownloadSignedUrl, getStorageConfig } from '~/lib/storage.server'
 import {
-  applyFullCanvasMeasurementMetadata,
+  applyMeasurementBasisMetadata,
   deriveUploadItemLifecycle,
+  getStoredMeasurementBasis,
 } from '~/lib/uploadLifecycle.server'
+import { getRuntimeMeasurementBasis } from '~/lib/customerPricingModel.server'
 import { authenticate } from '~/shopify.server'
 
 const RECENT_ORDER_DETAILS_QUERY = `
@@ -100,12 +103,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
   await authenticate.public.appProxy(request)
 
   const url = new URL(request.url)
-  const shopDomain =
-    url.searchParams.get('shopDomain')?.trim() || url.searchParams.get('shop')?.trim() || ''
-  const fallbackCustomerId = normalizeCustomerId(url.searchParams.get('customerId'))
-  const fallbackCustomerEmail = String(url.searchParams.get('customerEmail') || '').trim()
-  const loggedInCustomerId =
-    normalizeCustomerId(url.searchParams.get('logged_in_customer_id')) || fallbackCustomerId
+  const shopDomain = url.searchParams.get('shop')?.trim() || ''
+  const loggedInCustomerId = normalizeCustomerId(
+    url.searchParams.get('logged_in_customer_id')
+  )
   const productId = normalizeProductId(url.searchParams.get('productId'))
 
   if (!shopDomain) {
@@ -147,7 +148,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     shop,
     settings,
     customerId: loggedInCustomerId,
-    customerEmail: fallbackCustomerEmail,
     productId,
   })
   const pricingContext = effective.context
@@ -212,6 +212,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
       variantId: true,
       orderId: true,
       orderPaidAt: true,
+      requestedCopies: true,
+      designsPerSheet: true,
+      sheetsNeeded: true,
+      cartVariantId: true,
+      cartSheetLabel: true,
       items: {
         orderBy: { createdAt: 'asc' },
         take: 1,
@@ -283,12 +288,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
     storageProvider: shop.storageProvider,
     storageConfig: (shop.storageConfig as Record<string, string> | null) || null,
   })
+  const runtimeMeasurementBasis = getRuntimeMeasurementBasis(shop.shopDomain, shop.settings)
 
   const items = await Promise.all(
     uploads.map(async (upload) => {
       const firstItem = upload.items[0]
       const lifecycle = firstItem ? deriveUploadItemLifecycle(firstItem) : null
-      const metadata = lifecycle ? applyFullCanvasMeasurementMetadata(lifecycle.metadata) : null
+      const metadata =
+        lifecycle && firstItem
+          ? applyMeasurementBasisMetadata(
+              lifecycle.metadata,
+              getStoredMeasurementBasis(firstItem.preflightResult, runtimeMeasurementBasis)
+            )
+          : null
       const orderId = extractTrailingDigits(upload.ordersLink[0]?.orderId || upload.orderId)
       const lineItemId = extractTrailingDigits(upload.ordersLink[0]?.lineItemId)
       const orderNode = orderId ? orderNodeMap.get(orderId) : null
@@ -314,11 +326,27 @@ export async function loader({ request }: LoaderFunctionArgs) {
         ? productLabelById.get(normalizedUploadProductId) || normalizedUploadProductId
         : 'Custom Upload'
       const lastOrderedQuantity = parsePositiveInteger(
-        getAttributeValue(lineItem?.customAttributes, 'Requested Copies') ||
-          getAttributeValue(lineItem?.customAttributes, '_ul_requested_copies') ||
+        upload.requestedCopies ||
           lineItem?.quantity,
         1
       )
+      const storedSheetSize = parseSheetSizeFromTitle(upload.cartSheetLabel)
+      const billableLengthIn =
+        storedSheetSize && upload.sheetsNeeded
+          ? Number(
+              (
+                Math.max(storedSheetSize.widthIn, storedSheetSize.lengthIn) *
+                Math.max(1, upload.sheetsNeeded)
+              ).toFixed(2)
+            )
+          : metadata
+            ? Number(
+                (
+                  Math.max(metadata.widthIn, metadata.heightIn) *
+                  lastOrderedQuantity
+                ).toFixed(2)
+              )
+            : 0
 
       return {
         uploadId: upload.id,
@@ -335,24 +363,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
           getAttributeValue(lineItem?.customAttributes, 'Design File') ||
           firstItem?.originalName ||
           'Print-ready upload',
-        uploadUrl:
-          getAttributeValue(lineItem?.customAttributes, 'Print READY') ||
-          uploadUrl,
+        uploadUrl,
         thumbnailUrl,
         lastOrderedQuantity,
         requestedQuantity: lastOrderedQuantity,
-        selectedVariantId: getAttributeValue(lineItem?.customAttributes, '_ul_selected_variant_id'),
-        selectedVariantTitle: getAttributeValue(
-          lineItem?.customAttributes,
-          '_ul_selected_variant_title'
-        ),
-        selectedSheetLabel: getAttributeValue(
-          lineItem?.customAttributes,
-          '_ul_selected_sheet_label'
-        ),
-        billableLengthIn: Number(
-          getAttributeValue(lineItem?.customAttributes, '_ul_billable_length_in') || 0
-        ),
+        selectedVariantId: upload.cartVariantId || upload.variantId || '',
+        selectedVariantTitle: upload.cartSheetLabel || '',
+        selectedSheetLabel: upload.cartSheetLabel || '',
+        sheetsNeeded: upload.sheetsNeeded,
+        designsPerSheet: upload.designsPerSheet,
+        billableLengthIn,
         measurement: metadata
           ? {
               widthPx: metadata.widthPx,

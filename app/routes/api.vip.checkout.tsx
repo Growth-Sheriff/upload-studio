@@ -99,14 +99,11 @@ function formatDecimalAmount(value: number, digits = 6): string {
 
 function normalizeCheckoutItems(body: Record<string, unknown>) {
   const rawItems = Array.isArray(body.items) ? body.items : []
-  const fallbackMeasurementPolicy = String(body.measurementPolicy || '').trim() || null
-  const fallbackRollWidthIn = Number(body.rollWidthIn)
   const normalizedItems = rawItems
     .map((entry) => {
       const item = (entry || {}) as Record<string, unknown>
       const uploadId = String(item.uploadId || '').trim()
       if (!uploadId) return null
-      const itemRollWidthIn = Number(item.rollWidthIn)
       return {
         uploadId,
         quantity: parsePositiveInteger(item.quantity, 1),
@@ -114,14 +111,8 @@ function normalizeCheckoutItems(body: Record<string, unknown>) {
           item.selectedVariantId != null && String(item.selectedVariantId).trim()
             ? String(item.selectedVariantId).trim()
             : null,
-        measurementPolicy:
-          String(item.measurementPolicy || '').trim() || fallbackMeasurementPolicy,
-        rollWidthIn:
-          Number.isFinite(itemRollWidthIn) && itemRollWidthIn > 0
-            ? itemRollWidthIn
-            : Number.isFinite(fallbackRollWidthIn) && fallbackRollWidthIn > 0
-              ? fallbackRollWidthIn
-              : null,
+        measurementPolicy: null,
+        rollWidthIn: null,
       }
     })
     .filter(Boolean) as Array<{
@@ -145,18 +136,19 @@ function normalizeCheckoutItems(body: Record<string, unknown>) {
         body.selectedVariantId != null && String(body.selectedVariantId).trim()
           ? String(body.selectedVariantId).trim()
           : null,
-      measurementPolicy: fallbackMeasurementPolicy,
-      rollWidthIn:
-        Number.isFinite(fallbackRollWidthIn) && fallbackRollWidthIn > 0 ? fallbackRollWidthIn : null,
+      measurementPolicy: null,
+      rollWidthIn: null,
     },
   ]
 }
 
 function errorStatusFromMessage(message: string): number {
+  if (message === 'Customer profile lookup is temporarily unavailable') return 503
   if (message === 'Shop not found') return 404
   if (message === 'Upload not found') return 404
   if (message === 'Product not found') return 404
   if (message === 'Upload measurement is not ready') return 409
+  if (message === 'Upload is blocked by preflight checks') return 422
   if (message === 'Upload does not belong to the logged in customer') return 403
   if (message === 'Custom pricing is not active for this customer and product') return 403
   if (message === 'Upload product is missing') return 422
@@ -182,17 +174,12 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const body = await parseBody(request)
-  const fallbackCustomerEmail = String(body.customerEmail || '').trim()
   const customerNote = String(body.customerNote || body.note || '').trim().slice(0, 500)
   const checkoutIntent = String(body.checkoutIntent || '').trim()
   const discountCodes = normalizeDiscountCodes(body)
-  const loggedInCustomerId =
-    normalizeCustomerId(url.searchParams.get('logged_in_customer_id')) ||
-    normalizeCustomerId(
-      typeof body.customerId === 'string' || typeof body.customerId === 'number'
-        ? body.customerId
-        : null
-    )
+  const loggedInCustomerId = normalizeCustomerId(
+    url.searchParams.get('logged_in_customer_id')
+  )
   const normalizedItems = normalizeCheckoutItems(body)
 
   if (!normalizedItems.length) {
@@ -204,7 +191,6 @@ export async function action({ request }: ActionFunctionArgs) {
     prepared = await prepareCustomPricingJobQuote({
       shopDomain,
       loggedInCustomerId,
-      loggedInCustomerEmail: fallbackCustomerEmail,
       items: normalizedItems,
     })
   } catch (error) {
@@ -230,35 +216,43 @@ export async function action({ request }: ActionFunctionArgs) {
         ? 'Business custom checkout'
         : 'VIP custom checkout'
   const noteUploadIds = preparedItems.map((item) => item.upload.id).join(', ')
+  const productionInstructions = preparedItems
+    .map((item) => {
+      const sheet = String(
+        item.resolvedVariant?.selectedSheetLabel ||
+          item.resolvedVariant?.selectedVariantTitle ||
+          (item.pricingContext.pricingMode === 'measured_length' ? 'Exact measured length' : '')
+      ).trim()
+      const productionNote = String(
+        item.productionNote || item.resolvedVariant?.productionNote || ''
+      ).trim()
+      const requestedCopies = Math.max(1, item.requestedQuantity)
+      const sheetsNeeded = Math.max(
+        1,
+        Number(item.resolvedVariant?.sheetsNeeded || item.quote.sheetsNeeded) || requestedCopies
+      )
+      const designsPerSheet = Math.max(
+        1,
+        Number(item.resolvedVariant?.designsPerSheet) || 1
+      )
+      const instruction = [
+        sheet,
+        productionNote,
+        `${requestedCopies} requested cop${requestedCopies === 1 ? 'y' : 'ies'}`,
+        `${sheetsNeeded} sheet${sheetsNeeded === 1 ? '' : 's'}`,
+        `${designsPerSheet} design${designsPerSheet === 1 ? '' : 's'} per sheet`,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+      return instruction ? `${item.upload.id}: ${instruction}` : ''
+    })
+    .filter(Boolean)
   const customerGid = toCustomerGid(loggedInCustomerId || firstItem.pricingContext.customerId)
-
-  // Persist the nesting request on the upload rows (same fields the cart
-  // path writes) so the identity page and admin show copies/sheets even
-  // though the order line carries only the three visible properties.
-  await Promise.all(
-    preparedItems.map((item) =>
-      prisma.upload
-        .update({
-          where: { id: item.upload.id },
-          data: {
-            requestedCopies: Math.max(1, item.requestedQuantity),
-            sheetsNeeded: Number(item.resolvedVariant?.sheetsNeeded || item.quote.sheetsNeeded || 1) || 1,
-            designsPerSheet: Number(item.resolvedVariant?.designsPerSheet || 0) || null,
-            cartSheetLabel:
-              item.pricingContext.pricingMode === 'measured_length'
-                ? 'Exact measured length'
-                : item.resolvedVariant?.selectedSheetLabel || null,
-          },
-        })
-        .catch((error) => console.warn('[VIP Checkout] copies persist failed:', error))
-    )
-  )
 
   const draftOrderInput: Record<string, unknown> = {
     acceptAutomaticDiscounts: body.acceptAutomaticDiscounts !== false,
     allowDiscountCodesInCheckout: true,
     ...(discountCodes.length ? { discountCodes } : {}),
-    ...(fallbackCustomerEmail ? { email: fallbackCustomerEmail } : {}),
     ...(customerGid
       ? {
           purchasingEntity: { customerId: customerGid },
@@ -267,20 +261,14 @@ export async function action({ request }: ActionFunctionArgs) {
       : {}),
     note:
       `Custom pricing checkout for upload ${noteUploadIds}` +
+      (productionInstructions.length
+        ? `\nProduction: ${productionInstructions.join(' | ')}`
+        : '') +
       (checkoutIntent ? `\nIntent: ${checkoutIntent}` : '') +
       (discountCodes.length ? `\nDiscount code(s): ${discountCodes.join(', ')}` : '\nDiscounts: eligible automatic Shopify discounts accepted') +
       (customerNote ? `\nCustomer note: ${customerNote}` : ''),
-    lineItems: preparedItems.map((item, index) => {
-      const isMeasuredLength = item.pricingContext.pricingMode === 'measured_length'
-      const linkedVariantId = toVariantGid(
-        isMeasuredLength
-          ? normalizedItems[index]?.selectedVariantId ||
-              item.upload.variantId ||
-              item.resolvedVariant?.selectedVariantId
-          : item.upload.variantId ||
-              item.resolvedVariant?.selectedVariantId ||
-              normalizedItems[index]?.selectedVariantId
-      )
+    lineItems: preparedItems.map((item) => {
+      const linkedVariantId = toVariantGid(item.checkoutVariantId)
       const lineTitle =
         item.pricingContext.customerType === 'business'
           ? `${item.productTitle} - Business Pricing`
@@ -345,6 +333,41 @@ export async function action({ request }: ActionFunctionArgs) {
       )
     }
 
+    // Persist production facts only after Shopify has accepted the draft.
+    // A failed draft must not make an upload look ordered on its identity page.
+    const persistenceResults = await Promise.allSettled(
+      preparedItems.map((item) => {
+        const sheetLabel =
+          item.pricingContext.pricingMode === 'measured_length'
+            ? 'Exact measured length'
+            : String(
+                item.resolvedVariant?.selectedSheetLabel ||
+                  item.resolvedVariant?.selectedVariantTitle ||
+                  ''
+              ).trim()
+        const productionNote = String(
+          item.productionNote || item.resolvedVariant?.productionNote || ''
+        ).trim()
+        return prisma.upload.update({
+          where: { id: item.upload.id },
+          data: {
+            requestedCopies: Math.max(1, item.requestedQuantity),
+            sheetsNeeded:
+              Number(item.resolvedVariant?.sheetsNeeded || item.quote.sheetsNeeded || 1) || 1,
+            designsPerSheet: Number(item.resolvedVariant?.designsPerSheet || 0) || null,
+            cartVariantId: item.checkoutVariantId || null,
+            cartSheetLabel:
+              [sheetLabel, productionNote].filter(Boolean).join(' · ') || null,
+          },
+        })
+      })
+    )
+    for (const persistence of persistenceResults) {
+      if (persistence.status === 'rejected') {
+        console.warn('[VIP Checkout] draft created but upload facts failed to persist:', persistence.reason)
+      }
+    }
+
     return json({
       ok: true,
       checkoutLabel,
@@ -372,6 +395,7 @@ export async function action({ request }: ActionFunctionArgs) {
         selectedSheetLabel: item.resolvedVariant?.selectedSheetLabel || null,
         sheetsNeeded: item.resolvedVariant?.sheetsNeeded || item.quote.sheetsNeeded || null,
         designsPerSheet: item.resolvedVariant?.designsPerSheet || null,
+        productionNote: item.productionNote,
       })),
       quote: {
         pageWidthIn: firstItem.quote.pageWidthIn,

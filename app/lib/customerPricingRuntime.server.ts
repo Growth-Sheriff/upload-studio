@@ -15,7 +15,11 @@ import {
   resolveEffectivePricing,
   type EffectivePricing,
 } from '~/lib/customerPricingModel.server'
-import { applyFullCanvasMeasurementMetadata, deriveUploadItemLifecycle } from '~/lib/uploadLifecycle.server'
+import {
+  applyMeasurementBasisMetadata,
+  deriveUploadItemLifecycle,
+  getStoredMeasurementBasis,
+} from '~/lib/uploadLifecycle.server'
 
 export interface PricingShopLike {
   id: string
@@ -24,18 +28,59 @@ export interface PricingShopLike {
   settings: unknown
 }
 
-const CUSTOMER_TAGS_QUERY = `
-  query CustomerPricingTags($id: ID!) {
+const CUSTOMER_PROFILE_QUERY = `
+  query CustomerPricingProfile($id: ID!) {
     customer(id: $id) {
       id
       tags
+      email
+      displayName
     }
   }
 `
 
 const TAG_CACHE_TTL_MS = 5 * 60 * 1000
 const INCHES_CACHE_TTL_MS = 10 * 60 * 1000
-const tagCache = new Map<string, { tags: string[]; expiresAt: number }>()
+export interface TrustedCustomerProfile {
+  customerId: string
+  tags: string[]
+  email: string | null
+  name: string | null
+}
+
+export class TrustedCustomerProfileUnavailableError extends Error {
+  constructor(options?: ErrorOptions) {
+    super('Customer profile lookup is temporarily unavailable', options)
+    this.name = 'TrustedCustomerProfileUnavailableError'
+  }
+}
+
+interface CustomerProfileQueryData {
+  customer?: {
+    id?: string
+    tags?: string[]
+    email?: string | null
+    displayName?: string | null
+  } | null
+}
+
+export function trustedCustomerProfileFromQuery(
+  customerId: string,
+  response: CustomerProfileQueryData | null | undefined
+): TrustedCustomerProfile | null {
+  const customer = response?.customer
+  if (!customer) return null
+  return {
+    customerId,
+    tags: (customer.tags || [])
+      .map((tag) => String(tag || '').trim().toLowerCase())
+      .filter(Boolean),
+    email: String(customer.email || '').trim().toLowerCase() || null,
+    name: String(customer.displayName || '').trim() || null,
+  }
+}
+
+const profileCache = new Map<string, { profile: TrustedCustomerProfile; expiresAt: number }>()
 const inchesCache = new Map<string, { inches: number; expiresAt: number }>()
 
 function pruneCache<T extends { expiresAt: number }>(cache: Map<string, T>, now: number) {
@@ -47,36 +92,45 @@ function pruneCache<T extends { expiresAt: number }>(cache: Map<string, T>, now:
 
 export function invalidatePricingRuntimeCaches(shopDomain?: string) {
   if (!shopDomain) {
-    tagCache.clear()
+    profileCache.clear()
     inchesCache.clear()
     return
   }
-  for (const key of Array.from(tagCache.keys())) if (key.startsWith(`${shopDomain}:`)) tagCache.delete(key)
+  for (const key of Array.from(profileCache.keys())) if (key.startsWith(`${shopDomain}:`)) profileCache.delete(key)
   for (const key of Array.from(inchesCache.keys())) if (key.startsWith(`${shopDomain}:`)) inchesCache.delete(key)
+}
+
+/** Shopify-sourced identity and tags, cached per shop+customer for a few minutes. */
+export async function loadTrustedCustomerProfile(
+  shop: PricingShopLike,
+  customerId: string | null
+): Promise<TrustedCustomerProfile | null> {
+  if (!customerId || !shop.accessToken) return null
+  const now = Date.now()
+  const key = `${shop.shopDomain}:${customerId}`
+  const cached = profileCache.get(key)
+  if (cached && cached.expiresAt > now) return cached.profile
+  try {
+    const response = await shopifyGraphQL<CustomerProfileQueryData>(
+      shop.shopDomain,
+      shop.accessToken,
+      CUSTOMER_PROFILE_QUERY,
+      { id: `gid://shopify/Customer/${customerId}` }
+    )
+    const profile = trustedCustomerProfileFromQuery(customerId, response)
+    if (!profile) return null
+    pruneCache(profileCache, now)
+    profileCache.set(key, { profile, expiresAt: now + TAG_CACHE_TTL_MS })
+    return profile
+  } catch (error) {
+    console.warn('[Customer Pricing] customer profile lookup failed:', error)
+    throw new TrustedCustomerProfileUnavailableError({ cause: error })
+  }
 }
 
 /** Lower-cased customer tags, cached per shop+customer for a few minutes. */
 export async function loadCustomerTags(shop: PricingShopLike, customerId: string | null): Promise<string[]> {
-  if (!customerId || !shop.accessToken) return []
-  const now = Date.now()
-  const key = `${shop.shopDomain}:${customerId}`
-  const cached = tagCache.get(key)
-  if (cached && cached.expiresAt > now) return cached.tags
-  try {
-    const response = await shopifyGraphQL<{ data?: { customer?: { tags?: string[] } | null } }>(
-      shop.shopDomain,
-      shop.accessToken,
-      CUSTOMER_TAGS_QUERY,
-      { id: `gid://shopify/Customer/${customerId}` }
-    )
-    const tags = (response?.data?.customer?.tags || []).map((tag) => String(tag || '').trim().toLowerCase()).filter(Boolean)
-    pruneCache(tagCache, now)
-    tagCache.set(key, { tags, expiresAt: now + TAG_CACHE_TTL_MS })
-    return tags
-  } catch (error) {
-    console.warn('[Customer Pricing] tag lookup failed:', error)
-    return []
-  }
+  return (await loadTrustedCustomerProfile(shop, customerId))?.tags || []
 }
 
 /** Billable inches this customer paid for in the last `months`, from our own
@@ -117,7 +171,10 @@ export async function loadRecentBillableInches(
     const item = upload.items[0]
     if (!item) continue
     const lifecycle = deriveUploadItemLifecycle(item)
-    const metadata = basis === 'full_page' ? applyFullCanvasMeasurementMetadata(lifecycle.metadata) : lifecycle.metadata
+    const metadata = applyMeasurementBasisMetadata(
+      lifecycle.metadata,
+      getStoredMeasurementBasis(item.preflightResult, basis)
+    )
     if (!metadata || lifecycle.measurementStatus !== 'ready') continue
     const lengthIn = Math.max(Number(metadata.widthIn) || 0, Number(metadata.heightIn) || 0)
     const copies = Math.max(1, Number(upload.requestedCopies) || Number(upload.sheetsNeeded) || 1)
@@ -158,20 +215,30 @@ export async function resolveEffectivePricingForShop(input: EffectivePricingRequ
       (state.volumeTiersEnabled && program.eligibleTags.length > 0))
   const needsInches = Boolean(customerId) && state.volumeTiersEnabled && program.autoEligibility.enabled
 
-  const [customerTags, recentBillableInches] = await Promise.all([
-    needsTags ? loadCustomerTags(shop, customerId) : Promise.resolve<string[]>([]),
+  const [trustedProfile, recentBillableInches] = await Promise.all([
+    customerId
+      ? loadTrustedCustomerProfile(shop, customerId)
+      : Promise.resolve<TrustedCustomerProfile | null>(null),
     needsInches
-      ? loadRecentBillableInches(shop, customerId, program.autoEligibility.months, state.policy.measurementBasis)
+      ? loadRecentBillableInches(
+          shop,
+          customerId,
+          program.autoEligibility.months,
+          state.policyExplicit ? state.policy.measurementBasis : 'full_page'
+        )
       : Promise.resolve(0),
   ])
+  const customerTags = needsTags ? trustedProfile?.tags || [] : []
+  const trustedEmail = customerId ? trustedProfile?.email || null : input.customerEmail || null
+  const trustedName = customerId ? trustedProfile?.name || null : input.customerName || null
 
   return resolveEffectivePricing({
     shopDomain: shop.shopDomain,
     rawSettings: shop.settings,
     normalizedSettings: settings,
     customerId,
-    customerEmail: input.customerEmail,
-    customerName: input.customerName,
+    customerEmail: trustedEmail,
+    customerName: trustedName,
     customerTags,
     recentBillableInches: needsInches ? recentBillableInches : null,
     productId: input.productId,
