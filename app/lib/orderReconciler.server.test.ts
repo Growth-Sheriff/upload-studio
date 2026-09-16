@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  calculateServedOrderAmount,
   deriveUploadStatusTransition,
   extractOrderFacts,
   verifyShopifyWebhookHmac,
@@ -19,6 +20,30 @@ describe('extractOrderFacts', () => {
     expect(extractOrderFacts({ cancelled_at: null }).cancelled).toBe(false)
     expect(extractOrderFacts({ fulfillment_status: 'fulfilled' }).fulfilled).toBe(true)
     expect(extractOrderFacts({ fulfillment_status: 'partial' }).fulfilled).toBe(false)
+  })
+})
+
+describe('calculateServedOrderAmount', () => {
+  const order = {
+    line_items: [
+      {
+        id: 1,
+        price: '30.00',
+        quantity: 1,
+        discount_allocations: [{ amount: '30.00' }],
+      },
+      { id: 2, price: '100.00', quantity: 1, discount_allocations: [] },
+    ],
+    subtotal_price: '100.00',
+    total_price: '100.00',
+  }
+
+  it('keeps a fully discounted attributable app line at zero', () => {
+    expect(calculateServedOrderAmount(order, ['1'])).toBe(0)
+  })
+
+  it('falls back to the order subtotal only when no line can be attributed', () => {
+    expect(calculateServedOrderAmount(order, [])).toBe(100)
   })
 })
 
@@ -59,6 +84,17 @@ describe('deriveUploadStatusTransition (status lattice)', () => {
     expect(deriveUploadStatusTransition('approved', facts({ paid: true }))).toBeNull()
     expect(deriveUploadStatusTransition('printed', facts({ paid: true }))).toBeNull()
     expect(deriveUploadStatusTransition('shipped', facts({ paid: true }))).toBeNull()
+  })
+
+  it('never approves a missing-file ghost when payment arrives', () => {
+    expect(
+      deriveUploadStatusTransition('blocked', facts({ paid: true }), { isGhost: true })
+    ).toBeNull()
+    expect(
+      deriveUploadStatusTransition('blocked', facts({ paid: true, cancelled: true }), {
+        isGhost: true,
+      })
+    ).toBe('archived')
   })
 
   it('link-time (unpaid order) moves fresh uploads to needs_review only', () => {

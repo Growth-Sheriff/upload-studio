@@ -69,16 +69,58 @@ export function extractOrderFacts(order: {
   }
 }
 
+export function calculateServedOrderAmount(
+  order: {
+    line_items?: Array<{
+      id: string | number
+      price?: string | number | null
+      quantity?: string | number | null
+      discount_allocations?: Array<{ amount?: string | number | null }> | null
+    }> | null
+    subtotal_price?: string | number | null
+    total_line_items_price?: string | number | null
+    total_price?: string | number | null
+  },
+  servedLineItemIds: Iterable<string>
+): number {
+  const served = new Set(Array.from(servedLineItemIds, (value) => String(value)))
+  if (served.size === 0) {
+    return (
+      parseFloat(
+        String(order.subtotal_price ?? order.total_line_items_price ?? order.total_price ?? '0')
+      ) || 0
+    )
+  }
+
+  let servedAmount = 0
+  for (const line of order.line_items || []) {
+    if (!served.has(String(line.id))) continue
+    const gross = (parseFloat(String(line.price ?? '0')) || 0) * (Number(line.quantity) || 0)
+    const discounts = Array.isArray(line.discount_allocations)
+      ? line.discount_allocations.reduce(
+          (sum, discount) => sum + (parseFloat(String(discount?.amount ?? '0')) || 0),
+          0
+        )
+      : 0
+    servedAmount += Math.max(0, gross - discounts)
+  }
+  return servedAmount
+}
+
 /** Pure: next upload status for these order facts, or null for "no change".
  *  Encodes the lattice above; webhook retries and out-of-order delivery can
  *  therefore never move a status backwards. */
 export function deriveUploadStatusTransition(
   current: string,
-  facts: OrderFacts
+  facts: OrderFacts,
+  options: { isGhost?: boolean } = {}
 ): string | null {
   if (facts.cancelled) {
     return current === 'archived' || current === 'shipped' ? null : 'archived'
   }
+  // Missing-file placeholders must never enter the approved production queue.
+  // Cancellation may still archive them so the queue reflects the order.
+  if (options.isGhost) return null
   if (facts.fulfilled && current === 'printed') {
     return 'shipped'
   }
@@ -235,7 +277,7 @@ export async function reconcileOrder(
       create: { shopId: shop.id, orderId, uploadId, lineItemId },
     })
 
-    const nextStatus = deriveUploadStatusTransition(upload.status, facts)
+    const nextStatus = deriveUploadStatusTransition(upload.status, facts, { isGhost })
     const firstPaidTransition = facts.paid && !upload.orderPaidAt
 
     await prisma.upload.updateMany({
@@ -243,6 +285,7 @@ export async function reconcileOrder(
       data: {
         orderId,
         orderName,
+        customerEmail: order.email || upload.customerEmail,
         ...(nextStatus ? { status: nextStatus } : {}),
         ...(facts.paid
           ? {
@@ -318,8 +361,11 @@ export async function reconcileOrder(
     const match = matchUploadFromLineItem(lineItem)
 
     if (match) {
-      await applyUpload(match.uploadId, lineItemId, match.source)
-      continue
+      const applied = await applyUpload(match.uploadId, lineItemId, match.source)
+      if (applied) continue
+      // A syntactically valid but unknown/stale upload id is not proof that
+      // this configured line was served. Continue through cart-token recovery
+      // and ghost creation so production sees the missing-file condition.
     }
 
     if (!configuredProductIds.has(String(lineItem.product_id))) continue
@@ -461,54 +507,52 @@ export async function reconcileOrder(
     // Basis: the app's own line items, net of their discount allocations.
     // A note-only match (VIP/measured checkout: every line is ours) falls
     // back to the order subtotal.
-    const served = new Set(summary.servedLineItemIds)
-    let servedAmount = 0
-    for (const line of order.line_items || []) {
-      if (!served.has(String(line.id))) continue
-      const gross = (parseFloat(String(line.price ?? '0')) || 0) * (Number(line.quantity) || 0)
-      const discounts = Array.isArray(line.discount_allocations)
-        ? line.discount_allocations.reduce((sum: number, d: any) => sum + (parseFloat(String(d?.amount ?? '0')) || 0), 0)
-        : 0
-      servedAmount += Math.max(0, gross - discounts)
-    }
-    if (servedAmount <= 0) {
-      servedAmount = parseFloat(String(order.subtotal_price ?? order.total_line_items_price ?? order.total_price ?? '0')) || 0
-    }
+    const servedAmount = calculateServedOrderAmount(order, summary.servedLineItemIds)
     // A $0 order (free, fully discounted, test) is never billed: the row is
     // kept as void so the merchant sees it was considered and skipped.
-    const zeroPayment = isZeroPaymentOrder(order)
+    // A mixed order can have a positive total while the app-attributable line
+    // is fully discounted. A zero app basis is not a collectible fee.
+    const zeroPayment = isZeroPaymentOrder(order) || servedAmount <= 0
     const commissionAmount = zeroPayment ? 0 : calculateCommissionAmount(servedAmount)
     const commissionStatus = zeroPayment ? 'void' : 'pending'
 
-    const existingCommission = await prisma.commission.findUnique({
-      where: { commission_shop_order: { shopId: shop.id, orderId } },
-      select: { status: true },
+    const commissionKey = { commission_shop_order: { shopId: shop.id, orderId } }
+    // Create if absent without mutating an existing row. The follow-up update
+    // is conditional in SQL terms: if an auto-charge claims pending -> charging
+    // between these statements, reconciliation cannot reopen the claim.
+    await prisma.commission.upsert({
+      where: commissionKey,
+      create: {
+        shopId: shop.id,
+        orderId,
+        orderNumber: order.name || order.order_number?.toString(),
+        orderTotal: new Decimal(order.total_price || '0'),
+        orderCurrency,
+        commissionRate: new Decimal(COMMISSION_PERCENT),
+        commissionAmount: new Decimal(commissionAmount),
+        status: commissionStatus,
+      },
+      update: {},
     })
-    // Never reopen a settled or voided row; only pending rows follow the order.
-    const canRewrite = !existingCommission || existingCommission.status === 'pending'
 
-    if (canRewrite) {
-      await prisma.commission.upsert({
-        where: { commission_shop_order: { shopId: shop.id, orderId } },
-        create: {
-          shopId: shop.id,
-          orderId,
-          orderNumber: order.name || order.order_number?.toString(),
-          orderTotal: new Decimal(order.total_price || '0'),
-          orderCurrency,
-          commissionRate: new Decimal(COMMISSION_PERCENT),
-          commissionAmount: new Decimal(commissionAmount),
-          status: commissionStatus,
-        },
-        update: {
-          orderTotal: new Decimal(order.total_price || '0'),
-          orderCurrency,
-          commissionRate: new Decimal(COMMISSION_PERCENT),
-          commissionAmount: new Decimal(commissionAmount),
-          status: commissionStatus,
-        },
-      })
-    }
+    // Never rewrite a claimed, settled, voided, or waived row. Requiring a
+    // null paymentRef also protects legacy rows affected by an interrupted
+    // claim even if their status was incorrectly restored to pending.
+    await prisma.commission.updateMany({
+      where: {
+        shopId: shop.id,
+        orderId,
+        status: 'pending',
+        paymentRef: null,
+      },
+      data: {
+        orderTotal: new Decimal(order.total_price || '0'),
+        orderCurrency,
+        commissionRate: new Decimal(COMMISSION_PERCENT),
+        commissionAmount: new Decimal(commissionAmount),
+        status: commissionStatus,
+      },
+    })
     console.log(
       zeroPayment
         ? `[Reconcile] Order ${orderId} paid $0; fee voided`
