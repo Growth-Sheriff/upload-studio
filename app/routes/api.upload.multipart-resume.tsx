@@ -12,7 +12,9 @@ import {
   getStorageConfig,
   listR2MultipartParts,
   presignR2MultipartParts,
+  storageKeyMatchesObjectKey,
 } from '~/lib/storage.server'
+import { authenticate } from '~/shopify.server'
 
 export async function loader({ request }: LoaderFunctionArgs) {
   if (request.method === 'OPTIONS') return handleCorsOptions(request)
@@ -24,6 +26,8 @@ export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
     return corsJson({ error: 'Method not allowed' }, request, { status: 405 })
   }
+  await authenticate.public.appProxy(request)
+  const signedShopDomain = new URL(request.url).searchParams.get('shop')?.trim() || ''
 
   const identifier = getIdentifier(request, 'customer')
   const rateLimitResponse = await rateLimitGuard(identifier, 'uploadIntent')
@@ -36,13 +40,22 @@ export async function action({ request }: ActionFunctionArgs) {
     return corsJson({ error: 'Invalid JSON body' }, request, { status: 400 })
   }
 
-  const shopDomain = String(body.shopDomain || '').trim()
+  const shopDomain = signedShopDomain
   const uploadId = String(body.uploadId || '').trim()
   const key = String(body.key || '').trim()
   const multipartUploadId = String(body.multipartUploadId || '').trim()
+  const partSize = Math.floor(Number(body.partSize) || 0)
   const totalParts = Math.floor(Number(body.totalParts) || 0)
 
-  if (!shopDomain || !uploadId || !key || !multipartUploadId || totalParts < 1 || totalParts > 10_000) {
+  if (
+    !shopDomain ||
+    !uploadId ||
+    !key ||
+    !multipartUploadId ||
+    partSize < 5 * 1024 * 1024 ||
+    totalParts < 1 ||
+    totalParts > 10_000
+  ) {
     return corsJson(
       { error: 'Missing required fields: shopDomain, uploadId, key, multipartUploadId, totalParts' },
       request,
@@ -58,13 +71,20 @@ export async function action({ request }: ActionFunctionArgs) {
   // object.
   const upload = await prisma.upload.findFirst({
     where: { id: uploadId, shopId: shop.id },
-    select: { id: true, status: true, items: { select: { storageKey: true } } },
+    select: { id: true, status: true, items: { select: { storageKey: true, fileSize: true } } },
   })
   if (!upload) return corsJson({ error: 'Upload not found' }, request, { status: 404 })
-  const ownsKey = upload.items.some((item) => item.storageKey === `r2:${key}` || item.storageKey === key)
+  const ownsKey = upload.items.some((item) => storageKeyMatchesObjectKey(item.storageKey, key))
   if (!ownsKey) return corsJson({ error: 'Key does not belong to this upload' }, request, { status: 403 })
   if (upload.status !== 'draft') {
     return corsJson({ error: 'Upload already finalized', status: upload.status }, request, { status: 409 })
+  }
+  const uploadItem = upload.items.find((item) => storageKeyMatchesObjectKey(item.storageKey, key))
+  const fileSize = Number(uploadItem?.fileSize)
+  if (!Number.isSafeInteger(fileSize) || fileSize <= 0 || Math.ceil(fileSize / partSize) !== totalParts) {
+    return corsJson({ error: 'Multipart geometry does not match the upload intent' }, request, {
+      status: 400,
+    })
   }
 
   const storageConfig = getStorageConfig({
@@ -81,7 +101,14 @@ export async function action({ request }: ActionFunctionArgs) {
   const have = new Set(listed.parts.map((p) => p.partNumber))
   const missing: number[] = []
   for (let n = 1; n <= totalParts; n++) if (!have.has(n)) missing.push(n)
-  const presigned = await presignR2MultipartParts(storageConfig, key, multipartUploadId, missing)
+  const presigned = await presignR2MultipartParts(
+    storageConfig,
+    key,
+    multipartUploadId,
+    missing,
+    fileSize,
+    partSize
+  )
 
   console.log(
     `[Multipart Resume] shop=${shopDomain} upload=${uploadId} have=${have.size}/${totalParts} missing=${missing.length}`
@@ -92,8 +119,8 @@ export async function action({ request }: ActionFunctionArgs) {
       success: true,
       uploadedParts: listed.parts.map((p) => ({ partNumber: p.partNumber, etag: p.etag })),
       parts: presigned,
-      completeUrl: `${process.env.SHOPIFY_APP_URL || ''}/api/upload/multipart-complete`,
-      abortUrl: `${process.env.SHOPIFY_APP_URL || ''}/api/upload/multipart-abort`,
+      completeUrl: '/apps/customizer/api/upload/multipart-complete',
+      abortUrl: '/apps/customizer/api/upload/multipart-abort',
     },
     request
   )

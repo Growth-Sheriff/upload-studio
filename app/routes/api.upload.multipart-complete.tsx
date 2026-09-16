@@ -2,7 +2,12 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from '@remix-run/node'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
-import { completeR2Multipart, getStorageConfig } from '~/lib/storage.server'
+import {
+  completeR2Multipart,
+  getStorageConfig,
+  storageKeyMatchesObjectKey,
+} from '~/lib/storage.server'
+import { authenticate } from '~/shopify.server'
 
 export async function loader({ request }: LoaderFunctionArgs) {
   if (request.method === 'OPTIONS') return handleCorsOptions(request)
@@ -19,6 +24,8 @@ export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
     return corsJson({ error: 'Method not allowed' }, request, { status: 405 })
   }
+  await authenticate.public.appProxy(request)
+  const signedShopDomain = new URL(request.url).searchParams.get('shop')?.trim() || ''
 
   const identifier = getIdentifier(request, 'customer')
   const rateLimitResponse = await rateLimitGuard(identifier, 'uploadIntent')
@@ -31,15 +38,16 @@ export async function action({ request }: ActionFunctionArgs) {
     return corsJson({ error: 'Invalid JSON body' }, request, { status: 400 })
   }
 
-  const { shopDomain, uploadId: appUploadId, key, multipartUploadId, parts } = body as {
+  const { uploadId: appUploadId, key, multipartUploadId, parts } = body as {
     shopDomain?: string
     uploadId?: string
     key?: string
     multipartUploadId?: string
     parts?: PartInput[]
   }
+  const shopDomain = signedShopDomain
 
-  if (!shopDomain || !key || !multipartUploadId) {
+  if (!shopDomain || !appUploadId || !key || !multipartUploadId) {
     return corsJson(
       { error: 'Missing required fields: shopDomain, key, multipartUploadId' },
       request,
@@ -58,15 +66,15 @@ export async function action({ request }: ActionFunctionArgs) {
   const shop = await prisma.shop.findUnique({ where: { shopDomain } })
   if (!shop) return corsJson({ error: 'Shop not found' }, request, { status: 404 })
 
-  // Validate the app uploadId belongs to this shop (defense in depth)
-  if (appUploadId) {
-    const upload = await prisma.upload.findFirst({
-      where: { id: appUploadId, shopId: shop.id },
-      select: { id: true },
-    })
-    if (!upload) {
-      return corsJson({ error: 'Upload not found in this shop' }, request, { status: 404 })
-    }
+  const upload = await prisma.upload.findFirst({
+    where: { id: appUploadId, shopId: shop.id, status: 'draft' },
+    select: { items: { select: { storageKey: true } } },
+  })
+  if (!upload) {
+    return corsJson({ error: 'Writable upload not found in this shop' }, request, { status: 404 })
+  }
+  if (!upload.items.some((item) => storageKeyMatchesObjectKey(item.storageKey, key))) {
+    return corsJson({ error: 'Key does not belong to this upload' }, request, { status: 403 })
   }
 
   const storageConfig = getStorageConfig({

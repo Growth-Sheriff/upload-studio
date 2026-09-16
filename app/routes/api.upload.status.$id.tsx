@@ -2,7 +2,7 @@ import type { LoaderFunctionArgs } from '@remix-run/node'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
-import { getPricingPolicy } from '~/lib/customerPricingModel.server'
+import { getRuntimeMeasurementBasis } from '~/lib/customerPricingModel.server'
 import {
   generateLocalFileToken,
   getStorageConfig,
@@ -10,11 +10,13 @@ import {
   isBunnyUrl,
 } from '~/lib/storage.server'
 import {
-  applyFullCanvasMeasurementMetadata,
+  applyMeasurementBasisMetadata,
   deriveUploadClientStatus,
   deriveUploadItemLifecycle,
   deriveUploadOrderabilityStatus,
+  getStoredMeasurementBasis,
 } from '~/lib/uploadLifecycle.server'
+import { authenticate } from '~/shopify.server'
 
 
 const FILE_QUERY = `
@@ -79,13 +81,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return handleCorsOptions(request)
   }
 
+  await authenticate.public.appProxy(request)
+
 
   const identifier = getIdentifier(request, 'customer')
   const rateLimitResponse = await rateLimitGuard(identifier, 'adminApi')
   if (rateLimitResponse) return rateLimitResponse
 
   const url = new URL(request.url)
-  const shopDomain = url.searchParams.get('shopDomain')
+  const shopDomain = url.searchParams.get('shop')
 
   if (!shopDomain) {
     return corsJson({ error: 'Missing shopDomain' }, request, { status: 400 })
@@ -228,12 +232,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       const resolvedUrl = await resolveShopifyFileUrl(fileId, shop.shopDomain, shop.accessToken)
       if (resolvedUrl) {
         downloadUrl = resolvedUrl
-
-        await prisma.uploadItem.updateMany({
-          where: { id: firstItem.id, uploadId: upload.id },
-          data: { storageKey: resolvedUrl },
-        })
-        console.log(`[Upload Status] Resolved Shopify fileId to URL: ${resolvedUrl}`)
       } else {
 
         downloadUrl = null
@@ -303,15 +301,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       thumbnailKey: item.thumbnailKey,
     })
   )
-  const useFullCanvasMeasurement = getPricingPolicy(shop.shopDomain, shop.settings).measurementBasis === 'full_page'
+  const runtimeMeasurementBasis = getRuntimeMeasurementBasis(shop.shopDomain, shop.settings)
   const clientStatus = deriveUploadClientStatus(upload.status, lifecycleItems)
   const orderabilityStatus = deriveUploadOrderabilityStatus(lifecycleItems)
 
   const enrichedItems = upload.items.map((item, index) => {
     const lifecycle = lifecycleItems[index]
-    const metadata = useFullCanvasMeasurement
-      ? applyFullCanvasMeasurementMetadata(lifecycle.metadata)
-      : lifecycle.metadata
+    const metadata = applyMeasurementBasisMetadata(
+      lifecycle.metadata,
+      getStoredMeasurementBasis(item.preflightResult, runtimeMeasurementBasis)
+    )
 
 
     let itemThumbnailUrl: string | null = null
@@ -430,9 +429,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   })
 
   const primaryLifecycle = lifecycleItems[0] || null
-  const primaryMetadata = useFullCanvasMeasurement
-    ? applyFullCanvasMeasurementMetadata(primaryLifecycle?.metadata || null)
-    : primaryLifecycle?.metadata || null
+  const primaryMetadata = applyMeasurementBasisMetadata(
+    primaryLifecycle?.metadata || null,
+    getStoredMeasurementBasis(upload.items[0]?.preflightResult, runtimeMeasurementBasis)
+  )
   const problems = lifecycleItems.flatMap((lifecycle) => lifecycle.problems)
   const warnings = problems
     .filter((problem) => problem.severity === 'warning')

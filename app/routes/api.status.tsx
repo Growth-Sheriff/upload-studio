@@ -8,6 +8,10 @@ import { json } from "@remix-run/node";
 import prisma from "~/lib/prisma.server";
 import Redis from "ioredis";
 import { Queue } from "bullmq";
+import {
+  MEASURE_PREFLIGHT_QUEUE_NAME,
+  PREVIEW_RENDER_QUEUE_NAME,
+} from "~/lib/uploadQueues";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const startTime = Date.now();
@@ -110,16 +114,19 @@ async function checkQueues() {
       maxRetriesPerRequest: null,
     });
 
-    const preflightQueue = new Queue("preflight", { connection: redis });
+    const measureQueue = new Queue(MEASURE_PREFLIGHT_QUEUE_NAME, { connection: redis });
+    const previewQueue = new Queue(PREVIEW_RENDER_QUEUE_NAME, { connection: redis });
     const exportQueue = new Queue("export", { connection: redis });
 
-    const [preflightCounts, exportCounts] = await Promise.all([
-      preflightQueue.getJobCounts("waiting", "active", "completed", "failed"),
+    const [measureCounts, previewCounts, exportCounts] = await Promise.all([
+      measureQueue.getJobCounts("waiting", "active", "delayed", "completed", "failed"),
+      previewQueue.getJobCounts("waiting", "active", "delayed", "completed", "failed"),
       exportQueue.getJobCounts("waiting", "active", "completed", "failed"),
     ]);
 
     await Promise.all([
-      preflightQueue.close(),
+      measureQueue.close(),
+      previewQueue.close(),
       exportQueue.close(),
     ]);
 
@@ -127,7 +134,9 @@ async function checkQueues() {
 
     return {
       status: "ok",
-      preflight: preflightCounts,
+      preflight: measureCounts,
+      measurePreflight: measureCounts,
+      previewRender: previewCounts,
       export: exportCounts,
     };
   } catch (error) {

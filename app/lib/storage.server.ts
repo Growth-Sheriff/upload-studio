@@ -10,9 +10,11 @@ import {
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import crypto from 'crypto'
-import { existsSync } from 'fs'
-import { mkdir, readFile, unlink, writeFile } from 'fs/promises'
+import { createWriteStream, existsSync } from 'fs'
+import { mkdir, readFile, rename, unlink, writeFile } from 'fs/promises'
 import { dirname, join, resolve, sep } from 'path'
+import { Readable, Transform } from 'stream'
+import { pipeline } from 'stream/promises'
 
 
 
@@ -43,7 +45,10 @@ import { dirname, join, resolve, sep } from 'path'
 
 
 const LOCAL_STORAGE_BASE = process.env.LOCAL_STORAGE_PATH || './uploads'
-const LOCAL_FILE_SECRET = process.env.SECRET_KEY || 'fallback-secret-key'
+const LOCAL_FILE_SECRET =
+  process.env.SECRET_KEY ||
+  process.env.SHOPIFY_API_SECRET ||
+  (process.env.NODE_ENV === 'production' ? '' : 'development-only-file-token-secret')
 
 
 const BUNNY_STORAGE_ZONE = process.env.BUNNY_STORAGE_ZONE || 'customizerappdev'
@@ -136,6 +141,28 @@ export interface UploadUrlResult {
   }
 }
 
+export function asStorageFallback(
+  result: UploadUrlResult,
+  expectedProvider: 'r2' | 'local'
+): { url: string; publicUrl: string; method: 'PUT' | 'POST' } | null {
+  if (result.provider !== expectedProvider) return null
+  return {
+    url: result.url,
+    publicUrl: result.publicUrl,
+    method: result.method,
+  }
+}
+
+export function storageKeyMatchesObjectKey(
+  storedStorageKey: string | null | undefined,
+  objectKey: string
+): boolean {
+  const stored = String(storedStorageKey || '')
+  const expected = String(objectKey || '')
+  if (!stored || !expected) return false
+  return stored.replace(/^(bunny|r2|local|shopify):/, '') === expected
+}
+
 
 
 
@@ -216,6 +243,9 @@ export function getEffectiveStorageProvider(config: StorageConfig): StorageProvi
 
 
 export function generateLocalFileToken(key: string, expiresAt: number): string {
+  if (!LOCAL_FILE_SECRET) {
+    throw new Error('A server secret is required to sign file capabilities')
+  }
   const payload = `${key}:${expiresAt}`
   const signature = crypto.createHmac('sha256', LOCAL_FILE_SECRET).update(payload).digest('hex')
   return `${expiresAt}.${signature}`
@@ -232,16 +262,44 @@ export function validateLocalFileToken(key: string, token: string): boolean {
 
   if (Date.now() > expiresAt) return false
 
+  if (!LOCAL_FILE_SECRET) return false
+
   const expectedPayload = `${key}:${expiresAt}`
   const expectedSignature = crypto
     .createHmac('sha256', LOCAL_FILE_SECRET)
     .update(expectedPayload)
     .digest('hex')
 
-  return crypto.timingSafeEqual(
-    Buffer.from(signature, 'hex'),
-    Buffer.from(expectedSignature, 'hex')
-  )
+  const supplied = Buffer.from(signature, 'hex')
+  const expected = Buffer.from(expectedSignature, 'hex')
+  if (supplied.length !== expected.length) return false
+  return crypto.timingSafeEqual(supplied, expected)
+}
+
+function uploadCapabilitySubject(
+  provider: StorageProvider,
+  key: string,
+  expectedSize: number
+): string {
+  return `upload:${provider}:${expectedSize}:${key}`
+}
+
+export function generateUploadCapabilityToken(
+  provider: StorageProvider,
+  key: string,
+  expectedSize: number,
+  expiresAt: number
+): string {
+  return generateLocalFileToken(uploadCapabilitySubject(provider, key, expectedSize), expiresAt)
+}
+
+export function validateUploadCapabilityToken(
+  provider: StorageProvider,
+  key: string,
+  expectedSize: number,
+  token: string
+): boolean {
+  return validateLocalFileToken(uploadCapabilitySubject(provider, key, expectedSize), token)
 }
 
 
@@ -256,6 +314,7 @@ export async function getUploadSignedUrl(
   config: StorageConfig,
   key: string,
   contentType: string,
+  contentLength: number,
   _expiresIn: number = 3600
 ): Promise<UploadUrlResult> {
   const effectiveProvider = getEffectiveStorageProvider(config)
@@ -265,14 +324,14 @@ export async function getUploadSignedUrl(
 
   switch (effectiveProvider) {
     case 'bunny':
-      primaryResult = await getBunnyUploadUrlWithFallbacks(config, key, contentType)
+      primaryResult = await getBunnyUploadUrlWithFallbacks(config, key, contentType, contentLength)
       break
     case 'r2':
-      primaryResult = await getR2UploadUrl(config, key, contentType)
+      primaryResult = await getR2UploadUrl(config, key, contentType, contentLength)
       break
     case 'local':
     default:
-      primaryResult = getLocalUploadUrl(config, key)
+      primaryResult = getLocalUploadUrl(config, key, contentLength)
   }
 
   return primaryResult
@@ -285,9 +344,13 @@ export async function getUploadSignedUrl(
 async function getBunnyUploadUrlWithFallbacks(
   config: StorageConfig,
   key: string,
-  contentType: string
+  contentType: string,
+  contentLength: number
 ): Promise<UploadUrlResult> {
-  const uploadUrl = `https://${BUNNY_STORAGE_HOST}/${config.bunnyZone}/${key}`
+  const host = getAppHost()
+  const expiresAt = Date.now() + 3600 * 1000
+  const token = generateUploadCapabilityToken('bunny', key, contentLength, expiresAt)
+  const uploadUrl = `${host}/api/upload/bunny?key=${encodeURIComponent(key)}&size=${contentLength}&token=${encodeURIComponent(token)}`
   const publicUrl = `${config.bunnyCdnUrl}/${key}`
 
 
@@ -296,24 +359,18 @@ async function getBunnyUploadUrlWithFallbacks(
 
   if (isR2FallbackAvailable()) {
     try {
-      const r2Result = await getR2UploadUrl(config, key, contentType)
-      fallbackUrls.r2 = {
-        url: r2Result.url,
-        publicUrl: r2Result.publicUrl,
-        method: r2Result.method,
-      }
+      const r2Result = await getR2UploadUrl(config, key, contentType, contentLength)
+      const r2Fallback = asStorageFallback(r2Result, 'r2')
+      if (r2Fallback) fallbackUrls.r2 = r2Fallback
     } catch (error) {
       console.warn('[Storage] Failed to generate R2 fallback URL:', error)
     }
   }
 
 
-  const localResult = getLocalUploadUrl(config, key)
-  fallbackUrls.local = {
-    url: localResult.url,
-    publicUrl: localResult.publicUrl,
-    method: localResult.method,
-  }
+  const localResult = getLocalUploadUrl(config, key, contentLength)
+  const localFallback = asStorageFallback(localResult, 'local')
+  if (localFallback) fallbackUrls.local = localFallback
 
   return {
     url: uploadUrl,
@@ -321,9 +378,6 @@ async function getBunnyUploadUrlWithFallbacks(
     provider: 'bunny',
     publicUrl,
     method: 'PUT',
-    headers: {
-      AccessKey: config.bunnyApiKey || '',
-    },
     fallbackUrls,
     retryConfig: {
       maxRetries: MAX_RETRIES,
@@ -338,13 +392,14 @@ async function getBunnyUploadUrlWithFallbacks(
 async function getR2UploadUrl(
   config: StorageConfig,
   key: string,
-  contentType: string
+  contentType: string,
+  contentLength: number
 ): Promise<UploadUrlResult> {
   const client = getR2Client()
 
   if (!client) {
     console.warn('[Storage] R2 not configured, using local')
-    return getLocalUploadUrl(config, key)
+    return getLocalUploadUrl(config, key, contentLength)
   }
 
   try {
@@ -352,6 +407,7 @@ async function getR2UploadUrl(
       Bucket: config.r2BucketName || R2_BUCKET_NAME,
       Key: key,
       ContentType: contentType,
+      ContentLength: contentLength,
     })
 
     const presignedUrl = await getSignedUrl(client, command, { expiresIn: 3600 })
@@ -379,7 +435,7 @@ async function getR2UploadUrl(
     }
   } catch (error) {
     console.error('[Storage] R2 presigned URL error:', error)
-    return getLocalUploadUrl(config, key)
+    return getLocalUploadUrl(config, key, contentLength)
   }
 }
 
@@ -412,18 +468,31 @@ export async function getR2SignedGetUrl(
 
 
 
-function getLocalUploadUrl(_config: StorageConfig, key: string): UploadUrlResult {
-  let host = process.env.SHOPIFY_APP_URL || process.env.HOST || process.env.SHOPIFY_APP_URL!
+function getAppHost(): string {
+  let host = process.env.SHOPIFY_APP_URL || process.env.HOST || ''
+  if (!host) throw new Error('SHOPIFY_APP_URL or HOST is required for proxied uploads')
   if (!host.startsWith('http://') && !host.startsWith('https://')) {
     host = `https://${host}`
   }
+  return host.replace(/\/$/, '')
+}
+
+function getLocalUploadUrl(
+  _config: StorageConfig,
+  key: string,
+  contentLength: number
+): UploadUrlResult {
+  const host = getAppHost()
+  const expiresAt = Date.now() + 3600 * 1000
+  const token = generateUploadCapabilityToken('local', key, contentLength, expiresAt)
+  const downloadToken = generateLocalFileToken(key, expiresAt)
 
   return {
-    url: `${host}/api/upload/local`,
+    url: `${host}/api/upload/local?key=${encodeURIComponent(key)}&size=${contentLength}&token=${encodeURIComponent(token)}`,
     key,
     provider: 'local',
-    publicUrl: `${host}/api/files/${encodeURIComponent(key)}`,
-    method: 'POST',
+    publicUrl: `${host}/api/files/${encodeURIComponent(key)}?token=${encodeURIComponent(downloadToken)}`,
+    method: 'PUT',
   }
 }
 
@@ -623,6 +692,79 @@ export async function saveLocalFile(key: string, data: Buffer): Promise<string> 
   return filePath
 }
 
+export async function saveLocalFileStream(
+  key: string,
+  body: ReadableStream<Uint8Array>,
+  expectedSize: number
+): Promise<{ path: string; bytesWritten: number }> {
+  const filePath = safePath(key)
+  const dir = dirname(filePath)
+  await mkdir(dir, { recursive: true })
+
+  const tempPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.uploading`
+  let bytesWritten = 0
+  const limiter = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      bytesWritten += chunk.length
+      if (bytesWritten > expectedSize) {
+        callback(new Error('Upload exceeded its declared size'))
+        return
+      }
+      callback(null, chunk)
+    },
+  })
+
+  try {
+    await pipeline(
+      Readable.fromWeb(body as any),
+      limiter,
+      createWriteStream(tempPath, { flags: 'wx' })
+    )
+    if (bytesWritten !== expectedSize) {
+      throw new Error(`Upload size mismatch: expected ${expectedSize}, received ${bytesWritten}`)
+    }
+    await rename(tempPath, filePath)
+    return { path: filePath, bytesWritten }
+  } catch (error) {
+    await unlink(tempPath).catch(() => undefined)
+    throw error
+  }
+}
+
+export async function proxyUploadToBunny(
+  config: StorageConfig,
+  key: string,
+  body: ReadableStream<Uint8Array>,
+  expectedSize: number,
+  contentType: string
+): Promise<void> {
+  if (!config.bunnyZone || !config.bunnyApiKey) {
+    throw new Error('Bunny storage is not configured')
+  }
+
+  const response = await fetch(
+    `https://${BUNNY_STORAGE_HOST}/${encodeURIComponent(config.bunnyZone)}/${key
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/')}`,
+    {
+      method: 'PUT',
+      headers: {
+        AccessKey: config.bunnyApiKey,
+        'Content-Type': contentType || 'application/octet-stream',
+        'Content-Length': String(expectedSize),
+      },
+      body: body as any,
+      duplex: 'half',
+    } as RequestInit & { duplex: 'half' }
+  )
+
+  if (!response.ok) {
+    const detail = (await response.text().catch(() => '')).slice(0, 300)
+    throw new Error(`Bunny upload failed (${response.status})${detail ? `: ${detail}` : ''}`)
+  }
+}
+
 export async function readLocalFile(key: string): Promise<Buffer> {
   const filePath = safePath(key)
   return readFile(filePath)
@@ -792,6 +934,7 @@ export async function getR2MultipartInit(
 
   const parts: Array<{ partNumber: number; url: string }> = []
   for (let i = 1; i <= totalParts; i++) {
+    const contentLength = Math.min(partSize, fileSize - (i - 1) * partSize)
     const url = await getSignedUrl(
       client,
       new UploadPartCommand({
@@ -799,6 +942,7 @@ export async function getR2MultipartInit(
         Key: key,
         PartNumber: i,
         UploadId: uploadId,
+        ContentLength: contentLength,
       }),
       { expiresIn: 3600 }
     )
@@ -817,8 +961,8 @@ export async function getR2MultipartInit(
     partSize,
     totalParts,
     parts,
-    completeUrl: `${appHost}/api/upload/multipart-complete`,
-    abortUrl: `${appHost}/api/upload/multipart-abort`,
+    completeUrl: '/apps/customizer/api/upload/multipart-complete',
+    abortUrl: '/apps/customizer/api/upload/multipart-abort',
   }
 }
 
@@ -891,16 +1035,26 @@ export async function presignR2MultipartParts(
   config: StorageConfig,
   key: string,
   uploadId: string,
-  partNumbers: number[]
+  partNumbers: number[],
+  fileSize: number,
+  partSize: number
 ): Promise<Array<{ partNumber: number; url: string }>> {
   const client = getR2Client()
   const bucket = config.r2BucketName || R2_BUCKET_NAME
   if (!client || !bucket) return []
   const out: Array<{ partNumber: number; url: string }> = []
   for (const partNumber of partNumbers) {
+    const contentLength = Math.min(partSize, fileSize - (partNumber - 1) * partSize)
+    if (contentLength <= 0) throw new Error(`Invalid multipart part number: ${partNumber}`)
     const url = await getSignedUrl(
       client,
-      new UploadPartCommand({ Bucket: bucket, Key: key, PartNumber: partNumber, UploadId: uploadId }),
+      new UploadPartCommand({
+        Bucket: bucket,
+        Key: key,
+        PartNumber: partNumber,
+        UploadId: uploadId,
+        ContentLength: contentLength,
+      }),
       { expiresIn: 3600 }
     )
     out.push({ partNumber, url })

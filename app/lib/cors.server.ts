@@ -10,10 +10,7 @@ const APP_DOMAIN = process.env.APP_DOMAIN || 'localhost:3000';
 const EXTRA_CORS_ORIGINS = (process.env.EXTRA_CORS_ORIGINS || '').split(',').filter(Boolean);
 
 const ALLOWED_ORIGINS: (string | RegExp)[] = [
-
-  /\.myshopify\.com$/,
-
-  /^https:\/\/.+$/,
+  /^https:\/\/[a-z0-9][a-z0-9-]*\.myshopify\.com$/i,
 
   "http://localhost:3000",
   "http://localhost:5173",
@@ -21,7 +18,7 @@ const ALLOWED_ORIGINS: (string | RegExp)[] = [
 
   `https://${APP_DOMAIN}`,
 
-  /\.uploadstudio\.app\.techifyboost\.com$/,
+  /^https:\/\/[a-z0-9][a-z0-9-]*\.uploadstudio\.app\.techifyboost\.com$/i,
 
   ...EXTRA_CORS_ORIGINS.map(o => o.trim()),
 ];

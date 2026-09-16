@@ -70,6 +70,20 @@ export interface UploadLogEntry {
   traceId?: string
 }
 
+export function redactUploadLogLocation(value: string | null | undefined): string | undefined {
+  const raw = String(value || '').trim()
+  if (!raw) return undefined
+  try {
+    const url = new URL(raw)
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      return `${url.origin}${url.pathname}`
+    }
+  } catch {
+    // Provider-prefixed object keys are not HTTP URLs.
+  }
+  return raw.split(/[?#]/, 1)[0]
+}
+
 
 
 
@@ -104,11 +118,18 @@ class UploadLogger {
     options: { traceId?: string; persist?: boolean } = {}
   ): Promise<void> {
     const level = this.getLogLevel(event)
+    const safeContext: UploadLogContext = {
+      ...context,
+      ...(context.url ? { url: redactUploadLogLocation(context.url) } : {}),
+      ...(context.storageKey
+        ? { storageKey: redactUploadLogLocation(context.storageKey) }
+        : {}),
+    }
     const entry: UploadLogEntry = {
       timestamp: new Date().toISOString(),
       event,
       level,
-      context,
+      context: safeContext,
       traceId: options.traceId,
     }
 
