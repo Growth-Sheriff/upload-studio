@@ -33,6 +33,12 @@ import {
 import { useCallback, useState } from 'react'
 import prisma from '~/lib/prisma.server'
 import { getDownloadSignedUrl, getStorageConfig } from '~/lib/storage.server'
+import {
+  EXPORT_JOB_OPTIONS,
+  EXPORT_QUEUE_NAME,
+  getExportJobOptions,
+} from '~/lib/uploadQueues'
+import { getMissingExportUploadIds } from '~/lib/exportArchive'
 import { authenticate } from '~/shopify.server'
 
 import { UploadDetailModal } from '~/components/UploadDetailModal'
@@ -291,27 +297,34 @@ export async function action({ request }: ActionFunctionArgs) {
 
   if (action === 'create_export') {
     const uploadIds = JSON.parse(formData.get('uploadIds') as string) as string[]
+    const requestedIds = Array.from(
+      new Set(uploadIds.filter((id): id is string => typeof id === 'string' && id.length > 0))
+    )
 
-    if (!uploadIds.length) {
+    if (!requestedIds.length) {
       return json({ error: 'No uploads selected for export' })
     }
 
 
     const validUploads = await prisma.upload.findMany({
-      where: { id: { in: uploadIds }, shopId: shop.id },
+      where: { id: { in: requestedIds }, shopId: shop.id },
       select: { id: true },
     })
     const validIds = validUploads.map(u => u.id)
+    const missingIds = getMissingExportUploadIds(requestedIds, validIds)
 
-    if (validIds.length === 0) {
-      return json({ error: 'No valid uploads found for this shop' })
+    if (missingIds.length > 0) {
+      return json(
+        { error: `${missingIds.length} selected upload(s) were not found for this shop.` },
+        { status: 400 }
+      )
     }
 
 
     const exportJob = await prisma.exportJob.create({
       data: {
         shopId: shop.id,
-        uploadIds: validIds,
+        uploadIds: requestedIds,
         status: 'pending',
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
       },
@@ -322,19 +335,40 @@ export async function action({ request }: ActionFunctionArgs) {
       const { Queue } = await import('bullmq')
       const Redis = (await import('ioredis')).default
       const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-        maxRetriesPerRequest: null,
+        maxRetriesPerRequest: 1,
+        connectTimeout: 3000,
+        retryStrategy: (times: number) =>
+          times <= 2 ? Math.min(times * 100, 500) : null,
       })
-      const queue = new Queue('export', { connection })
-      await queue.add('process-export', {
-        exportId: exportJob.id,
-        shopId: shop.id,
-        uploadIds: validIds,
+      const queue = new Queue(EXPORT_QUEUE_NAME, {
+        connection,
+        defaultJobOptions: EXPORT_JOB_OPTIONS,
       })
-      await queue.close()
+      try {
+        await queue.add(
+          'process-export',
+          {
+            exportId: exportJob.id,
+            shopId: shop.id,
+          },
+          getExportJobOptions(exportJob.id)
+        )
+      } finally {
+        await queue.close().catch(() => undefined)
+        await connection.quit().catch(() => connection.disconnect())
+      }
       console.log(`[Queue] Export job ${exportJob.id} queued successfully`)
     } catch (error) {
       console.error('[Queue] Failed to enqueue export job:', error)
-      // Don't fail - export will be picked up by cron
+      return json(
+        {
+          success: true,
+          recoveryPending: true,
+          message: 'Export was saved and will start automatically when the queue reconnects.',
+          exportJobId: exportJob.id,
+        },
+        { status: 202 }
+      )
     }
 
     return json({

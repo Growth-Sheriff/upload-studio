@@ -1,18 +1,33 @@
-import { Job, Queue, Worker } from 'bullmq'
+import { DelayedError, Job, Queue, Worker } from 'bullmq'
 import { runPreflightChecks } from '../app/lib/preflight.server'
 import { deriveUploadItemLifecycle } from '../app/lib/uploadLifecycle.server'
 import {
+  isFinalUploadJobAttempt,
+  MEASURE_PREFLIGHT_JOB_OPTIONS,
+} from '../app/lib/uploadQueues'
+import {
+  clearStoredMeasurementStage,
+  resolvePreviewStatusAfterMeasurement,
+} from '../app/lib/uploadQueueRecovery'
+import {
+  acquireLargeImageLease,
+  acquireLargeUploadPrelock,
   cleanupTempDir,
+  compareAndSwapUploadItemResult,
   connection,
   getResultRecord,
+  LargeImageSlotBusyError,
+  LARGE_IMAGE_RETRY_DELAY_MS,
   MEASURE_PREFLIGHT_QUEUE_NAME,
   prepareUploadJobContext,
   prisma,
   rasterizeFileForProcessing,
+  safeLocationForLog,
   type UploadPipelineJobData,
   updateUploadAggregateStatus,
   workerLog,
 } from './uploadPipeline.shared'
+import { startUploadPipelineReconciler } from './upload-pipeline-reconciler'
 
 function normalizeStageStatus(value: unknown): 'pending' | 'ready' | 'warning' | 'error' | null {
   if (value === 'pending' || value === 'ready' || value === 'warning' || value === 'error') {
@@ -35,54 +50,118 @@ function mergeProblems(
   return Array.from(merged.values())
 }
 
+async function repairUploadAggregateStatus(uploadId: string, shopId: string) {
+  const shop = await prisma.shop.findUnique({
+    where: { id: shopId },
+    select: { settings: true },
+  })
+  await updateUploadAggregateStatus(uploadId, shopId, shop?.settings || null)
+}
+
 export const measurePreflightQueue = new Queue<UploadPipelineJobData>(MEASURE_PREFLIGHT_QUEUE_NAME, {
   connection,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 2000,
-    },
-    removeOnComplete: 100,
-    removeOnFail: 1000,
-  },
+  defaultJobOptions: MEASURE_PREFLIGHT_JOB_OPTIONS,
 })
 
 const measurePreflightWorker = new Worker<UploadPipelineJobData>(
   MEASURE_PREFLIGHT_QUEUE_NAME,
   async (job: Job<UploadPipelineJobData>) => {
-    const { uploadId, shopId, itemId, storageKey } = job.data
+    const { uploadId, shopId, itemId, storageKey: queuedStorageKey } = job.data
+    let storageKey = queuedStorageKey
     const jobStartedAt = Date.now()
 
     workerLog.info('MEASURE_JOB_STARTED', {
       jobId: job.id,
       uploadId,
       itemId,
-      storageKey: storageKey.substring(0, 80),
+      storageKey: safeLocationForLog(storageKey).substring(0, 80),
     })
 
     let tempDir = ''
+    let largeImageLease: Awaited<ReturnType<typeof acquireLargeImageLease>> = null
 
     try {
-      // A retry or stalled re-run must not measure again if the first run
-      // already finished: it would race the first run's temp files and
-      // overwrite a good result.
-      if (job.attemptsMade > 0) {
-        const alreadyMeasured = await prisma.uploadItem.findUnique({
-          where: { id: itemId },
-          select: { preflightResult: true },
+      // Check stored state on every execution. BullMQ stalls do not increment
+      // attemptsMade, and a duplicate deterministic job also starts at zero.
+      const alreadyMeasured = await prisma.uploadItem.findUnique({
+        where: { id: itemId },
+        select: {
+          preflightStatus: true,
+          preflightResult: true,
+          thumbnailKey: true,
+          fileSize: true,
+          storageKey: true,
+        },
+      })
+      if (alreadyMeasured?.storageKey) storageKey = alreadyMeasured.storageKey
+      const alreadyMeasuredLifecycle = alreadyMeasured
+        ? deriveUploadItemLifecycle(alreadyMeasured)
+        : null
+      if (alreadyMeasuredLifecycle?.measurementStatus === 'ready') {
+        workerLog.info('MEASURE_JOB_SKIPPED_ALREADY_READY', {
+          jobId: job.id,
+          uploadId,
+          itemId,
+          attempt: job.attemptsMade,
         })
-        const stages = getResultRecord(alreadyMeasured?.preflightResult).stages as
-          | Record<string, { status?: string } | undefined>
-          | undefined
-        if (stages?.measurement?.status === 'ready') {
-          workerLog.info('MEASURE_JOB_SKIPPED_ALREADY_READY', { jobId: job.id, uploadId, itemId, attempt: job.attemptsMade })
-          return { skipped: true }
-        }
+        // The previous execution may have committed the item result and then
+        // died before updating the parent upload. Repairing is idempotent and
+        // prevents a measured upload from remaining "processing" forever.
+        await repairUploadAggregateStatus(uploadId, shopId)
+        return { skipped: true }
+      }
+
+      try {
+        largeImageLease = await acquireLargeUploadPrelock(itemId, alreadyMeasured?.fileSize)
+      } catch (error) {
+        if (!(error instanceof LargeImageSlotBusyError)) throw error
+        await job.moveToDelayed(Date.now() + LARGE_IMAGE_RETRY_DELAY_MS, job.token)
+        workerLog.info('LARGE_IMAGE_JOB_DELAYED', {
+          jobId: job.id,
+          uploadId,
+          itemId,
+          delayMs: LARGE_IMAGE_RETRY_DELAY_MS,
+        })
+        throw new DelayedError()
       }
 
       const context = await prepareUploadJobContext(job.data, 'measure-preflight')
       tempDir = context.tempDir
+      storageKey = context.storageKey
+      if (!largeImageLease) {
+        try {
+          largeImageLease = await acquireLargeImageLease(
+            context.originalPath,
+            itemId,
+            context.detectedType
+          )
+        } catch (error) {
+          if (!(error instanceof LargeImageSlotBusyError)) throw error
+          await job.moveToDelayed(Date.now() + LARGE_IMAGE_RETRY_DELAY_MS, job.token)
+          workerLog.info('LARGE_IMAGE_JOB_DELAYED', {
+            jobId: job.id,
+            uploadId,
+            itemId,
+            delayMs: LARGE_IMAGE_RETRY_DELAY_MS,
+          })
+          throw new DelayedError()
+        }
+      }
+
+      // A legacy/random-ID execution may have completed while this job was
+      // downloading or waiting for the large-image slot. Recheck immediately
+      // before the expensive raster/decode phase.
+      const measuredWhileWaiting = await prisma.uploadItem.findUnique({
+        where: { id: itemId },
+        select: { preflightStatus: true, preflightResult: true, thumbnailKey: true },
+      })
+      if (
+        measuredWhileWaiting &&
+        deriveUploadItemLifecycle(measuredWhileWaiting).measurementStatus === 'ready'
+      ) {
+        await repairUploadAggregateStatus(uploadId, shopId)
+        return { skipped: true, measuredWhileWaiting: true }
+      }
 
       await job.updateProgress(20)
 
@@ -127,90 +206,110 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
 
       await job.updateProgress(70)
 
-      const latestItem = await prisma.uploadItem.findUnique({
-        where: { id: itemId },
-        select: {
-          preflightStatus: true,
-          preflightResult: true,
-          thumbnailKey: true,
-          previewKey: true,
-        },
-      })
+      let measurementSaved = false
+      let measurementCommittedByOther = false
+      for (let casAttempt = 0; casAttempt < 4; casAttempt += 1) {
+        const latestItem = await prisma.uploadItem.findUnique({
+          where: { id: itemId },
+          select: {
+            preflightStatus: true,
+            preflightResult: true,
+            thumbnailKey: true,
+            previewKey: true,
+          },
+        })
 
-      if (!latestItem) {
-        throw new Error(`Upload item not found during measurement merge: ${itemId}`)
-      }
+        if (!latestItem) {
+          throw new Error(`Upload item not found during measurement merge: ${itemId}`)
+        }
+        if (deriveUploadItemLifecycle(latestItem).measurementStatus === 'ready') {
+          measurementCommittedByOther = true
+          break
+        }
 
-      const existingResult = getResultRecord(latestItem.preflightResult)
-      const existingStages =
-        existingResult.stages && typeof existingResult.stages === 'object'
-          ? (existingResult.stages as Record<string, unknown>)
-          : {}
-      const existingPreview =
-        existingResult.preview && typeof existingResult.preview === 'object'
-          ? (existingResult.preview as Record<string, unknown>)
-          : {}
-
-      const provisionalResult = {
-        ...existingResult,
-        overall: result.overall,
-        checks: result.checks,
-      }
-
-      const lifecycle = deriveUploadItemLifecycle({
-        preflightStatus: result.overall,
-        preflightResult: provisionalResult,
-        thumbnailKey: latestItem.thumbnailKey,
-      })
-
-      const storedPreviewStage =
-        existingStages.preview && typeof existingStages.preview === 'object'
-          ? (existingStages.preview as Record<string, unknown>)
-          : {}
-      const previewHasThumbnail = Boolean(latestItem.thumbnailKey) || existingPreview.hasThumbnail === true
-      const previewUsedPlaceholder = existingPreview.usedPlaceholder === true
-      const previewStatus =
-        normalizeStageStatus(storedPreviewStage.status) ||
-        (previewHasThumbnail ? (previewUsedPlaceholder ? 'warning' : 'ready') : 'pending')
-
-      const nextPreflightResult = {
-        ...provisionalResult,
-        metadata: lifecycle.metadata,
-        problems: lifecycle.problems,
-        stages: {
-          ...existingStages,
-          measurement: {
-            status: lifecycle.measurementStatus,
+        const existingResult = getResultRecord(latestItem.preflightResult)
+        const existingStages =
+          existingResult.stages && typeof existingResult.stages === 'object'
+            ? (existingResult.stages as Record<string, unknown>)
+            : {}
+        const existingPreview =
+          existingResult.preview && typeof existingResult.preview === 'object'
+            ? (existingResult.preview as Record<string, unknown>)
+            : {}
+        const provisionalResult = {
+          ...clearStoredMeasurementStage(existingResult),
+          overall: result.overall,
+          checks: result.checks,
+        }
+        const lifecycle = deriveUploadItemLifecycle({
+          preflightStatus: result.overall,
+          preflightResult: provisionalResult,
+          thumbnailKey: latestItem.thumbnailKey,
+        })
+        const storedPreviewStage =
+          existingStages.preview && typeof existingStages.preview === 'object'
+            ? (existingStages.preview as Record<string, unknown>)
+            : {}
+        const storedPreviewStatus = normalizeStageStatus(storedPreviewStage.status)
+        const previewHasThumbnail =
+          Boolean(latestItem.thumbnailKey) || existingPreview.hasThumbnail === true
+        const previewUsedPlaceholder =
+          existingPreview.usedPlaceholder === true ||
+          Boolean(latestItem.thumbnailKey?.includes('_placeholder.webp'))
+        // A durable thumbnail supersedes an old pending retry marker. Preserve
+        // warning/error, but never leave preview pending when the asset exists.
+        const previewStatus = resolvePreviewStatusAfterMeasurement({
+          storedStatus: storedPreviewStatus,
+          hasThumbnail: previewHasThumbnail,
+          usedPlaceholder: previewUsedPlaceholder,
+        })
+        const nextPreflightResult = {
+          ...provisionalResult,
+          metadata: lifecycle.metadata,
+          problems: lifecycle.problems,
+          stages: {
+            ...existingStages,
+            measurement: { status: lifecycle.measurementStatus },
+            preview: {
+              status: previewStatus,
+              hasThumbnail: previewHasThumbnail,
+              usedPlaceholder: previewUsedPlaceholder,
+            },
+            orderability: { status: lifecycle.orderabilityStatus },
+          },
+          capabilities: {
+            canAddToCart: lifecycle.canAddToCart,
+            canResolveProduct: lifecycle.canResolveProduct,
+            hasPreview: lifecycle.hasPreview,
           },
           preview: {
-            status: previewStatus,
+            ...existingPreview,
             hasThumbnail: previewHasThumbnail,
             usedPlaceholder: previewUsedPlaceholder,
           },
-          orderability: {
-            status: lifecycle.orderabilityStatus,
-          },
-        },
-        capabilities: {
-          canAddToCart: lifecycle.canAddToCart,
-          canResolveProduct: lifecycle.canResolveProduct,
-          hasPreview: lifecycle.hasPreview,
-        },
-        preview: {
-          ...existingPreview,
-          hasThumbnail: previewHasThumbnail,
-          usedPlaceholder: previewUsedPlaceholder,
-        },
+        }
+
+        measurementSaved = await compareAndSwapUploadItemResult({
+          itemId,
+          expectedStatus: latestItem.preflightStatus,
+          expectedResult: latestItem.preflightResult,
+          nextStatus: result.overall,
+          nextResult: nextPreflightResult,
+          expectedThumbnailKey: latestItem.thumbnailKey,
+          expectedPreviewKey: latestItem.previewKey,
+          thumbnailKey: latestItem.thumbnailKey,
+          previewKey: latestItem.previewKey || storageKey,
+        })
+        if (measurementSaved) break
       }
 
-      await prisma.uploadItem.update({
-        where: { id: itemId },
-        data: {
-          preflightStatus: result.overall,
-          preflightResult: nextPreflightResult as any,
-          previewKey: latestItem.previewKey || storageKey,
-        },
-      })
+      if (measurementCommittedByOther) {
+        await repairUploadAggregateStatus(uploadId, shopId)
+        return { skipped: true, measurementCommittedByOther: true }
+      }
+      if (!measurementSaved) {
+        throw new Error(`Measurement merge kept changing for item ${itemId}`)
+      }
 
       await job.updateProgress(90)
 
@@ -232,14 +331,35 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
         checks: result.checks,
       }
     } catch (error) {
+      if (error instanceof DelayedError) throw error
       const latestItem = await prisma.uploadItem.findUnique({
         where: { id: itemId },
         select: {
+          preflightStatus: true,
           thumbnailKey: true,
           previewKey: true,
           preflightResult: true,
         },
       })
+
+      // The expensive measurement may already be committed by this execution
+      // (with only a progress/aggregate update failing afterward) or by a
+      // concurrent legacy/stalled execution. Never downgrade that durable
+      // result to pending/error merely because a post-commit side effect failed.
+      if (
+        latestItem &&
+        deriveUploadItemLifecycle(latestItem).measurementStatus === 'ready'
+      ) {
+        await repairUploadAggregateStatus(uploadId, shopId)
+        workerLog.warn('MEASURE_JOB_POST_COMMIT_RECOVERED', {
+          jobId: job.id,
+          uploadId,
+          itemId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        return { status: latestItem.preflightStatus, measurementCommitted: true }
+      }
+      if (!latestItem) throw error
 
       const existingResult = getResultRecord(latestItem?.preflightResult)
       const existingPreview =
@@ -253,52 +373,123 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
           )
         : []
       const hasThumbnail = Boolean(latestItem?.thumbnailKey) || existingPreview.hasThumbnail === true
-      const usedPlaceholder = existingPreview.usedPlaceholder === true
+      const usedPlaceholder =
+        existingPreview.usedPlaceholder === true ||
+        Boolean(latestItem?.thumbnailKey?.includes('_placeholder.webp'))
+      const finalAttempt = isFinalUploadJobAttempt(job.attemptsMade, job.opts.attempts)
 
-      await prisma.uploadItem.update({
-        where: { id: itemId },
-        data: {
-          preflightStatus: 'error',
-          preflightResult: {
-            ...existingResult,
-            overall: 'error',
-            problems: mergeProblems(existingProblems, [
-              {
-                scope: 'processing',
-                code: 'processing',
-                severity: 'error',
-                message: error instanceof Error ? error.message : 'Unknown error',
-              },
-            ]),
-            stages: {
-              measurement: { status: 'error' },
-              preview: {
-                status: hasThumbnail ? (usedPlaceholder ? 'warning' : 'ready') : 'pending',
-                hasThumbnail,
-                usedPlaceholder,
-              },
-              orderability: { status: 'blocked' },
-            },
-            capabilities: {
-              canAddToCart: false,
-              canResolveProduct: false,
-              hasPreview: hasThumbnail,
+      if (!finalAttempt) {
+        const message = error instanceof Error ? error.message : 'Unknown error'
+        const existingStages =
+          existingResult.stages && typeof existingResult.stages === 'object'
+            ? (existingResult.stages as Record<string, unknown>)
+            : {}
+
+        const nextRetryResult = {
+          ...existingResult,
+          overall: 'processing',
+          stages: {
+            ...existingStages,
+            measurement: {
+              status: 'pending',
+              retrying: true,
+              attempt: job.attemptsMade + 1,
+              maxAttempts: Math.max(1, Number(job.opts.attempts) || 1),
+              lastError: message,
             },
             preview: {
-              ...existingPreview,
+              status: hasThumbnail ? (usedPlaceholder ? 'warning' : 'ready') : 'pending',
               hasThumbnail,
               usedPlaceholder,
             },
-            checks: [
-              {
-                name: 'processing',
-                status: 'error',
-                message: error instanceof Error ? error.message : 'Unknown error',
-              },
-            ],
+            orderability: { status: 'processing' },
           },
-          previewKey: latestItem?.previewKey || storageKey,
+          capabilities: {
+            canAddToCart: false,
+            canResolveProduct: false,
+            hasPreview: hasThumbnail,
+          },
+          preview: {
+            ...existingPreview,
+            hasThumbnail,
+            usedPlaceholder,
+          },
+        }
+        await compareAndSwapUploadItemResult({
+          itemId,
+          expectedStatus: latestItem.preflightStatus,
+          expectedResult: latestItem.preflightResult,
+          nextStatus: 'pending',
+          nextResult: nextRetryResult,
+          expectedThumbnailKey: latestItem.thumbnailKey,
+          expectedPreviewKey: latestItem.previewKey,
+          thumbnailKey: latestItem.thumbnailKey,
+          previewKey: latestItem.previewKey || storageKey,
+        })
+
+        await updateUploadAggregateStatus(uploadId, shopId, null)
+
+        workerLog.warn('MEASURE_JOB_RETRY_SCHEDULED', {
+          jobId: job.id,
+          uploadId,
+          itemId,
+          attempt: job.attemptsMade + 1,
+          maxAttempts: Math.max(1, Number(job.opts.attempts) || 1),
+          error: message,
+          durationMs: Date.now() - jobStartedAt,
+        })
+
+        throw error
+      }
+
+      const nextTerminalResult = {
+        ...existingResult,
+        overall: 'error',
+        problems: mergeProblems(existingProblems, [
+          {
+            scope: 'processing',
+            code: 'processing',
+            severity: 'error',
+            message: error instanceof Error ? error.message : 'Unknown error',
+          },
+        ]),
+        stages: {
+          measurement: { status: 'error' },
+          preview: {
+            status: hasThumbnail ? (usedPlaceholder ? 'warning' : 'ready') : 'pending',
+            hasThumbnail,
+            usedPlaceholder,
+          },
+          orderability: { status: 'blocked' },
         },
+        capabilities: {
+          canAddToCart: false,
+          canResolveProduct: false,
+          hasPreview: hasThumbnail,
+        },
+        preview: {
+          ...existingPreview,
+          hasThumbnail,
+          usedPlaceholder,
+        },
+        checks: [
+          {
+            name: 'processing',
+            status: 'error',
+            message: error instanceof Error ? error.message : 'Unknown error',
+          },
+        ],
+      }
+      await compareAndSwapUploadItemResult({
+        itemId,
+        expectedStatus: latestItem.preflightStatus,
+        expectedResult: latestItem.preflightResult,
+        nextStatus: 'error',
+        nextResult: nextTerminalResult,
+        expectedThumbnailKey: latestItem.thumbnailKey,
+        expectedPreviewKey: latestItem.previewKey,
+        thumbnailKey: latestItem.thumbnailKey,
+        previewKey: latestItem.previewKey || storageKey,
       })
 
       await updateUploadAggregateStatus(uploadId, shopId, null)
@@ -313,6 +504,14 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
 
       throw error
     } finally {
+      if (largeImageLease) {
+        await largeImageLease.release().catch((error) =>
+          workerLog.error('LARGE_IMAGE_LOCK_RELEASE_FAILED', {
+            itemId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        )
+      }
       if (tempDir) {
         await cleanupTempDir(tempDir)
       }
@@ -338,10 +537,129 @@ measurePreflightWorker.on('completed', (job) => {
   console.log(`[Measure Preflight Worker] Job ${job.id} completed`)
 })
 
-measurePreflightWorker.on('failed', (job, err) => {
+measurePreflightWorker.on('failed', async (job, err) => {
   console.error(`[Measure Preflight Worker] Job ${job?.id} failed:`, err.message)
+
+  if (!job) return
+  const configuredAttempts = Math.max(1, Number(job.opts.attempts) || 1)
+  const exhaustedAttempts = job.attemptsMade >= configuredAttempts
+  const exhaustedStalls = /stalled more than allowable limit/i.test(err.message)
+  if (!exhaustedAttempts && !exhaustedStalls) return
+
+  // A killed/OOM worker never reaches the processor catch block. When BullMQ
+  // finally exhausts retries/stalls, project that terminal queue state into the
+  // upload lifecycle so the storefront does not spin indefinitely.
+  try {
+    const { uploadId, shopId, itemId, storageKey } = job.data
+    const item = await prisma.uploadItem.findUnique({
+      where: { id: itemId },
+      select: {
+        preflightStatus: true,
+        preflightResult: true,
+        thumbnailKey: true,
+        previewKey: true,
+      },
+    })
+    if (!item) return
+
+    const lifecycle = deriveUploadItemLifecycle(item)
+    if (lifecycle.measurementStatus !== 'pending') {
+      await repairUploadAggregateStatus(uploadId, shopId)
+      return
+    }
+
+    const existingResult = getResultRecord(item.preflightResult)
+    const existingPreview =
+      existingResult.preview && typeof existingResult.preview === 'object'
+        ? (existingResult.preview as Record<string, unknown>)
+        : {}
+    const existingProblems = Array.isArray(existingResult.problems)
+      ? (existingResult.problems as unknown[]).filter(
+          (problem): problem is Record<string, unknown> => Boolean(problem) && typeof problem === 'object'
+        )
+      : []
+    const hasThumbnail = Boolean(item.thumbnailKey) || existingPreview.hasThumbnail === true
+    const usedPlaceholder =
+      existingPreview.usedPlaceholder === true ||
+      Boolean(item.thumbnailKey?.includes('_placeholder.webp'))
+
+    const terminalMessage = err.message || 'Measurement worker stopped before completing the file.'
+    const nextTerminalResult = {
+      ...existingResult,
+      overall: 'error',
+      problems: mergeProblems(existingProblems, [
+        {
+          scope: 'processing',
+          code: 'measurement_worker_exhausted',
+          severity: 'error',
+          message: terminalMessage,
+        },
+      ]),
+      stages: {
+        measurement: { status: 'error' },
+        preview: {
+          status: hasThumbnail ? (usedPlaceholder ? 'warning' : 'ready') : 'pending',
+          hasThumbnail,
+          usedPlaceholder,
+        },
+        orderability: { status: 'blocked' },
+      },
+      capabilities: {
+        canAddToCart: false,
+        canResolveProduct: false,
+        hasPreview: hasThumbnail,
+      },
+      preview: {
+        ...existingPreview,
+        hasThumbnail,
+        usedPlaceholder,
+      },
+      checks: [
+        {
+          name: 'processing',
+          status: 'error',
+          message: terminalMessage,
+        },
+      ],
+    }
+    const saved = await compareAndSwapUploadItemResult({
+      itemId,
+      expectedStatus: item.preflightStatus,
+      expectedResult: item.preflightResult,
+      nextStatus: 'error',
+      nextResult: nextTerminalResult,
+      expectedThumbnailKey: item.thumbnailKey,
+      expectedPreviewKey: item.previewKey,
+      thumbnailKey: item.thumbnailKey,
+      previewKey: item.previewKey || storageKey,
+    })
+    if (!saved) {
+      workerLog.warn('MEASURE_JOB_TERMINAL_STATE_CHANGED_BEFORE_SAVE', {
+        jobId: job.id,
+        uploadId,
+        itemId,
+      })
+    }
+    await updateUploadAggregateStatus(uploadId, shopId, null)
+    workerLog.error('MEASURE_JOB_TERMINAL_STATE_PERSISTED', {
+      jobId: job.id,
+      uploadId,
+      itemId,
+      attemptsMade: job.attemptsMade,
+      stalledCounter: job.stalledCounter,
+      error: err.message,
+    })
+  } catch (persistError) {
+    workerLog.error('MEASURE_JOB_TERMINAL_STATE_PERSIST_FAILED', {
+      jobId: job.id,
+      uploadId: job.data.uploadId,
+      itemId: job.data.itemId,
+      error: persistError instanceof Error ? persistError.message : String(persistError),
+    })
+  }
 })
 
 console.log('[Measure Preflight Worker] Started and waiting for jobs...')
+startUploadPipelineReconciler()
 
 export default measurePreflightWorker

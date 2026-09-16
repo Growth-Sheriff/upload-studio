@@ -1,22 +1,41 @@
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { PrismaClient } from '@prisma/client'
+import { randomUUID } from 'crypto'
+import { createWriteStream } from 'fs'
 import fs from 'fs/promises'
 import Redis from 'ioredis'
 import os from 'os'
 import path from 'path'
+import { pipeline } from 'stream/promises'
 import {
   convertEpsToPng,
   convertPdfToPng,
   convertPsdToPng,
   convertTiffToPng,
   detectFileType,
+  getImageDimensionsFast,
   PLAN_CONFIGS,
   type PreflightConfig,
 } from '../app/lib/preflight.server'
 import { deriveUploadItemLifecycle } from '../app/lib/uploadLifecycle.server'
 import {
+  getRuntimeMeasurementBasis,
+  resolveCustomerPricingModelState,
+} from '../app/lib/customerPricingModel.server'
+import { resolveServerMainProductRollWidth } from '../app/lib/mainProductMeasurement.server'
+import { selectProductConfigForIdentity } from '../app/lib/productConfigIdentity.server'
+import { shopifyProductIdCandidates } from '../app/lib/shopifyProductIdentity'
+import { redactUploadLogLocation } from '../app/lib/uploadLogger.server'
+import {
+  canPipelineUpdateUploadStatus,
+  PIPELINE_MUTABLE_UPLOAD_STATUSES,
+  resolvePipelineAutoApprove,
+} from '../app/lib/uploadQueueRecovery'
+import {
   MEASURE_PREFLIGHT_QUEUE_NAME,
   PREVIEW_RENDER_QUEUE_NAME,
+  shouldPrelockLargeUpload,
+  shouldSerializeLargeImage,
   type UploadPipelineJobData,
 } from '../app/lib/uploadQueues'
 
@@ -27,6 +46,7 @@ export interface PreparedUploadJobContext {
   storageKey: string
   shop: {
     id: string
+    shopDomain: string
     plan: string
     settings: unknown
     storageProvider: string
@@ -63,16 +83,26 @@ export interface RasterizedFileResult {
   fileTypeLabel: string
 }
 
-type UploadStatusValue =
-  | 'processing'
-  | 'ready'
-  | 'pending_approval'
-  | 'needs_review'
-  | 'blocked'
+export interface LargeImageLease {
+  megapixels: number
+  release: () => Promise<void>
+}
+
+type UploadStatusValue = string
 
 type ActualStorageProvider = 'local' | 'bunny' | 'r2'
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+const LARGE_IMAGE_LOCK_KEY = 'upload-pipeline:large-image'
+const LARGE_IMAGE_LOCK_TTL_MS = 2 * 60 * 1000
+export const LARGE_IMAGE_RETRY_DELAY_MS = 15_000
+
+export class LargeImageSlotBusyError extends Error {
+  constructor(itemId: string) {
+    super(`Large-image processing slot is busy (${itemId}).`)
+    this.name = 'LargeImageSlotBusyError'
+  }
+}
 
 export const prisma = new PrismaClient()
 
@@ -100,9 +130,127 @@ connection.on('error', (error) => {
 
 export { MEASURE_PREFLIGHT_QUEUE_NAME, PREVIEW_RENDER_QUEUE_NAME, type UploadPipelineJobData }
 
-function getShopSettingsValue(settings: unknown, key: string): unknown {
-  if (!settings || typeof settings !== 'object') return undefined
-  return (settings as Record<string, unknown>)[key]
+const RELEASE_LARGE_IMAGE_LOCK_SCRIPT = `
+  if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('del', KEYS[1])
+  end
+  return 0
+`
+
+const RENEW_LARGE_IMAGE_LOCK_SCRIPT = `
+  if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('pexpire', KEYS[1], ARGV[2])
+  end
+  return 0
+`
+
+/**
+ * Large raster jobs run in separate measure/preview processes, so a local
+ * semaphore cannot protect container memory. A Redis lease serializes only
+ * files above 300 MP across both queues. A busy slot is reported immediately
+ * so BullMQ can delay the job without occupying a worker concurrency slot.
+ */
+async function acquireLargeImageRedisLease(
+  itemId: string,
+  imageInfo: { width: number; height: number } | null
+): Promise<LargeImageLease> {
+  const pixels = imageInfo
+    ? Math.max(0, imageInfo.width) * Math.max(0, imageInfo.height)
+    : 0
+  const token = `${process.pid}:${itemId}:${randomUUID()}`
+  const acquired = await connection.set(
+    LARGE_IMAGE_LOCK_KEY,
+    token,
+    'PX',
+    LARGE_IMAGE_LOCK_TTL_MS,
+    'NX'
+  )
+  if (acquired !== 'OK') {
+    throw new LargeImageSlotBusyError(itemId)
+  }
+
+  const renewal = setInterval(() => {
+    void connection
+      .eval(
+        RENEW_LARGE_IMAGE_LOCK_SCRIPT,
+        1,
+        LARGE_IMAGE_LOCK_KEY,
+        token,
+        String(LARGE_IMAGE_LOCK_TTL_MS)
+      )
+      .then((renewed) => {
+        if (Number(renewed) !== 1) {
+          workerLog.error('LARGE_IMAGE_LOCK_OWNERSHIP_LOST', { itemId })
+        }
+      })
+      .catch((error) =>
+        workerLog.error('LARGE_IMAGE_LOCK_RENEW_FAILED', {
+          itemId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      )
+  }, 30_000)
+  renewal.unref()
+
+  let released = false
+  workerLog.info('LARGE_IMAGE_LOCK_ACQUIRED', {
+    itemId,
+    widthPx: imageInfo?.width || null,
+    heightPx: imageInfo?.height || null,
+    megapixels: imageInfo ? Number((pixels / 1_000_000).toFixed(2)) : null,
+  })
+  return {
+    megapixels: pixels / 1_000_000,
+    release: async () => {
+      if (released) return
+      released = true
+      clearInterval(renewal)
+      await connection.eval(RELEASE_LARGE_IMAGE_LOCK_SCRIPT, 1, LARGE_IMAGE_LOCK_KEY, token)
+    },
+  }
+}
+
+export function safeLocationForLog(value: string): string {
+  return redactUploadLogLocation(value) || ''
+}
+
+/** Reserve the cross-worker slot before downloading a known-large object.
+ * This prevents a delayed 81–154 MB job from downloading the same object on
+ * every 15-second lock retry. Smaller objects are classified by pixels after
+ * download so ordinary uploads retain normal concurrency. */
+export async function acquireLargeUploadPrelock(
+  itemId: string,
+  fileSize: unknown
+): Promise<LargeImageLease | null> {
+  if (!shouldPrelockLargeUpload(fileSize)) return null
+  return acquireLargeImageRedisLease(itemId, null)
+}
+
+export async function acquireLargeImageLease(
+  filePath: string,
+  itemId: string,
+  detectedType?: string | null
+): Promise<LargeImageLease | null> {
+  const mayNeedRasterization =
+    Boolean(detectedType?.startsWith('image/')) ||
+    detectedType === 'application/pdf' ||
+    detectedType === 'application/postscript'
+  if (!mayNeedRasterization) return null
+
+  const imageInfo = detectedType?.startsWith('image/')
+    ? await getImageDimensionsFast(filePath, detectedType).catch((error) => {
+        workerLog.warn('LARGE_IMAGE_PROBE_FAILED', {
+          itemId,
+          detectedType,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        return null
+      })
+    : null
+  // Unknown raster dimensions are serialized conservatively. A malformed
+  // header must never turn memory protection off.
+  if (imageInfo && !shouldSerializeLargeImage(imageInfo.width, imageInfo.height)) return null
+  return acquireLargeImageRedisLease(itemId, imageInfo)
 }
 
 function normalizeResultRecord(value: unknown): Record<string, unknown> {
@@ -156,6 +304,34 @@ async function validateDownloadedFile(
 
 export function getResultRecord(value: unknown): Record<string, unknown> {
   return normalizeResultRecord(value)
+}
+
+export async function compareAndSwapUploadItemResult(input: {
+  itemId: string
+  expectedStatus: string
+  expectedResult: unknown
+  nextStatus: string
+  nextResult: Record<string, unknown>
+  expectedThumbnailKey: string | null
+  expectedPreviewKey: string | null
+  thumbnailKey: string | null
+  previewKey: string | null
+}): Promise<boolean> {
+  const expectedJson = JSON.stringify(input.expectedResult ?? null)
+  const nextJson = JSON.stringify(input.nextResult)
+  const updated = await prisma.$executeRaw`
+    update upload_items
+    set preflight_status = ${input.nextStatus},
+        preflight_result_json = ${nextJson}::jsonb,
+        thumbnail_key = ${input.thumbnailKey},
+        preview_key = ${input.previewKey}
+    where id = ${input.itemId}
+      and preflight_status = ${input.expectedStatus}
+      and coalesce(preflight_result_json, 'null'::jsonb) = ${expectedJson}::jsonb
+      and thumbnail_key is not distinct from ${input.expectedThumbnailKey}
+      and preview_key is not distinct from ${input.expectedPreviewKey}
+  `
+  return updated === 1
 }
 
 export function getFileTypeLabel(detectedType: string | null, storageKey: string): string {
@@ -409,6 +585,8 @@ async function uploadLocalFile(storageKey: string, localPath: string): Promise<v
   await fs.copyFile(localPath, destinationPath)
 }
 
+const BUNNY_DOWNLOAD_TIMEOUT_MS = 10 * 60 * 1000
+
 async function downloadFromBunny(storageKey: string, localPath: string): Promise<void> {
   const cdnUrl = process.env.BUNNY_CDN_URL || 'https://customizerappdev.b-cdn.net'
   let url: string
@@ -424,31 +602,61 @@ async function downloadFromBunny(storageKey: string, localPath: string): Promise
   const startTime = Date.now()
   workerLog.info('DOWNLOAD_STARTED', {
     provider: 'bunny',
-    storageKey: storageKey.substring(0, 100),
-    url: url.substring(0, 100),
+    storageKey: safeLocationForLog(storageKey).substring(0, 100),
+    url: safeLocationForLog(url).substring(0, 100),
   })
 
-  const response = await fetch(url)
-  if (!response.ok) {
-    const durationMs = Date.now() - startTime
-    workerLog.error('DOWNLOAD_FAILED', {
+  const controller = new AbortController()
+  let timedOut = false
+  const timeout = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, BUNNY_DOWNLOAD_TIMEOUT_MS)
+  timeout.unref()
+
+  try {
+    const response = await fetch(url, { signal: controller.signal })
+    if (!response.ok) {
+      const durationMs = Date.now() - startTime
+      workerLog.error('DOWNLOAD_FAILED', {
+        provider: 'bunny',
+        status: response.status,
+        statusText: response.statusText,
+        durationMs,
+        storageKey: safeLocationForLog(storageKey).substring(0, 100),
+      })
+      throw new Error(`Failed to download from Bunny: ${response.status} ${response.statusText}`)
+    }
+
+    if (!response.body) {
+      throw new Error('Failed to download from Bunny: empty response body')
+    }
+    await pipeline(response.body as any, createWriteStream(localPath))
+    const stats = await fs.stat(localPath)
+
+    workerLog.info('DOWNLOAD_SUCCESS', {
       provider: 'bunny',
-      status: response.status,
-      statusText: response.statusText,
-      durationMs,
-      storageKey: storageKey.substring(0, 100),
+      durationMs: Date.now() - startTime,
+      fileSize: stats.size,
     })
-    throw new Error(`Failed to download from Bunny: ${response.status} ${response.statusText}`)
+  } catch (error) {
+    await fs.rm(localPath, { force: true }).catch(() => undefined)
+    if (timedOut) {
+      workerLog.error('DOWNLOAD_FAILED', {
+        provider: 'bunny',
+        durationMs: Date.now() - startTime,
+        storageKey: safeLocationForLog(storageKey).substring(0, 100),
+        reason: 'timeout',
+      })
+      throw new Error(
+        `Bunny download timed out after ${BUNNY_DOWNLOAD_TIMEOUT_MS}ms`,
+        { cause: error }
+      )
+    }
+    throw error
+  } finally {
+    clearTimeout(timeout)
   }
-
-  const buffer = Buffer.from(await response.arrayBuffer())
-  await fs.writeFile(localPath, buffer)
-
-  workerLog.info('DOWNLOAD_SUCCESS', {
-    provider: 'bunny',
-    durationMs: Date.now() - startTime,
-    fileSize: buffer.length,
-  })
 }
 
 async function uploadToBunny(
@@ -513,12 +721,7 @@ async function downloadFile(client: S3Client, key: string, localPath: string): P
     throw new Error('Empty response body')
   }
 
-  const chunks: Uint8Array[] = []
-  for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
-    chunks.push(chunk)
-  }
-
-  await fs.writeFile(localPath, Buffer.concat(chunks))
+  await pipeline(response.Body as NodeJS.ReadableStream, createWriteStream(localPath))
 }
 
 async function uploadFile(
@@ -570,16 +773,21 @@ export async function prepareUploadJobContext(
   jobData: UploadPipelineJobData,
   tempPrefix: string
 ): Promise<PreparedUploadJobContext> {
-  const { uploadId, shopId, itemId, storageKey } = jobData
+  const { uploadId, shopId, itemId, storageKey: queuedStorageKey } = jobData
   // Unique per run: a stalled re-run of the same item must never share (and
   // delete) the directory of a run that is still working.
-  const tempDir = path.join(os.tmpdir(), `${tempPrefix}-${itemId}-${process.pid}-${Date.now().toString(36)}`)
+  const tempDir = path.join(
+    os.tmpdir(),
+    `${tempPrefix}-${itemId}-${process.pid}-${Date.now().toString(36)}-${randomUUID()}`
+  )
   await fs.mkdir(tempDir, { recursive: true })
 
+  try {
   const shop = await prisma.shop.findUnique({
     where: { id: shopId },
     select: {
       id: true,
+      shopDomain: true,
       plan: true,
       settings: true,
       storageProvider: true,
@@ -590,15 +798,21 @@ export async function prepareUploadJobContext(
     throw new Error(`Shop not found: ${shopId}`)
   }
 
-  const item = await prisma.uploadItem.findUnique({
-    where: { id: itemId },
+  const item = await prisma.uploadItem.findFirst({
+    where: {
+      id: itemId,
+      uploadId,
+      upload: { shopId },
+    },
     select: {
       id: true,
       uploadId: true,
+      storageKey: true,
       preflightStatus: true,
       preflightResult: true,
       thumbnailKey: true,
       previewKey: true,
+      upload: { select: { productId: true } },
     },
   })
 
@@ -606,10 +820,13 @@ export async function prepareUploadJobContext(
     throw new Error(`Upload item not found: ${itemId}`)
   }
 
-  if (item.uploadId !== uploadId) {
-    throw new Error(
-      `Upload item ${itemId} does not belong to upload ${uploadId} (actual: ${item.uploadId})`
-    )
+  const storageKey = item.storageKey
+  if (queuedStorageKey !== storageKey) {
+    workerLog.warn('STALE_QUEUE_STORAGE_KEY_IGNORED', {
+      uploadId,
+      shopId,
+      itemId,
+    })
   }
 
   const storageProvider = resolveStorageProvider(storageKey, shop.storageProvider)
@@ -633,7 +850,7 @@ export async function prepareUploadJobContext(
   if (!downloadValidation.valid) {
     workerLog.error('DOWNLOAD_VALIDATION_FAILED', {
       itemId,
-      storageKey: storageKey.substring(0, 60),
+      storageKey: safeLocationForLog(storageKey).substring(0, 60),
       error: downloadValidation.error,
       size: downloadValidation.size,
     })
@@ -648,27 +865,30 @@ export async function prepareUploadJobContext(
 
 
 
-  let sheetWidthIn: number | undefined
-  let sheetLengthIn: number | undefined
+  let sheetWidthIn = resolveServerMainProductRollWidth(null)
   try {
-    const upload = await prisma.upload.findUnique({
-      where: { id: uploadId },
-      select: { productId: true },
-    })
-    if (upload?.productId) {
-      const productConfig = await prisma.productConfig.findFirst({
-        where: { shopId, productId: upload.productId },
-        select: { builderConfig: true },
+    if (item.upload.productId) {
+      const productConfigs = await prisma.productConfig.findMany({
+        where: {
+          shopId,
+          productId: { in: shopifyProductIdCandidates(item.upload.productId) },
+        },
+        select: { productId: true, builderConfig: true },
+      })
+      const productConfig = selectProductConfigForIdentity({
+        rows: productConfigs,
+        productId: item.upload.productId,
+        shopId,
+        source: 'uploadPipeline',
       })
       const builderConfig = productConfig?.builderConfig as Record<string, unknown> | null
-      const widthCandidate = Number(builderConfig?.maxWidthIn)
-      const lengthCandidate = Number(builderConfig?.maxHeightIn)
-      if (Number.isFinite(widthCandidate) && widthCandidate > 0) {
-        sheetWidthIn = widthCandidate
-      }
-      if (Number.isFinite(lengthCandidate) && lengthCandidate > 0) {
-        sheetLengthIn = lengthCandidate
-      }
+      // maxWidthIn/maxHeightIn are acceptance limits, not physical media.
+      // Only the dedicated roll width may anchor no-DPI image measurement.
+      const pricingModel = resolveCustomerPricingModelState(shop.shopDomain, shop.settings)
+      sheetWidthIn = resolveServerMainProductRollWidth(builderConfig, {
+        policyExplicit: pricingModel.policyExplicit,
+        maxSheetWidthIn: pricingModel.policy.maxSheetWidthIn,
+      })
     }
   } catch (configError) {
     workerLog.warn('SHEET_WIDTH_LOOKUP_FAILED', {
@@ -679,13 +899,16 @@ export async function prepareUploadJobContext(
   }
 
   const baseConfig = PLAN_CONFIGS[shop.plan] || PLAN_CONFIGS.free
-  let config: PreflightConfig = baseConfig
-  if (sheetWidthIn !== undefined || sheetLengthIn !== undefined) {
-    config = {
-      ...baseConfig,
-      ...(sheetWidthIn !== undefined ? { sheetWidthIn } : {}),
-      ...(sheetLengthIn !== undefined ? { sheetLengthIn } : {}),
-    }
+  const storedResult = getResultRecord(item.preflightResult)
+  const storedMeasurementBasis =
+    storedResult.measurementBasis === 'full_page' || storedResult.measurementBasis === 'artwork_bounds'
+      ? storedResult.measurementBasis
+      : null
+  const config: PreflightConfig = {
+    ...baseConfig,
+    measurementBasis:
+      storedMeasurementBasis || getRuntimeMeasurementBasis(shop.shopDomain, shop.settings),
+    sheetWidthIn,
   }
 
   return {
@@ -702,6 +925,10 @@ export async function prepareUploadJobContext(
     originalPath,
     detectedType,
     fileSize: stats.size,
+  }
+  } catch (error) {
+    await cleanupTempDir(tempDir)
+    throw error
   }
 }
 
@@ -760,6 +987,14 @@ export async function updateUploadAggregateStatus(
   shopId: string,
   shopSettings: unknown
 ): Promise<UploadStatusValue> {
+  let effectiveShopSettings = shopSettings
+  if (effectiveShopSettings == null) {
+    const shop = await prisma.shop.findUnique({
+      where: { id: shopId },
+      select: { settings: true },
+    })
+    effectiveShopSettings = shop?.settings || null
+  }
   const items = await prisma.uploadItem.findMany({
     where: { uploadId },
     select: {
@@ -777,7 +1012,7 @@ export async function updateUploadAggregateStatus(
     })
   )
 
-  const autoApprove = getShopSettingsValue(shopSettings, 'autoApprove') !== false
+  const autoApprove = resolvePipelineAutoApprove(effectiveShopSettings)
   const hasError = items.some((item) => item.preflightStatus === 'error')
   const hasWarning = items.some((item) => item.preflightStatus === 'warning')
   const hasBlockedMeasurement =
@@ -811,8 +1046,12 @@ export async function updateUploadAggregateStatus(
     summaryOverall = 'warning'
   }
 
-  await prisma.upload.updateMany({
-    where: { id: uploadId, shopId },
+  const update = await prisma.upload.updateMany({
+    where: {
+      id: uploadId,
+      shopId,
+      status: { in: [...PIPELINE_MUTABLE_UPLOAD_STATUSES] },
+    },
     data: {
       status: uploadStatus,
       preflightSummary: {
@@ -824,6 +1063,22 @@ export async function updateUploadAggregateStatus(
       },
     },
   })
+
+  if (update.count === 0) {
+    const current = await prisma.upload.findFirst({
+      where: { id: uploadId, shopId },
+      select: { status: true },
+    })
+    if (current && !canPipelineUpdateUploadStatus(current.status)) {
+      workerLog.info('UPLOAD_STATUS_PRESERVED_AFTER_PIPELINE', {
+        uploadId,
+        shopId,
+        preservedStatus: current.status,
+        computedPipelineStatus: uploadStatus,
+      })
+      return current.status
+    }
+  }
 
   return uploadStatus
 }
