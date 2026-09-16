@@ -51,7 +51,8 @@
     if (raw == null || raw === '') return 0;
     var numeric = Number(raw);
     if (!isFinite(numeric)) return 0;
-    return numeric > 100 ? numeric / 100 : numeric;
+    // Shopify's Liquid variant JSON always expresses price in minor units.
+    return numeric / 100;
   }
 
   function readyKey(items) {
@@ -395,6 +396,11 @@
       this.productConfig.status = 'ready';
       this.productConfig.builderConfig = builderConfig;
       this.productConfig.customerOffer = builderConfig.customerOffer || null;
+      if (toNumber(builderConfig.rollWidthIn) > 0) {
+        this.rollWidthIn = toNumber(builderConfig.rollWidthIn);
+        var rollLabel = this.root.querySelector('[data-umpp-roll]');
+        if (rollLabel) rollLabel.textContent = this.rollWidthIn + '"';
+      }
       this.productConfig.error = '';
     } catch (error) {
       this.productConfig.status = 'ready';

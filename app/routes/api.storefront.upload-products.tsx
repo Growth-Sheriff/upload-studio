@@ -10,7 +10,7 @@ import { authenticate } from '~/shopify.server'
 export async function loader({ request }: LoaderFunctionArgs) {
   await authenticate.public.appProxy(request)
   const url = new URL(request.url)
-  const shopDomain = url.searchParams.get('shop')?.trim() || url.searchParams.get('shopDomain')?.trim() || ''
+  const shopDomain = url.searchParams.get('shop')?.trim() || ''
   if (!shopDomain) {
     return json({ error: 'Missing shop parameter' }, { status: 400 })
   }

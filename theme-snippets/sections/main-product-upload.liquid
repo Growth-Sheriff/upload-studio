@@ -702,34 +702,25 @@
           fallbackCandidates.push({
             label: 'r2',
             url: intent.fallbackUrls.r2.url,
+            publicUrl: intent.fallbackUrls.r2.publicUrl,
             method: intent.fallbackUrls.r2.method || 'PUT',
             headers: null
           });
         }
         if (intent.fallbackUrls.local && intent.fallbackUrls.local.url) {
+          var localFallbackMethod = intent.fallbackUrls.local.method || 'PUT';
           fallbackCandidates.push({
             label: 'local',
             url: intent.fallbackUrls.local.url,
-            method: intent.fallbackUrls.local.method || 'POST',
-            headers: { __extraFields: {
+            publicUrl: intent.fallbackUrls.local.publicUrl,
+            method: localFallbackMethod,
+            headers: localFallbackMethod === 'POST' ? { __extraFields: {
               key: intent.key || '',
               uploadId: intent.uploadId || '',
               itemId: intent.itemId || ''
-            } }
+            } } : null
           });
         }
-      }
-      if (storageProvider !== 'local') {
-        fallbackCandidates.push({
-          label: 'proxy-local',
-          url: apiBase + '/api/upload/local',
-          method: 'POST',
-          headers: { __extraFields: {
-            key: intent.key || '',
-            uploadId: intent.uploadId || '',
-            itemId: intent.itemId || ''
-          } }
-        });
       }
 
       for (var i = 0; i < fallbackCandidates.length; i++) {
@@ -737,6 +728,8 @@
         try {
           try { console.warn('[MainUpload] Falling back to ' + cand.label); } catch (_) {}
           await sendUploadXhr(cand.url, cand.method, file, cand.headers, onProgress);
+          intent.storageProvider = cand.label;
+          intent.publicUrl = cand.publicUrl || intent.publicUrl;
           return { via: cand.label, attempt: maxRetries + i + 1, fallback: true };
         } catch (err) {
           lastErr = err;
@@ -3676,6 +3669,7 @@
             shopDomain: shopDomain,
             productId: String(productData.productId),
             mode: 'dtf',
+            measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
             fileName: file.name,
             contentType: file.type || 'application/octet-stream',
             fileSize: file.size,
@@ -3877,6 +3871,7 @@
             shopDomain: shopDomain,
             productId: String(productData.productId),
             mode: 'dtf',
+            measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
             fileName: file.name,
             contentType: file.type || 'application/octet-stream',
             fileSize: file.size,

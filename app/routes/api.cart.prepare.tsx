@@ -2,22 +2,38 @@
 //
 // The storefront widget must not invent line properties: it sends the upload
 // ids it wants to add to the cart and receives the canonical property set
-// back. This keeps the cart a *reference carrier* (two visible links plus a
-// transitional hidden id) while every fact lives in the DB and is served by
-// the /i/<uploadId> identity page.
+// back. This keeps the cart a reference carrier with exactly three properties
+// while every production fact lives in the DB and is served by the
+// /i/<uploadId> identity page.
 //
-// Request:  { shopDomain, uploadIds: string[], lines?: [{ uploadId, copies, designsPerSheet, sheetsNeeded, variantId, sheetLabel }] }
+// Request:  { uploadIds: string[], lines?: [{ uploadId, copies }] }
 // Response: { success, items: [{ uploadId, orderable, properties, fileName, thumbnailUrl }] }
 //
-// `lines` carries the customer's nesting request (copies of the design) so it
-// is persisted on the upload and written as a customer-visible `Copies` line
-// property — the print shop must know how many to gang on each sheet.
+// `lines` carries only the customer's requested copies. Variant, nesting and
+// sheet facts are recomputed here from the authoritative server measurement.
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from '@remix-run/node'
 import prisma from '~/lib/prisma.server'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
-import { deriveUploadItemLifecycle } from '~/lib/uploadLifecycle.server'
+import {
+  deriveUploadItemLifecycle,
+  getStoredMeasurementBasis,
+} from '~/lib/uploadLifecycle.server'
+import {
+  MAIN_PRODUCT_MEASUREMENT_POLICY,
+  resolveServerMainProductRollWidth,
+} from '~/lib/mainProductMeasurement.server'
+import { persistMainProductMeasurementProjection } from '~/lib/mainProductMeasurementPersistence.server'
+import {
+  getRuntimeMeasurementBasis,
+  resolveCustomerPricingModelState,
+} from '~/lib/customerPricingModel.server'
+import { normalizeCustomerId } from '~/lib/customerPricing.server'
+import { resolveForMetadata } from '~/lib/sheetResolution.server'
+import { shopifyProductIdCandidates } from '~/lib/shopifyProductIdentity'
+import { selectProductConfigForIdentity } from '~/lib/productConfigIdentity.server'
+import { authenticate } from '~/shopify.server'
 import {
   DPI_PROPERTY,
   PRINT_READY_PROPERTY,
@@ -40,6 +56,13 @@ export async function action({ request }: ActionFunctionArgs) {
     return corsJson({ success: false, error: 'Method not allowed' }, request, { status: 405 })
   }
 
+  await authenticate.public.appProxy(request)
+  const requestUrl = new URL(request.url)
+  const signedShopDomain = String(requestUrl.searchParams.get('shop') || '').trim()
+  const signedCustomerId = normalizeCustomerId(
+    requestUrl.searchParams.get('logged_in_customer_id')
+  )
+
   const identifier = getIdentifier(request, 'customer')
   const rateLimitResponse = await rateLimitGuard(identifier, 'adminApi')
   if (rateLimitResponse) return rateLimitResponse
@@ -51,7 +74,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return corsJson({ success: false, error: 'Invalid JSON body' }, request, { status: 400 })
   }
 
-  const shopDomain = String(body.shopDomain || '').trim()
+  const shopDomain = signedShopDomain
   const uploadIds = Array.isArray(body.uploadIds)
     ? body.uploadIds.filter((id): id is string => typeof id === 'string' && /^[A-Za-z0-9_-]{8,40}$/.test(id))
     : []
@@ -62,7 +85,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
   const lineByUpload = new Map<
     string,
-    { copies: number; designsPerSheet: number | null; sheetsNeeded: number | null; variantId: string | null; sheetLabel: string | null }
+    { copies: number }
   >()
   if (Array.isArray(body.lines)) {
     for (const raw of body.lines as Array<Record<string, unknown>>) {
@@ -71,10 +94,6 @@ export async function action({ request }: ActionFunctionArgs) {
       if (!uploadIds.includes(uploadId)) continue
       lineByUpload.set(uploadId, {
         copies: toInt(raw.copies, 1, 999) ?? 1,
-        designsPerSheet: toInt(raw.designsPerSheet, 1, 100000),
-        sheetsNeeded: toInt(raw.sheetsNeeded, 1, 100000),
-        variantId: raw.variantId != null && /^\d{1,20}$/.test(String(raw.variantId)) ? String(raw.variantId) : null,
-        sheetLabel: typeof raw.sheetLabel === 'string' ? raw.sheetLabel.slice(0, 80) : null,
       })
     }
   }
@@ -112,12 +131,170 @@ export async function action({ request }: ActionFunctionArgs) {
   })
   const byId = new Map(uploads.map((u) => [u.id, u]))
   const storageConfig = storageConfigForShop(shop)
+  const lifecycleByUploadId = new Map(
+    uploads.map((upload) => {
+      const lifecycles = upload.items.map((item) =>
+        deriveUploadItemLifecycle({
+          preflightStatus: item.preflightStatus,
+          preflightResult: item.preflightResult,
+          thumbnailKey: item.thumbnailKey,
+        })
+      )
+      return [
+        upload.id,
+        {
+          lifecycles,
+          orderable: lifecycles.length > 0 && lifecycles.every((lifecycle) => lifecycle.canAddToCart),
+        },
+      ] as const
+    })
+  )
 
-  // Persist the nesting request before building properties, so the order
-  // line, the identity page and the merchant admin all read the same numbers.
+  const canonicalLineByUpload = new Map<
+    string,
+    {
+      copies: number
+      designsPerSheet: number | null
+      sheetsNeeded: number | null
+      variantId: string | null
+      variantTitle: string | null
+      sheetLabel: string | null
+      dpi: number | null
+    }
+  >()
+  const preparationErrorByUpload = new Map<string, string>()
+
   await Promise.all(
-    Array.from(lineByUpload.entries())
-      .filter(([uploadId]) => byId.has(uploadId))
+    uploads.map(async (upload) => {
+      const requestedLine = lineByUpload.get(upload.id)
+      const lifecycleState = lifecycleByUploadId.get(upload.id)
+      const firstItem = upload.items[0]
+      const firstLifecycle = lifecycleState?.lifecycles[0]
+      if (!lifecycleState?.orderable || !firstItem || !firstLifecycle?.metadata) return
+      const uploadCustomerId = normalizeCustomerId(upload.customerId)
+      if (uploadCustomerId && uploadCustomerId !== signedCustomerId) {
+        lifecycleByUploadId.set(upload.id, { ...lifecycleState, orderable: false })
+        preparationErrorByUpload.set(upload.id, 'This upload does not belong to the logged-in customer.')
+        return
+      }
+      // Listing blocks only need the canonical three reference properties.
+      // Main-product lines also send copies and require a server resolution.
+      if (!requestedLine) return
+      if (!upload.productId || !shop.accessToken) {
+        lifecycleByUploadId.set(upload.id, { ...lifecycleState, orderable: false })
+        preparationErrorByUpload.set(upload.id, 'This upload is missing its product configuration.')
+        return
+      }
+
+      const rawProductId = String(upload.productId)
+      const productConfigs = await prisma.productConfig.findMany({
+        where: {
+          shopId: shop.id,
+          productId: { in: shopifyProductIdCandidates(rawProductId) },
+        },
+        select: { productId: true, builderConfig: true },
+      })
+      const productConfig = selectProductConfigForIdentity({
+        rows: productConfigs,
+        productId: rawProductId,
+        shopId: shop.id,
+        source: 'api.cart.prepare',
+      })
+      const builderConfig =
+        productConfig?.builderConfig && typeof productConfig.builderConfig === 'object'
+          ? (productConfig.builderConfig as Record<string, unknown>)
+          : null
+      // Supplying a main-product cart line selects this server endpoint's
+      // full-page policy. Neither policy nor physical roll width is accepted
+      // from the request body.
+      const measurementPolicy = MAIN_PRODUCT_MEASUREMENT_POLICY
+      const pricingModel = resolveCustomerPricingModelState(shopDomain, shop.settings)
+      const configuredRollWidth = resolveServerMainProductRollWidth(builderConfig, {
+        policyExplicit: pricingModel.policyExplicit,
+        maxSheetWidthIn: pricingModel.policy.maxSheetWidthIn,
+      })
+
+      const resolved = await resolveForMetadata({
+        shopDomain,
+        shop: {
+          id: shop.id,
+          accessToken: shop.accessToken,
+          settings: shop.settings,
+        },
+        productIdRaw: rawProductId,
+        builderConfig,
+        rawMetadata: firstLifecycle.metadata,
+        quantity: requestedLine.copies,
+        selectedVariantId: upload.variantId,
+        customerId: signedCustomerId,
+        measurementPolicy,
+        measurementBasis: getStoredMeasurementBasis(
+          firstItem.preflightResult,
+          getRuntimeMeasurementBasis(shopDomain, shop.settings)
+        ),
+        rollWidthIn: configuredRollWidth,
+        maxUploadWidth: configuredRollWidth,
+      })
+
+      if (resolved.kind !== 'ok') {
+        if (resolved.kind === 'no_fit') {
+          await persistMainProductMeasurementProjection(
+            firstItem.id,
+            resolved.canonicalMetadata,
+            configuredRollWidth
+          )
+        }
+        lifecycleByUploadId.set(upload.id, { ...lifecycleState, orderable: false })
+        preparationErrorByUpload.set(
+          upload.id,
+          resolved.kind === 'no_fit'
+            ? 'This design and copy count do not fit any available sheet.'
+            : resolved.kind === 'product_not_found'
+              ? 'The configured product could not be found.'
+              : 'Upload measurement is not ready for cart yet.'
+        )
+        return
+      }
+
+      await persistMainProductMeasurementProjection(
+        firstItem.id,
+        resolved.canonicalMetadata,
+        configuredRollWidth
+      )
+
+      const resolution = resolved.resolution
+      const selectedVariantRaw = String(resolution.selectedVariantId || '').trim()
+      const variantId = selectedVariantRaw.match(/(\d+)$/)?.[1] || selectedVariantRaw || null
+      const baseLabel = String(
+        resolution.selectedSheetLabel || resolution.selectedVariantTitle || ''
+      ).trim()
+      const variantTitle = String(resolution.selectedVariantTitle || '').trim() || null
+      const productionNote = String(resolution.productionNote || '').trim()
+      canonicalLineByUpload.set(upload.id, {
+        copies: requestedLine.copies,
+        designsPerSheet: toInt(resolution.designsPerSheet, 1, 100000),
+        sheetsNeeded: toInt(resolution.sheetsNeeded, 1, 100000),
+        variantId,
+        variantTitle,
+        sheetLabel:
+          [baseLabel, productionNote].filter(Boolean).join(' · ').slice(0, 200) || null,
+        dpi:
+          Number(
+            resolved.canonicalMetadata.effectiveDpi ||
+              resolved.canonicalMetadata.documentDpi ||
+              resolved.canonicalMetadata.dpi ||
+              0
+          ) || null,
+      })
+    })
+  )
+
+  // Persist production instructions only after the server measurement says
+  // the upload can be ordered. A pending/blocked upload must not leave ghost
+  // instructions that later look like a confirmed cart choice.
+  await Promise.all(
+    Array.from(canonicalLineByUpload.entries())
+      .filter(([uploadId]) => lifecycleByUploadId.get(uploadId)?.orderable === true)
       .map(([uploadId, line]) =>
         prisma.upload.update({
           where: { id: uploadId },
@@ -139,14 +316,10 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     const firstItem = upload.items[0]
-    const lifecycles = upload.items.map((item) =>
-      deriveUploadItemLifecycle({
-        preflightStatus: item.preflightStatus,
-        preflightResult: item.preflightResult,
-        thumbnailKey: item.thumbnailKey,
-      })
-    )
-    const orderable = lifecycles.length > 0 && lifecycles.every((l) => l.canAddToCart)
+    const lifecycleState = lifecycleByUploadId.get(uploadId)
+    const lifecycles = lifecycleState?.lifecycles || []
+    const orderable = lifecycleState?.orderable === true
+    const cartInstruction = canonicalLineByUpload.get(uploadId) || null
 
     const identityUrl = buildIdentityUrl(upload.id)
     const fileUrl = firstItem ? buildFileUrl(storageConfig, firstItem.storageKey) : null
@@ -155,9 +328,11 @@ export async function action({ request }: ActionFunctionArgs) {
     // 2026-09): the print-ready file, the Sheet Identity page that only this
     // app writes and can resolve, and the measured DPI. Everything else the
     // shop needs (copies, sheet, sizes) lives on the identity page.
-    const dpi = lifecycles
-      .map((l) => Number(l.metadata?.effectiveDpi || l.metadata?.documentDpi || l.metadata?.dpi || 0))
-      .find((n) => n > 0)
+    const dpi =
+      cartInstruction?.dpi ||
+      lifecycles
+        .map((l) => Number(l.metadata?.effectiveDpi || l.metadata?.documentDpi || l.metadata?.dpi || 0))
+        .find((n) => n > 0)
     const properties: Record<string, string> = {
       [PRINT_READY_PROPERTY]: fileUrl || identityUrl,
       [SHEET_IDENTITY_PROPERTY]: identityUrl,
@@ -168,7 +343,14 @@ export async function action({ request }: ActionFunctionArgs) {
       uploadId,
       found: true as const,
       orderable,
-      properties,
+      properties: orderable ? properties : null,
+      cartInstruction: orderable ? cartInstruction : null,
+      error:
+        orderable
+          ? null
+          : preparationErrorByUpload.get(uploadId) ||
+            lifecycles.flatMap((lifecycle) => lifecycle.errors)[0] ||
+            'Upload measurement is not ready for cart yet.',
       fileName: firstItem?.originalName || null,
       thumbnailUrl: firstItem ? buildThumbnailUrl(storageConfig, firstItem.thumbnailKey) : null,
       identityUrl,

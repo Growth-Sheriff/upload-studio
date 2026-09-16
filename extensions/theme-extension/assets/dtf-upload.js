@@ -514,18 +514,31 @@
     var self = this;
     var apiBase = this.config.apiBase || '/apps/customizer';
     var attempts = 0;
-    var maxAttempts = 40;
+    // The largest observed production measurement completed in 164 seconds.
+    // Keep polling long enough for serialized large-image work and retries,
+    // but still fail visibly instead of leaving an endless spinner.
+    var maxAttempts = 200;
 
     var interval = setInterval(function() {
       attempts++;
       if (attempts > maxAttempts) {
         clearInterval(interval);
         console.warn('[DTF Upload] Preflight polling timed out for', uploadId);
+        var timedOutFile = self.files[fileIndex];
+        if (timedOutFile && timedOutFile.measurementStatus === 'pending') {
+          timedOutFile.measurementStatus = 'error';
+          timedOutFile._measurementError = 'Server measurement took longer than 10 minutes. Please try this upload again.';
+          if (self.activeFileIndex === fileIndex && self.state === 'EDITOR') self.renderEditor();
+          self.showToast(timedOutFile._measurementError, 'error');
+        }
         return;
       }
 
       fetch(apiBase + '/api/upload/status/' + uploadId + '?shopDomain=' + encodeURIComponent(self.config.shopDomain))
-        .then(function(res) { return res.json(); })
+        .then(function(res) {
+          if (!res.ok) throw new Error('Status request failed: ' + res.status);
+          return res.json();
+        })
         .then(function(data) {
           if (!data || !data.items || !data.items.length) return;
 
@@ -533,11 +546,13 @@
           var fileEntry = self.files[fileIndex];
           if (!fileEntry) { clearInterval(interval); return; }
 
-          if ((item.measurementStatus && item.measurementStatus !== 'pending') ||
-              (item.preflightStatus && item.preflightStatus !== 'pending')) {
+          var measurementFinished = item.measurementStatus === 'ready' || item.measurementStatus === 'error';
+          var orderabilityBlocked = item.orderabilityStatus === 'blocked' || data.orderabilityStatus === 'blocked';
+          var legacyFinished = !item.measurementStatus && item.preflightStatus && item.preflightStatus !== 'pending';
+          if (measurementFinished || orderabilityBlocked || legacyFinished) {
             clearInterval(interval);
             fileEntry.measurementStatus =
-              item.measurementStatus ||
+              (orderabilityBlocked ? 'error' : item.measurementStatus) ||
               (item.preflightStatus === 'error' ? 'error' : 'ready');
             fileEntry._measurementError =
               (item.errors && item.errors[0]) ||
@@ -551,12 +566,18 @@
             if (item.effectiveDpi && item.effectiveDpi > 0) fileEntry.dpi = item.effectiveDpi;
             else if (item.dpi && item.dpi > 0) fileEntry.dpi = item.dpi;
 
-            var measurementWidthPx = item.measurementWidthPx && item.measurementWidthPx > 0 ? item.measurementWidthPx : fileEntry.widthPx;
-            var measurementHeightPx = item.measurementHeightPx && item.measurementHeightPx > 0 ? item.measurementHeightPx : fileEntry.heightPx;
-            if (measurementWidthPx > 0 && measurementHeightPx > 0 && fileEntry.dpi > 0) {
+            if (item.widthIn > 0 && item.heightIn > 0) {
+              fileEntry.widthIn = Number(item.widthIn);
+              fileEntry.heightIn = Number(item.heightIn);
+              fileEntry.ratio = fileEntry.widthIn / fileEntry.heightIn;
+            } else {
+              var measurementWidthPx = item.measurementWidthPx && item.measurementWidthPx > 0 ? item.measurementWidthPx : fileEntry.widthPx;
+              var measurementHeightPx = item.measurementHeightPx && item.measurementHeightPx > 0 ? item.measurementHeightPx : fileEntry.heightPx;
+              if (measurementWidthPx > 0 && measurementHeightPx > 0 && fileEntry.dpi > 0) {
               fileEntry.widthIn = parseFloat((measurementWidthPx / fileEntry.dpi).toFixed(2));
               fileEntry.heightIn = parseFloat((measurementHeightPx / fileEntry.dpi).toFixed(2));
               fileEntry.ratio = fileEntry.widthIn / fileEntry.heightIn;
+              }
             }
 
             if (item.thumbnailUrl) fileEntry.previewUrl = item.thumbnailUrl;

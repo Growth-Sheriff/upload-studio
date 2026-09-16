@@ -2,11 +2,18 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, corsJson } from "~/lib/cors.server";
 import { rateLimitGuard, getIdentifier } from "~/lib/rateLimit.server";
 import prisma from "~/lib/prisma.server";
-import { getPricingPolicy } from "~/lib/customerPricingModel.server";
+import {
+  getRuntimePricingPolicy,
+  resolveCustomerPricingModelState,
+} from "~/lib/customerPricingModel.server";
+import { resolveServerMainProductRollWidth } from "~/lib/mainProductMeasurement.server";
 import {
   applyAlphaProBuilderDefaults,
   buildAlphaProCustomerOffer,
 } from "~/lib/alphaProDiscounts.server";
+import { selectProductConfigForIdentity } from "~/lib/productConfigIdentity.server";
+import { shopifyProductIdCandidates } from "~/lib/shopifyProductIdentity";
+import { authenticate } from "~/shopify.server";
 
 
 
@@ -25,17 +32,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return handleCorsOptions(request);
   }
 
+  await authenticate.public.appProxy(request);
+
 
   const identifier = getIdentifier(request, "customer");
   const rateLimitResponse = await rateLimitGuard(identifier, "adminApi");
   if (rateLimitResponse) return rateLimitResponse;
 
   const url = new URL(request.url);
-  const shopDomain = url.searchParams.get("shopDomain");
+  const shopDomain = url.searchParams.get("shop");
   const productId = url.searchParams.get("productId");
-  const customerId = url.searchParams.get("customerId");
-  const customerEmail = url.searchParams.get("customerEmail");
-  const customerName = url.searchParams.get("customerName");
+  const customerId = url.searchParams.get("logged_in_customer_id");
 
   if (!shopDomain) {
     return corsJson({ error: "Missing shopDomain parameter" }, request, { status: 400 });
@@ -64,17 +71,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   let productConfig = null;
   if (productId) {
-    const normalizedProductId = productId.startsWith("gid://")
-      ? productId
-      : `gid://shopify/Product/${productId}`;
-    productConfig = await prisma.productConfig.findFirst({
+    const productConfigs = await prisma.productConfig.findMany({
       where: {
         shopId: shop.id,
-        OR: [
-          { productId },
-          { productId: normalizedProductId },
-        ],
+        productId: { in: shopifyProductIdCandidates(productId) },
       },
+    });
+    productConfig = selectProductConfigForIdentity({
+      rows: productConfigs,
+      productId,
+      shopId: shop.id,
+      source: 'api.storefront.config',
     });
   }
 
@@ -134,10 +141,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const builderConfigRaw = productConfig
     ? (productConfig.builderConfig as Record<string, any>) || {}
     : {};
-  const pricingPolicy = getPricingPolicy(shopDomain, shop.settings);
+  const pricingModel = resolveCustomerPricingModelState(shopDomain, shop.settings);
+  const pricingPolicy = getRuntimePricingPolicy(shopDomain, shop.settings);
   const shopMaxWidthLimit = pricingPolicy.maxSheetWidthIn;
   const defaultArtboardMarginIn = pricingPolicy.artboardMarginIn;
   const defaultImageMarginIn = pricingPolicy.imageMarginIn;
+  const storedArtboardMargin = Number(builderConfigRaw.artboardMarginIn);
+  const storedImageMargin = Number(builderConfigRaw.imageMarginIn);
+  const storedMaxWidth = Number(builderConfigRaw.maxWidthIn);
+  const rollWidthIn = resolveServerMainProductRollWidth(builderConfigRaw, {
+    policyExplicit: pricingModel.policyExplicit,
+    maxSheetWidthIn: shopMaxWidthLimit,
+  });
 
   const rawBuilderConfigResponse = productConfig
     ? {
@@ -146,9 +161,25 @@ export async function loader({ request }: LoaderFunctionArgs) {
         widthOptionName: builderConfigRaw.widthOptionName ?? null,
         heightOptionName: builderConfigRaw.heightOptionName ?? null,
         modalOptionNames: Array.isArray(builderConfigRaw.modalOptionNames) ? builderConfigRaw.modalOptionNames : [],
-        artboardMarginIn: Math.max(defaultArtboardMarginIn, Number(builderConfigRaw.artboardMarginIn ?? defaultArtboardMarginIn)),
-        imageMarginIn: Math.max(defaultImageMarginIn, Number(builderConfigRaw.imageMarginIn ?? defaultImageMarginIn)),
-        maxWidthIn: Math.max(Number(builderConfigRaw.maxWidthIn ?? 0) || 0, shopMaxWidthLimit),
+        artboardMarginIn:
+          Number.isFinite(storedArtboardMargin) && storedArtboardMargin >= 0
+            ? pricingModel.policyExplicit
+              ? Math.max(defaultArtboardMarginIn, storedArtboardMargin)
+              : storedArtboardMargin
+            : defaultArtboardMarginIn,
+        imageMarginIn:
+          Number.isFinite(storedImageMargin) && storedImageMargin >= 0
+            ? pricingModel.policyExplicit
+              ? Math.max(defaultImageMarginIn, storedImageMargin)
+              : storedImageMargin
+            : defaultImageMarginIn,
+        rollWidthIn,
+        maxWidthIn:
+          Number.isFinite(storedMaxWidth) && storedMaxWidth > 0
+            ? pricingModel.policyExplicit
+              ? Math.min(storedMaxWidth, shopMaxWidthLimit)
+              : storedMaxWidth
+            : shopMaxWidthLimit,
         maxHeightIn: builderConfigRaw.maxHeightIn ?? 35.75,
         minWidthIn: builderConfigRaw.minWidthIn ?? 1,
         minHeightIn: builderConfigRaw.minHeightIn ?? 1,
@@ -172,8 +203,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     productId: normalizedProductIdForAlpha,
     settings: shop.settings,
     customerId,
-    customerEmail,
-    customerName,
+    customerEmail: null,
+    customerName: null,
   });
   const builderConfigResponse = rawBuilderConfigResponse
     ? applyAlphaProBuilderDefaults(shopDomain, normalizedProductIdForAlpha, rawBuilderConfigResponse, shop.settings)

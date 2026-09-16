@@ -13,11 +13,18 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, getCorsHeaders } from "~/lib/cors.server";
 import prisma from "~/lib/prisma.server";
-import { getPricingPolicy } from "~/lib/customerPricingModel.server";
+import {
+  getRuntimePricingPolicy,
+  resolveCustomerPricingModelState,
+} from "~/lib/customerPricingModel.server";
+import { resolveServerMainProductRollWidth } from "~/lib/mainProductMeasurement.server";
 import {
   applyAlphaProBuilderDefaults,
   buildAlphaProCustomerOffer,
 } from "~/lib/alphaProDiscounts.server";
+import { selectProductConfigForIdentity } from "~/lib/productConfigIdentity.server";
+import { shopifyProductIdCandidates } from "~/lib/shopifyProductIdentity";
+import { authenticate } from "~/shopify.server";
 
 
 function cachedCorsJson<T>(data: T, request: Request, options: { status?: number } = {}) {
@@ -53,6 +60,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return handleCorsOptions(request);
   }
 
+  await authenticate.public.appProxy(request);
+
   const productId = params.id;
   if (!productId) {
     return cachedCorsJson({ error: "Product ID required" }, request, { status: 400 });
@@ -61,9 +70,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const url = new URL(request.url);
   const shopDomain = url.searchParams.get("shop");
-  const customerId = url.searchParams.get("customerId");
-  const customerEmail = url.searchParams.get("customerEmail");
-  const customerName = url.searchParams.get("customerName");
+  const customerId = url.searchParams.get("logged_in_customer_id");
 
   if (!shopDomain) {
     return cachedCorsJson({ error: "Shop domain required" }, request, { status: 400 });
@@ -80,7 +87,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
     // Sheet policy (roll width, margins) is a merchant setting with per-shop
     // defaults; nothing here depends on the shop domain any more.
-    const policy = getPricingPolicy(shopDomain, shop.settings);
+    const pricingModel = resolveCustomerPricingModelState(shopDomain, shop.settings);
+    const policy = getRuntimePricingPolicy(shopDomain, shop.settings);
     const shopMaxWidthLimit = policy.maxSheetWidthIn;
     const defaultArtboardMarginIn = policy.artboardMarginIn;
     const defaultImageMarginIn = policy.imageMarginIn;
@@ -91,14 +99,17 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       : `gid://shopify/Product/${productId}`;
 
 
-    const config = await prisma.productConfig.findFirst({
+    const productConfigs = await prisma.productConfig.findMany({
       where: {
         shopId: shop.id,
-        OR: [
-          { productId },
-          { productId: productGid },
-        ],
+        productId: { in: shopifyProductIdCandidates(productId) },
       },
+    });
+    const config = selectProductConfigForIdentity({
+      rows: productConfigs,
+      productId,
+      shopId: shop.id,
+      source: 'api.product-config.$id',
     });
 
 
@@ -111,6 +122,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         modalOptionNames: [],
         artboardMarginIn: defaultArtboardMarginIn,
         imageMarginIn: defaultImageMarginIn,
+        rollWidthIn: resolveServerMainProductRollWidth(null, {
+          policyExplicit: pricingModel.policyExplicit,
+          maxSheetWidthIn: shopMaxWidthLimit,
+        }),
         maxWidthIn: shopMaxWidthLimit,
         maxHeightIn: 35.75,
         minWidthIn: 1,
@@ -130,8 +145,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         productId: productGid,
         settings: shop.settings,
         customerId,
-        customerEmail,
-        customerName,
+        customerEmail: null,
+        customerName: null,
       });
 
       return cachedCorsJson({
@@ -147,6 +162,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
 
     const builderConfig = (config.builderConfig as Record<string, any>) || {};
+    const storedArtboardMargin = Number(builderConfig.artboardMarginIn);
+    const storedImageMargin = Number(builderConfig.imageMarginIn);
+    const storedMaxWidth = Number(builderConfig.maxWidthIn);
+    const rollWidthIn = resolveServerMainProductRollWidth(builderConfig, {
+      policyExplicit: pricingModel.policyExplicit,
+      maxSheetWidthIn: shopMaxWidthLimit,
+    });
 
 
     const builderConfigResponse = applyAlphaProBuilderDefaults(shopDomain, productGid, {
@@ -155,9 +177,25 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       widthOptionName: builderConfig.widthOptionName ?? null,
       heightOptionName: builderConfig.heightOptionName ?? null,
       modalOptionNames: Array.isArray(builderConfig.modalOptionNames) ? builderConfig.modalOptionNames : [],
-      artboardMarginIn: Math.max(defaultArtboardMarginIn, Number(builderConfig.artboardMarginIn ?? defaultArtboardMarginIn)),
-      imageMarginIn: Math.max(defaultImageMarginIn, Number(builderConfig.imageMarginIn ?? defaultImageMarginIn)),
-      maxWidthIn: Math.max(Number(builderConfig.maxWidthIn ?? 0) || 0, shopMaxWidthLimit),
+      artboardMarginIn:
+        Number.isFinite(storedArtboardMargin) && storedArtboardMargin >= 0
+          ? pricingModel.policyExplicit
+            ? Math.max(defaultArtboardMarginIn, storedArtboardMargin)
+            : storedArtboardMargin
+          : defaultArtboardMarginIn,
+      imageMarginIn:
+        Number.isFinite(storedImageMargin) && storedImageMargin >= 0
+          ? pricingModel.policyExplicit
+            ? Math.max(defaultImageMarginIn, storedImageMargin)
+            : storedImageMargin
+          : defaultImageMarginIn,
+      rollWidthIn,
+      maxWidthIn:
+        Number.isFinite(storedMaxWidth) && storedMaxWidth > 0
+          ? pricingModel.policyExplicit
+            ? Math.min(storedMaxWidth, shopMaxWidthLimit)
+            : storedMaxWidth
+          : shopMaxWidthLimit,
       maxHeightIn: builderConfig.maxHeightIn ?? 35.75,
       minWidthIn: builderConfig.minWidthIn ?? 1,
       minHeightIn: builderConfig.minHeightIn ?? 1,
@@ -181,8 +219,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       productId: productGid,
       settings: shop.settings,
       customerId,
-      customerEmail,
-      customerName,
+      customerEmail: null,
+      customerName: null,
     });
 
     return cachedCorsJson({

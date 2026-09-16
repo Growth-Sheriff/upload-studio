@@ -2,12 +2,30 @@ import type { ActionFunctionArgs } from '@remix-run/node'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
-import { deriveUploadItemLifecycle } from '~/lib/uploadLifecycle.server'
+import { normalizeCustomerId } from '~/lib/customerPricing.server'
 import {
-  normalizeProductId,
+  deriveUploadItemLifecycle,
+  getStoredMeasurementBasis,
+} from '~/lib/uploadLifecycle.server'
+import {
+  getRuntimeMeasurementBasis,
+  resolveCustomerPricingModelState,
+} from '~/lib/customerPricingModel.server'
+import {
+  MAIN_PRODUCT_MEASUREMENT_POLICY,
+  resolveServerMainProductRollWidth,
+} from '~/lib/mainProductMeasurement.server'
+import { persistMainProductMeasurementProjection } from '~/lib/mainProductMeasurementPersistence.server'
+import {
   parsePositiveNumber,
   resolveForMetadata,
 } from '~/lib/sheetResolution.server'
+import {
+  shopifyProductIdCandidates,
+  shopifyProductIdsEqual,
+} from '~/lib/shopifyProductIdentity'
+import { selectProductConfigForIdentity } from '~/lib/productConfigIdentity.server'
+import { authenticate } from '~/shopify.server'
 
 // Authoritative resolution for a server-measured upload. The resolver itself
 // lives in app/lib/sheetResolution.server.ts and is shared with
@@ -36,13 +54,20 @@ export async function action({ request }: ActionFunctionArgs) {
     return corsJson({ error: 'Method not allowed' }, request, { status: 405 })
   }
 
+  await authenticate.public.appProxy(request)
+  const requestUrl = new URL(request.url)
+  const signedShopDomain = String(requestUrl.searchParams.get('shop') || '').trim()
+  const signedCustomerId = normalizeCustomerId(
+    requestUrl.searchParams.get('logged_in_customer_id')
+  )
+
   const identifier = getIdentifier(request, 'customer')
   const rateLimitResponse = await rateLimitGuard(identifier, 'adminApi')
   if (rateLimitResponse) return rateLimitResponse
 
   try {
     const body = (await request.json()) as ResolveRequestBody
-    const shopDomain = String(body.shopDomain || '').trim()
+    const shopDomain = signedShopDomain
     const uploadId = String(body.uploadId || '').trim()
     const productIdRaw = body.productId
     const quantity = Math.max(1, Math.floor(parsePositiveNumber(body.quantity) || 1))
@@ -66,34 +91,38 @@ export async function action({ request }: ActionFunctionArgs) {
       return corsJson({ error: 'Shop not found' }, request, { status: 404 })
     }
 
-    const productId = normalizeProductId(productIdRaw)
-
-    const [upload, productConfig] = await Promise.all([
+    const [upload, productConfigs] = await Promise.all([
       prisma.upload.findFirst({
         where: { id: uploadId, shopId: shop.id },
         select: {
           id: true,
           productId: true,
+          customerId: true,
           items: {
             orderBy: { createdAt: 'asc' },
             select: { id: true, originalName: true, preflightStatus: true, preflightResult: true },
           },
         },
       }),
-      prisma.productConfig.findFirst({
-        where: { shopId: shop.id, OR: [{ productId: String(productIdRaw) }, { productId }] },
-        select: { builderConfig: true },
+      prisma.productConfig.findMany({
+        where: {
+          shopId: shop.id,
+          productId: { in: shopifyProductIdCandidates(productIdRaw) },
+        },
+        select: { productId: true, builderConfig: true },
       }),
     ])
 
     if (!upload) {
       return corsJson({ error: 'Upload not found' }, request, { status: 404 })
     }
-    if (
-      upload.productId &&
-      String(upload.productId) !== String(productIdRaw) &&
-      String(upload.productId) !== productId
-    ) {
+    const uploadCustomerId = normalizeCustomerId(upload.customerId)
+    if (uploadCustomerId && uploadCustomerId !== signedCustomerId) {
+      return corsJson({ error: 'Upload does not belong to this customer' }, request, {
+        status: 403,
+      })
+    }
+    if (upload.productId && !shopifyProductIdsEqual(upload.productId, productIdRaw)) {
       return corsJson({ error: 'Upload does not belong to this product' }, request, { status: 400 })
     }
 
@@ -105,20 +134,34 @@ export async function action({ request }: ActionFunctionArgs) {
         })
       : null
 
+    const productConfig = selectProductConfigForIdentity({
+      rows: productConfigs,
+      productId: productIdRaw,
+      shopId: shop.id,
+      source: 'api.upload.resolve-product',
+    })
+    const builderConfig = (productConfig?.builderConfig || null) as Record<string, unknown> | null
+    const pricingModel = resolveCustomerPricingModelState(shopDomain, shop.settings)
+    const configuredRollWidth = resolveServerMainProductRollWidth(builderConfig, {
+      policyExplicit: pricingModel.policyExplicit,
+      maxSheetWidthIn: pricingModel.policy.maxSheetWidthIn,
+    })
     const result = await resolveForMetadata({
       shopDomain,
       shop,
       productIdRaw,
-      builderConfig: (productConfig?.builderConfig || null) as Record<string, unknown> | null,
+      builderConfig,
       rawMetadata: lifecycle?.metadata || null,
       quantity,
       selectedVariantId,
-      customerId: body.customerId,
-      customerEmail: body.customerEmail,
-      customerName: body.customerName,
-      measurementPolicy: body.measurementPolicy,
-      rollWidthIn: body.rollWidthIn,
-      maxUploadWidth: body.maxUploadWidth,
+      customerId: signedCustomerId,
+      measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
+      measurementBasis: getStoredMeasurementBasis(
+        firstItem?.preflightResult,
+        getRuntimeMeasurementBasis(shopDomain, shop.settings)
+      ),
+      rollWidthIn: configuredRollWidth,
+      maxUploadWidth: configuredRollWidth,
     })
 
     if (result.kind === 'product_not_found') {
@@ -131,6 +174,11 @@ export async function action({ request }: ActionFunctionArgs) {
         { status: 409 }
       )
     }
+    await persistMainProductMeasurementProjection(
+      firstItem.id,
+      result.canonicalMetadata,
+      configuredRollWidth
+    )
     const uploadPayload = { uploadId, fileName: firstItem?.originalName || '', ...result.dimensions }
     if (result.kind === 'no_fit') {
       return corsJson(

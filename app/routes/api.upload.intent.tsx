@@ -2,6 +2,10 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from '@remix-run/node'
 import { nanoid } from 'nanoid'
 import { checkUploadAllowed, MAX_FILE_SIZE_MB } from '~/lib/billing.server'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
+import { getRuntimeMeasurementBasis } from '~/lib/customerPricingModel.server'
+import { normalizeCustomerId } from '~/lib/customerPricing.server'
+import { variantIdsEqual } from '~/lib/dtfSheetResolver.server'
+import { resolveUploadIntentMeasurementBasis } from '~/lib/mainProductMeasurement.server'
 import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
 import {
@@ -16,6 +20,11 @@ import {
   type UploadUrlResult,
 } from '~/lib/storage.server'
 import { uploadLogger } from '~/lib/uploadLogger.server'
+import {
+  canReuseUploadByFingerprint,
+  normalizeUploadFingerprint,
+} from '~/lib/uploadFingerprint'
+import { authenticate } from '~/shopify.server'
 
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -44,6 +53,13 @@ export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
     return corsJson({ error: 'Method not allowed' }, request, { status: 405 })
   }
+
+  await authenticate.public.appProxy(request)
+  const signedUrl = new URL(request.url)
+  const shopDomain = String(signedUrl.searchParams.get('shop') || '').trim()
+  const customerId = normalizeCustomerId(
+    signedUrl.searchParams.get('logged_in_customer_id')
+  )
 
 
   let body: any
@@ -76,24 +92,18 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const {
-    shopDomain,
     productId,
     variantId,
     mode,
     contentType,
     fileName,
-    fileSize,
-    customerId,
-    customerEmail,
+    fileSize: rawFileSize,
     visitorId,
     sessionId,
   } = body
-
+  const fileSize = Number(rawFileSize)
   // Optional transport hints from the storefront probe.
-  const fingerprint =
-    typeof body.fingerprint === 'string' && /^v1-\d+-[a-f0-9]{64}$/.test(body.fingerprint)
-      ? body.fingerprint
-      : null
+  const fingerprint = normalizeUploadFingerprint(body.fingerprint)
   const partSizeHintMb = Number(body.partSizeMb)
   const partSizeOverride =
     Number.isFinite(partSizeHintMb) && partSizeHintMb >= 5 && partSizeHintMb <= 64
@@ -126,6 +136,23 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!shop) {
     return corsJson({ error: 'Shop not found' }, request, { status: 404 })
   }
+
+  if (!Number.isSafeInteger(fileSize) || fileSize <= 0) {
+    return corsJson(
+      { error: 'fileSize must be a positive integer number of bytes', code: 'INVALID_FILE_SIZE' },
+      request,
+      { status: 400 }
+    )
+  }
+  const measurementBasis = resolveUploadIntentMeasurementBasis(
+    getRuntimeMeasurementBasis(shop.shopDomain, shop.settings),
+    body.measurementPolicy
+  )
+
+  // The storefront email field is customer-controlled. The signed customer
+  // id is sufficient for ownership; the verified order webhook backfills the
+  // email after checkout without delaying the upload URL on an Admin API call.
+  const customerEmail: string | null = null
 
 
   if (!['dtf', '3d_designer', 'classic', 'quick', 'builder'].includes(mode)) {
@@ -227,8 +254,8 @@ export async function action({ request }: ActionFunctionArgs) {
   // Instant re-upload: the same file (content fingerprint) from the same
   // customer/visitor that already measured fine is reused — zero bytes sent.
   // Guests without any identity never dedupe (no cross-customer reuse).
-  if (fingerprint && (customerId || visitorId)) {
-    const existing = await prisma.upload.findFirst({
+  if (canReuseUploadByFingerprint(fingerprint) && (customerId || visitorId)) {
+    const candidates = await prisma.upload.findMany({
       where: {
         shopId: shop.id,
         productId: productId ? String(productId) : null,
@@ -244,16 +271,53 @@ export async function action({ request }: ActionFunctionArgs) {
         },
       },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, items: { select: { id: true, fingerprint: true }, orderBy: { createdAt: 'asc' } } },
+      take: 25,
+      select: {
+        id: true,
+        variantId: true,
+        items: {
+          select: { id: true, fingerprint: true, preflightResult: true },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
     })
-    if (existing) {
-      const item = existing.items.find((i) => i.fingerprint === fingerprint) || existing.items[0]
+    const compatible = candidates
+      .map((upload) => {
+        const requestedVariantId = variantId == null ? '' : String(variantId).trim()
+        const storedVariantId = upload.variantId == null ? '' : String(upload.variantId).trim()
+        const variantCompatible =
+          requestedVariantId || storedVariantId
+            ? variantIdsEqual(storedVariantId, requestedVariantId)
+            : true
+        if (!variantCompatible) return null
+
+        const item = upload.items.find((candidate) => {
+          if (candidate.fingerprint !== fingerprint) return false
+          const result =
+            candidate.preflightResult && typeof candidate.preflightResult === 'object'
+              ? (candidate.preflightResult as Record<string, unknown>)
+              : {}
+          const storedBasis =
+            result.measurementBasis === 'artwork_bounds' || result.measurementBasis === 'full_page'
+              ? result.measurementBasis
+              : null
+          const basisCompatible =
+            storedBasis === measurementBasis ||
+            (storedBasis === null && measurementBasis === 'full_page')
+          return basisCompatible
+        })
+        return item ? { upload, item } : null
+      })
+      .find((entry): entry is NonNullable<typeof entry> => entry !== null)
+
+    if (compatible) {
+      const { upload: existing, item } = compatible
       console.log(`[Upload Intent] Dedupe hit: fingerprint reuse -> upload ${existing.id} (shop ${shopDomain})`)
       return corsJson(
         {
           deduplicated: true,
           uploadId: existing.id,
-          itemId: item?.id || null,
+          itemId: item.id,
           fileName,
           fileSize,
           mimeType: contentType,
@@ -353,11 +417,17 @@ export async function action({ request }: ActionFunctionArgs) {
         fileSize: fileSize || null,
         fingerprint,
         preflightStatus: 'pending',
+        preflightResult: { measurementBasis },
       },
     })
 
 
-    const uploadResult: UploadUrlResult = await getUploadSignedUrl(storageConfig, key, contentType)
+    const uploadResult: UploadUrlResult = await getUploadSignedUrl(
+      storageConfig,
+      key,
+      contentType,
+      fileSize
+    )
 
 
     if (uploadResult.fallbackUrls) {

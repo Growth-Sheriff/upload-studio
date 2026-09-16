@@ -198,6 +198,25 @@
     var apiBase = root.getAttribute('data-api-base') || '/apps/customizer';
     var shopDomain = root.getAttribute('data-shop-domain') || '';
     var customerLoggedIn = root.getAttribute('data-customer-logged-in') === 'true';
+    var productMeasurementConfigPromise = null;
+
+    async function loadProductMeasurementConfig() {
+      try {
+        var configUrl =
+          apiBase +
+          '/api/product-config/' +
+          encodeURIComponent(String(productData.productId || '')) +
+          '?shop=' +
+          encodeURIComponent(shopDomain);
+        var response = await fetch(configUrl, { credentials: 'same-origin' });
+        var data = await response.json().catch(function() { return {}; });
+        if (!response.ok) return;
+        var configuredRollWidth = parseOptionalPositiveNumber(
+          data && data.builderConfig ? data.builderConfig.rollWidthIn : null
+        );
+        if (configuredRollWidth) MAIN_PRODUCT_ROLL_WIDTH_IN = configuredRollWidth;
+      } catch (error) {}
+    }
 
     function sendUploadXhr(url, method, file, headers, onProgress) {
       return new Promise(function(resolve, reject) {
@@ -287,6 +306,7 @@
           uploadId: session.uploadId,
           key: session.key,
           multipartUploadId: session.multipartUploadId,
+          partSize: session.partSize,
           totalParts: session.totalParts
         })
       });
@@ -337,6 +357,7 @@
           shopDomain: shopDomain,
           productId: String(productData.productId),
           mode: 'dtf',
+          measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
           fileName: file.name,
           contentType: file.type || 'application/octet-stream',
           fileSize: file.size,
@@ -527,34 +548,25 @@
           fallbackCandidates.push({
             label: 'r2',
             url: intent.fallbackUrls.r2.url,
+            publicUrl: intent.fallbackUrls.r2.publicUrl,
             method: intent.fallbackUrls.r2.method || 'PUT',
             headers: null
           });
         }
         if (intent.fallbackUrls.local && intent.fallbackUrls.local.url) {
+          var localFallbackMethod = intent.fallbackUrls.local.method || 'PUT';
           fallbackCandidates.push({
             label: 'local',
             url: intent.fallbackUrls.local.url,
-            method: intent.fallbackUrls.local.method || 'POST',
-            headers: { __extraFields: {
+            publicUrl: intent.fallbackUrls.local.publicUrl,
+            method: localFallbackMethod,
+            headers: localFallbackMethod === 'POST' ? { __extraFields: {
               key: intent.key || '',
               uploadId: intent.uploadId || '',
               itemId: intent.itemId || ''
-            } }
+            } } : null
           });
         }
-      }
-      if (storageProvider !== 'local') {
-        fallbackCandidates.push({
-          label: 'proxy-local',
-          url: apiBase + '/api/upload/local',
-          method: 'POST',
-          headers: { __extraFields: {
-            key: intent.key || '',
-            uploadId: intent.uploadId || '',
-            itemId: intent.itemId || ''
-          } }
-        });
       }
 
       for (var i = 0; i < fallbackCandidates.length; i++) {
@@ -562,6 +574,8 @@
         try {
           try { console.warn('[MainUpload] Falling back to ' + cand.label); } catch (_) {}
           await sendUploadXhr(cand.url, cand.method, file, cand.headers, onProgress);
+          intent.storageProvider = cand.label;
+          intent.publicUrl = cand.publicUrl || intent.publicUrl;
           return { via: cand.label, attempt: maxRetries + i + 1, fallback: true };
         } catch (err) {
           lastErr = err;
@@ -3435,6 +3449,7 @@
           var firstItem = data.items && data.items[0] ? data.items[0] : null;
           if (firstItem) {
             var measurementStatus = firstItem.measurementStatus || 'pending';
+            var measurementReady = measurementStatus === 'ready' || measurementStatus === 'warning';
             var orderabilityStatus = data.orderabilityStatus || '';
             state.thumbnailUrl = firstItem.thumbnailUrl || data.thumbnailUrl || '';
             state.originalUrl = firstItem.originalUrl || data.downloadUrl || '';
@@ -3442,7 +3457,7 @@
             // Before that the status payload carries no inches, and clearing
             // `provisional` here made the flow resolve on the estimate and stop
             // polling while the file was still being measured.
-            if (measurementStatus === 'ready') {
+            if (measurementReady) {
               applyServerMeasurement(firstItem);
               if (state.provisional) {
                 state.provisional = false;
@@ -3458,7 +3473,7 @@
               showError(getPreflightErrorMessage(data, firstItem));
               return false;
             }
-            if (measurementStatus === 'ready' && state.widthIn && state.heightIn) {
+            if (measurementReady && state.widthIn && state.heightIn) {
               if (customerPricing.status === 'loading' && customerPricingPromise) {
                 await customerPricingPromise.catch(function() { return null; });
               }
@@ -3497,8 +3512,9 @@
             queueItem.thumbnailUrl = firstItem.thumbnailUrl || data.thumbnailUrl || queueItem.thumbnailUrl || '';
             queueItem.originalUrl = firstItem.originalUrl || data.downloadUrl || queueItem.originalUrl || '';
             var measurementStatus = firstItem.measurementStatus || 'pending';
+            var measurementReady = measurementStatus === 'ready' || measurementStatus === 'warning';
             var orderabilityStatus = data.orderabilityStatus || '';
-            if (measurementStatus === 'ready') {
+            if (measurementReady) {
               applyServerMeasurement(firstItem, queueItem);
             }
 
@@ -3518,7 +3534,7 @@
               return false;
             }
 
-            if (measurementStatus === 'ready' && queueItem.widthIn && queueItem.heightIn) {
+            if (measurementReady && queueItem.widthIn && queueItem.heightIn) {
               queueItem.uploadStatus = 'ready';
               queueItem.quoteStatus = 'processing';
               queueItem.error = '';
@@ -3712,6 +3728,7 @@
     }
 
     async function handleCustomPricingFiles(fileList) {
+      if (productMeasurementConfigPromise) await productMeasurementConfigPromise;
       var files = Array.prototype.slice.call(fileList || []);
       if (!files.length) return;
 
@@ -3763,6 +3780,7 @@
 
     async function handleFile(file) {
       if (!file) return;
+      if (productMeasurementConfigPromise) await productMeasurementConfigPromise;
       if (!isAcceptedFile(file)) {
         showError('Unsupported file format. Please upload a PNG file.');
         return;
@@ -3981,8 +3999,8 @@
         // Exactly the three customer-visible line properties every block
         // writes (Print Ready, Sheet Identity, DPI), built by the server;
         // copies / sheet facts are persisted on the upload row.
-        var properties = uploadRequired && window.ULLineProperties
-          ? await window.ULLineProperties.build({
+        var preparedCartLine = uploadRequired && window.ULLineProperties
+          ? await window.ULLineProperties.prepare({
               uploadId: state.uploadId,
               fileUrl: state.originalUrl || '',
               dpi: state.effectiveDpi || state.embeddedDpi || 0,
@@ -3991,16 +4009,25 @@
                 designsPerSheet: state.selectedResult ? state.selectedResult.designsPerSheet : null,
                 sheetsNeeded: state.selectedResult ? state.selectedResult.sheetsNeeded : null,
                 variantId: String(variantId || ''),
-                sheetLabel: state.selectedResult ? (state.selectedResult.selectedSheetLabel || state.selectedResult.selectedVariantTitle || '') : ''
+                sheetLabel: state.selectedResult
+                  ? (state.selectedResult.selectedSheetLabel || state.selectedResult.selectedVariantTitle || '') +
+                    (state.selectedResult.productionNote ? ' · ' + state.selectedResult.productionNote : '')
+                  : ''
               }
             })
-          : {};
+          : { properties: {}, cartInstruction: null };
+        var properties = preparedCartLine.properties || {};
+        var canonicalInstruction = preparedCartLine.cartInstruction || {};
+        var canonicalVariantId = parseInt(canonicalInstruction.variantId, 10);
+        var canonicalSheetsNeeded = parseInt(canonicalInstruction.sheetsNeeded, 10);
 
         // Verified, idempotent cart sync (exact-line replace) + cart-token
         // binding so the order webhook has a second carrier for this upload.
         var cartItem = {
-          id: parseInt(variantId, 10),
-          quantity: Math.max(1, Number(state.selectedResult ? state.selectedResult.sheetsNeeded : quantityValue) || 1),
+          id: canonicalVariantId > 0 ? canonicalVariantId : parseInt(variantId, 10),
+          quantity: canonicalSheetsNeeded > 0
+            ? canonicalSheetsNeeded
+            : Math.max(1, Number(state.selectedResult ? state.selectedResult.sheetsNeeded : quantityValue) || 1),
           properties: properties
         };
         var syncedCart = uploadRequired && state.uploadId
@@ -4299,6 +4326,7 @@
 
     updateCustomerStatusUI();
     syncUploadInputMode();
+    productMeasurementConfigPromise = loadProductMeasurementConfig();
     customerPricingPromise = loadCustomerPricingContext();
     setSelectedVariant(getFallbackVariantId());
     updateVipPreviewUI();

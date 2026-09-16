@@ -100,7 +100,12 @@
       await fetch(opts.abortUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shopDomain: opts.shopDomain, key: opts.key, multipartUploadId: opts.uploadId }),
+        body: JSON.stringify({
+          shopDomain: opts.shopDomain,
+          uploadId: opts.appUploadId,
+          key: opts.key,
+          multipartUploadId: opts.uploadId
+        }),
       });
     } catch (_) {}
   }
@@ -221,6 +226,7 @@
       await abortMultipart({
         abortUrl: mp.abortUrl || mp.completeUrl.replace('multipart-complete', 'multipart-abort'),
         shopDomain: shopDomain,
+        appUploadId: intent.uploadId,
         key: mp.key,
         uploadId: mp.uploadId,
       });

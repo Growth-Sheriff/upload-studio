@@ -28,6 +28,8 @@ import {
 } from "~/lib/alphaProDiscounts";
 import { applyAlphaProBuilderDefaults } from "~/lib/alphaProDiscounts.server";
 import { isVolumeProgramProduct, isVolumeTiersEnabled } from "~/lib/customerPricingModel.server";
+import { preserveStoredProductMargins } from "~/lib/productBuilderConfig.server";
+import { resolveServerMainProductRollWidth } from "~/lib/mainProductMeasurement.server";
 
 
 const ExtraQuestionSchema = z.object({
@@ -99,6 +101,7 @@ interface BuilderConfig {
   modalOptionNames: string[];
   artboardMarginIn: number;
   imageMarginIn: number;
+  rollWidthIn: number;
   maxWidthIn: number;
   maxHeightIn: number;
   minWidthIn: number;
@@ -126,6 +129,7 @@ const DEFAULT_BUILDER_CONFIG: BuilderConfig = {
   modalOptionNames: [],
   artboardMarginIn: 0.125,
   imageMarginIn: 0.125,
+  rollWidthIn: 22,
   maxWidthIn: 22.5,
   maxHeightIn: 35.75,
   minWidthIn: 1,
@@ -157,8 +161,9 @@ const BuilderConfigSchema = z.object({
   widthOptionName: z.string().max(100).nullable().optional(),
   heightOptionName: z.string().max(100).nullable().optional(),
   modalOptionNames: z.array(z.string().max(100)).max(10).default([]),
-  artboardMarginIn: z.number().min(0.125).max(5).default(0.125),
-  imageMarginIn: z.number().min(0.125).max(5).default(0.125),
+  artboardMarginIn: z.number().min(0).max(5).default(0.125),
+  imageMarginIn: z.number().min(0).max(5).default(0.125),
+  rollWidthIn: z.number().min(0.1).max(120).default(DEFAULT_BUILDER_CONFIG.rollWidthIn),
   maxWidthIn: z.number().min(0.1).max(999).default(DEFAULT_BUILDER_CONFIG.maxWidthIn),
   maxHeightIn: z.number().min(0.1).max(999).default(DEFAULT_BUILDER_CONFIG.maxHeightIn),
   minWidthIn: z.number().min(0.1).max(999).default(DEFAULT_BUILDER_CONFIG.minWidthIn),
@@ -377,13 +382,17 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     ? {
         ...DEFAULT_BUILDER_CONFIG,
         ...((config.builderConfig as BuilderConfig | null) || {}),
+        // Materialize the same effective legacy fallback shown to storefronts.
+        // Otherwise merely opening and saving an old 22.5-inch row would write
+        // the newer 22-inch default and change no-DPI measurements.
+        rollWidthIn: resolveServerMainProductRollWidth(storedBuilderConfig),
         artboardMarginIn: Math.max(
-          0.125,
-          Number((config.builderConfig as BuilderConfig | null)?.artboardMarginIn ?? DEFAULT_BUILDER_CONFIG.artboardMarginIn)
+          0,
+          Number((config.builderConfig as BuilderConfig | null)?.artboardMarginIn ?? 0)
         ),
         imageMarginIn: Math.max(
-          0.125,
-          Number((config.builderConfig as BuilderConfig | null)?.imageMarginIn ?? DEFAULT_BUILDER_CONFIG.imageMarginIn)
+          0,
+          Number((config.builderConfig as BuilderConfig | null)?.imageMarginIn ?? 0)
         ),
       }
     : DEFAULT_BUILDER_CONFIG;
@@ -582,8 +591,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
         builderConfig = {
           ...DEFAULT_BUILDER_CONFIG,
           ...validationResult.data,
-          artboardMarginIn: Math.max(0.125, validationResult.data.artboardMarginIn ?? DEFAULT_BUILDER_CONFIG.artboardMarginIn),
-          imageMarginIn: Math.max(0.125, validationResult.data.imageMarginIn ?? DEFAULT_BUILDER_CONFIG.imageMarginIn),
+          artboardMarginIn: Math.max(0, validationResult.data.artboardMarginIn ?? DEFAULT_BUILDER_CONFIG.artboardMarginIn),
+          imageMarginIn: Math.max(0, validationResult.data.imageMarginIn ?? DEFAULT_BUILDER_CONFIG.imageMarginIn),
           sheetOptionName: validationResult.data.sheetOptionName || null,
           widthOptionName: validationResult.data.widthOptionName || null,
           heightOptionName: validationResult.data.heightOptionName || null,
@@ -615,6 +624,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
       select: { builderConfig: true },
     });
     const storedCompat = (existingForCompat?.builderConfig as Record<string, unknown> | null) || {};
+    builderConfig = preserveStoredProductMargins(
+      builderConfig as unknown as Record<string, unknown>,
+      storedCompat,
+      Boolean(existingForCompat)
+    ) as unknown as BuilderConfig;
     for (const key of ["cartProductHandle", "cartProductId", "cartAutoSync"]) {
       if (storedCompat[key] !== undefined) {
         (builderConfig as unknown as Record<string, unknown>)[key] = storedCompat[key];
@@ -692,8 +706,8 @@ export default function ProductConfigurePage() {
   const [builderConfig, setBuilderConfig] = useState<BuilderConfig>({
     ...DEFAULT_BUILDER_CONFIG,
     ...(config.builderConfig || {}),
-    artboardMarginIn: Math.max(0.125, Number(config.builderConfig?.artboardMarginIn ?? DEFAULT_BUILDER_CONFIG.artboardMarginIn)),
-    imageMarginIn: Math.max(0.125, Number(config.builderConfig?.imageMarginIn ?? DEFAULT_BUILDER_CONFIG.imageMarginIn)),
+    artboardMarginIn: Math.max(0, Number(config.builderConfig?.artboardMarginIn ?? DEFAULT_BUILDER_CONFIG.artboardMarginIn)),
+    imageMarginIn: Math.max(0, Number(config.builderConfig?.imageMarginIn ?? DEFAULT_BUILDER_CONFIG.imageMarginIn)),
   });
 
   const setAlphaProTier = useCallback((
@@ -919,6 +933,22 @@ export default function ProductConfigurePage() {
                     }));
                   }}
                   helpText="Sheet pricing needs size-named variants. The fields below are only for products whose size is split into two options or has extra options like material."
+                />
+
+                <TextField
+                  label="Physical roll width (inches)"
+                  autoComplete="off"
+                  type="number"
+                  min={0.1}
+                  max={120}
+                  step={0.01}
+                  value={String(builderConfig.rollWidthIn)}
+                  onChange={(value) => {
+                    const parsed = Number(value);
+                    if (!Number.isFinite(parsed) || parsed <= 0) return;
+                    setBuilderConfig((prev) => ({ ...prev, rollWidthIn: parsed }));
+                  }}
+                  helpText="Authoritative width used for main-product measurement and billing. The theme block value is only a provisional display hint."
                 />
 
                 <FormLayout>

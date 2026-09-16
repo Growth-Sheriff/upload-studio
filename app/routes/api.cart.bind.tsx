@@ -13,6 +13,7 @@ import prisma from '~/lib/prisma.server'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
 import { normalizeCartToken } from '~/lib/orderMatching.server'
+import { authenticate } from '~/shopify.server'
 
 const MAX_UPLOADS_PER_REQUEST = 20
 
@@ -28,6 +29,8 @@ export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
     return corsJson({ success: false, error: 'Method not allowed' }, request, { status: 405 })
   }
+  await authenticate.public.appProxy(request)
+  const signedShopDomain = new URL(request.url).searchParams.get('shop')?.trim() || ''
 
   const identifier = getIdentifier(request, 'customer')
   const rateLimitResponse = await rateLimitGuard(identifier, 'adminApi')
@@ -40,7 +43,7 @@ export async function action({ request }: ActionFunctionArgs) {
     return corsJson({ success: false, error: 'Invalid JSON body' }, request, { status: 400 })
   }
 
-  const shopDomain = String(body.shopDomain || '').trim()
+  const shopDomain = signedShopDomain
   const cartToken = normalizeCartToken(body.cartToken)
   const uploadIds = Array.isArray(body.uploadIds)
     ? body.uploadIds.filter((id): id is string => typeof id === 'string' && /^[A-Za-z0-9_-]{8,40}$/.test(id))

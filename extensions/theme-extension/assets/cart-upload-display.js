@@ -425,13 +425,15 @@
     const shopDomain = window.Shopify?.shop || document.querySelector('meta[name="shopify-domain"]')?.content;
 
     if (!shopDomain) {
-      updateStatusDisplay(element, 'ready', 'Design attached');
+      updateStatusDisplay(element, 'processing', 'Design status unavailable');
       return;
     }
 
-    const status = await getUploadStatus(uploadId, shopDomain);
-
-    if (status) {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const status = await getUploadStatus(uploadId, shopDomain);
+      if (!status) {
+        updateStatusDisplay(element, 'processing', 'Design status unavailable — retrying');
+      } else {
       const statusText = getStatusText(status);
       const statusClass = getStatusClass(status);
       updateStatusDisplay(element, statusClass, statusText);
@@ -447,8 +449,12 @@
           iconEl.replaceWith(img);
         }
       }
-    } else {
-      updateStatusDisplay(element, 'ready', 'Design attached');
+        if (statusClass !== 'processing') return;
+      }
+
+      if (attempt < 59) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
     }
   }
 

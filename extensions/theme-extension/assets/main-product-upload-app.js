@@ -1140,6 +1140,9 @@
       this.productConfig.status = 'ready';
       this.productConfig.builderConfig = builderConfig;
       this.productConfig.customerOffer = builderConfig.customerOffer || null;
+      if (toNumber(builderConfig.rollWidthIn) > 0) {
+        this.rollWidthIn = toNumber(builderConfig.rollWidthIn);
+      }
       this.productConfig.error = '';
     } catch (error) {
       this.productConfig.status = 'ready';
@@ -1946,6 +1949,9 @@
           var sheetLabel = exact && isReady
             ? 'Exact measured'
             : (result.selectedSheetLabel || result.selectedVariantTitle || '');
+          if (result.productionNote) {
+            sheetLabel += (sheetLabel ? ' · ' : '') + result.productionNote;
+          }
           var sheets = Number(result.cartQuantity || result.sheetsNeeded) || 0;
           var perSheet = Number(result.designsPerSheet) || 0;
           var sizeText = item.widthIn && item.heightIn
@@ -2518,6 +2524,7 @@
         uploadId: session.uploadId,
         key: session.key,
         multipartUploadId: session.multipartUploadId,
+        partSize: session.partSize,
         totalParts: session.totalParts
       })
     });
@@ -2636,12 +2643,17 @@
       }
     }
 
-    if (storageProvider !== 'local') {
-      await sendUploadXhr(this.apiBase + '/api/upload/local', 'POST', file, {
+    var localFallback = intent.fallbackUrls && intent.fallbackUrls.local;
+    if (storageProvider !== 'local' && localFallback && localFallback.url) {
+      var localMethod = localFallback.method || 'PUT';
+      var localHeaders = localMethod === 'POST' ? {
         __extraFields: { key: intent.key || '', uploadId: intent.uploadId || '', itemId: intent.itemId || '' }
-      }, onProgress, function(xhr) {
+      } : null;
+      await sendUploadXhr(localFallback.url, localMethod, file, localHeaders, onProgress, function(xhr) {
         self.state.abort = function() { try { xhr.abort(); } catch (_) {} };
       });
+      intent.storageProvider = 'local';
+      intent.publicUrl = localFallback.publicUrl || intent.publicUrl;
       self.state.abort = null;
       this.clearMpSession(fingerprint);
       return;
@@ -2731,6 +2743,8 @@
             productId: String(this.productId),
             variantId: this.getFallbackVariantId() || null,
             mode: 'dtf',
+            measurementPolicy: POLICY,
+            rollWidthIn: this.rollWidthIn,
             fileName: file.name,
             contentType: file.type || 'application/octet-stream',
             fileSize: file.size,
@@ -2926,8 +2940,8 @@
   };
 
   // ── Verified cart mutations ─────────────────────────────────────────────
-  // Line properties are built by the server (/api/cart/prepare): two visible
-  // links (Design File, Design Identity) plus a transitional hidden id. The
+  // Line properties are built by the server (/api/cart/prepare): Print Ready,
+  // Sheet Identity and DPI. The
   // add itself is idempotent and verified: read the cart, add only the
   // missing quantity, then re-read to confirm the line is really there.
 
@@ -2969,13 +2983,24 @@
       var data = await response.json();
       if (!data || !data.success || !Array.isArray(data.items)) throw new Error('prepare payload invalid');
       var map = {};
+      var firstPreparationError = '';
       data.items.forEach(function(entry) {
-        if (entry && entry.found && entry.properties) map[entry.uploadId] = entry.properties;
+        if (entry && entry.found && entry.orderable && entry.properties && entry.cartInstruction) {
+          map[entry.uploadId] = {
+            properties: entry.properties,
+            cartInstruction: entry.cartInstruction
+          };
+        } else if (!firstPreparationError && entry && entry.error) {
+          firstPreparationError = String(entry.error);
+        }
       });
+      if (Object.keys(map).length !== uploadIds.length) {
+        throw new Error(firstPreparationError || 'One or more uploads could not be prepared for cart.');
+      }
       return map;
     } catch (error) {
-      console.warn('[UMP] cart/prepare unavailable, using client-side fallback properties:', error);
-      return null;
+      console.warn('[UMP] cart/prepare unavailable:', error);
+      throw new Error((error && error.message) || 'Your measured sheet could not be verified for cart. Please try again.');
     }
   };
 
@@ -2997,20 +3022,23 @@
     };
   };
 
-  // What the customer asked for on this gang sheet, in the shape the server
-  // persists and writes into the visible `Copies` line property.
+  // What the customer asked for on this gang sheet. The server accepts only
+  // the copy count and recomputes every nesting, variant and sheet fact.
   function buildCartLineRequest(item) {
     var result = item.selectedResult || {};
     var copies = Math.max(1, Number(item.copies) || 1);
     var perSheet = Math.max(1, Number(result.designsPerSheet) || 1);
     var sheets = Math.max(1, Number(result.cartQuantity || result.sheetsNeeded) || Math.ceil(copies / perSheet));
+    var sheetLabel = String(result.selectedSheetLabel || result.selectedVariantTitle || '');
+    var productionNote = String(result.productionNote || '').trim();
+    if (productionNote) sheetLabel += (sheetLabel ? ' · ' : '') + productionNote;
     return {
       uploadId: item.uploadId,
       copies: copies,
       designsPerSheet: perSheet,
       sheetsNeeded: sheets,
       variantId: String(item.selectedVariantId || ''),
-      sheetLabel: String(result.selectedSheetLabel || result.selectedVariantTitle || '')
+      sheetLabel: sheetLabel
     };
   }
 
@@ -3144,11 +3172,12 @@
 
       var cartItems = readyItems.map(function(item) {
         var result = item.selectedResult || {};
-        var variantId = parseInt(item.selectedVariantId, 10);
+        var preparedLine = serverProperties[item.uploadId];
+        if (!preparedLine) throw new Error('A measured gang sheet could not be verified for cart.');
+        var variantId = parseInt(preparedLine.cartInstruction.variantId || item.selectedVariantId, 10);
         if (!(variantId > 0)) throw new Error('A measured gang sheet has no matching variant.');
-        var quantity = buildCartLineRequest(item).sheetsNeeded;
-        var properties = (serverProperties && serverProperties[item.uploadId]) ||
-          self.fallbackCartProperties(item);
+        var quantity = parseInt(preparedLine.cartInstruction.sheetsNeeded, 10) || buildCartLineRequest(item).sheetsNeeded;
+        var properties = preparedLine.properties;
         var pageVariant = (self.variants || []).find(function(v) {
           return Number(v && v.id) === variantId;
         });
@@ -3157,7 +3186,7 @@
           quantity: quantity,
           properties: properties,
           uploadId: item.uploadId,
-          variantTitle: String(result.selectedVariantTitle || (pageVariant && pageVariant.title) || '')
+          variantTitle: String(preparedLine.cartInstruction.variantTitle || result.selectedVariantTitle || (pageVariant && pageVariant.title) || '')
         };
       });
 

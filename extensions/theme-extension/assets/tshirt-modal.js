@@ -1099,8 +1099,8 @@ console.log('[ULTShirtModal] Script loading...')
 
         xhr.onerror = () => reject(new Error('Network error during upload'))
 
-        if (storageProvider === 'bunny' || storageProvider === 'r2') {
-          xhr.open('PUT', uploadUrl)
+        if (uploadMethod === 'PUT' || storageProvider === 'bunny' || storageProvider === 'r2') {
+          xhr.open(uploadMethod || 'PUT', uploadUrl)
           xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
           if (uploadHeaders) {
             Object.entries(uploadHeaders).forEach(([k, v]) => xhr.setRequestHeader(k, v))

@@ -12,8 +12,13 @@
 
 import type { LoaderFunctionArgs } from '@remix-run/node'
 import prisma from '~/lib/prisma.server'
+import { getRuntimeMeasurementBasis } from '~/lib/customerPricingModel.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
-import { deriveUploadItemLifecycle } from '~/lib/uploadLifecycle.server'
+import {
+  applyMeasurementBasisMetadata,
+  deriveUploadItemLifecycle,
+  getStoredMeasurementBasis,
+} from '~/lib/uploadLifecycle.server'
 import {
   buildFileUrl,
   buildIdentityUrl,
@@ -81,7 +86,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const upload = await prisma.upload.findUnique({
     where: { id: uploadId },
     include: {
-      shop: { select: { shopDomain: true, storageProvider: true, storageConfig: true, accessToken: true } },
+      shop: {
+        select: {
+          shopDomain: true,
+          storageProvider: true,
+          storageConfig: true,
+          accessToken: true,
+          settings: true,
+        },
+      },
       items: {
         select: {
           id: true,
@@ -103,6 +116,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   const storageConfig = storageConfigForShop(upload.shop)
+  const runtimeMeasurementBasis = getRuntimeMeasurementBasis(
+    upload.shop.shopDomain,
+    upload.shop.settings
+  )
 
   const items = upload.items.map((item) => {
     const lifecycle = deriveUploadItemLifecycle({
@@ -110,7 +127,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       preflightResult: item.preflightResult,
       thumbnailKey: item.thumbnailKey,
     })
-    const metadata = lifecycle.metadata
+    const metadata = applyMeasurementBasisMetadata(
+      lifecycle.metadata,
+      getStoredMeasurementBasis(item.preflightResult, runtimeMeasurementBasis)
+    )
     return {
       itemId: item.id,
       fileName: item.originalName || 'design-file',

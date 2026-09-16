@@ -8,13 +8,20 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from '@remix-run/node'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
-import { getMainProductRollWidth } from '~/lib/mainProductMeasurement.server'
+import {
+  MAIN_PRODUCT_MEASUREMENT_POLICY,
+  resolveServerMainProductRollWidth,
+} from '~/lib/mainProductMeasurement.server'
+import { resolveCustomerPricingModelState } from '~/lib/customerPricingModel.server'
+import { selectProductConfigForIdentity } from '~/lib/productConfigIdentity.server'
+import { shopifyProductIdCandidates } from '~/lib/shopifyProductIdentity'
 import {
   metadataFromProbe,
   normalizeProductId,
   parsePositiveNumber,
   resolveForMetadata,
 } from '~/lib/sheetResolution.server'
+import { authenticate } from '~/shopify.server'
 
 export async function loader({ request }: LoaderFunctionArgs) {
   if (request.method === 'OPTIONS') return handleCorsOptions(request)
@@ -27,13 +34,18 @@ export async function action({ request }: ActionFunctionArgs) {
     return corsJson({ error: 'Method not allowed' }, request, { status: 405 })
   }
 
+  await authenticate.public.appProxy(request)
+  const signedUrl = new URL(request.url)
+  const signedShopDomain = String(signedUrl.searchParams.get('shop') || '').trim()
+  const signedCustomerId = signedUrl.searchParams.get('logged_in_customer_id')
+
   const identifier = getIdentifier(request, 'customer')
   const rateLimitResponse = await rateLimitGuard(identifier, 'adminApi')
   if (rateLimitResponse) return rateLimitResponse
 
   try {
     const body = await request.json()
-    const shopDomain = String(body.shopDomain || '').trim()
+    const shopDomain = signedShopDomain
     const productIdRaw = body.productId
     const widthPx = parsePositiveNumber(body.widthPx)
     const heightPx = parsePositiveNumber(body.heightPx)
@@ -56,31 +68,45 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!shop?.accessToken) return corsJson({ error: 'Shop not found' }, request, { status: 404 })
 
     const productId = normalizeProductId(productIdRaw)
-    const productConfig = await prisma.productConfig.findFirst({
-      where: { shopId: shop.id, OR: [{ productId: String(productIdRaw) }, { productId }] },
-      select: { builderConfig: true },
+    const productConfigs = await prisma.productConfig.findMany({
+      where: {
+        shopId: shop.id,
+        productId: { in: shopifyProductIdCandidates(productIdRaw) },
+      },
+      select: { productId: true, builderConfig: true },
+    })
+    const productConfig = selectProductConfigForIdentity({
+      rows: productConfigs,
+      productId: productIdRaw,
+      shopId: shop.id,
+      source: 'api.upload.resolve-preview',
+    })
+    const pricingModel = resolveCustomerPricingModelState(shopDomain, shop.settings)
+    const builderConfig = (productConfig?.builderConfig || null) as Record<string, unknown> | null
+    const serverRollWidthIn = resolveServerMainProductRollWidth(builderConfig, {
+      policyExplicit: pricingModel.policyExplicit,
+      maxSheetWidthIn: pricingModel.policy.maxSheetWidthIn,
     })
 
     const result = await resolveForMetadata({
       shopDomain,
       shop,
       productIdRaw,
-      builderConfig: (productConfig?.builderConfig || null) as Record<string, unknown> | null,
+      builderConfig,
       rawMetadata: metadataFromProbe({
         widthPx,
         heightPx,
         dpi,
         dpiSource: typeof body.dpiSource === 'string' ? body.dpiSource : null,
-        rollWidthIn: getMainProductRollWidth(body.rollWidthIn),
+        rollWidthIn: serverRollWidthIn,
       }),
       quantity,
       selectedVariantId,
-      customerId: body.customerId,
-      customerEmail: body.customerEmail,
-      customerName: body.customerName,
-      measurementPolicy: body.measurementPolicy,
-      rollWidthIn: body.rollWidthIn,
-      maxUploadWidth: body.maxUploadWidth,
+      customerId: signedCustomerId,
+      customerEmail: null,
+      customerName: null,
+      measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
+      rollWidthIn: serverRollWidthIn,
     })
 
     if (result.kind === 'product_not_found') {

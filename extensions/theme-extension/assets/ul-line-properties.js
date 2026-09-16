@@ -42,9 +42,9 @@
     };
   }
 
-  async function build(input) {
+  async function prepare(input) {
     input = input || {};
-    if (!input.uploadId) return {};
+    if (!input.uploadId) return { properties: {}, cartInstruction: null };
     try {
       var response = await fetch(API_BASE + '/api/cart/prepare', {
         method: 'POST',
@@ -58,11 +58,28 @@
       if (!response.ok) throw new Error('prepare failed: ' + response.status);
       var data = await response.json();
       var entry = data && Array.isArray(data.items) ? data.items[0] : null;
-      if (entry && entry.found && entry.properties) return entry.properties;
+      if (entry && entry.found && entry.orderable === false) {
+        var orderabilityError = new Error(entry.error || 'This design is still being checked. Please wait before adding it to cart.');
+        orderabilityError.code = 'UPLOAD_NOT_ORDERABLE';
+        throw orderabilityError;
+      }
+      if (entry && entry.found && entry.properties) {
+        return {
+          properties: entry.properties,
+          cartInstruction: entry.cartInstruction || null
+        };
+      }
     } catch (error) {
-      console.warn('[ULLineProperties] using local fallback:', error && error.message);
+      console.warn('[ULLineProperties] cart preparation failed:', error && error.message);
+      if (error && error.code === 'UPLOAD_NOT_ORDERABLE') throw error;
+      throw new Error('Upload status could not be verified. Please try again before adding to cart.');
     }
-    return fallback(input);
+    throw new Error('Upload status could not be verified. Please try again before adding to cart.');
+  }
+
+  async function build(input) {
+    var prepared = await prepare(input);
+    return prepared.properties;
   }
 
   function customer() {
@@ -137,10 +154,12 @@
       }
     }
 
-    // Wait (up to ~45 s) for the measurement so DPI and the print-ready URL are real.
+    // Wait up to eight minutes for authoritative measurement. Never turn a
+    // pending upload into a cart line with provisional DPI or file facts.
     var fileUrl = intent.publicUrl || '';
     var dpi = 0;
-    for (var attempt = 0; attempt < 30; attempt += 1) {
+    var measurementReady = false;
+    for (var attempt = 0; attempt < 240; attempt += 1) {
       var st = await fetch(API_BASE + '/api/upload/status/' + encodeURIComponent(intent.uploadId) + '?shopDomain=' + encodeURIComponent(shop))
         .then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
       var item = st && st.items && st.items[0];
@@ -150,14 +169,21 @@
         if (st.orderabilityStatus === 'blocked' || item.orderabilityStatus === 'blocked') {
           throw new Error((item.errors && item.errors[0]) || 'This file cannot be printed. Please upload a different file.');
         }
-        if ((item.measurementStatus || 'pending') !== 'pending') break;
+        if ((item.measurementStatus || 'pending') !== 'pending') {
+          measurementReady = true;
+          break;
+        }
       }
-      await sleep(1500);
+      await sleep(2000);
+    }
+
+    if (!measurementReady) {
+      throw new Error('This design is still being measured. Please try adding it to cart again in a moment.');
     }
 
     var properties = await build({ uploadId: intent.uploadId, fileUrl: fileUrl, dpi: dpi });
     return { uploadId: intent.uploadId, properties: properties, fileUrl: fileUrl, dpi: dpi };
   }
 
-  window.ULLineProperties = { build: build, fallback: fallback, identityUrl: identityUrl, uploadAndBuild: uploadAndBuild };
+  window.ULLineProperties = { prepare: prepare, build: build, fallback: fallback, identityUrl: identityUrl, uploadAndBuild: uploadAndBuild };
 })();

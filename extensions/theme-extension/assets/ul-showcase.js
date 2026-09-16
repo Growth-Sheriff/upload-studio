@@ -143,7 +143,12 @@
         })
       });
     })
-    .then(function(r) { return r.json(); })
+    .then(function(r) {
+      if (r.ok) return r.json();
+      return r.json().catch(function() { return {}; }).then(function(body) {
+        throw new Error(body.description || body.message || 'Shopify rejected the cart item.');
+      });
+    })
     .then(function() {
       btn.textContent = '✓ Added!';
       setTimeout(function() {
@@ -151,7 +156,8 @@
         window.location.href = '/cart';
       }, 800);
     })
-    .catch(function() {
+    .catch(function(error) {
+      console.error('[UL Showcase] Add to cart failed:', error);
       btn.disabled = false;
       btn.textContent = 'Add to Cart';
     });
