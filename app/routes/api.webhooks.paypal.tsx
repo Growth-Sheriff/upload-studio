@@ -14,9 +14,20 @@
 
 import type { ActionFunctionArgs } from '@remix-run/node';
 import { json } from '@remix-run/node';
-import { verifyWebhookSignature } from '~/lib/paypal.server';
+import {
+  getCompletedPayPalCaptureDetails,
+  getPayPalCheckoutOrderDetails,
+  getPayPalOrder,
+  getPayPalRefundCaptureId,
+  verifyWebhookSignature,
+} from '~/lib/paypal.server';
 import type { PayPalWebhookEvent } from '~/lib/paypal.server';
 import prisma from '~/lib/prisma.server';
+import {
+  amountStringToCents,
+  parseHostedCheckoutReservation,
+  settleHostedCheckoutReservation,
+} from '~/lib/hostedCheckoutReservation.server';
 
 const PAYPAL_WEBHOOK_ID = process.env.PAYPAL_WEBHOOK_ID || '';
 
@@ -28,6 +39,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const body = await request.text();
 
 
+  let signatureVerified = false;
   if (PAYPAL_WEBHOOK_ID) {
     const headers: Record<string, string> = {};
     request.headers.forEach((value, key) => {
@@ -39,6 +51,7 @@ export async function action({ request }: ActionFunctionArgs) {
       console.error('[PayPal Webhook] Signature verification failed');
       return json({ error: 'Invalid signature' }, { status: 401 });
     }
+    signatureVerified = true;
   } else {
     console.warn('[PayPal Webhook] No PAYPAL_WEBHOOK_ID set - skipping signature verification');
   }
@@ -54,7 +67,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   switch (event.event_type) {
     case 'PAYMENT.CAPTURE.COMPLETED':
-      await handleCaptureCompleted(event);
+      await handleCaptureCompleted(event, signatureVerified);
       break;
 
     case 'PAYMENT.CAPTURE.DENIED':
@@ -77,7 +90,10 @@ export async function action({ request }: ActionFunctionArgs) {
 
 
 
-async function handleCaptureCompleted(event: PayPalWebhookEvent): Promise<void> {
+async function handleCaptureCompleted(
+  event: PayPalWebhookEvent,
+  signatureVerified: boolean
+): Promise<void> {
   const captureId = event.resource?.id;
   const amount = event.resource?.amount?.value;
   const payerEmail = event.resource?.payer?.email_address;
@@ -91,65 +107,75 @@ async function handleCaptureCompleted(event: PayPalWebhookEvent): Promise<void> 
     `[PayPal Webhook] Capture completed: ${captureId}, amount: $${amount}, payer: ${payerEmail}`
   );
 
-
-  const existingCommission = await prisma.commission.findFirst({
-    where: { paymentRef: captureId },
-  });
-
-  if (existingCommission) {
-    console.log(`[PayPal Webhook] Capture ${captureId} already processed - skipping`);
+  // Never let an unsigned callback change financial rows. Deployments without
+  // PAYPAL_WEBHOOK_ID can still settle through the authenticated capture
+  // route, but webhook delivery remains observational only.
+  if (!signatureVerified) {
+    console.warn(
+      `[PayPal Webhook] Capture ${captureId} not settled because webhook signature verification is disabled.`
+    );
     return;
   }
 
 
-
-
-
-  const auditLog = await prisma.auditLog.findFirst({
-    where: {
-      action: { in: ['paypal_order_created', 'paypal_payment_captured'] },
-      metadata: {
-        path: ['captureId'],
-        equals: captureId,
-      },
-    },
-    orderBy: { createdAt: 'desc' },
-  })
-
-
-  const resolvedAuditLog = auditLog || await prisma.auditLog.findFirst({
-    where: {
-      action: 'paypal_payment_captured',
-      resourceId: captureId,
-    },
-    orderBy: { createdAt: 'desc' },
-  });
-
-
-  const shopForAudit = resolvedAuditLog
-    ? await prisma.shop.findUnique({ where: { id: resolvedAuditLog.shopId } })
-    : null;
-
-  if (shopForAudit) {
-    await prisma.auditLog.create({
-      data: {
-        shopId: shopForAudit.id,
-        action: 'paypal_webhook_capture_completed',
-        resourceType: 'paypal_webhook',
-        resourceId: captureId,
-        metadata: {
-          eventId: event.id,
-          captureId,
-          amount,
-          payerEmail,
-          alreadyProcessed: !!existingCommission,
-        },
-      },
-    });
+  const paypalOrderId = event.resource?.supplementary_data?.related_ids?.order_id;
+  if (!paypalOrderId) {
+    throw new Error(`PayPal capture ${captureId} is missing its related order ID.`);
   }
 
+  const order = await getPayPalOrder(paypalOrderId);
+  const orderDetails = getPayPalCheckoutOrderDetails(order);
+  const completedCapture = getCompletedPayPalCaptureDetails(order);
+  if (completedCapture.captureId !== captureId) {
+    throw new Error(
+      `PayPal webhook capture ${captureId} does not match order capture ${completedCapture.captureId}.`
+    );
+  }
+  if (
+    amountStringToCents(String(amount || '')) !==
+      amountStringToCents(completedCapture.amount) ||
+    String(event.resource?.amount?.currency_code || '').toUpperCase() !==
+      completedCapture.currency.toUpperCase()
+  ) {
+    throw new Error(`PayPal webhook amount does not match order ${paypalOrderId}.`);
+  }
+
+  const shop = await prisma.shop.findUnique({
+    where: { shopDomain: orderDetails.shopReference },
+    select: { id: true },
+  });
+  if (!shop) throw new Error(`No tenant owns PayPal order ${paypalOrderId}.`);
+
+  const auditLog = await prisma.auditLog.findUnique({
+    where: { id: orderDetails.customId },
+  });
+  if (!auditLog || auditLog.shopId !== shop.id) {
+    throw new Error(`PayPal order ${paypalOrderId} has no matching tenant reservation.`);
+  }
+  const snapshot = parseHostedCheckoutReservation(auditLog.metadata);
+  if (
+    !snapshot ||
+    snapshot.provider !== 'paypal' ||
+    snapshot.reservationRef !== orderDetails.customId
+  ) {
+    throw new Error(`PayPal order ${paypalOrderId} has invalid reservation metadata.`);
+  }
+
+  const settlement = await settleHostedCheckoutReservation({
+    shopId: shop.id,
+    snapshot,
+    provider: 'paypal',
+    captureRef: captureId,
+    providerSessionId: paypalOrderId,
+    providerAmountCents: amountStringToCents(completedCapture.amount),
+    providerCurrency: completedCapture.currency,
+    source: 'webhook',
+    eventId: event.id,
+    extraMetadata: { payerEmail: payerEmail || null },
+  });
+
   console.log(
-    `[PayPal Webhook] Capture ${captureId} logged. Check if capture-order already processed.`
+    `[PayPal Webhook] Capture ${captureId} settled ${settlement.markedCount} reserved fee rows (replay=${settlement.alreadyProcessed}).`
   );
 }
 
@@ -192,46 +218,54 @@ async function handleCaptureDenied(event: PayPalWebhookEvent): Promise<void> {
 
 
 async function handleCaptureRefunded(event: PayPalWebhookEvent): Promise<void> {
-  const captureId = event.resource?.id;
-  console.warn(`[PayPal Webhook] Payment REFUNDED: ${captureId}`);
+  const refundId = event.resource?.id;
+  const captureId = getPayPalRefundCaptureId(event);
+  console.warn(`[PayPal Webhook] Payment REFUNDED: refund=${refundId}, capture=${captureId}`);
 
   if (!captureId) return;
 
 
-  const commissionsToRevert = await prisma.commission.findMany({
+  const settledCommissions = await prisma.commission.findMany({
     where: { paymentRef: captureId },
-    select: { shopId: true },
-    take: 1,
+    select: { id: true, shopId: true },
   })
 
+  if (settledCommissions.length > 0) {
+    const shopId = settledCommissions[0].shopId
+    if (!settledCommissions.every((commission) => commission.shopId === shopId)) {
+      console.error('[PayPal Webhook] Refund: cross-tenant commission detected, aborting')
+      return
+    }
+    const alreadyRecorded = await prisma.auditLog.findFirst({
+      where: {
+        shopId,
+        action: 'paypal_webhook_refund_review_required',
+        resourceId: event.id,
+      },
+      select: { id: true },
+    })
+    if (alreadyRecorded) return
 
-  const affected = await prisma.commission.updateMany({
-    where: { paymentRef: captureId },
-    data: {
-      status: 'pending',
-      paidAt: null,
-      paymentRef: null,
-    },
-  });
-
-  console.log(
-    `[PayPal Webhook] Reverted ${affected.count} commissions from capture ${captureId} to pending`
-  );
-
-
-  if (affected.count > 0 && commissionsToRevert.length > 0) {
+    // Keep paid rows immutable. A PayPal refund may be partial and does not by
+    // itself decide whether the underlying app fee is still owed.
     await prisma.auditLog.create({
       data: {
-        shopId: commissionsToRevert[0].shopId,
-        action: 'paypal_webhook_capture_refunded',
+        shopId,
+        action: 'paypal_webhook_refund_review_required',
         resourceType: 'paypal_webhook',
-        resourceId: captureId,
+        resourceId: event.id,
         metadata: {
           eventId: event.id,
+          refundId,
           captureId,
-          revertedCount: affected.count,
+          affectedCount: settledCommissions.length,
+          refundStatus: event.resource?.status || null,
+          refundAmount: event.resource?.amount || null,
         },
       },
     });
+    console.log(
+      `[PayPal Webhook] Refund recorded for review: ${settledCommissions.length} settled commissions left unchanged`
+    );
   }
 }

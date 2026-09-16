@@ -41,10 +41,26 @@ export interface PayPalOrderResponse {
 
 export interface PayPalCaptureResponse {
   id: string;
-  status: 'COMPLETED' | 'DECLINED' | 'PARTIALLY_REFUNDED' | 'PENDING' | 'REFUNDED' | 'FAILED';
+  status:
+    | 'CREATED'
+    | 'SAVED'
+    | 'APPROVED'
+    | 'VOIDED'
+    | 'COMPLETED'
+    | 'PAYER_ACTION_REQUIRED'
+    | 'DECLINED'
+    | 'PARTIALLY_REFUNDED'
+    | 'PENDING'
+    | 'REFUNDED'
+    | 'FAILED';
   purchase_units: Array<{
     reference_id: string;
-    payments: {
+    custom_id?: string;
+    amount?: {
+      currency_code: string;
+      value: string;
+    };
+    payments?: {
       captures: Array<{
         id: string;
         status: string;
@@ -55,7 +71,7 @@ export interface PayPalCaptureResponse {
       }>;
     };
   }>;
-  payer: {
+  payer?: {
     email_address: string;
     payer_id: string;
     name: {
@@ -93,9 +109,82 @@ export interface PayPalWebhookEvent {
       currency_code: string;
       value: string;
     };
+    supplementary_data?: {
+      related_ids?: {
+        capture_id?: string;
+        order_id?: string;
+      };
+    };
   };
   create_time: string;
   event_version: string;
+}
+
+export function getPayPalCheckoutOrderDetails(order: PayPalCaptureResponse): {
+  customId: string
+  shopReference: string
+  amount: string
+  currency: string
+} {
+  if (!Array.isArray(order.purchase_units) || order.purchase_units.length !== 1) {
+    throw new Error('PayPal checkout must contain exactly one purchase unit.')
+  }
+  const unit = order.purchase_units[0]
+  const capture = unit.payments?.captures?.[0]
+  const amount = unit.amount || capture?.amount
+  if (!unit.custom_id || !unit.reference_id || !amount?.value || !amount.currency_code) {
+    throw new Error('PayPal checkout is missing its reservation or amount metadata.')
+  }
+  return {
+    customId: unit.custom_id,
+    shopReference: unit.reference_id,
+    amount: amount.value,
+    currency: amount.currency_code,
+  }
+}
+
+export function getCompletedPayPalCaptureDetails(order: PayPalCaptureResponse): {
+  captureId: string
+  amount: string
+  currency: string
+} {
+  const captures = (order.purchase_units || []).flatMap(
+    (unit) => unit.payments?.captures || []
+  )
+  if (order.status !== 'COMPLETED' || captures.length !== 1) {
+    throw new Error(
+      `PayPal checkout did not return exactly one completed capture (status: ${order.status}).`
+    )
+  }
+  const capture = captures[0]
+  if (
+    capture.status !== 'COMPLETED' ||
+    !capture.id ||
+    !capture.amount?.value ||
+    !capture.amount.currency_code
+  ) {
+    throw new Error('PayPal capture is missing completed payment details.')
+  }
+  return {
+    captureId: capture.id,
+    amount: capture.amount.value,
+    currency: capture.amount.currency_code,
+  }
+}
+
+export function getPayPalRefundCaptureId(event: PayPalWebhookEvent): string | null {
+  return (
+    event.resource?.supplementary_data?.related_ids?.capture_id ||
+    (event.resource_type === 'capture' ? event.resource?.id : null) ||
+    null
+  )
+}
+
+export function buildPayPalAutoChargeRequestId(
+  customId: string,
+  phase: 'create' | 'capture'
+): string {
+  return `auto-${phase}-${customId}`
 }
 
 
@@ -187,6 +276,7 @@ export async function createPayPalOrder(
       'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       'Prefer': 'return=representation',
+      'PayPal-Request-Id': `checkout-create-${orderIds}`,
     },
     body: JSON.stringify(payload),
   });
@@ -221,6 +311,7 @@ export async function capturePayPalOrder(
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
         'Prefer': 'return=representation',
+        'PayPal-Request-Id': `checkout-capture-${paypalOrderId}`,
       },
     }
   );
@@ -367,7 +458,7 @@ export async function createPayPalOrderWithVault(
       'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       'Prefer': 'return=representation',
-      'PayPal-Request-Id': `vault-${shopDomain}-${Date.now()}`,
+      'PayPal-Request-Id': `checkout-vault-${customId}`,
     },
     body: JSON.stringify(payload),
   });
@@ -395,7 +486,8 @@ export async function chargeWithVault(
   amount: string,
   shopDomain: string,
   description: string,
-  customId: string
+  customId: string,
+  onProviderRequestStarted?: () => void
 ): Promise<PayPalCaptureResponse> {
   const accessToken = await getAccessToken();
 
@@ -425,13 +517,14 @@ export async function chargeWithVault(
     },
   };
 
+  onProviderRequestStarted?.();
   const createResponse = await fetch(`${PAYPAL_BASE_URL}/v2/checkout/orders`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       'Prefer': 'return=representation',
-      'PayPal-Request-Id': `auto-${shopDomain}-${Date.now()}`,
+      'PayPal-Request-Id': buildPayPalAutoChargeRequestId(customId, 'create'),
     },
     body: JSON.stringify(createPayload),
   });
@@ -461,6 +554,7 @@ export async function chargeWithVault(
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
         'Prefer': 'return=representation',
+        'PayPal-Request-Id': buildPayPalAutoChargeRequestId(customId, 'capture'),
       },
     }
   );

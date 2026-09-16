@@ -44,6 +44,7 @@ export interface StripeCaptureResult {
   paymentIntentId: string;
   status: string;
   amount: number;
+  currency: string;
   customerEmail: string | null;
   customerId: string | null;
   paymentMethodId: string | null;
@@ -141,7 +142,9 @@ export async function createCheckoutSession(
     };
   }
 
-  const session = await stripe.checkout.sessions.create(sessionParams);
+  const session = await stripe.checkout.sessions.create(sessionParams, {
+    idempotencyKey: `checkout-${referenceId}`,
+  });
 
   if (!session.url) {
     throw new Error('Stripe did not return a checkout URL');
@@ -180,6 +183,7 @@ export async function retrieveCheckoutSession(
     paymentIntentId: paymentIntent.id,
     status: paymentIntent.status,
     amount: paymentIntent.amount,
+    currency: paymentIntent.currency,
     customerEmail: session.customer_details?.email || customer?.email || null,
     customerId: customer?.id || (typeof session.customer === 'string' ? session.customer : null),
     paymentMethodId: typeof paymentIntent.payment_method === 'string'

@@ -1,5 +1,8 @@
 import prisma from '~/lib/prisma.server'
-import { getOutstandingFeeSelection } from '~/lib/billing.server'
+import {
+  parseHostedCheckoutReservation,
+  settleHostedCheckoutReservation,
+} from '~/lib/hostedCheckoutReservation.server'
 import {
   getOrCreateCustomer,
   getStripeClient,
@@ -128,18 +131,6 @@ async function saveStripePaymentMethod(
 
   if (!reusable) return
 
-  const existingShop = await prisma.shop.findUnique({
-    where: { id: shopId },
-    select: { settings: true },
-  })
-  const settings: Record<string, any> = { ...((existingShop?.settings as Record<string, any>) || {}) }
-  if (cardSnapshot) {
-    settings.billing = {
-      ...((settings.billing as Record<string, any>) || {}),
-      card: cardSnapshot,
-    }
-  }
-
   await prisma.shop.update({
     where: { id: shopId },
     data: {
@@ -148,9 +139,22 @@ async function saveStripePaymentMethod(
       stripeAutoCharge: true,
       stripeEmail: customerEmail,
       stripeSetupAt: new Date(),
-      settings,
     },
   })
+
+  if (cardSnapshot) {
+    const cardJson = JSON.stringify(cardSnapshot)
+    await prisma.$executeRaw`
+      update shops
+      set settings_json = jsonb_set(
+        coalesce(settings_json, '{}'::jsonb),
+        '{billing}',
+        coalesce(coalesce(settings_json, '{}'::jsonb)->'billing', '{}'::jsonb)
+          || jsonb_build_object('card', ${cardJson}::jsonb),
+        true
+      ), updated_at = now()
+      where id = ${shopId}`
+  }
 }
 
 export async function applySuccessfulStripeCheckout(
@@ -174,12 +178,42 @@ export async function applySuccessfulStripeCheckout(
   }
 
   const auditLog = await findCheckoutAuditLog(shop.id, sessionId, checkout.referenceId)
-  const orderIds = extractOrderIds(auditLog?.metadata)
-
-  if (orderIds.length === 0) {
-    throw new Error(`Could not resolve invoice order IDs for Stripe checkout ${sessionId}.`)
+  const snapshot = parseHostedCheckoutReservation(auditLog?.metadata)
+  if (
+    !snapshot ||
+    !auditLog ||
+    snapshot.reservationRef !== auditLog.id ||
+    checkout.referenceId !== snapshot.reservationRef
+  ) {
+    const legacyOrderIds = extractOrderIds(auditLog?.metadata)
+    throw new Error(
+      legacyOrderIds.length > 0
+        ? `Stripe checkout ${sessionId} predates atomic fee reservations and requires reconciliation before its rows can be changed.`
+        : `Could not resolve the reserved invoice rows for Stripe checkout ${sessionId}.`
+    )
   }
 
+  const settlement = await settleHostedCheckoutReservation({
+    shopId: shop.id,
+    snapshot,
+    provider: 'stripe',
+    captureRef: checkout.paymentIntentId,
+    providerSessionId: sessionId,
+    providerAmountCents: checkout.amount,
+    providerCurrency: checkout.currency,
+    source,
+    eventId: eventId || null,
+    extraMetadata: {
+      paymentIntentId: checkout.paymentIntentId,
+      customerEmail: checkout.customerEmail,
+      customerId: checkout.customerId,
+      referenceId: checkout.referenceId,
+    },
+  })
+
+  // Saving the reusable card is deliberately after exact amount/currency and
+  // reservation verification. A forged or mismatched session cannot replace
+  // the merchant's known-good payment method.
   await saveStripePaymentMethod(
     shop.id,
     shopDomain,
@@ -188,105 +222,12 @@ export async function applySuccessfulStripeCheckout(
     checkout.paymentMethodId
   )
 
-  const existingProcessedCommissions = await prisma.commission.findMany({
-    where: {
-      shopId: shop.id,
-      paymentRef: checkout.paymentIntentId,
-      orderId: { in: orderIds },
-    },
-    select: { orderId: true },
-  })
-  const existingProcessedOrderIds = new Set(
-    existingProcessedCommissions.map((commission) => commission.orderId)
-  )
-
-  if (existingProcessedOrderIds.size === orderIds.length) {
-    return {
-      shopDomain,
-      paymentIntentId: checkout.paymentIntentId,
-      amount: checkout.amount,
-      markedCount: existingProcessedOrderIds.size,
-      orderIds,
-      alreadyProcessed: true,
-    }
-  }
-
-  const outstandingSelection = await getOutstandingFeeSelection(shop.id, orderIds)
-  if (outstandingSelection.orderIds.length === 0) {
-    return {
-      shopDomain,
-      paymentIntentId: checkout.paymentIntentId,
-      amount: checkout.amount,
-      markedCount: existingProcessedOrderIds.size,
-      orderIds,
-      alreadyProcessed: true,
-    }
-  }
-
-  let markedCount = 0
-  const paidAt = new Date()
-
-  for (const orderId of outstandingSelection.orderIds) {
-    const rate = outstandingSelection.feeByOrderId.get(orderId) || 0.1
-
-    await prisma.commission.upsert({
-      where: {
-        commission_shop_order: {
-          shopId: shop.id,
-          orderId,
-        },
-      },
-      create: {
-        shopId: shop.id,
-        orderId,
-        orderNumber: `#${orderId.slice(-6)}`,
-        orderTotal: 0,
-        orderCurrency: 'USD',
-        commissionRate: 0,
-        commissionAmount: rate,
-        status: 'paid',
-        paidAt,
-        paymentRef: checkout.paymentIntentId,
-        paymentProvider: 'stripe',
-      },
-      update: {
-        status: 'paid',
-        paidAt,
-        paymentRef: checkout.paymentIntentId,
-        paymentProvider: 'stripe',
-      },
-    })
-
-    markedCount += 1
-  }
-
-  await prisma.auditLog.create({
-    data: {
-      shopId: shop.id,
-      action: source === 'webhook' ? 'stripe_webhook_checkout_completed' : 'stripe_payment_captured',
-      resourceType: source === 'webhook' ? 'stripe_webhook' : 'stripe_payment',
-      resourceId: checkout.paymentIntentId,
-      metadata: {
-        source,
-        sessionId,
-        eventId: eventId || null,
-        paymentIntentId: checkout.paymentIntentId,
-        amount: checkout.amount,
-        customerEmail: checkout.customerEmail,
-        customerId: checkout.customerId,
-        referenceId: checkout.referenceId,
-        markedCount,
-        orderIds: outstandingSelection.orderIds,
-      },
-    },
-  })
-
   return {
     shopDomain,
     paymentIntentId: checkout.paymentIntentId,
     amount: checkout.amount,
-    markedCount,
-    orderIds,
-    alreadyProcessed: false,
+    markedCount: settlement.markedCount,
+    orderIds: snapshot.orderIds,
+    alreadyProcessed: settlement.alreadyProcessed,
   }
 }

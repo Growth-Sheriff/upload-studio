@@ -6,10 +6,21 @@
 
 import type { ActionFunctionArgs } from '@remix-run/node';
 import { json } from '@remix-run/node';
-import { capturePayPalOrder, isPayPalConfigured } from '~/lib/paypal.server';
+import {
+  capturePayPalOrder,
+  getCompletedPayPalCaptureDetails,
+  getPayPalCheckoutOrderDetails,
+  getPayPalOrder,
+  isPayPalConfigured,
+} from '~/lib/paypal.server';
 import prisma from '~/lib/prisma.server';
 import { authenticate } from '~/shopify.server';
-import { getOutstandingFeeSelection } from '~/lib/billing.server';
+import {
+  amountStringToCents,
+  HostedCheckoutReservationError,
+  parseHostedCheckoutReservation,
+  settleHostedCheckoutReservation,
+} from '~/lib/hostedCheckoutReservation.server';
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
@@ -32,32 +43,90 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const body = await request.json();
-  const { paypalOrderId } = body;
+  const paypalOrderId =
+    typeof body.paypalOrderId === 'string' ? body.paypalOrderId.trim() : '';
 
   if (!paypalOrderId) {
     return json({ error: 'PayPal order ID is required' }, { status: 400 });
   }
 
   try {
-
-    const capture = await capturePayPalOrder(paypalOrderId);
-
-    if (capture.status !== 'COMPLETED') {
-      console.error('[PayPal] Capture not completed:', capture.status);
-      return json(
-        { error: `Payment not completed. Status: ${capture.status}` },
-        { status: 400 }
+    // Retrieve and authenticate the PayPal order before capturing it. The old
+    // flow captured any submitted order ID first and only looked for a local
+    // audit row afterwards.
+    const existingOrder = await getPayPalOrder(paypalOrderId);
+    const orderDetails = getPayPalCheckoutOrderDetails(existingOrder);
+    if (orderDetails.shopReference !== shopDomain) {
+      throw new HostedCheckoutReservationError(
+        'This PayPal order does not belong to the authenticated shop.',
+        'invalid_reservation'
       );
     }
 
+    const auditLog = await prisma.auditLog.findUnique({
+      where: { id: orderDetails.customId },
+    });
+    if (!auditLog || auditLog.shopId !== shop.id) {
+      throw new HostedCheckoutReservationError(
+        'Could not resolve this PayPal order to a fee reservation for the authenticated shop.',
+        'invalid_reservation'
+      );
+    }
 
-    const captureId =
-      capture.purchase_units?.[0]?.payments?.captures?.[0]?.id || paypalOrderId;
-    const captureAmount =
-      capture.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value || '0';
+    const snapshot = parseHostedCheckoutReservation(auditLog.metadata);
+    if (
+      !snapshot ||
+      snapshot.provider !== 'paypal' ||
+      snapshot.reservationRef !== orderDetails.customId
+    ) {
+      throw new HostedCheckoutReservationError(
+        'This PayPal order predates atomic fee reservations or has invalid reservation metadata.',
+        'invalid_reservation'
+      );
+    }
+
+    const orderAmountCents = amountStringToCents(orderDetails.amount);
+    if (
+      orderAmountCents !== snapshot.totalCents ||
+      orderDetails.currency.toUpperCase() !== snapshot.currency
+    ) {
+      throw new HostedCheckoutReservationError(
+        'The PayPal order amount or currency does not match the reserved fee rows.',
+        'payment_mismatch'
+      );
+    }
+
+    let capture = existingOrder;
+    if (capture.status !== 'COMPLETED') {
+      if (capture.status !== 'APPROVED') {
+        return json(
+          { error: `Payment is not ready to capture. Status: ${capture.status}` },
+          { status: 400 }
+        );
+      }
+      capture = await capturePayPalOrder(paypalOrderId);
+    }
+
+    const captureDetails = getCompletedPayPalCaptureDetails(capture);
+    const captureId = captureDetails.captureId;
+    const captureAmount = captureDetails.amount;
     const payerEmail = capture.payer?.email_address || 'unknown';
     const payerId = capture.payer?.payer_id || '';
 
+    const settlement = await settleHostedCheckoutReservation({
+      shopId: shop.id,
+      snapshot,
+      provider: 'paypal',
+      captureRef: captureId,
+      providerSessionId: paypalOrderId,
+      providerAmountCents: amountStringToCents(captureAmount),
+      providerCurrency: captureDetails.currency,
+      source: 'capture_route',
+      extraMetadata: {
+        paypalOrderId,
+        payerEmail,
+      },
+    });
 
 
     const captureRaw = capture as unknown as Record<string, unknown>;
@@ -81,98 +150,16 @@ export async function action({ request }: ActionFunctionArgs) {
       console.log(`[PayPal] Vault saved for ${shopDomain}: vault=${vaultData.id}, payer=${payerId}`);
     }
 
-
-    const auditLog = await prisma.auditLog.findFirst({
-      where: {
-        shopId: shop.id,
-        action: 'paypal_order_created',
-        resourceId: paypalOrderId,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    let pendingOrderIds: string[] = [];
-
-    if (auditLog && auditLog.metadata) {
-      const metadata = auditLog.metadata as { orderIds?: string[] };
-      pendingOrderIds = metadata.orderIds || [];
-    }
-
-    if (pendingOrderIds.length === 0) {
-      throw new Error('Could not resolve the billed orders for this PayPal payment.');
-    }
-
-    const outstandingSelection = await getOutstandingFeeSelection(shop.id, pendingOrderIds);
-    if (outstandingSelection.orderIds.length === 0) {
-      return json({
-        success: true,
-        captureId,
-        amount: captureAmount,
-        markedCount: 0,
-        payerEmail,
-      });
-    }
-
-    let markedCount = 0;
-    for (const orderId of outstandingSelection.orderIds) {
-      const rate = outstandingSelection.feeByOrderId.get(orderId) || 0.10;
-      await prisma.commission.upsert({
-        where: {
-          commission_shop_order: {
-            shopId: shop.id,
-            orderId: orderId,
-          },
-        },
-        create: {
-          shopId: shop.id,
-          orderId: orderId,
-          orderNumber: `#${orderId.slice(-6)}`,
-          orderTotal: 0,
-          orderCurrency: 'USD',
-          commissionRate: 0,
-          commissionAmount: rate,
-          status: 'paid',
-          paidAt: new Date(),
-          paymentRef: captureId,
-          paymentProvider: 'paypal',
-        },
-        update: {
-          status: 'paid',
-          paidAt: new Date(),
-          paymentRef: captureId,
-          paymentProvider: 'paypal',
-        },
-      });
-      markedCount++;
-    }
-
-
-    await prisma.auditLog.create({
-      data: {
-        shopId: shop.id,
-        action: 'paypal_payment_captured',
-        resourceType: 'paypal_capture',
-        resourceId: captureId,
-        metadata: {
-          paypalOrderId,
-          captureId,
-          amount: captureAmount,
-          payerEmail,
-          orderIds: outstandingSelection.orderIds,
-          markedCount,
-        },
-      },
-    });
-
     console.log(
-      `[PayPal] Payment captured for ${shopDomain}: $${captureAmount} (${markedCount} orders) - Capture: ${captureId}`
+      `[PayPal] Payment captured for ${shopDomain}: $${captureAmount} (${settlement.markedCount} orders) - Capture: ${captureId}`
     );
 
     return json({
       success: true,
       captureId,
       amount: captureAmount,
-      markedCount,
+      markedCount: settlement.markedCount,
+      alreadyProcessed: settlement.alreadyProcessed,
       payerEmail,
     });
   } catch (error) {

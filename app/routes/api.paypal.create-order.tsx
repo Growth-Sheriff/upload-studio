@@ -9,7 +9,13 @@ import { json } from '@remix-run/node';
 import { createPayPalOrder, createPayPalOrderWithVault, isPayPalConfigured } from '~/lib/paypal.server';
 import prisma from '~/lib/prisma.server';
 import { authenticate } from '~/shopify.server';
-import { getOutstandingFeeSelection } from '~/lib/billing.server';
+import {
+  HostedCheckoutReservationError,
+  markHostedCheckoutCreationUnknown,
+  markHostedCheckoutSessionCreated,
+  reserveFeesForHostedCheckout,
+} from '~/lib/hostedCheckoutReservation.server';
+import type { HostedCheckoutReservation } from '~/lib/hostedCheckoutReservation.server';
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
@@ -46,35 +52,25 @@ export async function action({ request }: ActionFunctionArgs) {
 
   }
 
-  const {
-    orderIds: pendingOrderIds,
-    totalAmount: total,
-    description,
-  } = await getOutstandingFeeSelection(shop.id, requestedOrderIds, monthKey);
-
-  if (pendingOrderIds.length === 0) {
-    return json({ error: 'No outstanding order fees to pay' }, { status: 400 });
+  let reservation: HostedCheckoutReservation;
+  try {
+    reservation = await reserveFeesForHostedCheckout({
+      shopId: shop.id,
+      provider: 'paypal',
+      requestedOrderIds,
+      monthKey,
+    });
+  } catch (error) {
+    if (error instanceof HostedCheckoutReservationError) {
+      const status = error.code === 'no_outstanding_fees' ? 400 : 409;
+      return json({ error: error.message, code: error.code }, { status });
+    }
+    throw error;
   }
 
-  const totalAmount = total.toFixed(2);
+  const totalAmount = reservation.totalAmount.toFixed(2);
 
   try {
-
-    const auditEntry = await prisma.auditLog.create({
-      data: {
-        shopId: shop.id,
-        action: 'paypal_order_pending',
-        resourceType: 'paypal_order',
-        resourceId: 'pending',
-        metadata: {
-          orderIds: pendingOrderIds,
-          amount: totalAmount,
-          orderCount: pendingOrderIds.length,
-        },
-      },
-    });
-
-
 
     const hasVault = Boolean(shop.paypalVaultId);
     let order;
@@ -84,57 +80,54 @@ export async function action({ request }: ActionFunctionArgs) {
       order = await createPayPalOrder(
         totalAmount,
         shopDomain,
-        description,
-        auditEntry.id
+        reservation.description,
+        reservation.reservationRef
       );
     } else {
-
-      try {
-        order = await createPayPalOrderWithVault(
-          totalAmount,
-          shopDomain,
-          description,
-          auditEntry.id
-        );
-      } catch (vaultError) {
-        console.warn('[PayPal] Vault not available, falling back to normal order:', vaultError);
-        order = await createPayPalOrder(
-          totalAmount,
-          shopDomain,
-          description,
-          auditEntry.id
-        );
-      }
+      // Never fall back to a second request shape after a failed provider
+      // call. A timeout can mean the vaulted order exists; creating a normal
+      // order with a different idempotency key would produce two payable
+      // sessions for the same reservation.
+      order = await createPayPalOrderWithVault(
+        totalAmount,
+        shopDomain,
+        reservation.description,
+        reservation.reservationRef
+      );
     }
 
 
     const approvalLink = order.links.find((link) => link.rel === 'approve');
 
     if (!approvalLink) {
-      console.error('[PayPal] No approval link in response:', order);
-      return json({ error: 'PayPal did not return an approval URL' }, { status: 500 });
+      // PayPal did create an identifiable order. Persist that identity before
+      // quarantining the reservation so support/reconciliation can retrieve
+      // provider state even though the merchant cannot continue from this
+      // response.
+      await markHostedCheckoutSessionCreated({
+        reservationRef: reservation.reservationRef,
+        provider: 'paypal',
+        providerSessionId: order.id,
+        checkoutUrl: null,
+      });
+      console.error('[PayPal] No approval link in response:', {
+        orderId: order.id,
+        status: order.status,
+      });
+      throw new Error('PayPal did not return an approval URL');
     }
 
 
 
-    await prisma.auditLog.update({
-      where: { id: auditEntry.id },
-      data: {
-        action: 'paypal_order_created',
-        resourceId: order.id,
-        metadata: {
-          paypalOrderId: order.id,
-          auditRefId: auditEntry.id,
-          orderIds: pendingOrderIds,
-          amount: totalAmount,
-          orderCount: pendingOrderIds.length,
-          status: order.status,
-        },
-      },
+    await markHostedCheckoutSessionCreated({
+      reservationRef: reservation.reservationRef,
+      provider: 'paypal',
+      providerSessionId: order.id,
+      checkoutUrl: approvalLink.href,
     });
 
     console.log(
-      `[PayPal] Order ${order.id} created for ${shopDomain}: $${totalAmount} (${pendingOrderIds.length} orders)`
+      `[PayPal] Order ${order.id} created for ${shopDomain}: $${totalAmount} (${reservation.orderIds.length} orders)`
     );
 
     return json({
@@ -142,12 +135,23 @@ export async function action({ request }: ActionFunctionArgs) {
       paypalOrderId: order.id,
       approvalUrl: approvalLink.href,
       amount: totalAmount,
-      orderCount: pendingOrderIds.length,
+      orderCount: reservation.orderIds.length,
     });
   } catch (error) {
     console.error('[PayPal] Create order error:', error);
+    // A timeout after the request left this process cannot prove that PayPal
+    // did not create the idempotent order. Never return these rows to the
+    // auto-charge pool without provider reconciliation.
+    await markHostedCheckoutCreationUnknown({
+      reservationRef: reservation.reservationRef,
+      provider: 'paypal',
+      error: error instanceof Error ? error.message : String(error),
+    }).catch(() => undefined);
     return json(
-      { error: error instanceof Error ? error.message : 'PayPal order creation failed' },
+      {
+        error:
+          'PayPal order creation could not be confirmed. The selected fees remain reserved and will not be auto-charged; refresh billing before trying again.',
+      },
       { status: 500 }
     );
   }

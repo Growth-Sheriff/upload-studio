@@ -9,7 +9,13 @@ import { json } from '@remix-run/node';
 import { createCheckoutSession, getOrCreateCustomer, isStripeConfigured } from '~/lib/stripe.server';
 import prisma from '~/lib/prisma.server';
 import { authenticate } from '~/shopify.server';
-import { getOutstandingFeeSelection } from '~/lib/billing.server';
+import {
+  HostedCheckoutReservationError,
+  markHostedCheckoutCreationUnknown,
+  markHostedCheckoutSessionCreated,
+  reserveFeesForHostedCheckout,
+} from '~/lib/hostedCheckoutReservation.server';
+import type { HostedCheckoutReservation } from '~/lib/hostedCheckoutReservation.server';
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
@@ -46,77 +52,61 @@ export async function action({ request }: ActionFunctionArgs) {
 
   }
 
-  const {
-    orderIds: pendingOrderIds,
-    totalAmount: total,
-    description,
-  } = await getOutstandingFeeSelection(shop.id, requestedOrderIds, monthKey);
+  const hasExistingPaymentMethod = Boolean(shop.stripePaymentMethodId);
 
-  if (pendingOrderIds.length === 0) {
-    return json({ error: 'No outstanding order fees to pay' }, { status: 400 });
+  // Resolve the Stripe customer before reserving fee rows. This step cannot
+  // collect money, and doing it first keeps a customer API outage from
+  // needlessly quarantining fees.
+  let stripeCustomerId = shop.stripeCustomerId || null;
+  if (!stripeCustomerId) {
+    try {
+      stripeCustomerId = await getOrCreateCustomer(shopDomain, shop.stripeEmail);
+      await prisma.shop.update({ where: { id: shop.id }, data: { stripeCustomerId } });
+    } catch (customerError) {
+      console.warn('[Stripe] customer ensure failed, falling back to email session:', customerError);
+      stripeCustomerId = null;
+    }
   }
 
-  const totalAmount = total.toFixed(2);
+  let reservation: HostedCheckoutReservation;
+  try {
+    reservation = await reserveFeesForHostedCheckout({
+      shopId: shop.id,
+      provider: 'stripe',
+      requestedOrderIds,
+      monthKey,
+    });
+  } catch (error) {
+    if (error instanceof HostedCheckoutReservationError) {
+      const status = error.code === 'no_outstanding_fees' ? 400 : 409;
+      return json({ error: error.message, code: error.code }, { status });
+    }
+    throw error;
+  }
+
+  const totalAmount = reservation.totalAmount.toFixed(2);
 
   try {
-
-    const auditEntry = await prisma.auditLog.create({
-      data: {
-        shopId: shop.id,
-        action: 'stripe_checkout_pending',
-        resourceType: 'stripe_checkout',
-        resourceId: 'pending',
-        metadata: {
-          orderIds: pendingOrderIds,
-          amount: totalAmount,
-          orderCount: pendingOrderIds.length,
-        },
-      },
-    });
-
-    const hasExistingPaymentMethod = Boolean(shop.stripePaymentMethodId);
-
-    // One Stripe customer per shop, created up front so the saved card lands
-    // on the customer we will charge off-session later.
-    let stripeCustomerId = shop.stripeCustomerId || null;
-    if (!stripeCustomerId) {
-      try {
-        stripeCustomerId = await getOrCreateCustomer(shopDomain, shop.stripeEmail);
-        await prisma.shop.update({ where: { id: shop.id }, data: { stripeCustomerId } });
-      } catch (customerError) {
-        console.warn('[Stripe] customer ensure failed, falling back to email session:', customerError);
-        stripeCustomerId = null;
-      }
-    }
 
     const result = await createCheckoutSession(
       totalAmount,
       shopDomain,
-      description,
-      auditEntry.id,
+      reservation.description,
+      reservation.reservationRef,
       hasExistingPaymentMethod,
       shop.stripeEmail,
       stripeCustomerId
     );
 
-
-    await prisma.auditLog.update({
-      where: { id: auditEntry.id },
-      data: {
-        action: 'stripe_checkout_created',
-        resourceId: result.sessionId,
-        metadata: {
-          sessionId: result.sessionId,
-          auditRefId: auditEntry.id,
-          orderIds: pendingOrderIds,
-          amount: totalAmount,
-          orderCount: pendingOrderIds.length,
-        },
-      },
+    await markHostedCheckoutSessionCreated({
+      reservationRef: reservation.reservationRef,
+      provider: 'stripe',
+      providerSessionId: result.sessionId,
+      checkoutUrl: result.checkoutUrl,
     });
 
     console.log(
-      `[Stripe] Checkout ${result.sessionId} created for ${shopDomain}: $${totalAmount} (${pendingOrderIds.length} orders)`
+      `[Stripe] Checkout ${result.sessionId} created for ${shopDomain}: $${totalAmount} (${reservation.orderIds.length} orders)`
     );
 
     return json({
@@ -124,12 +114,22 @@ export async function action({ request }: ActionFunctionArgs) {
       sessionId: result.sessionId,
       checkoutUrl: result.checkoutUrl,
       amount: totalAmount,
-      orderCount: pendingOrderIds.length,
+      orderCount: reservation.orderIds.length,
     });
   } catch (error) {
     console.error('[Stripe] Create checkout error:', error);
+    // Once the provider request starts, a timeout cannot prove that Stripe did
+    // not create the idempotent session. Keep these rows out of auto-charge.
+    await markHostedCheckoutCreationUnknown({
+      reservationRef: reservation.reservationRef,
+      provider: 'stripe',
+      error: error instanceof Error ? error.message : String(error),
+    }).catch(() => undefined);
     return json(
-      { error: error instanceof Error ? error.message : 'Stripe checkout creation failed' },
+      {
+        error:
+          'Stripe checkout creation could not be confirmed. The selected fees remain reserved and will not be auto-charged; refresh billing before trying again.',
+      },
       { status: 500 }
     );
   }

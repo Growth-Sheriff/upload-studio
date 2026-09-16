@@ -114,28 +114,40 @@ export async function handleChargeRefunded(
     return { matched: false, detail: 'cross_tenant_abort' };
   }
 
-  await prisma.commission.updateMany({
-    where: { paymentRef: paymentIntentId, shopId },
-    data: { status: 'pending', paidAt: null, paymentRef: null, paymentProvider: null },
+  const alreadyRecorded = await prisma.auditLog.findFirst({
+    where: {
+      shopId,
+      action: 'stripe_webhook_refund_review_required',
+      resourceId: eventId,
+    },
+    select: { id: true },
   });
+  if (alreadyRecorded) return { matched: true, detail: 'already_recorded' };
+
+  // A provider refund is not proof that the merchant no longer owes the app
+  // fee, and partial refunds cannot be represented by reopening a whole batch.
+  // Keep settled rows immutable and create an idempotent review signal.
   await prisma.auditLog.create({
     data: {
       shopId,
-      action: 'stripe_webhook_charge_refunded',
+      action: 'stripe_webhook_refund_review_required',
       resourceType: 'stripe_webhook',
-      resourceId: charge.id || eventId,
+      resourceId: eventId,
       metadata: {
         eventId,
         chargeId: charge.id,
         paymentIntentId,
-        revertedCount: affected.length,
+        affectedCount: affected.length,
+        amount: charge.amount,
+        amountRefunded: charge.amount_refunded,
+        refunded: charge.refunded,
       },
     },
   });
   console.log(
-    `[Stripe Webhook] Refund processed: ${affected.length} commissions reverted to pending`
+    `[Stripe Webhook] Refund recorded for review: ${affected.length} settled commissions left unchanged`
   );
-  return { matched: true, detail: `reverted=${affected.length}` };
+  return { matched: true, detail: `review=${affected.length}` };
 }
 
 export async function dispatchEvent(event: Stripe.Event): Promise<HandlerResult> {
