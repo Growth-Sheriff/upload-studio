@@ -13,14 +13,31 @@ import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { PrismaClient } from '@prisma/client'
 import archiver from 'archiver'
-import { Job, Worker } from 'bullmq'
+import { Job, Queue, Worker } from 'bullmq'
 import { createObjectCsvStringifier } from 'csv-writer'
-import { createWriteStream, mkdirSync, rmSync } from 'fs'
+import { randomUUID } from 'crypto'
+import { createReadStream, createWriteStream, mkdirSync } from 'fs'
 import fs from 'fs/promises'
 import Redis from 'ioredis'
 import { join } from 'path'
+import { pipeline } from 'stream/promises'
+import {
+  getEmptyExportUploadIds,
+  getExportItemFileName,
+  getExportUploadFolder,
+  getMissingExportUploadIds,
+} from '../app/lib/exportArchive'
+import {
+  EXPORT_QUEUE_NAME,
+  EXPORT_JOB_OPTIONS,
+  getExportJobOptions,
+  isFinalUploadJobAttempt,
+  type ExportJobData,
+} from '../app/lib/uploadQueues'
 
 const prisma = new PrismaClient()
+
+const BUNNY_DOWNLOAD_TIMEOUT_MS = 10 * 60 * 1000
 
 
 const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
@@ -80,13 +97,34 @@ async function downloadFromBunny(storageKey: string, localPath: string): Promise
 
   console.log(`[Export Worker] Downloading from Bunny CDN: ${url}`)
 
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(`Failed to download from Bunny: ${response.status} ${response.statusText}`)
-  }
+  const controller = new AbortController()
+  let timedOut = false
+  const timeout = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, BUNNY_DOWNLOAD_TIMEOUT_MS)
+  timeout.unref()
 
-  const buffer = Buffer.from(await response.arrayBuffer())
-  await fs.writeFile(localPath, buffer)
+  try {
+    const response = await fetch(url, { signal: controller.signal })
+    if (!response.ok) {
+      throw new Error(`Failed to download from Bunny: ${response.status} ${response.statusText}`)
+    }
+
+    if (!response.body) throw new Error('Empty Bunny response body')
+    await pipeline(response.body as any, createWriteStream(localPath))
+  } catch (error) {
+    await fs.rm(localPath, { force: true }).catch(() => undefined)
+    if (timedOut) {
+      throw new Error(
+        `Bunny download timed out after ${BUNNY_DOWNLOAD_TIMEOUT_MS}ms`,
+        { cause: error }
+      )
+    }
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 
@@ -95,8 +133,7 @@ async function downloadFromLocal(storageKey: string, localPath: string): Promise
 
   const cleanKey = storageKey.startsWith('local:') ? storageKey.replace('local:', '') : storageKey
   const sourcePath = join(uploadsDir, cleanKey)
-  const content = await fs.readFile(sourcePath)
-  await fs.writeFile(localPath, content)
+  await fs.copyFile(sourcePath, localPath)
 }
 
 
@@ -124,7 +161,7 @@ async function downloadFileFromStorage(
   const response = await client.send(
     new GetObjectCommand({
       Bucket: bucket,
-      Key: key,
+      Key: key.startsWith('r2:') ? key.slice('r2:'.length) : key,
     })
   )
 
@@ -132,12 +169,7 @@ async function downloadFileFromStorage(
     throw new Error('Empty response body')
   }
 
-  const chunks: Uint8Array[] = []
-  for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
-    chunks.push(chunk)
-  }
-
-  await fs.writeFile(localPath, Buffer.concat(chunks))
+  await pipeline(response.Body as any, createWriteStream(localPath))
 }
 
 
@@ -148,13 +180,11 @@ async function uploadFileToStorage(
 ): Promise<void> {
   const client = getStorageClient()
   const bucket = getBucketName()
-  const content = await fs.readFile(localPath)
-
   await client.send(
     new PutObjectCommand({
       Bucket: bucket,
       Key: key,
-      Body: content,
+      Body: createReadStream(localPath),
       ContentType: contentType,
     })
   )
@@ -180,11 +210,6 @@ function getStorageConfig(shopConfig: any): any {
   return shopConfig || {}
 }
 
-interface ExportJobData {
-  jobId: string
-  shopId: string
-}
-
 interface ManifestRow {
   orderId: string
   uploadId: string
@@ -197,23 +222,36 @@ interface ManifestRow {
 }
 
 async function processExportJob(job: Job<ExportJobData>) {
-  const { jobId, shopId } = job.data
+  const { exportId, shopId } = job.data
+  let tempDir = ''
 
-  console.log(`[Export Worker] Starting job ${jobId}`)
+  console.log(`[Export Worker] Starting job ${exportId}`)
 
   try {
+    if (!exportId || !shopId) {
+      throw new Error('Export job payload is missing exportId or shopId')
+    }
 
     const exportJob = await prisma.exportJob.findFirst({
-      where: { id: jobId, shopId },
+      where: { id: exportId, shopId },
     })
 
     if (!exportJob) {
       throw new Error('Export job not found')
     }
 
+    if (exportJob.status === 'completed' && exportJob.downloadUrl) {
+      console.log(`[Export Worker] Job ${exportId} is already completed; reusing stored result`)
+      return {
+        success: true,
+        skipped: true,
+        downloadUrl: exportJob.downloadUrl,
+      }
+    }
+
 
     await prisma.exportJob.updateMany({
-      where: { id: jobId, shopId },
+      where: { id: exportId, shopId, status: { not: 'completed' } },
       data: { status: 'processing' },
     })
 
@@ -246,22 +284,45 @@ async function processExportJob(job: Job<ExportJobData>) {
       },
     })
 
-    if (uploads.length === 0) {
-      throw new Error('No uploads found')
+    const missingUploadIds = getMissingExportUploadIds(
+      exportJob.uploadIds,
+      uploads.map((upload) => upload.id)
+    )
+    if (missingUploadIds.length > 0) {
+      throw new Error(
+        `Export is incomplete; ${missingUploadIds.length} requested upload(s) were not found: ${missingUploadIds.join(', ')}`
+      )
+    }
+
+    const emptyUploadIds = getEmptyExportUploadIds(uploads)
+    if (emptyUploadIds.length > 0) {
+      throw new Error(
+        `Export is incomplete; ${emptyUploadIds.length} requested upload(s) contain no design items: ${emptyUploadIds.join(', ')}`
+      )
     }
 
 
-    const tempDir = join(process.cwd(), 'temp', `export_${jobId}`)
+    tempDir = join(
+      process.cwd(),
+      'temp',
+      `export_${exportId}_${process.pid}_${randomUUID()}`
+    )
     mkdirSync(tempDir, { recursive: true })
 
     const manifestRows: ManifestRow[] = []
     const dateStr = new Date().toISOString().split('T')[0]
-    const zipFileName = `export_${dateStr}_${jobId.slice(0, 8)}.zip`
+    const zipFileName = `export_${dateStr}_${exportId}.zip`
     const zipPath = join(tempDir, zipFileName)
 
 
     const archive = archiver('zip', { zlib: { level: 5 } })
     const output = createWriteStream(zipPath)
+    const failedItemIds: string[] = []
+    const uploadsPerOrder = new Map<string, number>()
+    for (const upload of uploads) {
+      const orderId = upload.ordersLink[0]?.orderId || upload.orderId || 'no_order'
+      uploadsPerOrder.set(orderId, (uploadsPerOrder.get(orderId) || 0) + 1)
+    }
 
     await new Promise<void>((resolve, reject) => {
       output.on('close', resolve)
@@ -273,7 +334,11 @@ async function processExportJob(job: Job<ExportJobData>) {
       ;(async () => {
         for (const upload of uploads) {
           const orderId = upload.ordersLink[0]?.orderId || upload.orderId || 'no_order'
-          const orderFolder = `order_${orderId.slice(-8)}`
+          const orderFolder = getExportUploadFolder(
+            orderId,
+            upload.id,
+            uploadsPerOrder.get(orderId) || 1
+          )
 
 
           const metadata = {
@@ -293,14 +358,14 @@ async function processExportJob(job: Job<ExportJobData>) {
 
               const localFilePath = join(tempDir, `temp_${item.id}`)
               await downloadFileFromStorage(item.storageKey, localFilePath, storageProvider)
-              const fileBuffer = await fs.readFile(localFilePath)
+              const fileName = getExportItemFileName(
+                item.location,
+                item.originalName,
+                item.id
+              )
 
 
-              const ext = item.originalName?.split('.').pop() || 'png'
-              const fileName = `${item.location}_design.${ext}`
-
-
-              archive.append(fileBuffer, { name: `${orderFolder}/${fileName}` })
+              archive.file(localFilePath, { name: `${orderFolder}/${fileName}` })
 
 
               const preflightResult = (item.preflightResult as any) || {}
@@ -329,6 +394,7 @@ async function processExportJob(job: Job<ExportJobData>) {
               console.log(`[Export Worker] Added ${fileName} for order ${orderId}`)
             } catch (error) {
               console.error(`[Export Worker] Failed to process item ${item.id}:`, error)
+              failedItemIds.push(item.id)
             }
           }
 
@@ -362,8 +428,14 @@ async function processExportJob(job: Job<ExportJobData>) {
 
 
         await archive.finalize()
-      })()
+      })().catch(reject)
     })
+
+    if (failedItemIds.length > 0) {
+      throw new Error(
+        `Export is incomplete; failed to include ${failedItemIds.length} item(s): ${failedItemIds.join(', ')}`
+      )
+    }
 
 
     const zipStorageKey = `${shop.shopDomain}/exports/${zipFileName}`
@@ -375,7 +447,7 @@ async function processExportJob(job: Job<ExportJobData>) {
 
 
     await prisma.exportJob.updateMany({
-      where: { id: jobId, shopId },
+      where: { id: exportId, shopId },
       data: {
         status: 'completed',
         downloadUrl,
@@ -384,9 +456,7 @@ async function processExportJob(job: Job<ExportJobData>) {
     })
 
 
-    rmSync(tempDir, { recursive: true, force: true })
-
-    console.log(`[Export Worker] Job ${jobId} completed. Files: ${uploads.length}`)
+    console.log(`[Export Worker] Job ${exportId} completed. Files: ${uploads.length}`)
 
     return {
       success: true,
@@ -394,21 +464,68 @@ async function processExportJob(job: Job<ExportJobData>) {
       downloadUrl,
     }
   } catch (error) {
-    console.error(`[Export Worker] Job ${jobId} failed:`, error)
+    console.error(`[Export Worker] Job ${exportId || 'unknown'} failed:`, error)
 
-
-    await prisma.exportJob.updateMany({
-      where: { id: jobId, shopId },
-      data: { status: 'failed' },
-    })
+    if (exportId && shopId) {
+      const finalAttempt = isFinalUploadJobAttempt(job.attemptsMade, job.opts.attempts)
+      await prisma.exportJob.updateMany({
+        where: { id: exportId, shopId, status: { in: ['pending', 'processing'] } },
+        data: { status: finalAttempt ? 'failed' : 'pending' },
+      })
+    }
 
     throw error
+  } finally {
+    if (tempDir) {
+      await fs.rm(tempDir, { recursive: true, force: true }).catch((cleanupError) =>
+        console.warn(`[Export Worker] Could not clean temp directory ${tempDir}:`, cleanupError)
+      )
+    }
   }
+}
+
+function startPendingExportReconciler(redisConnection: { host: string; port: number; db?: number }) {
+  const queue = new Queue<ExportJobData>(EXPORT_QUEUE_NAME, {
+    connection: redisConnection,
+    defaultJobOptions: EXPORT_JOB_OPTIONS,
+  })
+  let running = false
+  const reconcile = async () => {
+    if (running) return
+    running = true
+    try {
+      const pending = await prisma.exportJob.findMany({
+        where: { status: 'pending' },
+        select: { id: true, shopId: true },
+        orderBy: { createdAt: 'asc' },
+        take: 100,
+      })
+      for (const exportJob of pending) {
+        const options = getExportJobOptions(exportJob.id)
+        const existing = options.jobId ? await queue.getJob(String(options.jobId)) : null
+        if (!existing) {
+          await queue.add(
+            'process-export',
+            { exportId: exportJob.id, shopId: exportJob.shopId },
+            options
+          )
+        }
+      }
+    } catch (error) {
+      console.error('[Export Worker] Pending export reconciliation failed:', error)
+    } finally {
+      running = false
+    }
+  }
+  const initial = setTimeout(() => void reconcile(), 10_000)
+  initial.unref()
+  const interval = setInterval(() => void reconcile(), 60_000)
+  interval.unref()
 }
 
 
 export function createExportWorker(redisConnection: { host: string; port: number }) {
-  const worker = new Worker<ExportJobData>('export', processExportJob, {
+  const worker = new Worker<ExportJobData>(EXPORT_QUEUE_NAME, processExportJob, {
     connection: redisConnection,
     concurrency: 2,
     limiter: {
@@ -421,13 +538,37 @@ export function createExportWorker(redisConnection: { host: string; port: number
     console.log(`[Export Worker] Job ${job.id} completed:`, result)
   })
 
-  worker.on('failed', (job, error) => {
+  worker.on('failed', async (job, error) => {
     console.error(`[Export Worker] Job ${job?.id} failed:`, error.message)
+    if (!job?.data.exportId || !job.data.shopId) return
+
+    const configuredAttempts = Math.max(1, Number(job.opts.attempts) || 1)
+    const exhaustedAttempts = job.attemptsMade >= configuredAttempts
+    const exhaustedStalls = /stalled more than allowable limit/i.test(error.message)
+    if (!exhaustedAttempts && !exhaustedStalls) return
+
+    try {
+      await prisma.exportJob.updateMany({
+        where: {
+          id: job.data.exportId,
+          shopId: job.data.shopId,
+          status: { in: ['pending', 'processing'] },
+        },
+        data: { status: 'failed' },
+      })
+    } catch (persistError) {
+      console.error(
+        `[Export Worker] Could not persist terminal failure for ${job.data.exportId}:`,
+        persistError
+      )
+    }
   })
 
   worker.on('progress', (job, progress) => {
     console.log(`[Export Worker] Job ${job.id} progress: ${progress}%`)
   })
+
+  startPendingExportReconciler(redisConnection)
 
   return worker
 }
