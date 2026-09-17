@@ -1,11 +1,4 @@
-import {
-  applyMeasurementBasisMetadata,
-  deriveUploadItemLifecycle,
-  getStoredMeasurementBasis,
-} from '~/lib/uploadLifecycle.server'
-
 export const DTF_PRINTHOUSE_SHOP_DOMAIN = 'e3bd2d-3.myshopify.com'
-export const DTF_PRINTHOUSE_MAX_WIDTH_IN = 22.5
 
 export type CustomerPricingCustomerType = 'guest' | 'standard' | 'business' | 'vip'
 export type CustomerPricingMode = 'standard_variant' | 'variant_length' | 'measured_length'
@@ -109,19 +102,6 @@ export interface CustomPricedQuote {
   sheetsNeeded?: number | null
 }
 
-export interface BuilderLimits {
-  maxWidthIn?: number | null
-  maxHeightIn?: number | null
-  minWidthIn?: number | null
-  minHeightIn?: number | null
-}
-
-export interface QuoteValidationResult {
-  ok: boolean
-  reason: string | null
-  code: string | null
-}
-
 export interface ParsedSheetSize {
   widthIn: number
   lengthIn: number
@@ -132,9 +112,11 @@ export interface ProductRuleCatalogItem {
   label: string
 }
 
-const DEFAULT_BUSINESS_PRICE_PER_INCH = 0.2
-const DEFAULT_MAX_WIDTH_IN = 22
-const DEFAULT_MAX_HEIGHT_IN = 240
+// Zero means "not configured". Runtime quote helpers reject it, so a new or
+// incomplete pricing profile cannot silently invent a customer-facing rate.
+// Explicit legacy values stored at the shop/status/rule level still flow
+// through the normal fallback chain unchanged.
+const UNCONFIGURED_PRICE_PER_INCH = 0
 const DEFAULT_CUSTOMER_PRICING_VERSION = 2
 
 function toPositiveNumber(value: unknown, fallback = 0): number {
@@ -249,12 +231,12 @@ function normalizeCustomerEmail(value: string | null | undefined): string {
     .toLowerCase()
 }
 
-export interface MeasuredCrossRollFitResult extends QuoteValidationResult {
+export interface MeasuredCrossRollFitResult {
+  ok: boolean
+  reason: string | null
+  code: string | null
   crossRollLimitIn: number
   placedWidthIn: number
-  rotationApplied: boolean
-  toleranceApplied: boolean
-  productionNote: string | null
 }
 
 export function matchesTrustedUploadOwner(input: {
@@ -282,10 +264,6 @@ export function isDtfPrintHouseShop(shopDomain: string | null | undefined): bool
   return String(shopDomain || '').trim().toLowerCase() === DTF_PRINTHOUSE_SHOP_DOMAIN
 }
 
-export function getMaxWidthLimitForShop(shopDomain: string | null | undefined): number {
-  return isDtfPrintHouseShop(shopDomain) ? DTF_PRINTHOUSE_MAX_WIDTH_IN : DEFAULT_MAX_WIDTH_IN
-}
-
 export function buildDtfPrintHouseCustomerPricingSettings(): CustomerPricingSettings {
   const standardStatus: CustomerPricingStatus = {
     id: 'standard',
@@ -293,7 +271,7 @@ export function buildDtfPrintHouseCustomerPricingSettings(): CustomerPricingSett
     label: 'Standard Customer',
     type: 'standard',
     active: true,
-    pricePerInch: DEFAULT_BUSINESS_PRICE_PER_INCH,
+    pricePerInch: UNCONFIGURED_PRICE_PER_INCH,
     productRules: [],
   }
 
@@ -303,7 +281,7 @@ export function buildDtfPrintHouseCustomerPricingSettings(): CustomerPricingSett
     label: 'Business',
     type: 'business',
     active: true,
-    pricePerInch: DEFAULT_BUSINESS_PRICE_PER_INCH,
+    pricePerInch: UNCONFIGURED_PRICE_PER_INCH,
     productRules: [],
   }
 
@@ -313,14 +291,14 @@ export function buildDtfPrintHouseCustomerPricingSettings(): CustomerPricingSett
     label: 'VIP',
     type: 'vip',
     active: true,
-    pricePerInch: DEFAULT_BUSINESS_PRICE_PER_INCH,
+    pricePerInch: UNCONFIGURED_PRICE_PER_INCH,
     productRules: [],
   }
 
   return {
     version: DEFAULT_CUSTOMER_PRICING_VERSION,
     enabled: true,
-    businessPricePerInch: DEFAULT_BUSINESS_PRICE_PER_INCH,
+    businessPricePerInch: UNCONFIGURED_PRICE_PER_INCH,
     statuses: [standardStatus, businessStatus, vipStatus],
     assignments: [],
     tagRules: [],
@@ -348,8 +326,8 @@ export function normalizeCustomerPricingSettings(rawSettings: unknown): Customer
   )
   const businessPricePerInch = toPositiveNumber(
     rawPricing.businessPricePerInch ?? rawPricing.defaultPricePerInch,
-    DEFAULT_BUSINESS_PRICE_PER_INCH
-  ) || DEFAULT_BUSINESS_PRICE_PER_INCH
+    UNCONFIGURED_PRICE_PER_INCH
+  )
 
   const rawStatuses = Array.isArray(rawPricing.statuses) ? rawPricing.statuses : []
   const statuses = rawStatuses
@@ -367,7 +345,7 @@ export function normalizeCustomerPricingSettings(rawSettings: unknown): Customer
       const pricePerInch = toPositiveNumber(
         value.pricePerInch ?? value.defaultPricePerInch,
         businessPricePerInch
-      ) || businessPricePerInch
+      )
 
       const rawRules = Array.isArray(value.productRules) ? value.productRules : []
       const productRules = rawRules
@@ -375,7 +353,7 @@ export function normalizeCustomerPricingSettings(rawSettings: unknown): Customer
           const rawRule = rule && typeof rule === 'object' ? (rule as Record<string, unknown>) : {}
           const productId = ensureProductId(rawRule.productId) || String(rawRule.productId || '').trim()
           if (!productId) return null
-          const rulePrice = toPositiveNumber(rawRule.pricePerInch, pricePerInch) || pricePerInch
+          const rulePrice = toPositiveNumber(rawRule.pricePerInch, pricePerInch)
           return {
             id: String(rawRule.id || `${key}_${ruleIndex + 1}`),
             productId,
@@ -753,55 +731,6 @@ export function resolveCustomerPricingContext(
   }
 }
 
-/**
- * `basis` is the shop's measurement policy ('full_page' bills the whole
- * uploaded page, 'artwork_bounds' only the artwork). A shop domain is still
- * accepted for old call sites and maps to the legacy default for that shop.
- */
-export function extractVipUploadMeasurement(
-  uploadItems: Array<{ preflightStatus?: string | null; preflightResult?: unknown }>,
-  basisOrShopDomain?: 'full_page' | 'artwork_bounds' | string | null
-): VipUploadMeasurement | null {
-  const fallbackBasis: 'full_page' | 'artwork_bounds' =
-    basisOrShopDomain === 'full_page'
-      ? 'full_page'
-      : basisOrShopDomain === 'artwork_bounds'
-        ? 'artwork_bounds'
-        : isDtfPrintHouseShop(basisOrShopDomain)
-          ? 'full_page'
-          : 'artwork_bounds'
-
-  for (const item of uploadItems) {
-    const lifecycle = deriveUploadItemLifecycle(item)
-    const measurementBasis = getStoredMeasurementBasis(item.preflightResult, fallbackBasis)
-    const metadata = applyMeasurementBasisMetadata(
-      lifecycle.metadata,
-      measurementBasis
-    )
-
-    if (lifecycle.measurementStatus !== 'ready' || !metadata) {
-      continue
-    }
-
-    return {
-      widthPx: metadata.widthPx,
-      heightPx: metadata.heightPx,
-      measurementWidthPx: metadata.measurementWidthPx,
-      measurementHeightPx: metadata.measurementHeightPx,
-      dpi: metadata.dpi,
-      documentDpi: metadata.documentDpi,
-      documentDpiSource: metadata.documentDpiSource,
-      effectiveDpi: metadata.effectiveDpi,
-      sizingSource: metadata.sizingSource,
-      widthIn: metadata.widthIn,
-      heightIn: metadata.heightIn,
-      measurementMode: metadata.measurementMode,
-    }
-  }
-
-  return null
-}
-
 export function calculateMeasuredLengthQuote(
   measurement: VipUploadMeasurement,
   pricePerInch: number,
@@ -811,7 +740,10 @@ export function calculateMeasuredLengthQuote(
   const pageLengthIn = Number(Math.max(measurement.widthIn, measurement.heightIn).toFixed(2))
   const sheetsNeeded = Math.max(1, Math.floor(Number(requestedQuantity) || 1))
   const billableLengthIn = Number((pageLengthIn * sheetsNeeded).toFixed(2))
-  const rate = Number(pricePerInch) || DEFAULT_BUSINESS_PRICE_PER_INCH
+  const rate = Number(pricePerInch)
+  if (!Number.isFinite(rate) || rate <= 0) {
+    throw new Error('A positive configured price per inch is required')
+  }
   const totalPrice = Number((billableLengthIn * rate).toFixed(2))
 
   return {
@@ -828,44 +760,19 @@ export function calculateMeasuredLengthQuote(
 export function validateMeasuredCrossRollFit(input: {
   measurement: Pick<VipUploadMeasurement, 'widthIn' | 'heightIn'>
   rollWidthIn: number
-  maxDesignWidthIn?: number | null
-  artboardMarginIn?: number | null
-  fitToleranceIn?: number | null
 }): MeasuredCrossRollFitResult {
   const rollWidth = toPositiveNumber(input.rollWidthIn)
-  const margin = Math.max(0, Number(input.artboardMarginIn) || 0)
-  const tolerance = Math.max(0, Number(input.fitToleranceIn) || 0)
-  const designLimit = Number(input.maxDesignWidthIn)
-  const physicalLimit = Math.max(0, rollWidth - 2 * margin)
-  const crossRollLimitIn =
-    Number.isFinite(designLimit) && designLimit > 0
-      ? Math.min(physicalLimit, designLimit)
-      : physicalLimit
+  const crossRollLimitIn = rollWidth
   const pageWidthIn = Math.min(input.measurement.widthIn, input.measurement.heightIn)
-  const rotationApplied = input.measurement.widthIn > input.measurement.heightIn
-  const toleranceApplied =
-    crossRollLimitIn > 0 &&
-    pageWidthIn > crossRollLimitIn &&
-    pageWidthIn <= crossRollLimitIn + tolerance
-  const ok = crossRollLimitIn > 0 && pageWidthIn <= crossRollLimitIn + tolerance
-  const productionNote = [
-    rotationApplied ? 'Rotate artwork 90°' : '',
-    toleranceApplied ? `Fit tolerance applied at ${crossRollLimitIn.toFixed(2)}\" cross-roll` : '',
-  ]
-    .filter(Boolean)
-    .join('; ') || null
-
+  const ok = crossRollLimitIn > 0 && pageWidthIn <= crossRollLimitIn
   return {
     ok,
     code: ok ? null : 'WIDTH_TOO_LARGE',
     reason: ok
       ? null
-      : `Design width exceeds the usable roll width of ${crossRollLimitIn.toFixed(2)}\".`,
+      : `Your file is ${Number(pageWidthIn.toFixed(2))} inches wide; maximum printable width is ${Number(crossRollLimitIn.toFixed(2))} inches.`,
     crossRollLimitIn,
-    placedWidthIn: toleranceApplied ? crossRollLimitIn : pageWidthIn,
-    rotationApplied,
-    toleranceApplied,
-    productionNote,
+    placedWidthIn: pageWidthIn,
   }
 }
 
@@ -918,7 +825,10 @@ export function calculateVariantLengthQuote({
   // physical long edge, not the title's second token.
   const sheetLengthIn = Math.max(parsedVariant.widthIn, parsedVariant.lengthIn)
   const billableLengthIn = Number((sheetLengthIn * safeSheetsNeeded).toFixed(2))
-  const rate = Number(pricePerInch) || DEFAULT_BUSINESS_PRICE_PER_INCH
+  const rate = Number(pricePerInch)
+  if (!Number.isFinite(rate) || rate <= 0) {
+    throw new Error('A positive configured price per inch is required')
+  }
   const totalPrice = Number((billableLengthIn * rate).toFixed(2))
 
   return {
@@ -930,83 +840,5 @@ export function calculateVariantLengthQuote({
     formattedTotalPrice: totalPrice.toFixed(2),
     sheetVariantTitle: variantTitle,
     sheetsNeeded: safeSheetsNeeded,
-  }
-}
-
-export function deriveVariantBasedLimits(
-  variantTitles: string[],
-  fallbackLimits?: BuilderLimits | null
-): BuilderLimits {
-  const parsedSizes = variantTitles
-    .map((title) => parseSheetSizeFromTitle(title))
-    .filter((value): value is ParsedSheetSize => Boolean(value))
-
-  if (!parsedSizes.length) {
-    return {
-      maxWidthIn: toPositiveNumber(fallbackLimits?.maxWidthIn, DEFAULT_MAX_WIDTH_IN) || DEFAULT_MAX_WIDTH_IN,
-      maxHeightIn: toPositiveNumber(fallbackLimits?.maxHeightIn, DEFAULT_MAX_HEIGHT_IN) || DEFAULT_MAX_HEIGHT_IN,
-      minWidthIn: toPositiveNumber(fallbackLimits?.minWidthIn, 1) || 1,
-      minHeightIn: toPositiveNumber(fallbackLimits?.minHeightIn, 1) || 1,
-    }
-  }
-
-  return {
-    // Variant option labels are merchant-authored and may be written as
-    // width x length or length x width. Limits describe the physical short
-    // (cross-roll) and long edges, so normalize every pair before aggregating.
-    maxWidthIn: Math.max(...parsedSizes.map((size) => Math.min(size.widthIn, size.lengthIn))),
-    maxHeightIn: Math.max(...parsedSizes.map((size) => Math.max(size.widthIn, size.lengthIn))),
-    minWidthIn: 1,
-    minHeightIn: 1,
-  }
-}
-
-export function validateCustomQuoteAgainstLimits(
-  quote: Pick<CustomPricedQuote, 'pageWidthIn' | 'pageLengthIn'>,
-  limits: BuilderLimits | null | undefined,
-  prefixLabel = 'Design'
-): QuoteValidationResult {
-  const maxWidthIn = toPositiveNumber(limits?.maxWidthIn, DEFAULT_MAX_WIDTH_IN) || DEFAULT_MAX_WIDTH_IN
-  const maxHeightIn = toPositiveNumber(limits?.maxHeightIn, DEFAULT_MAX_HEIGHT_IN) || DEFAULT_MAX_HEIGHT_IN
-  const minWidthIn = toPositiveNumber(limits?.minWidthIn, 1) || 1
-  const minHeightIn = toPositiveNumber(limits?.minHeightIn, 1) || 1
-  const epsilon = 0.001
-
-  if (quote.pageWidthIn + epsilon < minWidthIn) {
-    return {
-      ok: false,
-      code: 'WIDTH_TOO_SMALL',
-      reason: `${prefixLabel} width must be at least ${minWidthIn.toFixed(2)}".`,
-    }
-  }
-
-  if (quote.pageLengthIn + epsilon < minHeightIn) {
-    return {
-      ok: false,
-      code: 'LENGTH_TOO_SMALL',
-      reason: `${prefixLabel} length must be at least ${minHeightIn.toFixed(2)}".`,
-    }
-  }
-
-  if (quote.pageWidthIn > maxWidthIn + epsilon) {
-    return {
-      ok: false,
-      code: 'WIDTH_TOO_LARGE',
-      reason: `${prefixLabel} width exceeds the configured limit of ${maxWidthIn.toFixed(2)}".`,
-    }
-  }
-
-  if (quote.pageLengthIn > maxHeightIn + epsilon) {
-    return {
-      ok: false,
-      code: 'LENGTH_TOO_LARGE',
-      reason: `${prefixLabel} length exceeds the configured limit of ${maxHeightIn.toFixed(2)}".`,
-    }
-  }
-
-  return {
-    ok: true,
-    code: null,
-    reason: null,
   }
 }

@@ -3,7 +3,6 @@ import {
   applyCustomerPricingDefaultsForShop,
   calculateMeasuredLengthQuote,
   calculateVariantLengthQuote,
-  deriveVariantBasedLimits,
   DTF_PRINTHOUSE_SHOP_DOMAIN,
   matchesTrustedUploadOwner,
   normalizeCustomerPricingSettings,
@@ -36,31 +35,92 @@ describe('measured-length roll fit', () => {
     expect(quote.sheetsNeeded).toBe(5)
   })
 
+  it('fails closed instead of inventing a per-inch rate', () => {
+    const measurement = {
+      widthPx: 6600,
+      heightPx: 7200,
+      measurementWidthPx: 6600,
+      measurementHeightPx: 7200,
+      widthIn: 22,
+      heightIn: 24,
+      dpi: 300,
+      effectiveDpi: 300,
+      sizingSource: 'document_dpi',
+      measurementMode: 'full',
+    }
+
+    expect(() => calculateMeasuredLengthQuote(measurement, 0, 1)).toThrow(
+      'A positive configured price per inch is required'
+    )
+    expect(() =>
+      calculateVariantLengthQuote({
+        measurement,
+        pricePerInch: Number.NaN,
+        variantTitle: '22 x 24',
+        sheetsNeeded: 1,
+      })
+    ).toThrow('A positive configured price per inch is required')
+  })
+
   it('enforces the configured physical roll instead of a wider variant limit', () => {
     const result = validateMeasuredCrossRollFit({
       measurement: { widthIn: 21, heightIn: 24 },
       rollWidthIn: 20,
-      maxDesignWidthIn: 22,
     })
     expect(result.ok).toBe(false)
     expect(result.crossRollLimitIn).toBe(20)
   })
 
-  it('surfaces rotation and bounded fit tolerance for production', () => {
+  it('rejects width overflow exactly without margin, tolerance, or rotation instructions', () => {
     const result = validateMeasuredCrossRollFit({
       measurement: { widthIn: 24, heightIn: 20.1 },
       rollWidthIn: 20,
-      fitToleranceIn: 0.125,
     })
-    expect(result.ok).toBe(true)
-    expect(result.rotationApplied).toBe(true)
-    expect(result.toleranceApplied).toBe(true)
-    expect(result.productionNote).toContain('Rotate artwork 90°')
-    expect(result.productionNote).toContain('Fit tolerance applied')
+    expect(result.ok).toBe(false)
+    expect(result.crossRollLimitIn).toBe(20)
+    expect(result.placedWidthIn).toBe(20.1)
+    expect(result.reason).toBe(
+      'Your file is 20.1 inches wide; maximum printable width is 20 inches.'
+    )
   })
 })
 
 describe('customer pricing product rules', () => {
+  it('leaves new pricing profiles unconfigured instead of inventing a rate', () => {
+    const settings = normalizeCustomerPricingSettings({})
+
+    expect(settings.businessPricePerInch).toBe(0)
+    expect(settings.statuses).toEqual([])
+    expect(applyCustomerPricingDefaultsForShop('new-shop.myshopify.com', {}).businessPricePerInch).toBe(0)
+  })
+
+  it('preserves an explicitly stored legacy fallback rate', () => {
+    const settings = normalizeCustomerPricingSettings({
+      customerPricing: {
+        businessPricePerInch: 0.27,
+        statuses: [
+          {
+            id: 'business',
+            key: 'business',
+            label: 'Business',
+            type: 'business',
+            productRules: [
+              {
+                id: 'legacy-rule',
+                productId: 'gid://shopify/Product/111',
+                pricingMode: 'measured_length',
+              },
+            ],
+          },
+        ],
+      },
+    })
+
+    expect(settings.businessPricePerInch).toBe(0.27)
+    expect(settings.statuses[0]?.pricePerInch).toBe(0.27)
+    expect(settings.statuses[0]?.productRules[0]?.pricePerInch).toBe(0.27)
+  })
+
   it('does not inject DTF Print House product rules from hardcoded product IDs', () => {
     const settings = applyCustomerPricingDefaultsForShop(DTF_PRINTHOUSE_SHOP_DOMAIN, {})
 
@@ -245,14 +305,5 @@ describe('parseSheetSizeFromTitle', () => {
     expect(normal?.billableLengthIn).toBe(240)
     expect(reversed?.billableLengthIn).toBe(240)
     expect(reversed?.totalPrice).toBe(normal?.totalPrice)
-  })
-
-  it('derives the same physical limits from reversed sheet titles', () => {
-    expect(deriveVariantBasedLimits(['12 x 22', '24 x 22', '240 x 22'])).toEqual({
-      maxWidthIn: 22,
-      maxHeightIn: 240,
-      minWidthIn: 1,
-      minHeightIn: 1,
-    })
   })
 })

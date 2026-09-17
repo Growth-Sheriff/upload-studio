@@ -13,10 +13,6 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, getCorsHeaders } from "~/lib/cors.server";
 import prisma from "~/lib/prisma.server";
-import {
-  getRuntimePricingPolicy,
-  resolveCustomerPricingModelState,
-} from "~/lib/customerPricingModel.server";
 import { resolveServerMainProductRollWidth } from "~/lib/mainProductMeasurement.server";
 import {
   applyAlphaProBuilderDefaults,
@@ -85,15 +81,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       return cachedCorsJson({ error: "Shop not found" }, request, { status: 404 });
     }
 
-    // Sheet policy (roll width, margins) is a merchant setting with per-shop
-    // defaults; nothing here depends on the shop domain any more.
-    const pricingModel = resolveCustomerPricingModelState(shopDomain, shop.settings);
-    const policy = getRuntimePricingPolicy(shopDomain, shop.settings);
-    const shopMaxWidthLimit = policy.maxSheetWidthIn;
-    const defaultArtboardMarginIn = policy.artboardMarginIn;
-    const defaultImageMarginIn = policy.imageMarginIn;
-
-
     const productGid = productId.startsWith("gid://")
       ? productId
       : `gid://shopify/Product/${productId}`;
@@ -120,16 +107,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         widthOptionName: null,
         heightOptionName: null,
         modalOptionNames: [],
-        artboardMarginIn: defaultArtboardMarginIn,
-        imageMarginIn: defaultImageMarginIn,
-        rollWidthIn: resolveServerMainProductRollWidth(null, {
-          policyExplicit: pricingModel.policyExplicit,
-          maxSheetWidthIn: shopMaxWidthLimit,
-        }),
-        maxWidthIn: shopMaxWidthLimit,
-        maxHeightIn: 35.75,
-        minWidthIn: 1,
-        minHeightIn: 1,
+        rollWidthIn: resolveServerMainProductRollWidth(null),
         colorProfile: "CMYK",
         maxFileSizeMb: 500,
         supportedFormats: ["PNG","JPG","JPEG","SVG","PSD","AI","EPS","PDF"],
@@ -162,13 +140,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
 
     const builderConfig = (config.builderConfig as Record<string, any>) || {};
-    const storedArtboardMargin = Number(builderConfig.artboardMarginIn);
-    const storedImageMargin = Number(builderConfig.imageMarginIn);
-    const storedMaxWidth = Number(builderConfig.maxWidthIn);
-    const rollWidthIn = resolveServerMainProductRollWidth(builderConfig, {
-      policyExplicit: pricingModel.policyExplicit,
-      maxSheetWidthIn: shopMaxWidthLimit,
-    });
+    const rollWidthIn = resolveServerMainProductRollWidth(builderConfig);
 
 
     const builderConfigResponse = applyAlphaProBuilderDefaults(shopDomain, productGid, {
@@ -177,28 +149,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       widthOptionName: builderConfig.widthOptionName ?? null,
       heightOptionName: builderConfig.heightOptionName ?? null,
       modalOptionNames: Array.isArray(builderConfig.modalOptionNames) ? builderConfig.modalOptionNames : [],
-      artboardMarginIn:
-        Number.isFinite(storedArtboardMargin) && storedArtboardMargin >= 0
-          ? pricingModel.policyExplicit
-            ? Math.max(defaultArtboardMarginIn, storedArtboardMargin)
-            : storedArtboardMargin
-          : defaultArtboardMarginIn,
-      imageMarginIn:
-        Number.isFinite(storedImageMargin) && storedImageMargin >= 0
-          ? pricingModel.policyExplicit
-            ? Math.max(defaultImageMarginIn, storedImageMargin)
-            : storedImageMargin
-          : defaultImageMarginIn,
       rollWidthIn,
-      maxWidthIn:
-        Number.isFinite(storedMaxWidth) && storedMaxWidth > 0
-          ? pricingModel.policyExplicit
-            ? Math.min(storedMaxWidth, shopMaxWidthLimit)
-            : storedMaxWidth
-          : shopMaxWidthLimit,
-      maxHeightIn: builderConfig.maxHeightIn ?? 35.75,
-      minWidthIn: builderConfig.minWidthIn ?? 1,
-      minHeightIn: builderConfig.minHeightIn ?? 1,
       colorProfile: builderConfig.colorProfile ?? "CMYK",
       maxFileSizeMb: builderConfig.maxFileSizeMb ?? 500,
       supportedFormats: builderConfig.supportedFormats ?? ["PNG","JPG","JPEG","SVG","PSD","AI","EPS","PDF"],

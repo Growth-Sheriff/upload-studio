@@ -2,6 +2,7 @@ import type { ActionFunctionArgs } from '@remix-run/node'
 import { json } from '@remix-run/node'
 import { normalizeCustomerId } from '~/lib/customerPricing.server'
 import {
+  HISTORICAL_UPLOAD_REUPLOAD_REQUIRED,
   prepareCustomPricingJobQuote,
 } from '~/lib/customerPricingCheckout.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
@@ -149,10 +150,12 @@ function errorStatusFromMessage(message: string): number {
   if (message === 'Product not found') return 404
   if (message === 'Upload measurement is not ready') return 409
   if (message === 'Upload is blocked by preflight checks') return 422
+  if (message === HISTORICAL_UPLOAD_REUPLOAD_REQUIRED) return 422
   if (message === 'Upload does not belong to the logged in customer') return 403
   if (message === 'Custom pricing is not active for this customer and product') return 403
   if (message === 'Upload product is missing') return 422
   if (message.includes('No product variant can fit')) return 422
+  if (message.includes('maximum printable width')) return 422
   if (message.includes('outside product limits')) return 422
   if (message.includes('exceeds')) return 422
   if (message.includes('must be at least')) return 422
@@ -216,37 +219,6 @@ export async function action({ request }: ActionFunctionArgs) {
         ? 'Business custom checkout'
         : 'VIP custom checkout'
   const noteUploadIds = preparedItems.map((item) => item.upload.id).join(', ')
-  const productionInstructions = preparedItems
-    .map((item) => {
-      const sheet = String(
-        item.resolvedVariant?.selectedSheetLabel ||
-          item.resolvedVariant?.selectedVariantTitle ||
-          (item.pricingContext.pricingMode === 'measured_length' ? 'Exact measured length' : '')
-      ).trim()
-      const productionNote = String(
-        item.productionNote || item.resolvedVariant?.productionNote || ''
-      ).trim()
-      const requestedCopies = Math.max(1, item.requestedQuantity)
-      const sheetsNeeded = Math.max(
-        1,
-        Number(item.resolvedVariant?.sheetsNeeded || item.quote.sheetsNeeded) || requestedCopies
-      )
-      const designsPerSheet = Math.max(
-        1,
-        Number(item.resolvedVariant?.designsPerSheet) || 1
-      )
-      const instruction = [
-        sheet,
-        productionNote,
-        `${requestedCopies} requested cop${requestedCopies === 1 ? 'y' : 'ies'}`,
-        `${sheetsNeeded} sheet${sheetsNeeded === 1 ? '' : 's'}`,
-        `${designsPerSheet} design${designsPerSheet === 1 ? '' : 's'} per sheet`,
-      ]
-        .filter(Boolean)
-        .join(' · ')
-      return instruction ? `${item.upload.id}: ${instruction}` : ''
-    })
-    .filter(Boolean)
   const customerGid = toCustomerGid(loggedInCustomerId || firstItem.pricingContext.customerId)
 
   const draftOrderInput: Record<string, unknown> = {
@@ -261,9 +233,6 @@ export async function action({ request }: ActionFunctionArgs) {
       : {}),
     note:
       `Custom pricing checkout for upload ${noteUploadIds}` +
-      (productionInstructions.length
-        ? `\nProduction: ${productionInstructions.join(' | ')}`
-        : '') +
       (checkoutIntent ? `\nIntent: ${checkoutIntent}` : '') +
       (discountCodes.length ? `\nDiscount code(s): ${discountCodes.join(', ')}` : '\nDiscounts: eligible automatic Shopify discounts accepted') +
       (customerNote ? `\nCustomer note: ${customerNote}` : ''),
@@ -345,19 +314,16 @@ export async function action({ request }: ActionFunctionArgs) {
                   item.resolvedVariant?.selectedVariantTitle ||
                   ''
               ).trim()
-        const productionNote = String(
-          item.productionNote || item.resolvedVariant?.productionNote || ''
-        ).trim()
         return prisma.upload.update({
           where: { id: item.upload.id },
           data: {
+            quantitySemantics: 'whole_sheet',
             requestedCopies: Math.max(1, item.requestedQuantity),
-            sheetsNeeded:
-              Number(item.resolvedVariant?.sheetsNeeded || item.quote.sheetsNeeded || 1) || 1,
-            designsPerSheet: Number(item.resolvedVariant?.designsPerSheet || 0) || null,
+            sheetsNeeded: Math.max(1, item.requestedQuantity),
+            // Compatibility column: one uploaded file is always one sheet.
+            designsPerSheet: 1,
             cartVariantId: item.checkoutVariantId || null,
-            cartSheetLabel:
-              [sheetLabel, productionNote].filter(Boolean).join(' · ') || null,
+            cartSheetLabel: sheetLabel || null,
           },
         })
       })
@@ -393,9 +359,7 @@ export async function action({ request }: ActionFunctionArgs) {
         selectedVariantTitle:
           item.resolvedVariant?.selectedVariantTitle || item.quote.sheetVariantTitle || null,
         selectedSheetLabel: item.resolvedVariant?.selectedSheetLabel || null,
-        sheetsNeeded: item.resolvedVariant?.sheetsNeeded || item.quote.sheetsNeeded || null,
-        designsPerSheet: item.resolvedVariant?.designsPerSheet || null,
-        productionNote: item.productionNote,
+        wholeSheetCopies: item.requestedQuantity,
       })),
       quote: {
         pageWidthIn: firstItem.quote.pageWidthIn,
@@ -409,7 +373,7 @@ export async function action({ request }: ActionFunctionArgs) {
         selectedVariantTitle:
           firstItem.resolvedVariant?.selectedVariantTitle || firstItem.quote.sheetVariantTitle || null,
         selectedSheetLabel: firstItem.resolvedVariant?.selectedSheetLabel || null,
-        sheetsNeeded: firstItem.resolvedVariant?.sheetsNeeded || firstItem.quote.sheetsNeeded || null,
+        wholeSheetCopies: firstItem.requestedQuantity,
       },
       customer: {
         customerId: firstItem.pricingContext.customerId,

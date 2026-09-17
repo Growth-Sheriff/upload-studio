@@ -6,11 +6,12 @@
 // the authoritative answer after measurement.
 
 import { shopifyGraphQL } from '~/lib/shopify.server'
-import { resolveCustomerPricingModelState } from '~/lib/customerPricingModel.server'
 import {
+  getPrintableWidthFailure,
   resolveSheetVariant,
   variantIdsEqual,
   type BuilderResolveConfig,
+  type PrintableWidthFailure,
   type ProductOptionDef,
   type ProductVariantDef,
 } from '~/lib/dtfSheetResolver.server'
@@ -60,12 +61,6 @@ const PRODUCT_VARIANTS_QUERY = `
   }
 `
 
-export const DEFAULT_RESOLVE_CONFIG = {
-  artboardMarginIn: 0,
-  imageMarginIn: 0,
-  maxWidthIn: 22,
-}
-
 interface ProductQueryResponse {
   product: {
     id: string
@@ -105,12 +100,6 @@ const productResolveInFlight = new Map<string, Promise<ProductResolveData>>()
 export function parsePositiveNumber(value: unknown): number | null {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed <= 0) return null
-  return parsed
-}
-
-function parseNonNegativeNumber(value: unknown): number | null {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < 0) return null
   return parsed
 }
 
@@ -264,48 +253,30 @@ export function resolveLinearInchVariant({
   quantity,
   variants,
   selectedVariantId,
-  maxCrossRollWidthIn,
-  maxDesignWidthIn,
-  artboardMarginIn,
-  fitToleranceIn,
+  printableWidthIn,
 }: {
   dimensions: UploadDimensions
   quantity: number
   variants: ProductVariantDef[]
   selectedVariantId?: string | null
-  maxCrossRollWidthIn?: number | null
-  maxDesignWidthIn?: number | null
-  artboardMarginIn?: number | null
-  fitToleranceIn?: number | null
+  printableWidthIn?: number | null
 }) {
   const variant = findUnitVariant(variants, selectedVariantId)
   if (!variant) return null
 
   const pageWidthIn = Math.min(dimensions.widthIn, dimensions.heightIn)
   const pageLengthIn = Math.max(dimensions.widthIn, dimensions.heightIn)
-  const configuredCrossRollWidth = Number(maxCrossRollWidthIn)
-  const configuredDesignWidth = Number(maxDesignWidthIn)
-  const sheetMargin = Math.max(0, Number(artboardMarginIn) || 0)
-  const fitTolerance = Math.max(0, Number(fitToleranceIn) || 0)
-  const physicalUsableCrossRollWidth =
-    Number.isFinite(configuredCrossRollWidth) && configuredCrossRollWidth > 0
-      ? configuredCrossRollWidth - 2 * sheetMargin
-      : null
+  const configuredCrossRollWidth = Number(printableWidthIn)
   const usableCrossRollWidth =
-    Number.isFinite(configuredDesignWidth) && configuredDesignWidth > 0
-      ? physicalUsableCrossRollWidth == null
-        ? configuredDesignWidth
-        : Math.min(physicalUsableCrossRollWidth, configuredDesignWidth)
-      : physicalUsableCrossRollWidth
+    Number.isFinite(configuredCrossRollWidth) && configuredCrossRollWidth > 0
+      ? configuredCrossRollWidth
+      : null
   if (
     usableCrossRollWidth != null &&
-    (usableCrossRollWidth <= 0 || pageWidthIn > usableCrossRollWidth + fitTolerance)
+    (usableCrossRollWidth <= 0 || pageWidthIn > usableCrossRollWidth)
   ) {
     return null
   }
-  const toleranceApplied =
-    usableCrossRollWidth != null && pageWidthIn > usableCrossRollWidth
-  const rotationApplied = dimensions.widthIn > dimensions.heightIn
   const requestedQuantity = Math.max(1, Math.floor(quantity))
   const billableLengthIn = Number((pageLengthIn * requestedQuantity).toFixed(2))
   const cartQuantity = Math.max(1, Math.ceil(billableLengthIn))
@@ -324,18 +295,8 @@ export function resolveLinearInchVariant({
     heightIn: dimensions.heightIn,
     pageWidthIn,
     pageLengthIn,
-    placedWidthIn:
-      toleranceApplied && usableCrossRollWidth != null ? usableCrossRollWidth : pageWidthIn,
+    placedWidthIn: pageWidthIn,
     placedHeightIn: pageLengthIn,
-    rotationApplied,
-    rotationRequired: rotationApplied,
-    toleranceApplied,
-    productionNote: [
-      rotationApplied ? 'Rotate artwork 90°' : '',
-      toleranceApplied && usableCrossRollWidth != null
-        ? `Fit tolerance applied at ${usableCrossRollWidth.toFixed(2)}\" cross-roll`
-        : '',
-    ].filter(Boolean).join('; ') || null,
     billableLengthIn,
     cartQuantity,
     pricingMode: 'linear_inches',
@@ -451,18 +412,20 @@ export interface ResolveForMetadataInput {
   rawMetadata: UploadLifecycleMetadata | null
   quantity: number
   selectedVariantId: string | null
+  /** Manual/reorder surfaces choose a commercial variant themselves. When
+   * true, fit is validated against that exact variant instead of silently
+   * substituting a different one. */
+  lockSelectedVariant?: boolean
   customerId?: string | number | null
   customerEmail?: string | null
   customerName?: string | null
   measurementPolicy?: string | null
   measurementBasis?: 'full_page' | 'artwork_bounds' | null
   rollWidthIn?: number | string | null
-  maxUploadWidth?: number | string | null
 }
 
 export type EffectiveResolveConfig = BuilderResolveConfig & {
-  maxWidthIn: number
-  fitToleranceIn: number
+  rollWidthIn: number
   pricingMode?: string
   volumeDiscountTierUnit?: string
 }
@@ -475,6 +438,7 @@ export type ResolveForMetadataResult =
       dimensions: UploadDimensions
       canonicalMetadata: UploadLifecycleMetadata
       config: EffectiveResolveConfig
+      failure: PrintableWidthFailure | null
     }
   | {
       kind: 'ok'
@@ -494,11 +458,7 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
   if (!productResolveData.productData.product) return { kind: 'product_not_found' }
 
   const baseBuilderConfig = (input.builderConfig || {}) as Record<string, unknown>
-  const pricingModel = resolveCustomerPricingModelState(shopDomain, shop.settings)
-  const policy = pricingModel.policy
-  const measurementBasis =
-    input.measurementBasis ||
-    (pricingModel.policyExplicit ? policy.measurementBasis : 'full_page')
+  const measurementBasis = 'full_page'
   const appliedBuilderConfig = applyAlphaProBuilderDefaults(shopDomain, productId, baseBuilderConfig, shop.settings)
   const customerOffer = buildAlphaProCustomerOffer({
     shopDomain,
@@ -511,29 +471,11 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
   const rawBuilderConfig = (customerOffer
     ? { ...appliedBuilderConfig, customerOffer }
     : appliedBuilderConfig) as Record<string, unknown>
-  const shopMaxWidthLimit = policy.maxSheetWidthIn
   const useMainPolicy = shouldUseMainProductMeasurementPolicy(input.measurementPolicy)
-  const sheetWidthLimits = [
-    ...(useMainPolicy ? [getMainProductRollWidth(input.rollWidthIn)] : []),
-    ...(pricingModel.policyExplicit ? [shopMaxWidthLimit] : []),
-  ].filter((value): value is number => Number.isFinite(value) && value > 0)
-  const maxSheetWidthIn = sheetWidthLimits.length ? Math.min(...sheetWidthLimits) : null
-  const builderMaxWidth = parsePositiveNumber(rawBuilderConfig.maxWidthIn)
-  const requestMaxWidth = parsePositiveNumber(input.maxUploadWidth)
-  const configuredDesignWidths = [
-    builderMaxWidth,
-    requestMaxWidth,
-    ...(pricingModel.policyExplicit ? [shopMaxWidthLimit] : []),
-  ].filter(
-    (value): value is number => value != null
-  )
-  const maxDesignWidthIn = configuredDesignWidths.length
-    ? Math.min(...configuredDesignWidths)
-    : pricingModel.policyExplicit
-      ? shopMaxWidthLimit
-      : null
-  const configuredArtboardMargin = parseNonNegativeNumber(rawBuilderConfig.artboardMarginIn)
-  const configuredImageMargin = parseNonNegativeNumber(rawBuilderConfig.imageMarginIn)
+  // The visible per-product printable roll width is the only physical fit
+  // limit. Legacy policy caps, design limits, margins and request hints are
+  // retained only as stored compatibility data and never affect price or fit.
+  const printableWidthIn = getMainProductRollWidth(input.rollWidthIn)
   const effectiveConfig: EffectiveResolveConfig = {
     sheetOptionName:
       typeof rawBuilderConfig.sheetOptionName === 'string' ? rawBuilderConfig.sheetOptionName : null,
@@ -544,22 +486,8 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
     modalOptionNames: Array.isArray(rawBuilderConfig.modalOptionNames)
       ? rawBuilderConfig.modalOptionNames.map((value) => String(value || '').trim()).filter(Boolean)
       : [],
-    artboardMarginIn: pricingModel.policyExplicit
-      ? Math.max(configuredArtboardMargin ?? 0, policy.artboardMarginIn)
-      : configuredArtboardMargin ?? DEFAULT_RESOLVE_CONFIG.artboardMarginIn,
-    imageMarginIn: pricingModel.policyExplicit
-      ? Math.max(configuredImageMargin ?? 0, policy.imageMarginIn)
-      : configuredImageMargin ?? DEFAULT_RESOLVE_CONFIG.imageMarginIn,
-    fitToleranceIn: policy.fitToleranceIn,
-    selectionStrategy:
-      policy.sheetSelection !== 'block_default'
-        ? policy.sheetSelection
-        : useMainPolicy
-          ? 'smallest_fitting_sheet'
-          : null,
-    maxDesignWidthIn,
-    maxSheetWidthIn,
-    maxWidthIn: maxDesignWidthIn || shopMaxWidthLimit || DEFAULT_RESOLVE_CONFIG.maxWidthIn,
+    printableWidthIn,
+    rollWidthIn: printableWidthIn,
   }
 
   const optionDefs = productResolveData.optionDefs
@@ -584,10 +512,7 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
       quantity,
       variants,
       selectedVariantId: input.selectedVariantId,
-      maxCrossRollWidthIn: effectiveConfig.maxSheetWidthIn || effectiveConfig.maxWidthIn,
-      maxDesignWidthIn: effectiveConfig.maxDesignWidthIn,
-      artboardMarginIn: effectiveConfig.artboardMarginIn,
-      fitToleranceIn: effectiveConfig.fitToleranceIn,
+      printableWidthIn: effectiveConfig.printableWidthIn,
     })
     if (!linear) {
       return {
@@ -595,6 +520,13 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
         dimensions,
         canonicalMetadata: resolvedMetadata,
         config: effectiveConfig,
+        failure: getPrintableWidthFailure({
+          widthIn: dimensions.widthIn,
+          heightIn: dimensions.heightIn,
+          config: {
+            printableWidthIn: effectiveConfig.printableWidthIn,
+          },
+        }),
       }
     }
     return {
@@ -607,11 +539,14 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
     }
   }
 
+  const sheetVariants = input.lockSelectedVariant
+    ? variants.filter((variant) => variantIdsEqual(variant.id, input.selectedVariantId))
+    : variants
   const resolution = resolveSheetVariant({
     widthIn: dimensions.widthIn,
     heightIn: dimensions.heightIn,
     quantity,
-    variants,
+    variants: sheetVariants,
     optionDefs,
     selectedVariantId: input.selectedVariantId,
     config: effectiveConfig,
@@ -622,6 +557,11 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
       dimensions,
       canonicalMetadata: resolvedMetadata,
       config: effectiveConfig,
+      failure: getPrintableWidthFailure({
+        widthIn: dimensions.widthIn,
+        heightIn: dimensions.heightIn,
+        config: effectiveConfig,
+      }),
     }
   }
 
@@ -658,7 +598,7 @@ export function metadataFromProbe(probe: {
   let sizingSource = 'document_dpi'
   if (!(dpi > 0)) {
     const shortEdgeIn = Math.min(widthPx, heightPx) / ADOBE_DEFAULT_DPI
-    if (shortEdgeIn <= rollWidthIn + 0.5) {
+    if (shortEdgeIn <= rollWidthIn) {
       dpi = ADOBE_DEFAULT_DPI
       sizingSource = 'adobe_default_dpi'
     } else {

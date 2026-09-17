@@ -66,33 +66,25 @@ describe('model derivation keeps legacy tenants on their engine', () => {
     expect(state.model).toBe('status_rates')
     expect(state.policy).toEqual({
       measurementBasis: 'full_page',
-      sheetSelection: 'block_default',
-      fitToleranceIn: 0.5,
-      maxSheetWidthIn: 22.5,
-      artboardMarginIn: 0,
-      imageMarginIn: 0,
     })
   })
 
   it('a fresh shop is off with the default policy', () => {
     expect(deriveCustomerPricingModel(OTHER, {})).toBe('off')
-    expect(getPricingPolicy(OTHER, {}).measurementBasis).toBe('artwork_bounds')
-    expect(getPricingPolicy(OTHER, {}).maxSheetWidthIn).toBe(22)
+    expect(getPricingPolicy(OTHER, {})).toEqual({ measurementBasis: 'full_page' })
   })
 
-  it('does not opt a legacy tenant into artwork-bounds measurement until policy is saved', () => {
-    expect(getPricingPolicy(ALPHA, alphaSettings).measurementBasis).toBe('artwork_bounds')
+  it('keeps full-page runtime measurement even when historical settings say artwork bounds', () => {
+    expect(getPricingPolicy(ALPHA, alphaSettings).measurementBasis).toBe('full_page')
     expect(getRuntimeMeasurementBasis(ALPHA, alphaSettings)).toBe('full_page')
     expect(
       getRuntimeMeasurementBasis(ALPHA, {
         ...alphaSettings,
         customerPricing: { policy: { measurementBasis: 'artwork_bounds' } },
       })
-    ).toBe('artwork_bounds')
-    expect(getRuntimePricingPolicy(ALPHA, alphaSettings)).toMatchObject({
+    ).toBe('full_page')
+    expect(getRuntimePricingPolicy(ALPHA, alphaSettings)).toEqual({
       measurementBasis: 'full_page',
-      artboardMarginIn: 0,
-      imageMarginIn: 0,
     })
   })
 
@@ -102,10 +94,8 @@ describe('model derivation keeps legacy tenants on their engine', () => {
     })
 
     expect(state.policyExplicit).toBe(false)
-    expect(getRuntimePricingPolicy(OTHER, { customerPricing: { policy: [] } })).toMatchObject({
+    expect(getRuntimePricingPolicy(OTHER, { customerPricing: { policy: [] } })).toEqual({
       measurementBasis: 'full_page',
-      artboardMarginIn: 0,
-      imageMarginIn: 0,
     })
   })
 
@@ -119,10 +109,10 @@ describe('model derivation keeps legacy tenants on their engine', () => {
 
   it('normalised status settings round-trip model, priority and policy', () => {
     const normalized = normalizeCustomerPricingSettings({
-      customerPricing: { model: 'status_rates', priority: 'status_first', policy: { fitToleranceIn: 0.25 }, tagRules: [{ tag: 'Wholesale', statusKey: 'business' }] },
+      customerPricing: { model: 'status_rates', priority: 'status_first', policy: { measurementBasis: 'full_page' }, tagRules: [{ tag: 'Wholesale', statusKey: 'business' }] },
     })
     expect(normalized.model).toBe('status_rates')
-    expect(normalized.policy).toEqual({ fitToleranceIn: 0.25 })
+    expect(normalized.policy).toEqual({ measurementBasis: 'full_page' })
     expect(normalized.tagRules).toEqual([{ tag: 'wholesale', statusKey: 'business' }])
   })
 })

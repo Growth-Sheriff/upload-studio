@@ -9,7 +9,6 @@ import {
 } from '~/lib/uploadLifecycle.server'
 import {
   getRuntimeMeasurementBasis,
-  resolveCustomerPricingModelState,
 } from '~/lib/customerPricingModel.server'
 import {
   MAIN_PRODUCT_MEASUREMENT_POLICY,
@@ -37,7 +36,6 @@ interface ResolveRequestBody {
   uploadId?: string
   quantity?: number | string
   selectedVariantId?: string | number | null
-  maxUploadWidth?: number | string | null
   measurementPolicy?: string | null
   rollWidthIn?: number | string | null
   customerId?: string | number | null
@@ -141,11 +139,7 @@ export async function action({ request }: ActionFunctionArgs) {
       source: 'api.upload.resolve-product',
     })
     const builderConfig = (productConfig?.builderConfig || null) as Record<string, unknown> | null
-    const pricingModel = resolveCustomerPricingModelState(shopDomain, shop.settings)
-    const configuredRollWidth = resolveServerMainProductRollWidth(builderConfig, {
-      policyExplicit: pricingModel.policyExplicit,
-      maxSheetWidthIn: pricingModel.policy.maxSheetWidthIn,
-    })
+    const configuredRollWidth = resolveServerMainProductRollWidth(builderConfig)
     const result = await resolveForMetadata({
       shopDomain,
       shop,
@@ -161,7 +155,6 @@ export async function action({ request }: ActionFunctionArgs) {
         getRuntimeMeasurementBasis(shopDomain, shop.settings)
       ),
       rollWidthIn: configuredRollWidth,
-      maxUploadWidth: configuredRollWidth,
     })
 
     if (result.kind === 'product_not_found') {
@@ -183,7 +176,10 @@ export async function action({ request }: ActionFunctionArgs) {
     if (result.kind === 'no_fit') {
       return corsJson(
         {
-          error: 'No product variant can fit this upload with the current quantity and available sheet sizes.',
+          error:
+            result.failure?.message ||
+            'No product variant can fit this upload with the available sheet sizes.',
+          failure: result.failure,
           upload: uploadPayload,
           config: result.config,
         },

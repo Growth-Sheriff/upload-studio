@@ -63,11 +63,7 @@ export function getMainProductRollWidth(value: unknown): number {
 }
 
 export function resolveServerMainProductRollWidth(
-  builderConfig: Record<string, unknown> | null | undefined,
-  options: {
-    policyExplicit?: boolean
-    maxSheetWidthIn?: number | string | null
-  } = {}
+  builderConfig: Record<string, unknown> | null | undefined
 ): number {
   const configured = parseValidRollWidth(builderConfig?.rollWidthIn)
   // rollWidthIn is the explicit, purpose-built setting. Before that field
@@ -81,11 +77,7 @@ export function resolveServerMainProductRollWidth(
       ? Math.min(legacyMaxWidth, legacyMaxHeight)
       : legacyMaxWidth || legacyMaxHeight
   const legacyWidth = configured || legacyConfiguredWidth || DEFAULT_MAIN_PRODUCT_ROLL_WIDTH_IN
-  const policyLimit = parseValidRollWidth(options.maxSheetWidthIn)
-
-  return options.policyExplicit && policyLimit > 0
-    ? Math.min(legacyWidth, policyLimit)
-    : legacyWidth
+  return legacyWidth
 }
 
 function parseSheetSize(value: unknown): RollWidthSheetSize | null {

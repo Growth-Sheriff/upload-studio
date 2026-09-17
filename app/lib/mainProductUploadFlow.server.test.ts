@@ -82,8 +82,7 @@ function resolveMainProductUpload({
     selectedVariantId: '12',
     config: {
       sheetOptionName: 'Size',
-      fitToleranceIn: 0.5,
-      selectionStrategy: 'smallest_fitting_sheet',
+      printableWidthIn: 22,
     },
   })
 
@@ -91,7 +90,7 @@ function resolveMainProductUpload({
 }
 
 describe('main product upload measurement flow', () => {
-  it('routes Annette-style 6600x3600 @ 300 DPI to 22x12', () => {
+  it('routes Annette-style 6600x3600 @ 300 DPI to 22x24 after orientation normalization', () => {
     const { measurement, resolution } = resolveMainProductUpload({
       widthPx: 6600,
       heightPx: 3600,
@@ -102,7 +101,7 @@ describe('main product upload measurement flow', () => {
     expect(measurement.widthIn).toBe(22)
     expect(measurement.heightIn).toBe(12)
     expect(measurement.sizingSource).toBe('document_dpi')
-    expect(resolution?.selectedSheetLabel).toBe('22 x 12')
+    expect(resolution?.selectedSheetLabel).toBe('22 x 24')
   })
 
   it('routes metreicin-style 6485x2605 @ 118.4148 DPI to 22x60', () => {
@@ -119,7 +118,7 @@ describe('main product upload measurement flow', () => {
     expect(resolution?.selectedSheetLabel).toBe('22 x 60')
   })
 
-  it('routes Genuity-style 1494x668 no-DPI PNG to 22x12', () => {
+  it('routes Genuity-style 1494x668 no-DPI PNG to 22x24 by normalized length', () => {
     const { measurement, resolution } = resolveMainProductUpload({
       widthPx: 1494,
       heightPx: 668,
@@ -128,7 +127,7 @@ describe('main product upload measurement flow', () => {
     expect(measurement.widthIn).toBe(20.75)
     expect(measurement.heightIn).toBe(9.28)
     expect(measurement.sizingSource).toBe('adobe_default_dpi')
-    expect(resolution?.selectedSheetLabel).toBe('22 x 12')
+    expect(resolution?.selectedSheetLabel).toBe('22 x 24')
   })
 
   it('keeps large no-DPI gang sheets roll-anchored and routes to 22x60', () => {

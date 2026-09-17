@@ -63,17 +63,8 @@ export type {
 }
 
 export interface CustomerPricingPolicy {
-  /** What the customer is billed for: the whole uploaded page or only the artwork bounds. */
+  /** Historical stored basis used only when interpreting existing order data. */
   measurementBasis: MeasurementBasis
-  /** Which sheet variant wins when several fit. `block_default` keeps each block's own rule. */
-  sheetSelection: SheetSelection
-  /** Extra inches an artwork may exceed a sheet by and still count as fitting. */
-  fitToleranceIn: number
-  /** Widest sheet the shop prints (roll width). */
-  maxSheetWidthIn: number
-  /** Safe margins used when nesting designs onto a sheet. */
-  artboardMarginIn: number
-  imageMarginIn: number
 }
 
 export interface VolumeProgramProduct {
@@ -150,21 +141,11 @@ export interface EffectivePricing {
 }
 
 const DEFAULT_POLICY: CustomerPricingPolicy = {
-  measurementBasis: 'artwork_bounds',
-  sheetSelection: 'block_default',
-  fitToleranceIn: 0,
-  maxSheetWidthIn: 22,
-  artboardMarginIn: 0.125,
-  imageMarginIn: 0.125,
+  measurementBasis: 'full_page',
 }
 
 const FULL_PAGE_POLICY: CustomerPricingPolicy = {
   measurementBasis: 'full_page',
-  sheetSelection: 'block_default',
-  fitToleranceIn: 0.5,
-  maxSheetWidthIn: 22.5,
-  artboardMarginIn: 0,
-  imageMarginIn: 0,
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -340,17 +321,8 @@ export function derivePolicyDefaults(shopDomain: string | null | undefined): Cus
 export function normalizePolicy(rawPolicy: unknown, defaults: CustomerPricingPolicy): CustomerPricingPolicy {
   const raw = asRecord(rawPolicy)
   const basis = text(raw.measurementBasis)
-  const selection = text(raw.sheetSelection)
   return {
     measurementBasis: basis === 'full_page' || basis === 'artwork_bounds' ? (basis as MeasurementBasis) : defaults.measurementBasis,
-    sheetSelection:
-      selection === 'lowest_total_cost' || selection === 'smallest_fitting_sheet' || selection === 'block_default'
-        ? (selection as SheetSelection)
-        : defaults.sheetSelection,
-    fitToleranceIn: raw.fitToleranceIn == null || text(raw.fitToleranceIn) === '' ? defaults.fitToleranceIn : Math.min(5, num(raw.fitToleranceIn, defaults.fitToleranceIn)),
-    maxSheetWidthIn: num(raw.maxSheetWidthIn, 0) > 0 ? num(raw.maxSheetWidthIn) : defaults.maxSheetWidthIn,
-    artboardMarginIn: raw.artboardMarginIn == null || text(raw.artboardMarginIn) === '' ? defaults.artboardMarginIn : Math.min(2, num(raw.artboardMarginIn, defaults.artboardMarginIn)),
-    imageMarginIn: raw.imageMarginIn == null || text(raw.imageMarginIn) === '' ? defaults.imageMarginIn : Math.min(2, num(raw.imageMarginIn, defaults.imageMarginIn)),
   }
 }
 
@@ -409,11 +381,10 @@ export function getPricingPolicy(shopDomain: string | null | undefined, rawSetti
  * Only an explicitly saved policy opts a tenant into trim-based billing.
  */
 export function getRuntimeMeasurementBasis(
-  shopDomain: string | null | undefined,
-  rawSettings: unknown
+  _shopDomain: string | null | undefined,
+  _rawSettings: unknown
 ): MeasurementBasis {
-  const state = resolveCustomerPricingModelState(shopDomain, rawSettings)
-  return state.policyExplicit ? state.policy.measurementBasis : 'full_page'
+  return 'full_page'
 }
 
 /** The policy shape a legacy tenant must see before its first explicit save.
@@ -423,13 +394,10 @@ export function getRuntimePricingPolicy(
   shopDomain: string | null | undefined,
   rawSettings: unknown
 ): CustomerPricingPolicy {
-  const state = resolveCustomerPricingModelState(shopDomain, rawSettings)
-  if (state.policyExplicit) return state.policy
+  void shopDomain
+  void rawSettings
   return {
-    ...state.policy,
     measurementBasis: 'full_page',
-    artboardMarginIn: 0,
-    imageMarginIn: 0,
   }
 }
 

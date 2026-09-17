@@ -2,6 +2,7 @@ import type { ActionFunctionArgs } from '@remix-run/node'
 import { json } from '@remix-run/node'
 import { normalizeCustomerId } from '~/lib/customerPricing.server'
 import {
+  HISTORICAL_UPLOAD_REUPLOAD_REQUIRED,
   prepareCustomPricingJobQuote,
   prepareCustomPricingQuote,
 } from '~/lib/customerPricingCheckout.server'
@@ -86,10 +87,12 @@ function errorStatusFromMessage(message: string): number {
   if (message === 'Product not found') return 404
   if (message === 'Upload measurement is not ready') return 409
   if (message === 'Upload is blocked by preflight checks') return 422
+  if (message === HISTORICAL_UPLOAD_REUPLOAD_REQUIRED) return 422
   if (message === 'Upload does not belong to the logged in customer') return 403
   if (message === 'Custom pricing is not active for this customer and product') return 403
   if (message === 'Upload product is missing') return 422
   if (message.includes('No product variant can fit')) return 422
+  if (message.includes('maximum printable width')) return 422
   if (message.includes('outside product limits')) return 422
   if (message.includes('exceeds')) return 422
   if (message.includes('must be at least')) return 422
@@ -176,12 +179,7 @@ export async function action({ request }: ActionFunctionArgs) {
       selectedVariantTitle:
         firstItem.resolvedVariant?.selectedVariantTitle || firstItem.quote.sheetVariantTitle || null,
       selectedSheetLabel: firstItem.resolvedVariant?.selectedSheetLabel || null,
-      sheetsNeeded:
-        firstItem.resolvedVariant?.sheetsNeeded ||
-        firstItem.quote.sheetsNeeded ||
-        firstItem.requestedQuantity,
-      designsPerSheet: firstItem.resolvedVariant?.designsPerSheet || null,
-      productionNote: firstItem.productionNote,
+      wholeSheetCopies: firstItem.requestedQuantity,
       totalRequestedQuantity,
       items: preparedItems.map((item) => ({
         uploadId: item.upload.id,
@@ -204,10 +202,7 @@ export async function action({ request }: ActionFunctionArgs) {
         selectedVariantTitle:
           item.resolvedVariant?.selectedVariantTitle || item.quote.sheetVariantTitle || null,
         selectedSheetLabel: item.resolvedVariant?.selectedSheetLabel || null,
-        sheetsNeeded:
-          item.resolvedVariant?.sheetsNeeded || item.quote.sheetsNeeded || item.requestedQuantity,
-        designsPerSheet: item.resolvedVariant?.designsPerSheet || null,
-        productionNote: item.productionNote,
+        wholeSheetCopies: item.requestedQuantity,
         measurement: {
           dpi: item.measurement.dpi,
           effectiveDpi: item.measurement.effectiveDpi,
@@ -234,11 +229,7 @@ export async function action({ request }: ActionFunctionArgs) {
         selectedVariantTitle:
           firstItem.resolvedVariant?.selectedVariantTitle || firstItem.quote.sheetVariantTitle || null,
         selectedSheetLabel: firstItem.resolvedVariant?.selectedSheetLabel || null,
-        sheetsNeeded:
-          firstItem.resolvedVariant?.sheetsNeeded ||
-          firstItem.quote.sheetsNeeded ||
-          firstItem.requestedQuantity,
-        designsPerSheet: firstItem.resolvedVariant?.designsPerSheet || null,
+        wholeSheetCopies: firstItem.requestedQuantity,
         totalRequestedQuantity,
         items: preparedItems.map((item) => ({
           uploadId: item.upload.id,
@@ -254,9 +245,7 @@ export async function action({ request }: ActionFunctionArgs) {
           selectedVariantTitle:
             item.resolvedVariant?.selectedVariantTitle || item.quote.sheetVariantTitle || null,
           selectedSheetLabel: item.resolvedVariant?.selectedSheetLabel || null,
-          sheetsNeeded:
-            item.resolvedVariant?.sheetsNeeded || item.quote.sheetsNeeded || item.requestedQuantity,
-          designsPerSheet: item.resolvedVariant?.designsPerSheet || null,
+          wholeSheetCopies: item.requestedQuantity,
         })),
       },
     })

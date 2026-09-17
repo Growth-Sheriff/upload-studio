@@ -91,7 +91,7 @@ describe('applyMainProductMeasurementPolicy', () => {
     expect(result?.sizingSource).toBe('adobe_default_dpi')
   })
 
-  it('keeps Genuity-style no-DPI dimensions small enough to select 22x12', () => {
+  it('uses Genuity-style normalized length to select 22x24', () => {
     const variants: ProductVariantDef[] = [
       {
         id: '12',
@@ -104,6 +104,16 @@ describe('applyMainProductMeasurementPolicy', () => {
         selectedOptions: [{ name: 'Size', value: '22 x 12' }],
       },
       {
+        id: '24',
+        title: '22 x 24',
+        price: '20.00',
+        available: true,
+        availableForSale: true,
+        option1: '22 x 24',
+        options: ['22 x 24'],
+        selectedOptions: [{ name: 'Size', value: '22 x 24' }],
+      },
+      {
         id: '60',
         title: '22 x 60',
         price: '27.00',
@@ -114,7 +124,7 @@ describe('applyMainProductMeasurementPolicy', () => {
         selectedOptions: [{ name: 'Size', value: '22 x 60' }],
       },
     ]
-    const optionDefs: ProductOptionDef[] = [{ name: 'Size', values: ['22 x 12', '22 x 60'] }]
+    const optionDefs: ProductOptionDef[] = [{ name: 'Size', values: ['22 x 12', '22 x 24', '22 x 60'] }]
 
     const result = applyMainProductMeasurementPolicy(
       measurement({
@@ -143,16 +153,15 @@ describe('applyMainProductMeasurementPolicy', () => {
       selectedVariantId: '12',
       config: {
         sheetOptionName: 'Size',
-        selectionStrategy: 'smallest_fitting_sheet',
       },
     })
 
     expect(result.widthIn).toBe(20.75)
     expect(result.heightIn).toBe(9.28)
-    expect(resolution?.selectedVariantId).toBe('12')
+    expect(resolution?.selectedVariantId).toBe('24')
   })
 
-  it('uses sheet-aware roll anchoring only when canonical metadata is an anchor fallback', () => {
+  it('recovers an exact sold sheet ratio before normalizing width and length', () => {
     const result = applyMainProductMeasurementPolicy(
       measurement({
         widthPx: 6600,
@@ -174,7 +183,7 @@ describe('applyMainProductMeasurementPolicy', () => {
     expect(result?.widthIn).toBe(22)
     expect(result?.heightIn).toBe(12)
     expect(result?.sizingSource).toBe('sheet_width_anchor')
-    expect(result?.sheetLengthIn).toBe(12)
+    expect(result?.sheetLengthIn).toBe(22)
   })
 
   it('keeps large no-DPI gang sheets anchored to the roll when no exact sheet ratio matches', () => {
@@ -236,24 +245,13 @@ describe('resolveServerMainProductRollWidth', () => {
     expect(resolveServerMainProductRollWidth({ maxWidthIn: 60, maxHeightIn: 35.75 })).toBe(35.75)
   })
 
-  it('enforces an explicitly saved shop width limit', () => {
-    expect(
-      resolveServerMainProductRollWidth(
-        { rollWidthIn: 24 },
-        { policyExplicit: true, maxSheetWidthIn: 22.5 }
-      )
-    ).toBe(22.5)
+  it('takes the printable width only from the product configuration', () => {
+    expect(resolveServerMainProductRollWidth({ rollWidthIn: 24 })).toBe(24)
   })
 
   it('rejects corrupt roll widths outside the admin contract', () => {
     expect(resolveServerMainProductRollWidth({ rollWidthIn: 0.01 })).toBe(22)
     expect(resolveServerMainProductRollWidth({ rollWidthIn: 121 })).toBe(22)
-    expect(
-      resolveServerMainProductRollWidth(
-        { rollWidthIn: 24 },
-        { policyExplicit: true, maxSheetWidthIn: 0.01 }
-      )
-    ).toBe(24)
   })
 })
 

@@ -33,16 +33,15 @@ import type {
 import {
   CUSTOMER_PRICING_TEMPLATES,
   buildVolumeProgramPayload,
-  normalizePolicy,
   normalizeVolumeProgram,
   normalizeVolumeTiers,
   getRuntimePricingPolicy,
   resolveCustomerPricingModelState,
-  derivePolicyDefaults,
   type CustomerPricingPolicy,
   type VolumeProgram,
   type VolumeProgramCustomer,
 } from '~/lib/customerPricingModel.server'
+import { customerPricingRuleValidationMessage } from '~/lib/customerPricingValidation'
 import { isCustomerPricingModel, pickVolumeTier, type CustomerPricingModel, type VolumeTier } from '~/lib/customerPricingShared'
 import { invalidatePricingRuntimeCaches } from '~/lib/customerPricingRuntime.server'
 import {
@@ -150,15 +149,6 @@ interface VolumeCustomerEditor {
   orders: string
   lastOrderedAt: string
   source: 'manual' | 'import' | 'auto'
-}
-
-interface PolicyEditor {
-  measurementBasis: CustomerPricingPolicy['measurementBasis']
-  sheetSelection: CustomerPricingPolicy['sheetSelection']
-  fitToleranceIn: string
-  maxSheetWidthIn: string
-  artboardMarginIn: string
-  imageMarginIn: string
 }
 
 interface VolumeCandidate {
@@ -420,28 +410,6 @@ function serializeVolumeCustomers(customers: VolumeCustomerEditor[]) {
   }))
 }
 
-function toPolicyEditor(policy: CustomerPricingPolicy): PolicyEditor {
-  return {
-    measurementBasis: policy.measurementBasis,
-    sheetSelection: policy.sheetSelection,
-    fitToleranceIn: formatEditableNumber(policy.fitToleranceIn),
-    maxSheetWidthIn: formatEditableNumber(policy.maxSheetWidthIn),
-    artboardMarginIn: formatEditableNumber(policy.artboardMarginIn),
-    imageMarginIn: formatEditableNumber(policy.imageMarginIn),
-  }
-}
-
-function serializePolicy(policy: PolicyEditor) {
-  return {
-    measurementBasis: policy.measurementBasis,
-    sheetSelection: policy.sheetSelection,
-    fitToleranceIn: policy.fitToleranceIn,
-    maxSheetWidthIn: policy.maxSheetWidthIn,
-    artboardMarginIn: policy.artboardMarginIn,
-    imageMarginIn: policy.imageMarginIn,
-  }
-}
-
 function tierValidationMessage(tiers: TierEditor[]): string | null {
   const parsed = tiers.map((tier) => ({
     min: Math.round(parseLocalizedPositiveNumber(tier.minQty, 0)),
@@ -677,6 +645,9 @@ async function findVolumeCandidates(
     )
     if (!metadata || lifecycle.measurementStatus !== 'ready') continue
     const lengthIn = Math.max(Number(metadata.widthIn) || 0, Number(metadata.heightIn) || 0)
+    // Keep the historical eligibility calculation stable. New uploads write
+    // requestedCopies with explicit whole-sheet semantics, while old uploads
+    // retain the meaning they had when eligibility was first calculated.
     const copies = Math.max(1, Number(upload.requestedCopies) || Number(upload.sheetsNeeded) || 1)
     const current = totals.get(customerId) || {
       customerId,
@@ -756,9 +727,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const shopSettings = (shop?.settings as Record<string, unknown> | null) || {}
   const config = applyCustomerPricingDefaultsForShop(session.shop, shopSettings)
   const rawModelState = resolveCustomerPricingModelState(session.shop, shopSettings)
-  const modelState = rawModelState.policyExplicit
-    ? rawModelState
-    : { ...rawModelState, policy: getRuntimePricingPolicy(session.shop, shopSettings) }
+  // Finished gang sheets have one fixed measurement contract. Keep the old
+  // JSON readable for compatibility, but never surface it as a second runtime
+  // authority beside the product's printable roll width.
+  const modelState = {
+    ...rawModelState,
+    policy: getRuntimePricingPolicy(session.shop, {}),
+  }
   const program = normalizeVolumeProgram(shopSettings, session.shop)
   const productCatalog = await loadProductCatalog(admin, config, program)
   const url = new URL(request.url)
@@ -814,7 +789,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
     config,
     modelState,
     program,
-    policyDefaults: derivePolicyDefaults(session.shop),
     productCatalog,
     search,
     searchResults,
@@ -906,19 +880,16 @@ export async function action({ request }: ActionFunctionArgs) {
       }
       const model = isCustomerPricingModel(parsed.model) ? (parsed.model as CustomerPricingModel) : existingModel.model
       const priority = parsed.priority === 'volume_first' ? 'volume_first' : 'status_first'
-      const parsedPolicy = normalizePolicy(parsed.policy, derivePolicyDefaults(session.shop))
-      const legacyRuntimePolicy = getRuntimePricingPolicy(session.shop, existingSettings)
-      const policyWasChanged = (
-        Object.keys(legacyRuntimePolicy) as Array<keyof CustomerPricingPolicy>
-      ).some((key) => parsedPolicy[key] !== legacyRuntimePolicy[key])
-      // A legacy tenant has no explicit sizing policy. Keep that distinction
-      // until the merchant actually changes a policy field; otherwise an
-      // unrelated rate edit would activate width limits and margins that were
-      // previously only editor defaults.
-      const policy = existingModel.policyExplicit || policyWasChanged ? parsedPolicy : null
       const statuses = Array.isArray(parsed.statuses) ? parsed.statuses : existingConfig.statuses
       const tagRules = Array.isArray(parsed.tagRules) ? parsed.tagRules : existingConfig.tagRules
       const volume = parsed.volume && typeof parsed.volume === 'object' ? (parsed.volume as Record<string, unknown>) : null
+
+      if (model === 'status_rates' || model === 'both') {
+        const statusRateError = customerPricingRuleValidationMessage(statuses)
+        if (statusRateError) {
+          return json({ success: false, error: statusRateError }, { status: 400 })
+        }
+      }
 
       let programNext: VolumeProgram | null = null
       if (volume) {
@@ -949,7 +920,9 @@ export async function action({ request }: ActionFunctionArgs) {
         enabled: parsed.enabled !== false,
         model,
         priority,
-        policy: policy as unknown as Record<string, unknown> | null,
+        // The sizing-policy editor has been retired, but its raw value remains
+        // rollback/audit data. An unrelated pricing save must not rewrite it.
+        policy: existingConfig.policy,
         statuses: statuses as CustomerPricingSettings['statuses'],
         tagRules: tagRules as CustomerPricingSettings['tagRules'],
       })
@@ -1240,7 +1213,6 @@ export default function CustomerPricingPage() {
   const [model, setModel] = useState<CustomerPricingModel>(modelState.model)
   const [priority, setPriority] = useState(modelState.priority)
   const [enabled, setEnabled] = useState(config.enabled)
-  const [policy, setPolicy] = useState<PolicyEditor>(() => toPolicyEditor(modelState.policy))
   const [statuses, setStatuses] = useState<StatusEditor[]>(() => config.statuses.map(toStatusEditor))
   const [tagRules, setTagRules] = useState<TagRuleEditor[]>(() =>
     config.tagRules.map((rule, index) => ({ id: `tag_${index}_${rule.tag}`, tag: rule.tag, statusKey: rule.statusKey }))
@@ -1279,7 +1251,6 @@ export default function CustomerPricingPage() {
     setModel(modelState.model)
     setPriority(modelState.priority)
     setEnabled(config.enabled)
-    setPolicy(toPolicyEditor(modelState.policy))
     setStatuses(config.statuses.map(toStatusEditor))
     setTagRules(config.tagRules.map((rule, index) => ({ id: `tag_${index}_${rule.tag}`, tag: rule.tag, statusKey: rule.statusKey })))
     setVolumeLabel(program.label)
@@ -1308,7 +1279,6 @@ export default function CustomerPricingPage() {
       model,
       priority,
       enabled,
-      policy: serializePolicy(policy),
       statuses: serializeStatuses(statuses),
       tagRules: tagRules.map((rule) => ({ tag: rule.tag, statusKey: rule.statusKey })),
       volume: {
@@ -1323,7 +1293,7 @@ export default function CustomerPricingPage() {
         billingBasis,
       },
     }),
-    [model, priority, enabled, policy, statuses, tagRules, volumeEnabled, volumeLabel, program.products, tiers, volumeCustomers, volumeTags, autoEnabled, autoMonths, autoMinInches, checkoutMode, billingBasis]
+    [model, priority, enabled, statuses, tagRules, volumeEnabled, volumeLabel, program.products, tiers, volumeCustomers, volumeTags, autoEnabled, autoMonths, autoMinInches, checkoutMode, billingBasis]
   )
 
   const savedSnapshot = useMemo(
@@ -1332,7 +1302,6 @@ export default function CustomerPricingPage() {
         model: modelState.model,
         priority: modelState.priority,
         enabled: config.enabled,
-        policy: serializePolicy(toPolicyEditor(modelState.policy)),
         statuses: serializeStatuses(config.statuses.map(toStatusEditor)),
         tagRules: config.tagRules.map((rule) => ({ tag: rule.tag, statusKey: rule.statusKey })),
         volume: {
@@ -1351,6 +1320,10 @@ export default function CustomerPricingPage() {
   )
   const isDirty = JSON.stringify(payload) !== savedSnapshot
   const tierError = tierValidationMessage(tiers)
+  const statusRuleError =
+    model === 'status_rates' || model === 'both'
+      ? customerPricingRuleValidationMessage(statuses)
+      : null
 
   const saveAll = useCallback(() => {
     const form = new FormData()
@@ -1570,8 +1543,12 @@ export default function CustomerPricingPage() {
     >
       {isDirty ? (
         <ContextualSaveBar
-          message={tierError ? tierError : 'Unsaved pricing changes'}
-          saveAction={{ onAction: saveAll, loading: isSubmitting, disabled: Boolean(tierError) }}
+          message={statusRuleError || tierError || 'Unsaved pricing changes'}
+          saveAction={{
+            onAction: saveAll,
+            loading: isSubmitting,
+            disabled: Boolean(statusRuleError || tierError),
+          }}
           discardAction={{ onAction: resetFromLoader }}
         />
       ) : null}
@@ -2000,7 +1977,7 @@ export default function CustomerPricingPage() {
                         label="Inches counted"
                         options={[
                           { label: 'Exact measured length of the file × copies', value: 'measured_length' },
-                          { label: 'Length of the matched sheet × sheets needed', value: 'variant_length' },
+                          { label: 'Length of the matched sheet × whole-sheet copies', value: 'variant_length' },
                         ]}
                         value={billingBasis}
                         onChange={(value) => setBillingBasis(value === 'variant_length' ? 'variant_length' : 'measured_length')}
@@ -2220,37 +2197,16 @@ export default function CustomerPricingPage() {
               <Card>
                 <BlockStack gap="400">
                   <BlockStack gap="100">
-                    <Text as="h2" variant="headingMd">How uploads are measured and matched</Text>
-                    <Text as="p" tone="subdued">These rules decide how many inches a file counts as and which sheet it lands on. They apply to every upload block in this store.</Text>
+                    <Text as="h2" variant="headingMd">How finished gang sheets are measured</Text>
+                    <Text as="p" tone="subdued">
+                      The uploaded file is the production sheet. Upload Studio measures and prices it; it never rearranges designs inside it.
+                    </Text>
                   </BlockStack>
-                  <ChoiceList
-                    title="What is measured"
-                    choices={[
-                      { label: 'The whole uploaded page', value: 'full_page', helpText: 'Bills the full document size, even if the artwork has empty space around it. Simplest to explain to customers.' },
-                      { label: 'Only the artwork bounds', value: 'artwork_bounds', helpText: 'Trims empty space and bills the artwork itself. Cheaper for customers who upload loose files.' },
-                    ]}
-                    selected={[policy.measurementBasis]}
-                    onChange={(values) => setPolicy((current) => ({ ...current, measurementBasis: values[0] === 'full_page' ? 'full_page' : 'artwork_bounds' }))}
-                  />
-                  <Select
-                    label="Which sheet is chosen when several fit"
-                    options={[
-                      { label: 'Let each upload block decide (default)', value: 'block_default' },
-                      { label: 'Smallest sheet the artwork fits on', value: 'smallest_fitting_sheet' },
-                      { label: 'Cheapest total for the copies requested', value: 'lowest_total_cost' },
-                    ]}
-                    value={policy.sheetSelection}
-                    onChange={(value) => setPolicy((current) => ({ ...current, sheetSelection: value as PolicyEditor['sheetSelection'] }))}
-                    helpText={'Example: a 20" × 30" file with 2 copies. Smallest sheet picks 22" × 36" twice; cheapest total may pick one 22" × 60" if it costs less.'}
-                  />
-                  <InlineGrid columns={{ xs: 1, md: 4 }} gap="300">
-                    <TextField label="Widest sheet (inches)" autoComplete="off" type="text" inputMode="decimal" value={policy.maxSheetWidthIn} onChange={(value) => setPolicy((current) => ({ ...current, maxSheetWidthIn: value }))} helpText="Your roll width." />
-                    <TextField label="Fit tolerance (inches)" autoComplete="off" type="text" inputMode="decimal" value={policy.fitToleranceIn} onChange={(value) => setPolicy((current) => ({ ...current, fitToleranceIn: value }))} helpText="Artwork may exceed a sheet by this much and still fit." />
-                    <TextField label="Sheet margin (inches)" autoComplete="off" type="text" inputMode="decimal" value={policy.artboardMarginIn} onChange={(value) => setPolicy((current) => ({ ...current, artboardMarginIn: value }))} helpText="Kept free around the sheet edge." />
-                    <TextField label="Gap between designs (inches)" autoComplete="off" type="text" inputMode="decimal" value={policy.imageMarginIn} onChange={(value) => setPolicy((current) => ({ ...current, imageMarginIn: value }))} helpText="Space between copies on a sheet." />
-                  </InlineGrid>
+                  <Banner tone="info">
+                    The shorter edge is the printable width and the longer edge is the billable length. A file wider than the product's printable roll width is rejected exactly as measured. Otherwise Upload Studio chooses the shortest variant that covers the full sheet. Quantity is the number of complete sheet copies.
+                  </Banner>
                   <Text as="p" variant="bodySm" tone="subdued">
-                    Defaults for this store: {modelState.policy.measurementBasis === 'full_page' ? 'whole page' : 'artwork bounds'}, {data.policyDefaults.maxSheetWidthIn}" roll, {data.policyDefaults.fitToleranceIn}" tolerance.
+                    Printable roll width is configured per product. There is no hidden edge inset, fit tolerance, gap between copies, or cheapest-layout calculation.
                   </Text>
                 </BlockStack>
               </Card>
@@ -2293,7 +2249,7 @@ export default function CustomerPricingPage() {
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">How the price is calculated</Text>
                 <BlockStack gap="200">
-                  <Text as="p" variant="bodySm"><strong>Account rate, sheet length:</strong> sheet length × sheets needed × rate. The file is matched to the smallest sheet it fits; the customer pays for that sheet's length.</Text>
+                  <Text as="p" variant="bodySm"><strong>Account rate, sheet length:</strong> matched sheet length × whole-sheet copies × rate. The file is matched to the shortest sheet it fits; the customer pays for that sheet's length.</Text>
                   <Text as="p" variant="bodySm"><strong>Account rate, measured length:</strong> measured length × copies × rate. No sheet matching; the customer pays only for the file.</Text>
                   <Text as="p" variant="bodySm"><strong>Volume tier:</strong> measured length × copies picks the tier; total inches × that tier's rate.</Text>
                   <Text as="p" variant="bodySm"><strong>Standard:</strong> the normal Shopify variant price of the matched sheet.</Text>

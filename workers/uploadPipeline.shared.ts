@@ -20,7 +20,6 @@ import {
 import { deriveUploadItemLifecycle } from '../app/lib/uploadLifecycle.server'
 import {
   getRuntimeMeasurementBasis,
-  resolveCustomerPricingModelState,
 } from '../app/lib/customerPricingModel.server'
 import { resolveServerMainProductRollWidth } from '../app/lib/mainProductMeasurement.server'
 import { selectProductConfigForIdentity } from '../app/lib/productConfigIdentity.server'
@@ -882,13 +881,10 @@ export async function prepareUploadJobContext(
         source: 'uploadPipeline',
       })
       const builderConfig = productConfig?.builderConfig as Record<string, unknown> | null
-      // maxWidthIn/maxHeightIn are acceptance limits, not physical media.
-      // Only the dedicated roll width may anchor no-DPI image measurement.
-      const pricingModel = resolveCustomerPricingModelState(shop.shopDomain, shop.settings)
-      sheetWidthIn = resolveServerMainProductRollWidth(builderConfig, {
-        policyExplicit: pricingModel.policyExplicit,
-        maxSheetWidthIn: pricingModel.policy.maxSheetWidthIn,
-      })
+      // New saves use the visible rollWidthIn field. Unsaved legacy products
+      // retain their previous effective anchor through the old maxWidth/
+      // maxHeight values until the merchant explicitly saves rollWidthIn.
+      sheetWidthIn = resolveServerMainProductRollWidth(builderConfig)
     }
   } catch (configError) {
     workerLog.warn('SHEET_WIDTH_LOOKUP_FAILED', {

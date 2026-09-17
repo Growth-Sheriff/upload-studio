@@ -28,7 +28,6 @@ import {
 } from "~/lib/alphaProDiscounts";
 import { applyAlphaProBuilderDefaults } from "~/lib/alphaProDiscounts.server";
 import { isVolumeProgramProduct, isVolumeTiersEnabled } from "~/lib/customerPricingModel.server";
-import { preserveStoredProductMargins } from "~/lib/productBuilderConfig.server";
 import { resolveServerMainProductRollWidth } from "~/lib/mainProductMeasurement.server";
 
 
@@ -99,13 +98,7 @@ interface BuilderConfig {
   widthOptionName: string | null;
   heightOptionName: string | null;
   modalOptionNames: string[];
-  artboardMarginIn: number;
-  imageMarginIn: number;
   rollWidthIn: number;
-  maxWidthIn: number;
-  maxHeightIn: number;
-  minWidthIn: number;
-  minHeightIn: number;
   colorProfile: string;
   maxFileSizeMb: number;
   supportedFormats: string[];
@@ -127,13 +120,7 @@ const DEFAULT_BUILDER_CONFIG: BuilderConfig = {
   widthOptionName: null,
   heightOptionName: null,
   modalOptionNames: [],
-  artboardMarginIn: 0.125,
-  imageMarginIn: 0.125,
   rollWidthIn: 22,
-  maxWidthIn: 22.5,
-  maxHeightIn: 35.75,
-  minWidthIn: 1,
-  minHeightIn: 1,
   colorProfile: "CMYK",
   maxFileSizeMb: 500,
   supportedFormats: ["PNG", "JPG", "JPEG", "SVG", "PSD", "AI", "EPS", "PDF"],
@@ -161,13 +148,7 @@ const BuilderConfigSchema = z.object({
   widthOptionName: z.string().max(100).nullable().optional(),
   heightOptionName: z.string().max(100).nullable().optional(),
   modalOptionNames: z.array(z.string().max(100)).max(10).default([]),
-  artboardMarginIn: z.number().min(0).max(5).default(0.125),
-  imageMarginIn: z.number().min(0).max(5).default(0.125),
   rollWidthIn: z.number().min(0.1).max(120).default(DEFAULT_BUILDER_CONFIG.rollWidthIn),
-  maxWidthIn: z.number().min(0.1).max(999).default(DEFAULT_BUILDER_CONFIG.maxWidthIn),
-  maxHeightIn: z.number().min(0.1).max(999).default(DEFAULT_BUILDER_CONFIG.maxHeightIn),
-  minWidthIn: z.number().min(0.1).max(999).default(DEFAULT_BUILDER_CONFIG.minWidthIn),
-  minHeightIn: z.number().min(0.1).max(999).default(DEFAULT_BUILDER_CONFIG.minHeightIn),
   cartProductHandle: z.string().max(200).nullable().optional(),
   colorProfile: z.string().max(50).default(DEFAULT_BUILDER_CONFIG.colorProfile),
   maxFileSizeMb: z.number().min(1).max(10240).default(DEFAULT_BUILDER_CONFIG.maxFileSizeMb),
@@ -386,14 +367,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         // Otherwise merely opening and saving an old 22.5-inch row would write
         // the newer 22-inch default and change no-DPI measurements.
         rollWidthIn: resolveServerMainProductRollWidth(storedBuilderConfig),
-        artboardMarginIn: Math.max(
-          0,
-          Number((config.builderConfig as BuilderConfig | null)?.artboardMarginIn ?? 0)
-        ),
-        imageMarginIn: Math.max(
-          0,
-          Number((config.builderConfig as BuilderConfig | null)?.imageMarginIn ?? 0)
-        ),
       }
     : DEFAULT_BUILDER_CONFIG;
   const builderConfigForResponse = applyAlphaProBuilderDefaults(
@@ -554,6 +527,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     let extraQuestions: ExtraQuestion[] = [];
     let tshirtConfig: TshirtConfig | null = null;
     let builderConfig: BuilderConfig = DEFAULT_BUILDER_CONFIG;
+    let submittedRollWidth = false;
 
 
     try {
@@ -581,6 +555,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       }
       if (builderConfigJson) {
         const parsed = JSON.parse(builderConfigJson);
+        submittedRollWidth = Object.prototype.hasOwnProperty.call(parsed, "rollWidthIn");
         const validationResult = BuilderConfigSchema.safeParse(parsed);
         if (!validationResult.success) {
           console.error("[ADM-003] BuilderConfig validation failed:", validationResult.error.errors);
@@ -591,8 +566,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
         builderConfig = {
           ...DEFAULT_BUILDER_CONFIG,
           ...validationResult.data,
-          artboardMarginIn: Math.max(0, validationResult.data.artboardMarginIn ?? DEFAULT_BUILDER_CONFIG.artboardMarginIn),
-          imageMarginIn: Math.max(0, validationResult.data.imageMarginIn ?? DEFAULT_BUILDER_CONFIG.imageMarginIn),
           sheetOptionName: validationResult.data.sheetOptionName || null,
           widthOptionName: validationResult.data.widthOptionName || null,
           heightOptionName: validationResult.data.heightOptionName || null,
@@ -624,11 +597,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
       select: { builderConfig: true },
     });
     const storedCompat = (existingForCompat?.builderConfig as Record<string, unknown> | null) || {};
-    builderConfig = preserveStoredProductMargins(
-      builderConfig as unknown as Record<string, unknown>,
-      storedCompat,
-      Boolean(existingForCompat)
-    ) as unknown as BuilderConfig;
+    if (!submittedRollWidth) {
+      builderConfig.rollWidthIn = resolveServerMainProductRollWidth(storedCompat);
+    }
     for (const key of ["cartProductHandle", "cartProductId", "cartAutoSync"]) {
       if (storedCompat[key] !== undefined) {
         (builderConfig as unknown as Record<string, unknown>)[key] = storedCompat[key];
@@ -706,8 +677,6 @@ export default function ProductConfigurePage() {
   const [builderConfig, setBuilderConfig] = useState<BuilderConfig>({
     ...DEFAULT_BUILDER_CONFIG,
     ...(config.builderConfig || {}),
-    artboardMarginIn: Math.max(0, Number(config.builderConfig?.artboardMarginIn ?? DEFAULT_BUILDER_CONFIG.artboardMarginIn)),
-    imageMarginIn: Math.max(0, Number(config.builderConfig?.imageMarginIn ?? DEFAULT_BUILDER_CONFIG.imageMarginIn)),
   });
 
   const setAlphaProTier = useCallback((
@@ -909,8 +878,8 @@ export default function ProductConfigurePage() {
                   <Text as="p">
                     <strong>Sheet pricing (recommended):</strong> the customer drops a file → the app measures it
                     (for example 10" × 8") → it picks the smallest sheet variant that fits (for example 22"x12") →
-                    that variant and price go to the cart. If the customer asks for 5 copies, the app nests them
-                    and adds as many sheets as needed. Your variants must be named with their size, like
+                    that variant and price go to the cart. If the customer asks for 5 copies, the complete uploaded
+                    sheet is printed 5 times. Your variants must be named with their size, like
                     <strong> 22x12</strong>, <strong>22"x24"</strong>, <strong>22 x 36</strong>.
                   </Text>
                   <Text as="p">
@@ -936,7 +905,7 @@ export default function ProductConfigurePage() {
                 />
 
                 <TextField
-                  label="Physical roll width (inches)"
+                  label="Printable roll width (inches)"
                   autoComplete="off"
                   type="number"
                   min={0.1}
@@ -948,8 +917,11 @@ export default function ProductConfigurePage() {
                     if (!Number.isFinite(parsed) || parsed <= 0) return;
                     setBuilderConfig((prev) => ({ ...prev, rollWidthIn: parsed }));
                   }}
-                  helpText="Authoritative width used for main-product measurement and billing. The theme block value is only a provisional display hint."
+                  helpText="Hard width limit used for measurement and billing. Files wider than this are rejected; no margin or tolerance is subtracted or added."
                 />
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Usable printable width: {builderConfig.rollWidthIn}" (no hidden inset)
+                </Text>
 
                 <FormLayout>
                   <Select

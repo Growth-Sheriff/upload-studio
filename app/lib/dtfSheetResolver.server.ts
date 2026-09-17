@@ -1,5 +1,3 @@
-const MIN_MARGIN_IN = 0
-
 export function variantIdsEqual(left: unknown, right: unknown): boolean {
   const normalize = (value: unknown) => {
     const text = String(value ?? '').trim()
@@ -40,15 +38,8 @@ export interface BuilderResolveConfig {
   widthOptionName?: string | null
   heightOptionName?: string | null
   modalOptionNames?: string[] | null
-  artboardMarginIn?: number | null
-  imageMarginIn?: number | null
-  fitToleranceIn?: number | null
-  /** Maximum cross-roll artwork width. Rotation may make the uploaded height
-   * the cross-roll edge. */
-  maxDesignWidthIn?: number | null
-  /** Maximum physical roll/sheet short edge offered by this shop. */
-  maxSheetWidthIn?: number | null
-  selectionStrategy?: 'lowest_total_cost' | 'smallest_fitting_sheet' | null
+  /** The merchant-entered printable roll width. This is the only fit limit. */
+  printableWidthIn?: number | null
 }
 
 interface Measurement {
@@ -75,13 +66,8 @@ interface VariantMatrix {
   sheetFamilies: VariantFamily[]
 }
 
-interface FitGridResult {
-  count: number
+interface FinishedSheetFit {
   efficiency: number
-  placementMode: 'normal' | 'rotated' | 'mixed'
-  rotationApplied: boolean
-  rotationRequired: boolean
-  toleranceApplied: boolean
   placedWidthIn: number
   placedHeightIn: number
 }
@@ -97,25 +83,55 @@ export interface SheetVariantResolution {
   heightIn: number
   sheetWidthIn: number
   sheetHeightIn: number
-  placementMode: 'normal' | 'rotated' | 'mixed'
-  rotationApplied: boolean
-  rotationRequired: boolean
-  toleranceApplied: boolean
   placedWidthIn: number
   placedHeightIn: number
-  productionNote: string | null
 }
 
-function normalizeMarginIn(value: number | null | undefined): number {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < MIN_MARGIN_IN) return MIN_MARGIN_IN
-  return parsed
+export interface PrintableWidthFailure {
+  code: 'WIDTH_TOO_LARGE'
+  widthIn: number
+  lengthIn: number
+  printableWidthIn: number
+  message: string
 }
 
-function normalizeToleranceIn(value: number | null | undefined): number {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < 0) return 0
-  return parsed
+function configuredPrintableWidth(config: BuilderResolveConfig): number | null {
+  const printableWidthIn = Number(config.printableWidthIn)
+  return Number.isFinite(printableWidthIn) && printableWidthIn > 0
+    ? printableWidthIn
+    : null
+}
+
+export function getPrintableWidthFailure({
+  widthIn,
+  heightIn,
+  config,
+}: {
+  widthIn: number
+  heightIn: number
+  config: BuilderResolveConfig
+}): PrintableWidthFailure | null {
+  const printableWidthIn = configuredPrintableWidth(config)
+  const normalizedWidthIn = Math.min(widthIn, heightIn)
+  const normalizedLengthIn = Math.max(widthIn, heightIn)
+  if (
+    !(normalizedWidthIn > 0) ||
+    !(normalizedLengthIn > 0) ||
+    printableWidthIn == null ||
+    normalizedWidthIn <= printableWidthIn
+  ) {
+    return null
+  }
+
+  const displayWidth = Number(normalizedWidthIn.toFixed(2))
+  const displayLimit = Number(printableWidthIn.toFixed(2))
+  return {
+    code: 'WIDTH_TOO_LARGE',
+    widthIn: normalizedWidthIn,
+    lengthIn: normalizedLengthIn,
+    printableWidthIn,
+    message: `Your file is ${displayWidth} inches wide; maximum printable width is ${displayLimit} inches.`,
+  }
 }
 
 function normalizeOptionName(value: string | null | undefined): string {
@@ -165,17 +181,6 @@ function parseSheetSize(value: unknown): Measurement | null {
   }
 
   return null
-}
-
-function normalizeVariantPriceToDollars(rawPrice: string | number | null): number {
-  if (rawPrice == null || rawPrice === '') return 0
-  if (typeof rawPrice === 'string') {
-    if (rawPrice.includes('.')) return parseFloat(rawPrice) || 0
-    const asInt = parseInt(rawPrice, 10)
-    return Number.isFinite(asInt) ? asInt / 100 : 0
-  }
-  const numeric = Number(rawPrice)
-  return Number.isFinite(numeric) ? numeric / 100 : 0
 }
 
 function getOptionValue(variant: ProductVariantDef, optionIndex: number): string {
@@ -489,183 +494,33 @@ function resolveVariantForFamily(
   return family.variants[0] || null
 }
 
-interface OrientationFit {
-  count: number
-  placedWidthIn: number
-  placedHeightIn: number
-  toleranceApplied: boolean
-}
-
-function clampWithinTolerance(value: number, limit: number, tolerance: number) {
-  if (!(value > 0) || !(limit > 0)) return { value, fits: false, clamped: false }
-  if (value <= limit) return { value, fits: true, clamped: false }
-  if (value <= limit + tolerance) return { value: limit, fits: true, clamped: true }
-  return { value, fits: false, clamped: false }
-}
-
-function fitOrientation(
-  designWidth: number,
-  designHeight: number,
-  usableWidth: number,
-  usableHeight: number,
-  gap: number,
-  tolerance: number,
-  maxDesignWidth: number | null
-): OrientationFit {
-  const crossRollLimit = maxDesignWidth && maxDesignWidth > 0
-    ? Math.min(usableWidth, maxDesignWidth)
-    : usableWidth
-  const width = clampWithinTolerance(designWidth, crossRollLimit, tolerance)
-  const height = clampWithinTolerance(designHeight, usableHeight, tolerance)
-  if (!width.fits || !height.fits) {
-    return {
-      count: 0,
-      placedWidthIn: designWidth,
-      placedHeightIn: designHeight,
-      toleranceApplied: false,
-    }
-  }
-
-  const cols = Math.floor((usableWidth + gap) / (width.value + gap))
-  const rows = Math.floor((usableHeight + gap) / (height.value + gap))
-  return {
-    count: cols > 0 && rows > 0 ? cols * rows : 0,
-    placedWidthIn: width.value,
-    placedHeightIn: height.value,
-    toleranceApplied: width.clamped || height.clamped,
-  }
-}
-
-function fitGridMixed(
-  normal: OrientationFit,
-  rotated: OrientationFit,
-  usableWidth: number,
-  usableHeight: number,
-  gap: number
-): number {
-  if (normal.count <= 0 || rotated.count <= 0) return 0
-  const normalCols = Math.floor((usableWidth + gap) / (normal.placedWidthIn + gap))
-  const rotatedCols = Math.floor((usableWidth + gap) / (rotated.placedWidthIn + gap))
-  if (normalCols <= 0 || rotatedCols <= 0) return 0
-
-  // A per-row density choice is not globally optimal because the final strip
-  // can fit rows of the other orientation. Enumerate the bounded number of
-  // normal rows and fill the remaining height with rotated rows.
-  const maxNormalRows = Math.floor(
-    (usableHeight + gap) / (normal.placedHeightIn + gap)
-  )
-  let bestCount = 0
-  for (let normalRows = 0; normalRows <= maxNormalRows; normalRows += 1) {
-    const normalHeight =
-      normalRows * normal.placedHeightIn + Math.max(0, normalRows - 1) * gap
-    const remainingHeight = usableHeight - normalHeight
-    const rotatedRows =
-      normalRows > 0
-        ? Math.max(0, Math.floor((remainingHeight + 1e-9) / (rotated.placedHeightIn + gap)))
-        : Math.max(
-            0,
-            Math.floor((remainingHeight + gap + 1e-9) / (rotated.placedHeightIn + gap))
-          )
-    bestCount = Math.max(
-      bestCount,
-      normalRows * normalCols + rotatedRows * rotatedCols
-    )
-  }
-  return bestCount
-}
-
-function calculateGridFit(
+function calculateFinishedSheetFit(
   design: Measurement,
-  sheet: Measurement,
-  config: BuilderResolveConfig
-): FitGridResult {
-  const gap = normalizeMarginIn(config.imageMarginIn)
-  const margin = normalizeMarginIn(config.artboardMarginIn)
-  // Treat the short sheet edge as cross-roll regardless of how a merchant's
-  // variant title happens to order its dimensions.
-  const usableWidth = Math.min(sheet.widthInch, sheet.heightInch) - 2 * margin
-  const usableHeight = Math.max(sheet.widthInch, sheet.heightInch) - 2 * margin
-  const tolerance = normalizeToleranceIn(config.fitToleranceIn)
-  const configuredMaxDesignWidth = Number(config.maxDesignWidthIn)
-  const maxDesignWidth = Number.isFinite(configuredMaxDesignWidth) && configuredMaxDesignWidth > 0
-    ? configuredMaxDesignWidth
-    : null
+  sheet: Measurement
+): FinishedSheetFit | null {
+  // A gang-sheet upload is already the production sheet. Normalization only
+  // makes portrait and landscape exports equivalent for measurement; it does
+  // not authorize arranging copies or rotating the production bytes.
+  const designWidthIn = Math.min(design.widthInch, design.heightInch)
+  const designLengthIn = Math.max(design.widthInch, design.heightInch)
+  // Product variants retain the merchant's stored width x length meaning.
+  // `22 x 12` is twelve billable inches on a nominal 22-inch product; unlike
+  // the uploaded file, the commercial variant is not orientation-normalized.
+  const sheetWidthIn = sheet.widthInch
+  const sheetLengthIn = sheet.heightInch
 
-  if (usableWidth <= 0 || usableHeight <= 0) {
-    return {
-      count: 0,
-      efficiency: 0,
-      placementMode: 'normal',
-      rotationApplied: false,
-      rotationRequired: false,
-      toleranceApplied: false,
-      placedWidthIn: design.widthInch,
-      placedHeightIn: design.heightInch,
-    }
-  }
+  // Cross-roll fit was already decided once, against config.printableWidthIn.
+  // The smaller number in a variant title is a nominal product label (shops
+  // can have a 22-inch-labelled variant on 22.5 inches of printable film), so
+  // it must not silently reintroduce a second, narrower roll-width limit.
+  if (designLengthIn > sheetLengthIn) return null
 
-  const normal = fitOrientation(
-    design.widthInch,
-    design.heightInch,
-    usableWidth,
-    usableHeight,
-    gap,
-    tolerance,
-    maxDesignWidth
-  )
-  const rotated = design.widthInch !== design.heightInch
-    ? fitOrientation(
-        design.heightInch,
-        design.widthInch,
-        usableWidth,
-        usableHeight,
-        gap,
-        tolerance,
-        maxDesignWidth
-      )
-    : { ...normal, count: 0 }
-  const mixedCount = design.widthInch !== design.heightInch
-    ? fitGridMixed(normal, rotated, usableWidth, usableHeight, gap)
-    : 0
-
-  const candidates = [
-    { mode: 'normal' as const, ...normal },
-    { mode: 'rotated' as const, ...rotated },
-    {
-      mode: 'mixed' as const,
-      count: mixedCount,
-      placedWidthIn: normal.placedWidthIn,
-      placedHeightIn: normal.placedHeightIn,
-      toleranceApplied: normal.toleranceApplied || rotated.toleranceApplied,
-    },
-  ].sort((a, b) => b.count - a.count)
-  const selected = candidates[0]
-  if (selected.count <= 0) {
-    return {
-      count: 0,
-      efficiency: 0,
-      placementMode: 'normal',
-      rotationApplied: false,
-      rotationRequired: false,
-      toleranceApplied: false,
-      placedWidthIn: design.widthInch,
-      placedHeightIn: design.heightInch,
-    }
-  }
-
-  const designArea = design.widthInch * design.heightInch
-  const sheetArea = sheet.widthInch * sheet.heightInch
-  const efficiency = sheetArea > 0 ? (selected.count * designArea) / sheetArea : 0
-
+  const designArea = designWidthIn * designLengthIn
+  const sheetArea = sheetWidthIn * sheetLengthIn
   return {
-    count: selected.count,
-    efficiency,
-    placementMode: selected.mode,
-    rotationApplied: selected.mode !== 'normal',
-    rotationRequired: normal.count <= 0 && selected.mode !== 'normal',
-    toleranceApplied: selected.toleranceApplied,
-    placedWidthIn: selected.placedWidthIn,
-    placedHeightIn: selected.placedHeightIn,
+    efficiency: sheetArea > 0 ? designArea / sheetArea : 0,
+    placedWidthIn: designWidthIn,
+    placedHeightIn: designLengthIn,
   }
 }
 
@@ -694,62 +549,43 @@ export function resolveSheetVariant({
   const selectedServiceValues = getSelectedServiceOptionValues(matrix, variants, selectedVariantId)
   const design = { widthInch: widthIn, heightInch: heightIn }
   const requestedQuantity = Math.max(1, Math.floor(quantity))
-  const configuredMaxSheetWidth = Number(config.maxSheetWidthIn)
-  const maxSheetWidth = Number.isFinite(configuredMaxSheetWidth) && configuredMaxSheetWidth > 0
-    ? configuredMaxSheetWidth
-    : null
+  // Width overflow is never a tolerance case. The short edge is the only
+  // cross-roll candidate, so no other orientation can make this file fit.
+  if (getPrintableWidthFailure({ widthIn, heightIn, config })) return null
 
   const validResults = matrix.sheetFamilies
     .map((family) => {
-      if (maxSheetWidth && Math.min(family.widthInch, family.heightInch) > maxSheetWidth + 0.001) {
-        return null
-      }
       const variant = resolveVariantForFamily(family, matrix, selectedServiceValues)
       if (!variant) return null
 
-      const gridFit = calculateGridFit(design, family, config)
-      if (gridFit.count <= 0) return null
-
-      const sheetsNeeded = Math.ceil(requestedQuantity / gridFit.count)
-      const variantPrice = normalizeVariantPriceToDollars(variant.price)
-      const totalCost = sheetsNeeded * variantPrice
+      const sheetFit = calculateFinishedSheetFit(design, family)
+      if (!sheetFit) return null
 
       return {
         family,
         variant,
-        gridFit,
-        designsPerSheet: gridFit.count,
-        sheetsNeeded,
-        totalCost,
-        efficiency: gridFit.efficiency,
+        sheetFit,
+        designsPerSheet: 1,
+        sheetsNeeded: requestedQuantity,
+        efficiency: sheetFit.efficiency,
       }
     })
     .filter((result): result is NonNullable<typeof result> => Boolean(result))
     .sort((a, b) => {
-      if (config.selectionStrategy === 'smallest_fitting_sheet') {
-        const areaA = a.family.widthInch * a.family.heightInch
-        const areaB = b.family.widthInch * b.family.heightInch
-        if (areaA !== areaB) return areaA - areaB
-        if (a.sheetsNeeded !== b.sheetsNeeded) return a.sheetsNeeded - b.sheetsNeeded
-        if (a.totalCost !== b.totalCost) return a.totalCost - b.totalCost
-        return b.efficiency - a.efficiency
-      }
-      if (a.totalCost !== b.totalCost) return a.totalCost - b.totalCost
-      if (a.sheetsNeeded !== b.sheetsNeeded) return a.sheetsNeeded - b.sheetsNeeded
+      // Selection is physical, not a layout/cost optimization: choose the
+      // smallest available sheet that contains one complete uploaded file.
+      const lengthA = a.family.heightInch
+      const lengthB = b.family.heightInch
+      if (lengthA !== lengthB) return lengthA - lengthB
+      const widthA = a.family.widthInch
+      const widthB = b.family.widthInch
+      if (widthA !== widthB) return widthA - widthB
       return b.efficiency - a.efficiency
     })
 
   if (!validResults.length) return null
 
   const selected = validResults[0]
-  const notes: string[] = []
-  if (selected.gridFit.placementMode === 'rotated') notes.push('Rotate artwork 90°')
-  if (selected.gridFit.placementMode === 'mixed') notes.push('Use mixed normal/rotated placement')
-  if (selected.gridFit.toleranceApplied) {
-    notes.push(
-      `Fit tolerance applied at ${selected.gridFit.placedWidthIn.toFixed(2)}" × ${selected.gridFit.placedHeightIn.toFixed(2)}"`
-    )
-  }
   return {
     selectedVariantId: selected.variant.id,
     selectedVariantTitle: selected.variant.title,
@@ -757,16 +593,11 @@ export function resolveSheetVariant({
     designsPerSheet: selected.designsPerSheet,
     sheetsNeeded: selected.sheetsNeeded,
     requestedQuantity,
-    widthIn,
-    heightIn,
+    widthIn: Math.min(widthIn, heightIn),
+    heightIn: Math.max(widthIn, heightIn),
     sheetWidthIn: selected.family.widthInch,
     sheetHeightIn: selected.family.heightInch,
-    placementMode: selected.gridFit.placementMode,
-    rotationApplied: selected.gridFit.rotationApplied,
-    rotationRequired: selected.gridFit.rotationRequired,
-    toleranceApplied: selected.gridFit.toleranceApplied,
-    placedWidthIn: selected.gridFit.placedWidthIn,
-    placedHeightIn: selected.gridFit.placedHeightIn,
-    productionNote: notes.length ? notes.join('; ') : null,
+    placedWidthIn: selected.sheetFit.placedWidthIn,
+    placedHeightIn: selected.sheetFit.placedHeightIn,
   }
 }

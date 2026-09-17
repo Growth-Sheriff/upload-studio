@@ -260,6 +260,13 @@ export async function action({ request }: ActionFunctionArgs) {
         shopId: shop.id,
         productId: productId ? String(productId) : null,
         status: { notIn: ['archived', 'blocked'] },
+        // An upload row carries mutable cart facts. Reusing a row that is
+        // already linked to an order would let a later cart overwrite what
+        // the first order's identity/admin pages report. The same customer
+        // may upload the same bytes again, but that must create a fresh row.
+        orderId: null,
+        orderPaidAt: null,
+        ordersLink: { none: {} },
         createdAt: { gte: new Date(Date.now() - 30 * 24 * 3600 * 1000) },
         ...(customerId ? { customerId: String(customerId) } : { visitorId: String(visitorId) }),
         items: {

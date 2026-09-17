@@ -6,27 +6,21 @@ import {
   getMainProductSheetSizes,
   MAIN_PRODUCT_MEASUREMENT_POLICY,
   resolveServerMainProductRollWidth,
-  shouldUseMainProductMeasurementPolicy,
 } from '~/lib/mainProductMeasurement.server'
 import {
   applyCustomerPricingDefaultsForShop,
   calculateMeasuredLengthQuote,
   calculateVariantLengthQuote,
-  deriveVariantBasedLimits,
   matchesTrustedUploadOwner,
   normalizeCustomerId,
   parseSheetSizeFromTitle,
-  validateCustomQuoteAgainstLimits,
   validateMeasuredCrossRollFit,
-  type BuilderLimits,
   type CustomPricedQuote,
   type CustomerPricingContext,
   type VipUploadMeasurement,
 } from '~/lib/customerPricing.server'
 import {
   getRuntimeMeasurementBasis,
-  resolveCustomerPricingModelState,
-  type CustomerPricingPolicy,
   type PricingSource,
   type VolumeTier,
 } from '~/lib/customerPricingModel.server'
@@ -35,6 +29,7 @@ import {
   resolveEffectivePricingForShop,
 } from '~/lib/customerPricingRuntime.server'
 import {
+  getPrintableWidthFailure,
   resolveSheetVariant,
   type BuilderResolveConfig,
   type ProductOptionDef,
@@ -53,6 +48,9 @@ import {
 } from '~/lib/shopifyProductIdentity'
 import { selectProductConfigForIdentity } from '~/lib/productConfigIdentity.server'
 import { collectShopifyConnectionPages } from '~/lib/shopifyVariantPagination.server'
+import { hasUploadOrderHistory } from '~/lib/uploadQuantitySemantics'
+export const HISTORICAL_UPLOAD_REUPLOAD_REQUIRED =
+  'Upload this file again before ordering so the previous order record stays unchanged.'
 
 const PRODUCT_VARIANTS_QUERY = `
   query CustomPricingProductVariants($id: ID!, $after: String) {
@@ -145,7 +143,6 @@ export interface PreparedCustomPricingQuote {
   resolvedVariant: SheetVariantResolution | null
   checkoutVariantId: string | null
   requestedQuantity: number
-  productionNote: string | null
 }
 
 export interface CustomPricingJobItemInput {
@@ -184,21 +181,8 @@ function normalizeMeasurementPolicy(value: unknown): string | null {
 
 function buildEffectiveResolveConfig(
   builderConfig: Record<string, unknown> | null | undefined,
-  policy: CustomerPricingPolicy,
-  policyExplicit: boolean,
   rollWidthIn: number
-): BuilderResolveConfig & { maxWidthIn: number } {
-  const rawConfiguredMaxWidth = parsePositiveNumber(builderConfig?.maxWidthIn) || 0
-  const maxWidthLimit = policy.maxSheetWidthIn
-  const physicalSheetWidthLimit = policyExplicit
-    ? Math.min(rollWidthIn, maxWidthLimit)
-    : rollWidthIn
-  const configuredMaxWidth = Math.min(
-    rawConfiguredMaxWidth || physicalSheetWidthLimit,
-    physicalSheetWidthLimit
-  )
-  const configuredArtboardMargin = Number(builderConfig?.artboardMarginIn)
-  const configuredImageMargin = Number(builderConfig?.imageMarginIn)
+): BuilderResolveConfig {
   return {
     sheetOptionName:
       typeof builderConfig?.sheetOptionName === 'string' ? builderConfig.sheetOptionName : null,
@@ -211,30 +195,7 @@ function buildEffectiveResolveConfig(
           .map((value) => String(value || '').trim())
           .filter(Boolean)
       : [],
-    artboardMarginIn: policyExplicit
-      ? Math.max(
-          Number.isFinite(configuredArtboardMargin) && configuredArtboardMargin >= 0
-            ? configuredArtboardMargin
-            : 0,
-          policy.artboardMarginIn
-        )
-      : Number.isFinite(configuredArtboardMargin) && configuredArtboardMargin >= 0
-        ? configuredArtboardMargin
-        : 0,
-    imageMarginIn: policyExplicit
-      ? Math.max(
-          Number.isFinite(configuredImageMargin) && configuredImageMargin >= 0
-            ? configuredImageMargin
-            : 0,
-          policy.imageMarginIn
-        )
-      : Number.isFinite(configuredImageMargin) && configuredImageMargin >= 0
-        ? configuredImageMargin
-        : 0,
-    maxDesignWidthIn: configuredMaxWidth,
-    maxSheetWidthIn: physicalSheetWidthLimit,
-    maxWidthIn: configuredMaxWidth,
-    fitToleranceIn: policy.fitToleranceIn,
+    printableWidthIn: rollWidthIn,
   }
 }
 
@@ -275,32 +236,6 @@ function buildVariantMatrix(
   })
 
   return { optionDefs, variants }
-}
-
-function buildVariantLimits(
-  product: ProductQueryResponse['product'],
-  builderConfig: Record<string, unknown> | null | undefined,
-  policy: CustomerPricingPolicy,
-  policyExplicit: boolean
-): BuilderLimits {
-  const variantTitles = (product?.variants.edges || [])
-    .map((edge) => edge.node?.title || '')
-    .filter(Boolean)
-  const limits = deriveVariantBasedLimits(
-    variantTitles,
-    (builderConfig as BuilderLimits | null | undefined) || null
-  )
-  const maxWidthLimit = policy.maxSheetWidthIn
-  const rawConfiguredMaxWidth = parsePositiveNumber(builderConfig?.maxWidthIn)
-  const configuredMaxWidth = policyExplicit
-    ? Math.min(rawConfiguredMaxWidth || maxWidthLimit, maxWidthLimit)
-    : rawConfiguredMaxWidth
-  return {
-    ...limits,
-    maxWidthIn:
-      configuredMaxWidth ||
-      (policyExplicit ? maxWidthLimit : parsePositiveNumber(limits.maxWidthIn)),
-  }
 }
 
 export async function prepareCustomPricingQuote({
@@ -390,8 +325,6 @@ export async function prepareCustomPricingJobQuote({
   }
   const trustedCustomerProfile = trustedCustomer
   const settings = applyCustomerPricingDefaultsForShop(activeShop.shopDomain, activeShop.settings)
-  const pricingModel = resolveCustomerPricingModelState(activeShop.shopDomain, activeShop.settings)
-  const policy = pricingModel.policy
   const measurementBasis = getRuntimeMeasurementBasis(activeShop.shopDomain, activeShop.settings)
   const storageConfig = getStorageConfig({
     storageProvider: activeShop.storageProvider,
@@ -404,7 +337,6 @@ export async function prepareCustomPricingJobQuote({
       productData: ProductQueryResponse
       optionDefs: ProductOptionDef[]
       variants: ProductVariantDef[]
-      variantLimits: BuilderLimits
     }
   >()
 
@@ -419,6 +351,15 @@ export async function prepareCustomPricingJobQuote({
         variantId: true,
         customerId: true,
         customerEmail: true,
+        orderId: true,
+        quantitySemantics: true,
+        requestedCopies: true,
+        designsPerSheet: true,
+        sheetsNeeded: true,
+        ordersLink: {
+          select: { orderId: true },
+          take: 1,
+        },
         items: {
           orderBy: { createdAt: 'asc' },
           select: {
@@ -446,6 +387,11 @@ export async function prepareCustomPricingJobQuote({
       })
     ) {
       throw new Error('Upload does not belong to the logged in customer')
+    }
+
+    const hasOrderHistory = hasUploadOrderHistory(upload)
+    if (hasOrderHistory) {
+      throw new Error(HISTORICAL_UPLOAD_REUPLOAD_REQUIRED)
     }
 
     const itemLifecycles = upload.items.map((item) => ({
@@ -529,30 +475,17 @@ export async function prepareCustomPricingJobQuote({
       const builderConfig =
         (productConfig?.builderConfig as Record<string, unknown> | null) || null
       const { optionDefs, variants } = buildVariantMatrix(productData.product)
-      const variantLimits = buildVariantLimits(
-        productData.product,
-        builderConfig,
-        policy,
-        pricingModel.policyExplicit
-      )
 
       cachedProduct = {
         builderConfig,
         productData,
         optionDefs,
         variants,
-        variantLimits,
       }
       productCache.set(productId, cachedProduct)
     }
 
-    const configuredRollWidth = resolveServerMainProductRollWidth(
-      cachedProduct.builderConfig,
-      {
-        policyExplicit: pricingModel.policyExplicit,
-        maxSheetWidthIn: policy.maxSheetWidthIn,
-      }
-    )
+    const configuredRollWidth = resolveServerMainProductRollWidth(cachedProduct.builderConfig)
     const measurement = applyMainProductMeasurementPolicy(rawMeasurement, {
       measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
       rollWidthIn: configuredRollWidth,
@@ -586,30 +519,16 @@ export async function prepareCustomPricingJobQuote({
     let resolvedVariant: SheetVariantResolution | null = null
     let checkoutVariantId: string | null = null
     let quote: CustomPricedQuote | null = null
-    let productionNote: string | null = null
 
     if (pricingContext.pricingMode === 'measured_length') {
       quote = calculateMeasuredLengthQuote(measurement, pricePerInch, itemInput.quantity)
-      const fitConfig = buildEffectiveResolveConfig(
-        cachedProduct.builderConfig,
-        policy,
-        pricingModel.policyExplicit,
-        configuredRollWidth
-      )
+      const fitConfig = buildEffectiveResolveConfig(cachedProduct.builderConfig, configuredRollWidth)
       const crossRollFit = validateMeasuredCrossRollFit({
         measurement,
-        rollWidthIn: fitConfig.maxSheetWidthIn || configuredRollWidth,
-        maxDesignWidthIn: fitConfig.maxDesignWidthIn,
-        artboardMarginIn: fitConfig.artboardMarginIn,
-        fitToleranceIn: fitConfig.fitToleranceIn,
+        rollWidthIn: fitConfig.printableWidthIn || configuredRollWidth,
       })
       if (!crossRollFit.ok) {
         throw new Error(crossRollFit.reason || 'Design is outside the configured roll width')
-      }
-      productionNote = crossRollFit.productionNote
-      const validation = validateCustomQuoteAgainstLimits(quote, cachedProduct.variantLimits, 'Custom design')
-      if (!validation.ok) {
-        throw new Error(validation.reason || 'Design is outside product limits')
       }
       const requestedVariantId = String(
         itemInput.selectedVariantId || upload.variantId || ''
@@ -632,36 +551,23 @@ export async function prepareCustomPricingJobQuote({
         variants: cachedProduct.variants,
         optionDefs: cachedProduct.optionDefs,
         selectedVariantId: itemInput.selectedVariantId || null,
-        config: {
-          ...buildEffectiveResolveConfig(
-            cachedProduct.builderConfig,
-            policy,
-            pricingModel.policyExplicit,
-            configuredRollWidth
-          ),
-          selectionStrategy:
-            policy.sheetSelection !== 'block_default'
-              ? policy.sheetSelection
-              : shouldUseMainProductMeasurementPolicy(MAIN_PRODUCT_MEASUREMENT_POLICY)
-                ? 'smallest_fitting_sheet'
-                : null,
-        },
+        config: buildEffectiveResolveConfig(cachedProduct.builderConfig, configuredRollWidth),
       })
 
       if (!resolution) {
+        const widthFailure = getPrintableWidthFailure({
+          widthIn: measurement.widthIn,
+          heightIn: measurement.heightIn,
+          config: buildEffectiveResolveConfig(cachedProduct.builderConfig, configuredRollWidth),
+        })
         throw new Error(
-          'No product variant can fit this upload with the current quantity and available sheet sizes.'
+          widthFailure?.message ||
+            'No product variant can fit this upload with the available sheet sizes.'
         )
       }
 
       const parsedSheetSize = parseSheetSizeFromTitle(resolution.selectedVariantTitle)
-      const selectedSheetCrossWidth = parsedSheetSize
-        ? Math.min(parsedSheetSize.widthIn, parsedSheetSize.lengthIn)
-        : 0
-      const selectedSheetMaxWidth = Math.min(selectedSheetCrossWidth, configuredRollWidth)
-      if (!parsedSheetSize || resolution.placedWidthIn > selectedSheetMaxWidth + 0.001) {
-        throw new Error('Business design width exceeds the selected sheet width')
-      }
+      if (!parsedSheetSize) throw new Error('Selected sheet length could not be parsed')
 
       const billableSheetLengthIn = Number(
         (
@@ -733,7 +639,6 @@ export async function prepareCustomPricingJobQuote({
       resolvedVariant,
       checkoutVariantId,
       requestedQuantity: itemInput.quantity,
-      productionNote: productionNote || resolvedVariant?.productionNote || null,
     }
   }
 

@@ -2,10 +2,6 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, corsJson } from "~/lib/cors.server";
 import { rateLimitGuard, getIdentifier } from "~/lib/rateLimit.server";
 import prisma from "~/lib/prisma.server";
-import {
-  getRuntimePricingPolicy,
-  resolveCustomerPricingModelState,
-} from "~/lib/customerPricingModel.server";
 import { resolveServerMainProductRollWidth } from "~/lib/mainProductMeasurement.server";
 import {
   applyAlphaProBuilderDefaults,
@@ -141,18 +137,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const builderConfigRaw = productConfig
     ? (productConfig.builderConfig as Record<string, any>) || {}
     : {};
-  const pricingModel = resolveCustomerPricingModelState(shopDomain, shop.settings);
-  const pricingPolicy = getRuntimePricingPolicy(shopDomain, shop.settings);
-  const shopMaxWidthLimit = pricingPolicy.maxSheetWidthIn;
-  const defaultArtboardMarginIn = pricingPolicy.artboardMarginIn;
-  const defaultImageMarginIn = pricingPolicy.imageMarginIn;
-  const storedArtboardMargin = Number(builderConfigRaw.artboardMarginIn);
-  const storedImageMargin = Number(builderConfigRaw.imageMarginIn);
-  const storedMaxWidth = Number(builderConfigRaw.maxWidthIn);
-  const rollWidthIn = resolveServerMainProductRollWidth(builderConfigRaw, {
-    policyExplicit: pricingModel.policyExplicit,
-    maxSheetWidthIn: shopMaxWidthLimit,
-  });
+  const rollWidthIn = resolveServerMainProductRollWidth(builderConfigRaw);
 
   const rawBuilderConfigResponse = productConfig
     ? {
@@ -161,28 +146,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         widthOptionName: builderConfigRaw.widthOptionName ?? null,
         heightOptionName: builderConfigRaw.heightOptionName ?? null,
         modalOptionNames: Array.isArray(builderConfigRaw.modalOptionNames) ? builderConfigRaw.modalOptionNames : [],
-        artboardMarginIn:
-          Number.isFinite(storedArtboardMargin) && storedArtboardMargin >= 0
-            ? pricingModel.policyExplicit
-              ? Math.max(defaultArtboardMarginIn, storedArtboardMargin)
-              : storedArtboardMargin
-            : defaultArtboardMarginIn,
-        imageMarginIn:
-          Number.isFinite(storedImageMargin) && storedImageMargin >= 0
-            ? pricingModel.policyExplicit
-              ? Math.max(defaultImageMarginIn, storedImageMargin)
-              : storedImageMargin
-            : defaultImageMarginIn,
         rollWidthIn,
-        maxWidthIn:
-          Number.isFinite(storedMaxWidth) && storedMaxWidth > 0
-            ? pricingModel.policyExplicit
-              ? Math.min(storedMaxWidth, shopMaxWidthLimit)
-              : storedMaxWidth
-            : shopMaxWidthLimit,
-        maxHeightIn: builderConfigRaw.maxHeightIn ?? 35.75,
-        minWidthIn: builderConfigRaw.minWidthIn ?? 1,
-        minHeightIn: builderConfigRaw.minHeightIn ?? 1,
         colorProfile: builderConfigRaw.colorProfile ?? "CMYK",
         cartProductHandle: builderConfigRaw.cartProductHandle ?? null,
         maxFileSizeMb: builderConfigRaw.maxFileSizeMb ?? 500,

@@ -12,7 +12,6 @@ import {
   MAIN_PRODUCT_MEASUREMENT_POLICY,
   resolveServerMainProductRollWidth,
 } from '~/lib/mainProductMeasurement.server'
-import { resolveCustomerPricingModelState } from '~/lib/customerPricingModel.server'
 import { selectProductConfigForIdentity } from '~/lib/productConfigIdentity.server'
 import { shopifyProductIdCandidates } from '~/lib/shopifyProductIdentity'
 import {
@@ -81,12 +80,8 @@ export async function action({ request }: ActionFunctionArgs) {
       shopId: shop.id,
       source: 'api.upload.resolve-preview',
     })
-    const pricingModel = resolveCustomerPricingModelState(shopDomain, shop.settings)
     const builderConfig = (productConfig?.builderConfig || null) as Record<string, unknown> | null
-    const serverRollWidthIn = resolveServerMainProductRollWidth(builderConfig, {
-      policyExplicit: pricingModel.policyExplicit,
-      maxSheetWidthIn: pricingModel.policy.maxSheetWidthIn,
-    })
+    const serverRollWidthIn = resolveServerMainProductRollWidth(builderConfig)
 
     const result = await resolveForMetadata({
       shopDomain,
@@ -118,7 +113,10 @@ export async function action({ request }: ActionFunctionArgs) {
     if (result.kind === 'no_fit') {
       return corsJson(
         {
-          error: 'No product variant can fit this file with the current quantity and available sheet sizes.',
+          error:
+            result.failure?.message ||
+            'No product variant can fit this file with the available sheet sizes.',
+          failure: result.failure,
           provisional: true,
           dimensions: result.dimensions,
           config: result.config,

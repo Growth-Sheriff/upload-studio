@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveLinearInchVariant } from './sheetResolution.server'
+import { metadataFromProbe, resolveLinearInchVariant } from './sheetResolution.server'
 
 const measured = {
   widthPx: 9000,
@@ -26,7 +26,7 @@ describe('resolveLinearInchVariant', () => {
       dimensions: { ...measured, widthIn: 21.98, heightIn: 23.91 },
       quantity: 2,
       variants: [{ id: '1', title: '22x1', price: '1.00', availableForSale: true }],
-      maxCrossRollWidthIn: 22,
+      printableWidthIn: 22,
     })
 
     expect(result?.cartQuantity).toBe(48)
@@ -41,22 +41,42 @@ describe('resolveLinearInchVariant', () => {
         dimensions: measured,
         quantity: 1,
         variants: [{ id: '1', title: '22x1', price: '1.00', availableForSale: true }],
-        maxCrossRollWidthIn: 22,
+        printableWidthIn: 22,
       })
     ).toBeNull()
   })
 
-  it('subtracts artboard margins from the physical roll once, not from the design cap twice', () => {
+  it('treats the entered roll width as printable width without subtracting margins', () => {
     const result = resolveLinearInchVariant({
       dimensions: { ...measured, widthIn: 21.5, heightIn: 40 },
       quantity: 1,
       variants: [{ id: '1', title: '22x1', price: '1.00', availableForSale: true }],
-      maxCrossRollWidthIn: 22,
-      maxDesignWidthIn: 21.5,
-      artboardMarginIn: 0.25,
+      printableWidthIn: 22,
     })
 
     expect(result?.placedWidthIn).toBe(21.5)
+  })
+
+  it('does not use fit tolerance to accept an over-width measured-length file', () => {
+    const result = resolveLinearInchVariant({
+      dimensions: { ...measured, widthIn: 24, heightIn: 20.1 },
+      quantity: 1,
+      variants: [{ id: '1', title: '22x1', price: '1.00', availableForSale: true }],
+      printableWidthIn: 20,
+    })
+
+    expect(result).toBeNull()
+  })
+
+  it('keeps orientation normalization internal', () => {
+    const result = resolveLinearInchVariant({
+      dimensions: { ...measured, widthIn: 80, heightIn: 22 },
+      quantity: 1,
+      variants: [{ id: '1', title: '22x1', price: '1.00', availableForSale: true }],
+      printableWidthIn: 22,
+    })
+
+    expect(result?.billableLengthIn).toBe(80)
   })
 
   it('does not select an unavailable unit variant', () => {
@@ -65,7 +85,7 @@ describe('resolveLinearInchVariant', () => {
         dimensions: { ...measured, widthIn: 20 },
         quantity: 1,
         variants: [{ id: '1', title: '22x1', price: '1.00', availableForSale: false }],
-        maxCrossRollWidthIn: 22,
+        printableWidthIn: 22,
       })
     ).toBeNull()
   })
@@ -79,7 +99,7 @@ describe('resolveLinearInchVariant', () => {
         { id: '2', title: '24 x 1 / Premium', price: '1.25', availableForSale: true },
       ],
       selectedVariantId: 'gid://shopify/ProductVariant/2',
-      maxCrossRollWidthIn: 22,
+      printableWidthIn: 22,
     })
 
     expect(result?.selectedVariantId).toBe('2')
@@ -123,7 +143,7 @@ describe('resolveLinearInchVariant', () => {
         },
       ],
       selectedVariantId: '10',
-      maxCrossRollWidthIn: 22,
+      printableWidthIn: 22,
     })
 
     expect(result?.selectedVariantId).toBe('12')
@@ -167,10 +187,26 @@ describe('resolveLinearInchVariant', () => {
         },
       ],
       selectedVariantId: '20',
-      maxCrossRollWidthIn: 22,
+      printableWidthIn: 22,
     })
 
     expect(result?.selectedVariantId).toBe('22')
     expect(result?.pricePerInch).toBe(1.25)
+  })
+})
+
+describe('metadataFromProbe', () => {
+  it('does not accept a 22.01-inch Adobe-default short edge on a 22-inch roll', () => {
+    const result = metadataFromProbe({
+      widthPx: 7200,
+      heightPx: 1585,
+      dpi: 0,
+      rollWidthIn: 22,
+    })
+
+    expect(result.sizingSource).toBe('client_probe')
+    expect(result.effectiveDpi).toBe(0)
+    expect(result.widthIn).toBe(0)
+    expect(result.heightIn).toBe(0)
   })
 })
