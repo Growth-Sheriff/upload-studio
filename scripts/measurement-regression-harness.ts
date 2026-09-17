@@ -56,7 +56,7 @@ interface CaseFixture {
   measurementPolicy?: string | null
   rollWidthIn?: number | null
   metadata: JsonRecord
-  expectedClassification: 'same' | 'intended_fix' | 'approved_correction' | 'regression'
+  expectedClassification: 'same' | 'approved_finished_sheet_rule' | 'approved_no_nesting' | 'approved_physical_rejection' | 'regression'
   expectedChangedFields: OutputField[]
   expected?: {
     previous: Partial<VersionOutput>
@@ -79,15 +79,12 @@ interface VersionOutput {
   heightIn: number | null
   effectiveDpi: number | null
   chosenVariant: string | null
-  designsPerSheet: number | null
-  sheetsNeeded: number | null
+  wholeSheetCopies: number | null
   finalPrice: number | null
   billableLengthIn: number | null
   pricePerInch: number | null
   chosenTier: string | null
-  placementMode: string | null
-  rotationApplied: boolean | null
-  productionNote: string | null
+  fitFailure: string | null
 }
 
 const OUTPUT_FIELDS = [
@@ -95,15 +92,12 @@ const OUTPUT_FIELDS = [
   'heightIn',
   'effectiveDpi',
   'chosenVariant',
-  'designsPerSheet',
-  'sheetsNeeded',
+  'wholeSheetCopies',
   'finalPrice',
   'billableLengthIn',
   'pricePerInch',
   'chosenTier',
-  'placementMode',
-  'rotationApplied',
-  'productionNote',
+  'fitFailure',
 ] as const
 type OutputField = (typeof OUTPUT_FIELDS)[number]
 
@@ -120,7 +114,6 @@ interface UploadLifecycleModule {
 
 interface MainProductMeasurementModule {
   getMainProductRollWidth: (value: unknown) => number
-  resolveServerMainProductRollWidth?: (builderConfig: JsonRecord | null | undefined) => number
 }
 
 interface LegacyCustomerPricingModule {
@@ -134,8 +127,8 @@ const scriptDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(scriptDir, '..')
 const fixturePath = resolve(scriptDir, 'measurement-regression-fixtures.json')
 const fixtures = JSON.parse(readFileSync(fixturePath, 'utf8')) as FixtureFile
-if (fixtures.schemaVersion !== 2) {
-  throw new Error(`Unsupported fixture schema ${fixtures.schemaVersion}; expected 2`)
+if (fixtures.schemaVersion !== 3) {
+  throw new Error(`Unsupported fixture schema ${fixtures.schemaVersion}; expected 3`)
 }
 const nativeRequire = createRequire(import.meta.url)
 
@@ -397,6 +390,7 @@ const currentCustomerPricing = currentLoader.load<{
 interface ResolvedVersion {
   dimensions: UploadLifecycleMetadata
   resolution: JsonRecord | null
+  failure: JsonRecord | null
 }
 
 async function resolveVersion(
@@ -408,14 +402,8 @@ async function resolveVersion(
 ): Promise<ResolvedVersion> {
   const requestedMeasurementPolicy = testCase.measurementPolicy ?? 'main_product_roll_width'
   let rollWidthIn = testCase.rollWidthIn ?? 22
-  let maxUploadWidth: number | null = rollWidthIn
   if (version === 'previous') {
     rollWidthIn = previousMainProductMeasurement.getMainProductRollWidth(rollWidthIn)
-  } else if (currentMainProductMeasurement.resolveServerMainProductRollWidth) {
-    rollWidthIn = currentMainProductMeasurement.resolveServerMainProductRollWidth(
-      product.builderConfig
-    )
-    maxUploadWidth = rollWidthIn
   }
   // Both real resolve-product routes normalize the stored preflight payload
   // through their own revision's lifecycle parser before sheet resolution.
@@ -443,8 +431,9 @@ async function resolveVersion(
     selectedVariantId: null,
     measurementPolicy: requestedMeasurementPolicy,
     measurementBasis: testCase.measurementBasis,
-    rollWidthIn,
-    maxUploadWidth,
+    // Only the historical revision consumes this client-era value. Current
+    // code resolves its three visible merchant settings from builderConfig.
+    ...(version === 'previous' ? { rollWidthIn, maxUploadWidth: rollWidthIn } : {}),
   })
   const kind = String(result.kind || '')
   if (kind === 'not_ready' || kind === 'product_not_found') {
@@ -457,6 +446,10 @@ async function resolveVersion(
     resolution: kind === 'ok' && result.resolution && typeof result.resolution === 'object'
       ? (result.resolution as JsonRecord)
       : null,
+    failure:
+      kind === 'no_fit' && result.failure && typeof result.failure === 'object'
+        ? (result.failure as JsonRecord)
+        : null,
   }
 }
 
@@ -473,12 +466,14 @@ function selectedRetailTotal(
     (candidate) => String(candidate.id) === String(resolution.selectedVariantId || '')
   )
   if (!variant) throw new Error(`Selected variant ${resolution.selectedVariantId} is absent from fixture`)
-  return dollars(Number(variant.price) * Number(resolution.sheetsNeeded || 0))
+  const copies = Number(resolution.wholeSheetCopies ?? resolution.sheetsNeeded ?? 0)
+  return dollars(Number(variant.price) * copies)
 }
 
 function sheetOutput(
   measurement: UploadLifecycleMetadata,
   resolution: JsonRecord | null,
+  failure: JsonRecord | null,
   variants: ProductVariantDef[]
 ): VersionOutput {
   return {
@@ -486,18 +481,14 @@ function sheetOutput(
     heightIn: measurement.heightIn,
     effectiveDpi: measurement.effectiveDpi,
     chosenVariant: resolution ? String(resolution.selectedVariantTitle || '') || null : null,
-    designsPerSheet: resolution ? Number(resolution.designsPerSheet) || null : null,
-    sheetsNeeded: resolution ? Number(resolution.sheetsNeeded) || null : null,
+    wholeSheetCopies: resolution
+      ? Number(resolution.wholeSheetCopies ?? resolution.sheetsNeeded) || null
+      : null,
     finalPrice: selectedRetailTotal(resolution, variants),
     billableLengthIn: null,
     pricePerInch: null,
     chosenTier: null,
-    placementMode: resolution ? String(resolution.placementMode || '') || null : null,
-    rotationApplied:
-      resolution && typeof resolution.rotationApplied === 'boolean'
-        ? resolution.rotationApplied
-        : null,
-    productionNote: resolution ? String(resolution.productionNote || '') || null : null,
+    fitFailure: failure ? String(failure.code || 'NO_FIT') : null,
   }
 }
 
@@ -521,6 +512,7 @@ function linearOutput(
   product: LinearProductFixture,
   measurement: UploadLifecycleMetadata,
   resolution: JsonRecord | null,
+  failure: JsonRecord | null,
   quantity: number
 ): VersionOutput {
   const expectedBillableLength = Number(
@@ -543,45 +535,33 @@ function linearOutput(
       heightIn: measurement.heightIn,
       effectiveDpi: measurement.effectiveDpi,
       chosenVariant: resolution ? String(resolution.selectedVariantTitle || product.carrier.title) : null,
-      designsPerSheet: resolution ? Number(resolution.designsPerSheet) || null : null,
-      // This field deliberately comes from resolve-product. d8470f5 exposed
-      // integer Shopify carrier inches here; current code exposes physical copies.
-      sheetsNeeded: resolution ? Number(resolution.sheetsNeeded) || null : null,
+      // The baseline exposed integer carrier inches as `sheetsNeeded`; that
+      // was never a physical copy count. Compare the business fact instead.
+      wholeSheetCopies: resolution ? Math.max(1, Math.floor(quantity)) : null,
       finalPrice,
       billableLengthIn: billableLength,
       pricePerInch: quote.pricePerInch,
       chosenTier: tier.label,
-      placementMode: resolution ? String(resolution.placementMode || '') || null : null,
-      rotationApplied:
-        resolution && typeof resolution.rotationApplied === 'boolean'
-          ? resolution.rotationApplied
-          : null,
-      productionNote: resolution ? String(resolution.productionNote || '') || null : null,
+      fitFailure: failure ? String(failure.code || 'NO_FIT') : null,
     }
   }
 
-  const quote = currentCustomerPricing.calculateMeasuredLengthQuote(
-    measurement,
-    tier.rate,
-    quantity
-  )
+  const quote = resolution
+    ? currentCustomerPricing.calculateMeasuredLengthQuote(measurement, tier.rate, quantity)
+    : null
   return {
     widthIn: measurement.widthIn,
     heightIn: measurement.heightIn,
     effectiveDpi: measurement.effectiveDpi,
     chosenVariant: resolution ? String(resolution.selectedVariantTitle || product.carrier.title) : null,
-    designsPerSheet: resolution ? Number(resolution.designsPerSheet) || null : null,
-    sheetsNeeded: resolution ? Number(resolution.sheetsNeeded) || null : quote.sheetsNeeded || null,
-    finalPrice: quote.totalPrice,
-    billableLengthIn: quote.billableLengthIn,
-    pricePerInch: quote.pricePerInch,
-    chosenTier: tier.label,
-    placementMode: resolution ? String(resolution.placementMode || '') || null : null,
-    rotationApplied:
-      resolution && typeof resolution.rotationApplied === 'boolean'
-        ? resolution.rotationApplied
-        : null,
-    productionNote: resolution ? String(resolution.productionNote || '') || null : null,
+    wholeSheetCopies: resolution
+      ? Number(resolution.wholeSheetCopies) || Math.max(1, Math.floor(quantity))
+      : null,
+    finalPrice: quote?.totalPrice ?? null,
+    billableLengthIn: quote?.billableLengthIn ?? null,
+    pricePerInch: quote?.pricePerInch ?? null,
+    chosenTier: resolution ? tier.label : null,
+    fitFailure: failure ? String(failure.code || 'NO_FIT') : null,
   }
 }
 
@@ -598,7 +578,7 @@ function changedFields(previous: VersionOutput, current: VersionOutput): OutputF
 
 function formatValue(field: OutputField, value: VersionOutput[OutputField]): string {
   if (value == null) {
-    return ['chosenVariant', 'designsPerSheet', 'sheetsNeeded', 'finalPrice'].includes(field)
+    return ['chosenVariant', 'wholeSheetCopies', 'finalPrice'].includes(field)
       ? 'NO FIT'
       : '—'
   }
@@ -653,6 +633,7 @@ const rows = await Promise.all(fixtures.cases.map(async (testCase) => {
       product,
       previousResolved.dimensions,
       previousResolved.resolution,
+      previousResolved.failure,
       testCase.quantity
     )
     current = linearOutput(
@@ -660,12 +641,23 @@ const rows = await Promise.all(fixtures.cases.map(async (testCase) => {
       product,
       currentResolved.dimensions,
       currentResolved.resolution,
+      currentResolved.failure,
       testCase.quantity
     )
   } else {
     const { variants } = buildProductMatrix(product)
-    previous = sheetOutput(previousResolved.dimensions, previousResolved.resolution, variants)
-    current = sheetOutput(currentResolved.dimensions, currentResolved.resolution, variants)
+    previous = sheetOutput(
+      previousResolved.dimensions,
+      previousResolved.resolution,
+      previousResolved.failure,
+      variants
+    )
+    current = sheetOutput(
+      currentResolved.dimensions,
+      currentResolved.resolution,
+      currentResolved.failure,
+      variants
+    )
   }
 
   const actualChangedFields = changedFields(previous, current)
@@ -731,6 +723,17 @@ const unexpectedRows = rows.filter((row) => !row.expectationMatches)
 const regressionRows = rows.filter(
   (row) => row.testCase.expectedClassification === 'regression'
 )
+const approvedPriceClassifications = new Set([
+  'approved_finished_sheet_rule',
+  'approved_no_nesting',
+  'approved_physical_rejection',
+])
+const unclassifiedPriceRows = rows.filter(
+  (row) =>
+    !valuesEqual(row.previous.finalPrice, row.current.finalPrice) &&
+    !approvedPriceClassifications.has(row.testCase.expectedClassification)
+)
+const releaseBlockingRows = Array.from(new Set([...regressionRows, ...unclassifiedPriceRows]))
 const failOnRegression = process.argv.includes('--fail-on-regression')
 
 if (process.argv.includes('--json')) {
@@ -742,8 +745,9 @@ if (process.argv.includes('--json')) {
         baselineCommit,
         currentRevision,
         comparisonIntegrity: unexpectedRows.length ? 'fail' : 'pass',
-        knownRegressionCount: regressionRows.length,
-        releaseGate: regressionRows.length ? 'owner_approval_required' : 'clear',
+        knownRegressionCount: releaseBlockingRows.length,
+        unclassifiedPriceDifferenceCount: unclassifiedPriceRows.length,
+        releaseGate: releaseBlockingRows.length ? 'owner_approval_required' : 'clear',
         rows: rows.map(({ product, ...row }) => ({
           ...row,
           product: { tenant: product.tenant, productId: product.productId, title: product.title },
@@ -759,35 +763,36 @@ if (process.argv.includes('--json')) {
   console.log(`Fixture captured: ${fixtures.capturedAt}`)
   console.log(`Previous code: ${baselineCommit}`)
   console.log(`Current code: ${currentRevision}`)
-  console.log('Sheet final price is variant retail price × sheets; measured-length final price is this upload\'s tier quote. The per-order fee cap is outside this resolver harness.')
+  console.log('Sheet final price is variant retail price × complete-sheet copies; measured-length final price is this upload\'s tier quote. The per-order fee cap is outside this resolver harness.')
+  console.log('Only uploaded dimensions are orientation-normalized. Variant dimensions retain their commercial width × length meaning, and variant length is the price ceiling.')
   console.log('Measured-length tier labels come from the captured live tier fixture; this harness does not test customer eligibility, multi-upload aggregation, or the hosted-checkout fee.')
-  console.log('For baseline measured-length rows, sheets needed is the resolve-product carrier quantity; the explanation records the separate customer/production copy behavior.')
-  console.log(`Comparison integrity: ${unexpectedRows.length ? 'FAIL' : 'PASS'}; known regressions: ${regressionRows.length} (${regressionRows.length ? 'owner approval required' : 'none'}).`)
+  console.log('Every price difference must carry an explicit approved finished-sheet, no-nesting, or physical-rejection classification; otherwise the strict gate fails it as a regression.')
+  console.log(`Comparison integrity: ${unexpectedRows.length ? 'FAIL' : 'PASS'}; release-blocking regressions: ${releaseBlockingRows.length} (${releaseBlockingRows.length ? 'owner approval required' : 'none'}).`)
   console.log('')
-  console.log('| Case | Version | widthIn | heightIn | effectiveDpi | chosen variant | designs/sheet | sheets needed | final price |')
-  console.log('|---|---|---:|---:|---:|---|---:|---:|---:|')
+  console.log('| Case | Version | widthIn | heightIn | effectiveDpi | chosen variant | whole-sheet copies | final price | fit failure |')
+  console.log('|---|---|---:|---:|---:|---|---:|---:|---|')
   for (const row of rows) {
     for (const [version, output] of [
       ['previous', row.previous],
       ['current', row.current],
     ] as const) {
       console.log(
-        `| ${row.testCase.caseId} | ${version} | ${formatValue('widthIn', output.widthIn)} | ${formatValue('heightIn', output.heightIn)} | ${formatValue('effectiveDpi', output.effectiveDpi)} | ${formatValue('chosenVariant', output.chosenVariant)} | ${formatValue('designsPerSheet', output.designsPerSheet)} | ${formatValue('sheetsNeeded', output.sheetsNeeded)} | ${formatValue('finalPrice', output.finalPrice)} |`
+        `| ${row.testCase.caseId} | ${version} | ${formatValue('widthIn', output.widthIn)} | ${formatValue('heightIn', output.heightIn)} | ${formatValue('effectiveDpi', output.effectiveDpi)} | ${formatValue('chosenVariant', output.chosenVariant)} | ${formatValue('wholeSheetCopies', output.wholeSheetCopies)} | ${formatValue('finalPrice', output.finalPrice)} | ${formatValue('fitFailure', output.fitFailure)} |`
       )
     }
   }
   console.log('')
   console.log('## Pricing and production details')
   console.log('')
-  console.log('| Case | Version | billable inches | rate | tier | placement | rotated | production note |')
-  console.log('|---|---|---:|---:|---|---|---|---|')
+  console.log('| Case | Version | billable inches | rate | tier |')
+  console.log('|---|---|---:|---:|---|')
   for (const row of rows) {
     for (const [version, output] of [
       ['previous', row.previous],
       ['current', row.current],
     ] as const) {
       console.log(
-        `| ${row.testCase.caseId} | ${version} | ${formatValue('billableLengthIn', output.billableLengthIn)} | ${formatValue('pricePerInch', output.pricePerInch)} | ${formatValue('chosenTier', output.chosenTier)} | ${formatValue('placementMode', output.placementMode)} | ${formatValue('rotationApplied', output.rotationApplied)} | ${formatValue('productionNote', output.productionNote)} |`
+        `| ${row.testCase.caseId} | ${version} | ${formatValue('billableLengthIn', output.billableLengthIn)} | ${formatValue('pricePerInch', output.pricePerInch)} | ${formatValue('chosenTier', output.chosenTier)} |`
       )
     }
   }
@@ -814,6 +819,6 @@ if (process.argv.includes('--json')) {
 
 if (unexpectedRows.length) {
   process.exitCode = 1
-} else if (failOnRegression && regressionRows.length) {
+} else if (failOnRegression && releaseBlockingRows.length) {
   process.exitCode = 2
 }

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "capturedAt": "2026-09-17T00:00:00Z",
   "baselineCommit": "d8470f5",
   "evidence": {
@@ -12,7 +12,8 @@
       "BWZVq4aSt_No": "gid://shopify/Product/7353935298608",
       "cACX21FxOLlT": "gid://shopify/Product/7353935298608",
       "p2f6LjKFQaml": "gid://shopify/Product/7359337889840"
-    }
+    },
+    "boundaryCanaries": "Cases whose ids begin canary- are deterministic mathematical boundary probes, not production rows or claimed merchant data."
   },
   "products": {
     "alpha_dtf_gang": {
@@ -30,26 +31,146 @@
       "widthOptionName": "Transfer Width",
       "heightOptionName": "Transfer Height",
       "sheets": [
-        ["41164109381680", 22, 12, "22\" / 12\"", "6.00"],
-        ["41164109414448", 22, 24, "22\" / 24\"", "12.00"],
-        ["41164109447216", 22, 36, "22\" / 36\"", "18.00"],
-        ["41164109709360", 22, 48, "22\" / 48\"", "24.00"],
-        ["41164109742128", 22, 60, "22\" / 60\"", "30.00"],
-        ["41164109774896", 22, 72, "22\" / 72\"", "36.00"],
-        ["41164110266416", 22, 84, "22\" / 84\"", "42.00"],
-        ["41164110299184", 22, 96, "22\" / 96\"", "48.00"],
-        ["41164110331952", 22, 108, "22\" / 108\"", "54.00"],
-        ["41164110364720", 22, 120, "22\" / 120\"", "60.00"],
-        ["41164110397488", 22, 132, "22\" / 132\"", "66.00"],
-        ["41164110430256", 22, 144, "22\" / 144\"", "72.00"],
-        ["41164110463024", 22, 156, "22\" / 156\"", "78.00"],
-        ["41164110495792", 22, 168, "22\" / 168\"", "84.00"],
-        ["41164110528560", 22, 180, "22\" / 180\"", "90.00"],
-        ["41164110561328", 22, 192, "22\" / 192\"", "96.00"],
-        ["41164110594096", 22, 204, "22\" / 204\"", "102.00"],
-        ["41164110626864", 22, 216, "22\" / 216\"", "108.00"],
-        ["41164110659632", 22, 228, "22\" / 228\"", "114.00"],
-        ["41164110692400", 22, 240, "22\" / 240\"", "120.00"]
+        [
+          "41164109381680",
+          22,
+          12,
+          "22\" / 12\"",
+          "6.00"
+        ],
+        [
+          "41164109414448",
+          22,
+          24,
+          "22\" / 24\"",
+          "12.00"
+        ],
+        [
+          "41164109447216",
+          22,
+          36,
+          "22\" / 36\"",
+          "18.00"
+        ],
+        [
+          "41164109709360",
+          22,
+          48,
+          "22\" / 48\"",
+          "24.00"
+        ],
+        [
+          "41164109742128",
+          22,
+          60,
+          "22\" / 60\"",
+          "30.00"
+        ],
+        [
+          "41164109774896",
+          22,
+          72,
+          "22\" / 72\"",
+          "36.00"
+        ],
+        [
+          "41164110266416",
+          22,
+          84,
+          "22\" / 84\"",
+          "42.00"
+        ],
+        [
+          "41164110299184",
+          22,
+          96,
+          "22\" / 96\"",
+          "48.00"
+        ],
+        [
+          "41164110331952",
+          22,
+          108,
+          "22\" / 108\"",
+          "54.00"
+        ],
+        [
+          "41164110364720",
+          22,
+          120,
+          "22\" / 120\"",
+          "60.00"
+        ],
+        [
+          "41164110397488",
+          22,
+          132,
+          "22\" / 132\"",
+          "66.00"
+        ],
+        [
+          "41164110430256",
+          22,
+          144,
+          "22\" / 144\"",
+          "72.00"
+        ],
+        [
+          "41164110463024",
+          22,
+          156,
+          "22\" / 156\"",
+          "78.00"
+        ],
+        [
+          "41164110495792",
+          22,
+          168,
+          "22\" / 168\"",
+          "84.00"
+        ],
+        [
+          "41164110528560",
+          22,
+          180,
+          "22\" / 180\"",
+          "90.00"
+        ],
+        [
+          "41164110561328",
+          22,
+          192,
+          "22\" / 192\"",
+          "96.00"
+        ],
+        [
+          "41164110594096",
+          22,
+          204,
+          "22\" / 204\"",
+          "102.00"
+        ],
+        [
+          "41164110626864",
+          22,
+          216,
+          "22\" / 216\"",
+          "108.00"
+        ],
+        [
+          "41164110659632",
+          22,
+          228,
+          "22\" / 228\"",
+          "114.00"
+        ],
+        [
+          "41164110692400",
+          22,
+          240,
+          "22\" / 240\"",
+          "120.00"
+        ]
       ]
     },
     "alpha_uv_gang": {
@@ -67,16 +188,76 @@
       "widthOptionName": "Transfer Width:",
       "heightOptionName": "Transfer Height:",
       "sheets": [
-        ["41178163675184", 22, 6, "22\" / 6\"", "7.50"],
-        ["41178185695280", 22, 12, "22\" / 12\"", "15.00"],
-        ["41178185728048", 22, 24, "22\" / 24\"", "30.00"],
-        ["41178185760816", 22, 36, "22\" / 36\"", "45.00"],
-        ["41178185793584", 22, 48, "22\" / 48\"", "60.00"],
-        ["41178189168688", 22, 60, "22\" / 60\"", "75.00"],
-        ["41178189201456", 22, 72, "22\" / 72\"", "90.00"],
-        ["41178189234224", 22, 84, "22\" / 84\"", "105.00"],
-        ["41178189266992", 22, 96, "22\" / 96\"", "120.00"],
-        ["41178189299760", 22, 120, "22\" / 120\"", "150.00"]
+        [
+          "41178163675184",
+          22,
+          6,
+          "22\" / 6\"",
+          "7.50"
+        ],
+        [
+          "41178185695280",
+          22,
+          12,
+          "22\" / 12\"",
+          "15.00"
+        ],
+        [
+          "41178185728048",
+          22,
+          24,
+          "22\" / 24\"",
+          "30.00"
+        ],
+        [
+          "41178185760816",
+          22,
+          36,
+          "22\" / 36\"",
+          "45.00"
+        ],
+        [
+          "41178185793584",
+          22,
+          48,
+          "22\" / 48\"",
+          "60.00"
+        ],
+        [
+          "41178189168688",
+          22,
+          60,
+          "22\" / 60\"",
+          "75.00"
+        ],
+        [
+          "41178189201456",
+          22,
+          72,
+          "22\" / 72\"",
+          "90.00"
+        ],
+        [
+          "41178189234224",
+          22,
+          84,
+          "22\" / 84\"",
+          "105.00"
+        ],
+        [
+          "41178189266992",
+          22,
+          96,
+          "22\" / 96\"",
+          "120.00"
+        ],
+        [
+          "41178189299760",
+          22,
+          120,
+          "22\" / 120\"",
+          "150.00"
+        ]
       ]
     },
     "dtfph_dtf_gang": {
@@ -93,26 +274,146 @@
       "dimensionMode": "combined",
       "sheetOptionName": "Size",
       "sheets": [
-        ["46549088993438", 22, 1, "22\" x 1\"", "0.01"],
-        ["46651919794334", 22, 6, "22\"x6\"", "3.00"],
-        ["42943219695774", 22, 12, "22\"x12\"", "5.88"],
-        ["42962263802014", 22, 24, "22\"x24\"", "11.52"],
-        ["44363124441246", 22, 36, "22\"x36\"", "16.92"],
-        ["42962263834782", 22, 48, "22\"x48\"", "22.08"],
-        ["42962263867550", 22, 60, "22\"x60\"", "27.00"],
-        ["44363124474014", 22, 72, "22\"x72\"", "31.68"],
-        ["42962263900318", 22, 84, "22\"x84\"", "36.12"],
-        ["43467356962974", 22, 96, "22\"x96\"", "40.32"],
-        ["42962263933086", 22, 108, "22\"x108\"", "44.28"],
-        ["42962263965854", 22, 120, "22\"x120\"", "48.00"],
-        ["46652193767582", 22, 132, "22\"x132\"", "51.48"],
-        ["42962263998622", 22, 144, "22\"x144\"", "54.72"],
-        ["46652276637854", 22, 156, "22\"x156\"", "57.72"],
-        ["42962264031390", 22, 168, "22\"x168\"", "60.48"],
-        ["42962264064158", 22, 180, "22\"x180\"", "63.00"],
-        ["46652276736158", 22, 192, "22\"x192\"", "65.28"],
-        ["42962264096926", 22, 204, "22\"x204\"", "67.32"],
-        ["46652276998302", 22, 240, "22\"x240\"", "76.80"]
+        [
+          "46549088993438",
+          22,
+          1,
+          "22\" x 1\"",
+          "0.01"
+        ],
+        [
+          "46651919794334",
+          22,
+          6,
+          "22\"x6\"",
+          "3.00"
+        ],
+        [
+          "42943219695774",
+          22,
+          12,
+          "22\"x12\"",
+          "5.88"
+        ],
+        [
+          "42962263802014",
+          22,
+          24,
+          "22\"x24\"",
+          "11.52"
+        ],
+        [
+          "44363124441246",
+          22,
+          36,
+          "22\"x36\"",
+          "16.92"
+        ],
+        [
+          "42962263834782",
+          22,
+          48,
+          "22\"x48\"",
+          "22.08"
+        ],
+        [
+          "42962263867550",
+          22,
+          60,
+          "22\"x60\"",
+          "27.00"
+        ],
+        [
+          "44363124474014",
+          22,
+          72,
+          "22\"x72\"",
+          "31.68"
+        ],
+        [
+          "42962263900318",
+          22,
+          84,
+          "22\"x84\"",
+          "36.12"
+        ],
+        [
+          "43467356962974",
+          22,
+          96,
+          "22\"x96\"",
+          "40.32"
+        ],
+        [
+          "42962263933086",
+          22,
+          108,
+          "22\"x108\"",
+          "44.28"
+        ],
+        [
+          "42962263965854",
+          22,
+          120,
+          "22\"x120\"",
+          "48.00"
+        ],
+        [
+          "46652193767582",
+          22,
+          132,
+          "22\"x132\"",
+          "51.48"
+        ],
+        [
+          "42962263998622",
+          22,
+          144,
+          "22\"x144\"",
+          "54.72"
+        ],
+        [
+          "46652276637854",
+          22,
+          156,
+          "22\"x156\"",
+          "57.72"
+        ],
+        [
+          "42962264031390",
+          22,
+          168,
+          "22\"x168\"",
+          "60.48"
+        ],
+        [
+          "42962264064158",
+          22,
+          180,
+          "22\"x180\"",
+          "63.00"
+        ],
+        [
+          "46652276736158",
+          22,
+          192,
+          "22\"x192\"",
+          "65.28"
+        ],
+        [
+          "42962264096926",
+          22,
+          204,
+          "22\"x204\"",
+          "67.32"
+        ],
+        [
+          "46652276998302",
+          22,
+          240,
+          "22\"x240\"",
+          "76.80"
+        ]
       ]
     },
     "alpha_linear_pro": {
@@ -139,9 +440,39 @@
         "price": "0.50"
       },
       "volumeTiers": [
-        [1, 249, 0.28],
-        [250, 499, 0.22],
-        [500, null, 0.2]
+        [
+          1,
+          249,
+          0.28
+        ],
+        [
+          250,
+          499,
+          0.22
+        ],
+        [
+          500,
+          null,
+          0.2
+        ]
+      ]
+    },
+    "canary_22x80": {
+      "tenant": "boundary-canary",
+      "shopDomain": "measurement-canary.invalid",
+      "productId": "gid://shopify/Product/8000000000080",
+      "title": "Synthetic 22 x 80 boundary carrier",
+      "builderConfig": {},
+      "dimensionMode": "combined",
+      "sheetOptionName": "Size",
+      "sheets": [
+        [
+          "8000000000080",
+          22,
+          80,
+          "22\" x 80\"",
+          "40.00"
+        ]
       ]
     }
   },
@@ -165,38 +496,37 @@
         "sheetWidthIn": 22,
         "measurementMode": "full"
       },
-      "expectedClassification": "intended_fix",
-      "expectedChangedFields": ["chosenVariant", "designsPerSheet", "sheetsNeeded", "finalPrice"],
+      "expectedClassification": "approved_finished_sheet_rule",
+      "expectedChangedFields": [
+        "heightIn",
+        "chosenVariant",
+        "wholeSheetCopies",
+        "finalPrice"
+      ],
       "expected": {
         "previous": {
           "widthIn": 22.26,
           "heightIn": 237.05,
           "effectiveDpi": 299.9994,
           "chosenVariant": null,
-          "designsPerSheet": null,
-          "sheetsNeeded": null,
           "finalPrice": null,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": null,
+          "fitFailure": null
         },
         "current": {
           "widthIn": 22.26,
-          "heightIn": 237.05,
+          "heightIn": 237.0538,
           "effectiveDpi": 299.9994,
           "chosenVariant": "22\" / 240\"",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 1,
           "finalPrice": 120,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 1,
+          "fitFailure": null
         }
       },
       "explanation": "Both versions honor the embedded 300-DPI scale. The corrected resolver uses the product's 22.5-inch printable width as the sole cross-roll limit, so this 22.26-inch-wide file now selects the 240-inch length variant at $120 instead of being rejected by the variant's nominal 22-inch label."
@@ -220,41 +550,38 @@
         "sheetWidthIn": 22,
         "measurementMode": "full"
       },
-      "expectedClassification": "same",
-      "expectedChangedFields": [],
+      "expectedClassification": "approved_finished_sheet_rule",
+      "expectedChangedFields": [
+        "widthIn",
+        "heightIn"
+      ],
       "expected": {
         "previous": {
           "widthIn": 237.99,
           "heightIn": 21.98,
           "effectiveDpi": 299.9994,
           "chosenVariant": "22\" / 240\"",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 1,
           "finalPrice": 120,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 1,
+          "fitFailure": null
         },
         "current": {
-          "widthIn": 237.99,
-          "heightIn": 21.98,
+          "widthIn": 237.9905,
+          "heightIn": 21.9834,
           "effectiveDpi": 299.9994,
           "chosenVariant": "22\" / 240\"",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 1,
           "finalPrice": 120,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 1,
+          "fitFailure": null
         }
       },
-      "explanation": "The product roll width is the printable width. The 21.98-inch short edge fits the 22-inch roll, so both revisions select 22 x 240 at $120. Orientation normalization remains internal and emits no production instruction."
+      "explanation": "The short edge is 21.9834 inches, within the 22.5-inch maximum printable width. Orientation normalization remains internal; the same 240-inch variant and USD 120 price remain."
     },
     {
       "caseId": "alpha-order-43232-rotated",
@@ -275,38 +602,35 @@
         "sheetWidthIn": 22,
         "measurementMode": "full"
       },
-      "expectedClassification": "same",
-      "expectedChangedFields": [],
+      "expectedClassification": "approved_finished_sheet_rule",
+      "expectedChangedFields": [
+        "widthIn",
+        "heightIn"
+      ],
       "expected": {
         "previous": {
           "widthIn": 23.91,
           "heightIn": 21.14,
           "effectiveDpi": 299.9994,
           "chosenVariant": "22\" / 24\"",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 1,
           "finalPrice": 30,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 1,
+          "fitFailure": null
         },
         "current": {
-          "widthIn": 23.91,
-          "heightIn": 21.14,
+          "widthIn": 23.9067,
+          "heightIn": 21.1367,
           "effectiveDpi": 299.9994,
           "chosenVariant": "22\" / 24\"",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 1,
           "finalPrice": 30,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 1,
+          "fitFailure": null
         }
       },
       "explanation": "Orientation is normalized internally to 21.14 inches across the roll and 23.91 inches of length. The file remains on 22 x 24 at $30, with no rotation instruction or hidden margin adjustment."
@@ -330,41 +654,39 @@
         "sheetWidthIn": 22,
         "measurementMode": "full"
       },
-      "expectedClassification": "intended_fix",
-      "expectedChangedFields": ["chosenVariant", "finalPrice"],
+      "expectedClassification": "approved_finished_sheet_rule",
+      "expectedChangedFields": [
+        "heightIn",
+        "chosenVariant",
+        "finalPrice"
+      ],
       "expected": {
         "previous": {
           "widthIn": 21.26,
           "heightIn": 11.73,
           "effectiveDpi": 299.9994,
           "chosenVariant": "22\" / 12\"",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 1,
           "finalPrice": 6,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 1,
+          "fitFailure": null
         },
         "current": {
           "widthIn": 21.26,
-          "heightIn": 11.73,
+          "heightIn": 11.7334,
           "effectiveDpi": 299.9994,
           "chosenVariant": "22\" / 24\"",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 1,
           "finalPrice": 12,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 1,
+          "fitFailure": null
         }
       },
-      "explanation": "Final owner rule correction: the file normalizes to 11.73 inches across the roll and 21.26 billable inches long. It therefore needs the merchant's 24-inch length variant at $12 rather than the 12-inch variant at $6; no rotation instruction is emitted."
+      "explanation": "Only the uploaded file is orientation-normalized: 11.7334 inches is width and 21.26 inches is billable length. Commercial variant dimensions retain width x length meaning, so the 12-inch length cannot cover it and the 22 x 24 variant costs USD 12."
     },
     {
       "caseId": "alpha-eight-up",
@@ -385,38 +707,35 @@
         "sheetWidthIn": 22,
         "measurementMode": "full"
       },
-      "expectedClassification": "approved_correction",
-      "expectedChangedFields": ["designsPerSheet", "sheetsNeeded", "finalPrice"],
+      "expectedClassification": "approved_no_nesting",
+      "expectedChangedFields": [
+        "wholeSheetCopies",
+        "finalPrice"
+      ],
       "expected": {
         "previous": {
           "widthIn": 5,
           "heightIn": 5,
           "effectiveDpi": 299.9994,
           "chosenVariant": "22\" / 12\"",
-          "designsPerSheet": 8,
-          "sheetsNeeded": 1,
           "finalPrice": 6,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 1,
+          "fitFailure": null
         },
         "current": {
           "widthIn": 5,
           "heightIn": 5,
           "effectiveDpi": 299.9994,
           "chosenVariant": "22\" / 12\"",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 8,
           "finalPrice": 48,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 8,
+          "fitFailure": null
         }
       },
       "explanation": "Owner-approved correction: the uploaded file is the finished sheet, so quantity 8 means eight complete 22 x 12 sheets. Removing the nonexistent eight-up layout raises this scenario from $6 to $48."
@@ -440,38 +759,37 @@
         "sheetWidthIn": 22,
         "measurementMode": "full"
       },
-      "expectedClassification": "approved_correction",
-      "expectedChangedFields": ["designsPerSheet", "sheetsNeeded", "finalPrice"],
+      "expectedClassification": "approved_no_nesting",
+      "expectedChangedFields": [
+        "widthIn",
+        "heightIn",
+        "wholeSheetCopies",
+        "finalPrice"
+      ],
       "expected": {
         "previous": {
           "widthIn": 10.99,
           "heightIn": 11.99,
           "effectiveDpi": 291.9984,
           "chosenVariant": "22\" / 12\"",
-          "designsPerSheet": 2,
-          "sheetsNeeded": 5,
           "finalPrice": 30,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 5,
+          "fitFailure": null
         },
         "current": {
-          "widthIn": 10.99,
-          "heightIn": 11.99,
+          "widthIn": 10.9864,
+          "heightIn": 11.9864,
           "effectiveDpi": 291.9984,
           "chosenVariant": "22\" / 12\"",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 10,
           "finalPrice": 60,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 10,
+          "fitFailure": null
         }
       },
       "explanation": "Owner-approved correction: quantity means complete sheet copies, never two layouts on one sheet. Ten copies therefore require ten 22 x 12 sheets and cost $60 instead of the undercharged $30; margins play no role."
@@ -499,41 +817,38 @@
         "heightIn": 21.33,
         "measurementMode": "full"
       },
-      "expectedClassification": "same",
-      "expectedChangedFields": [],
+      "expectedClassification": "approved_finished_sheet_rule",
+      "expectedChangedFields": [
+        "widthIn",
+        "heightIn"
+      ],
       "expected": {
         "previous": {
           "widthIn": 14.22,
           "heightIn": 21.33,
           "effectiveDpi": 72,
           "chosenVariant": "22\" / 24\"",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 1,
           "finalPrice": 12,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 1,
+          "fitFailure": null
         },
         "current": {
-          "widthIn": 14.22,
-          "heightIn": 21.33,
+          "widthIn": 14.2222,
+          "heightIn": 21.3333,
           "effectiveDpi": 72,
           "chosenVariant": "22\" / 24\"",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 1,
           "finalPrice": 12,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 1,
+          "fitFailure": null
         }
       },
-      "explanation": "Both route-equivalent revisions normalize the real stored row through lifecycle parsing, apply Adobe 72 DPI, and select 22 x 24 at $12. The earlier raw-metadata-only harness result of 47 DPI was a false comparison and is not blessed."
+      "explanation": "Adobe 72 DPI remains the source. The uploaded file normalizes to 14.2222 inches wide by 21.3333 inches long; commercial variant dimensions are not normalized, so both revisions select 22 x 24 at USD 12."
     },
     {
       "caseId": "dtfph-two-copies",
@@ -554,38 +869,34 @@
         "sheetWidthIn": 22,
         "measurementMode": "full"
       },
-      "expectedClassification": "same",
-      "expectedChangedFields": [],
+      "expectedClassification": "approved_finished_sheet_rule",
+      "expectedChangedFields": [
+        "heightIn"
+      ],
       "expected": {
         "previous": {
           "widthIn": 22,
           "heightIn": 63.96,
           "effectiveDpi": 299.9994,
           "chosenVariant": "22\"x72\"",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 2,
           "finalPrice": 63.36,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 2,
+          "fitFailure": null
         },
         "current": {
           "widthIn": 22,
-          "heightIn": 63.96,
+          "heightIn": 63.9568,
           "effectiveDpi": 299.9994,
           "chosenVariant": "22\"x72\"",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 2,
           "finalPrice": 63.36,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 2,
+          "fitFailure": null
         }
       },
       "explanation": "The live full-width, two-copy job remains two physical 22 x 72 sheets with the same $63.36 retail total. Orientation normalization remains internal and emits no production instruction."
@@ -611,41 +922,37 @@
         "sheetWidthIn": 22,
         "measurementMode": "full"
       },
-      "expectedClassification": "intended_fix",
-      "expectedChangedFields": ["sheetsNeeded"],
+      "expectedClassification": "approved_finished_sheet_rule",
+      "expectedChangedFields": [
+        "heightIn"
+      ],
       "expected": {
         "previous": {
           "widthIn": 22.25,
           "heightIn": 89.67,
           "effectiveDpi": 299.9994,
           "chosenVariant": "(22\" X 1\")",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 180,
           "finalPrice": 50.22,
           "billableLengthIn": 179.34,
           "pricePerInch": 0.28,
           "chosenTier": "1-249 @ $0.28",
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 2,
+          "fitFailure": null
         },
         "current": {
           "widthIn": 22.25,
-          "heightIn": 89.67,
+          "heightIn": 89.6702,
           "effectiveDpi": 299.9994,
           "chosenVariant": "(22\" X 1\")",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 2,
           "finalPrice": 50.22,
           "billableLengthIn": 179.34,
           "pricePerInch": 0.28,
           "chosenTier": "1-249 @ $0.28",
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 2,
+          "fitFailure": null
         }
       },
-      "explanation": "The previous authoritative checkout caller already multiplied the helper quote by requested copies and the public quote endpoint fell back to requestedQuantity for physical sheet count. Current code centralizes those semantics in the quote helper, but the customer-facing total remains $50.22 and production still sees two physical copies. The upload metadata and $0.28 tier are live; quantity=2 is the explicit canary scenario because no historical Pro row had copies greater than one."
+      "explanation": "The previous checkout already multiplied the quote by requested copies. Current code expresses the same business fact directly: 179.34 billable inches, USD 50.22, and two complete sheet copies."
     },
     {
       "caseId": "alpha-linear-tier-250-canary",
@@ -668,41 +975,37 @@
         "sheetWidthIn": 22,
         "measurementMode": "full"
       },
-      "expectedClassification": "intended_fix",
-      "expectedChangedFields": ["sheetsNeeded"],
+      "expectedClassification": "approved_finished_sheet_rule",
+      "expectedChangedFields": [
+        "heightIn"
+      ],
       "expected": {
         "previous": {
           "widthIn": 22.25,
           "heightIn": 89.67,
           "effectiveDpi": 299.9994,
           "chosenVariant": "(22\" X 1\")",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 270,
           "finalPrice": 59.18,
           "billableLengthIn": 269.01,
           "pricePerInch": 0.22,
           "chosenTier": "250-499 @ $0.22",
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 3,
+          "fitFailure": null
         },
         "current": {
           "widthIn": 22.25,
-          "heightIn": 89.67,
+          "heightIn": 89.6702,
           "effectiveDpi": 299.9994,
           "chosenVariant": "(22\" X 1\")",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 3,
           "finalPrice": 59.18,
           "billableLengthIn": 269.01,
           "pricePerInch": 0.22,
           "chosenTier": "250-499 @ $0.22",
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 3,
+          "fitFailure": null
         }
       },
-      "explanation": "The real 89.67-inch Alpha Pro upload is repeated three times to cross the live 250-inch threshold. Both revisions must charge 269.01 inches at $0.22 ($59.18); only the resolver's public sheetsNeeded meaning changes from carrier inches to three physical copies."
+      "explanation": "The real 89.67-inch Alpha Pro upload is repeated three times to cross the captured 250-inch tier. Both revisions charge 269.01 inches at USD 0.22 for USD 59.18 and produce three complete copies."
     },
     {
       "caseId": "alpha-linear-tier-500-canary",
@@ -725,41 +1028,260 @@
         "sheetWidthIn": 22,
         "measurementMode": "full"
       },
-      "expectedClassification": "intended_fix",
-      "expectedChangedFields": ["sheetsNeeded"],
+      "expectedClassification": "approved_finished_sheet_rule",
+      "expectedChangedFields": [
+        "heightIn"
+      ],
       "expected": {
         "previous": {
           "widthIn": 22.25,
           "heightIn": 89.67,
           "effectiveDpi": 299.9994,
           "chosenVariant": "(22\" X 1\")",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 539,
           "finalPrice": 107.6,
           "billableLengthIn": 538.02,
           "pricePerInch": 0.2,
           "chosenTier": "500-∞ @ $0.20",
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 6,
+          "fitFailure": null
         },
         "current": {
           "widthIn": 22.25,
-          "heightIn": 89.67,
+          "heightIn": 89.6702,
           "effectiveDpi": 299.9994,
           "chosenVariant": "(22\" X 1\")",
-          "designsPerSheet": 1,
-          "sheetsNeeded": 6,
           "finalPrice": 107.6,
           "billableLengthIn": 538.02,
           "pricePerInch": 0.2,
           "chosenTier": "500-∞ @ $0.20",
-          "placementMode": null,
-          "rotationApplied": null,
-          "productionNote": null
+          "wholeSheetCopies": 6,
+          "fitFailure": null
         }
       },
-      "explanation": "The same real upload is repeated six times to cross the live 500-inch threshold. Both revisions must charge 538.02 inches at $0.20 ($107.60); only the resolver's public sheetsNeeded meaning changes from carrier inches to six physical copies."
+      "explanation": "The same real upload is repeated six times to cross the live 500-inch threshold. Both revisions must charge 538.02 inches at $0.20 ($107.60) and produce six complete copies."
+    },
+    {
+      "caseId": "canary-width-22.503-tolerated",
+      "uploadId": "canary-width-22.503",
+      "productKey": "canary_22x80",
+      "quantity": 1,
+      "quantitySource": "deterministic mathematical boundary canary; not a production row",
+      "measurementBasis": "full_page",
+      "rollWidthIn": 22.5,
+      "metadata": {
+        "widthPx": 22503,
+        "heightPx": 78000,
+        "dpi": 1000,
+        "documentDpi": 1000,
+        "documentDpiSource": "canary_exact_dpi",
+        "measurementWidthPx": 22503,
+        "measurementHeightPx": 78000,
+        "trimmedWidthPx": 22503,
+        "trimmedHeightPx": 78000,
+        "sheetWidthIn": 22.5,
+        "measurementMode": "full"
+      },
+      "expectedClassification": "approved_finished_sheet_rule",
+      "expectedChangedFields": [
+        "widthIn",
+        "chosenVariant",
+        "wholeSheetCopies",
+        "finalPrice"
+      ],
+      "expected": {
+        "previous": {
+          "widthIn": 22.5,
+          "heightIn": 78,
+          "effectiveDpi": 1000,
+          "chosenVariant": null,
+          "wholeSheetCopies": null,
+          "finalPrice": null,
+          "billableLengthIn": null,
+          "pricePerInch": null,
+          "chosenTier": null,
+          "fitFailure": null
+        },
+        "current": {
+          "widthIn": 22.503,
+          "heightIn": 78,
+          "effectiveDpi": 1000,
+          "chosenVariant": "22\" x 80\"",
+          "wholeSheetCopies": 1,
+          "finalPrice": 40,
+          "billableLengthIn": null,
+          "pricePerInch": null,
+          "chosenTier": null,
+          "fitFailure": null
+        }
+      },
+      "explanation": "A 22.503-inch short edge is within the merchant-visible 0.02-inch export tolerance above the default 22.5-inch press limit. It remains a single 80-inch sheet; measured inches are not clamped."
+    },
+    {
+      "caseId": "canary-width-23.91-rejected",
+      "uploadId": "canary-width-23.91",
+      "productKey": "canary_22x80",
+      "quantity": 1,
+      "quantitySource": "deterministic mathematical boundary canary; not a production row",
+      "measurementBasis": "full_page",
+      "rollWidthIn": 22.5,
+      "metadata": {
+        "widthPx": 23910,
+        "heightPx": 80000,
+        "dpi": 1000,
+        "documentDpi": 1000,
+        "documentDpiSource": "canary_exact_dpi",
+        "measurementWidthPx": 23910,
+        "measurementHeightPx": 80000,
+        "trimmedWidthPx": 23910,
+        "trimmedHeightPx": 80000,
+        "sheetWidthIn": 22.5,
+        "measurementMode": "full"
+      },
+      "expectedClassification": "approved_physical_rejection",
+      "expectedChangedFields": [
+        "fitFailure"
+      ],
+      "expected": {
+        "previous": {
+          "widthIn": 23.91,
+          "heightIn": 80,
+          "effectiveDpi": 1000,
+          "chosenVariant": null,
+          "wholeSheetCopies": null,
+          "finalPrice": null,
+          "billableLengthIn": null,
+          "pricePerInch": null,
+          "chosenTier": null,
+          "fitFailure": null
+        },
+        "current": {
+          "widthIn": 23.91,
+          "heightIn": 80,
+          "effectiveDpi": 1000,
+          "chosenVariant": null,
+          "wholeSheetCopies": null,
+          "finalPrice": null,
+          "billableLengthIn": null,
+          "pricePerInch": null,
+          "chosenTier": null,
+          "fitFailure": "WIDTH_TOO_LARGE"
+        }
+      },
+      "explanation": "A real 1.41-inch overflow is not export rounding. Current code rejects 23.91 against the visible 22.5-inch maximum and exposes a width-specific failure."
+    },
+    {
+      "caseId": "canary-22.3-by-78-selects-22-by-80",
+      "uploadId": "canary-22.3-by-78",
+      "productKey": "canary_22x80",
+      "quantity": 1,
+      "quantitySource": "deterministic mathematical boundary canary; not a production row",
+      "measurementBasis": "full_page",
+      "rollWidthIn": 22.5,
+      "metadata": {
+        "widthPx": 22300,
+        "heightPx": 78000,
+        "dpi": 1000,
+        "documentDpi": 1000,
+        "documentDpiSource": "canary_exact_dpi",
+        "measurementWidthPx": 22300,
+        "measurementHeightPx": 78000,
+        "trimmedWidthPx": 22300,
+        "trimmedHeightPx": 78000,
+        "sheetWidthIn": 22.5,
+        "measurementMode": "full"
+      },
+      "expectedClassification": "approved_finished_sheet_rule",
+      "expectedChangedFields": [
+        "chosenVariant",
+        "wholeSheetCopies",
+        "finalPrice"
+      ],
+      "expected": {
+        "previous": {
+          "widthIn": 22.3,
+          "heightIn": 78,
+          "effectiveDpi": 1000,
+          "chosenVariant": null,
+          "wholeSheetCopies": null,
+          "finalPrice": null,
+          "billableLengthIn": null,
+          "pricePerInch": null,
+          "chosenTier": null,
+          "fitFailure": null
+        },
+        "current": {
+          "widthIn": 22.3,
+          "heightIn": 78,
+          "effectiveDpi": 1000,
+          "chosenVariant": "22\" x 80\"",
+          "wholeSheetCopies": 1,
+          "finalPrice": 40,
+          "billableLengthIn": null,
+          "pricePerInch": null,
+          "chosenTier": null,
+          "fitFailure": null
+        }
+      },
+      "explanation": "The 22 in a variant label is not a second press-width gate. Width 22.3 fits the 22.5-inch press and length 78 is covered by the 80-inch variant."
+    },
+    {
+      "caseId": "canary-custom-length-240.03-rejected",
+      "uploadId": "canary-custom-length-240.03",
+      "productKey": "alpha_linear_pro",
+      "quantity": 1,
+      "quantitySource": "deterministic mathematical boundary canary using the captured Alpha measured-length rates; not a production row",
+      "measurementBasis": "full_page",
+      "rollWidthIn": 22.5,
+      "metadata": {
+        "widthPx": 22500,
+        "heightPx": 240030,
+        "dpi": 1000,
+        "documentDpi": 1000,
+        "documentDpiSource": "canary_exact_dpi",
+        "measurementWidthPx": 22500,
+        "measurementHeightPx": 240030,
+        "trimmedWidthPx": 22500,
+        "trimmedHeightPx": 240030,
+        "sheetWidthIn": 22.5,
+        "measurementMode": "full"
+      },
+      "expectedClassification": "approved_physical_rejection",
+      "expectedChangedFields": [
+        "chosenVariant",
+        "wholeSheetCopies",
+        "finalPrice",
+        "billableLengthIn",
+        "pricePerInch",
+        "chosenTier",
+        "fitFailure"
+      ],
+      "expected": {
+        "previous": {
+          "widthIn": 22.5,
+          "heightIn": 240.03,
+          "effectiveDpi": 1000,
+          "chosenVariant": "(22\" X 1\")",
+          "wholeSheetCopies": 1,
+          "finalPrice": 67.21,
+          "billableLengthIn": 240.03,
+          "pricePerInch": 0.28,
+          "chosenTier": "1-249 @ $0.28",
+          "fitFailure": null
+        },
+        "current": {
+          "widthIn": 22.5,
+          "heightIn": 240.03,
+          "effectiveDpi": 1000,
+          "chosenVariant": null,
+          "wholeSheetCopies": null,
+          "finalPrice": null,
+          "billableLengthIn": null,
+          "pricePerInch": null,
+          "chosenTier": null,
+          "fitFailure": "LENGTH_TOO_LARGE"
+        }
+      },
+      "explanation": "Measured-length pricing has no larger variant or split behavior. At the visible 240-inch maximum with 0.02-inch tolerance, 240.03 is physically over the accepted boundary and is rejected before pricing."
     }
   ]
 }
