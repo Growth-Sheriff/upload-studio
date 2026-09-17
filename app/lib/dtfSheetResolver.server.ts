@@ -489,26 +489,49 @@ function resolveVariantForFamily(
 function calculateFinishedSheetFit(
   design: Measurement,
   sheet: Measurement,
-  fitToleranceIn: number
+  fitToleranceIn: number,
+  maxPrintableWidthIn: number | null
 ): FinishedSheetFit | null {
-  // A gang-sheet upload is already the production sheet. Normalization only
-  // makes portrait and landscape exports equivalent for measurement; it does
-  // not authorize arranging copies or rotating the production bytes.
-  const normalizedDesign = normalizeFinishedSheet(design.widthInch, design.heightInch)
-  if (!normalizedDesign || !(sheet.widthInch > 0) || !(sheet.heightInch > 0)) return null
-  const designWidthIn = normalizedDesign.widthIn
-  const designLengthIn = normalizedDesign.lengthIn
+  // A gang-sheet upload is already the production sheet. Either edge may run
+  // cross-roll as long as it stays within the printable width; the film the
+  // shop actually consumes is the other edge. A 12 x 22 file therefore belongs
+  // on a 22 x 12 sheet, not a 22 x 24 one — billing the long edge whenever it
+  // also fits across the roll overcharged the customer for twice the film.
+  const firstIn = Number(design.widthInch)
+  const secondIn = Number(design.heightInch)
+  if (!(firstIn > 0) || !(secondIn > 0)) return null
+  if (!(sheet.widthInch > 0) || !(sheet.heightInch > 0)) return null
+
+  const shortEdgeIn = Math.min(firstIn, secondIn)
+  const longEdgeIn = Math.max(firstIn, secondIn)
+  const orientations = [
+    { crossRollIn: shortEdgeIn, alongRollIn: longEdgeIn },
+    { crossRollIn: longEdgeIn, alongRollIn: shortEdgeIn },
+  ]
+
+  let chosen: { crossRollIn: number; alongRollIn: number } | null = null
+  for (const orientation of orientations) {
+    if (
+      maxPrintableWidthIn != null &&
+      !isWithinFinishedSheetLimit(orientation.crossRollIn, maxPrintableWidthIn, fitToleranceIn)
+    ) {
+      continue
+    }
+    if (!isWithinFinishedSheetLimit(orientation.alongRollIn, sheet.heightInch, fitToleranceIn)) {
+      continue
+    }
+    // Prefer the orientation that consumes the least film.
+    if (!chosen || orientation.alongRollIn < chosen.alongRollIn) chosen = orientation
+  }
+  if (!chosen) return null
+
+  const designWidthIn = chosen.crossRollIn
+  const designLengthIn = chosen.alongRollIn
   // Shopify sheet sizes retain their commercial width × length meaning. The
   // first value is the nominal product width and the second is the amount of
   // film sold. Only the uploaded file is orientation-normalized.
   const sheetWidthIn = sheet.widthInch
   const sheetLengthIn = sheet.heightInch
-
-  // Cross-roll fit was already decided once, against maxPrintableWidthIn.
-  // The smaller number in a variant title is a nominal product label (shops
-  // can have a 22-inch-labelled variant on 22.5 inches of printable film), so
-  // it must not silently reintroduce a second, narrower roll-width limit.
-  if (!isWithinFinishedSheetLimit(designLengthIn, sheetLengthIn, fitToleranceIn)) return null
 
   const designArea = designWidthIn * designLengthIn
   const sheetArea = sheetWidthIn * sheetLengthIn
@@ -549,13 +572,14 @@ export function resolveSheetVariant({
   if (getFinishedSheetWidthFailure({ widthIn, heightIn, config })) return null
 
   const fitToleranceIn = configuredFitTolerance(config)
+  const maxPrintableWidthIn = configuredPrintableWidth(config)
 
   const validResults = matrix.sheetFamilies
     .map((family) => {
       const variant = resolveVariantForFamily(family, matrix, selectedServiceValues)
       if (!variant) return null
 
-      const sheetFit = calculateFinishedSheetFit(design, family, fitToleranceIn)
+      const sheetFit = calculateFinishedSheetFit(design, family, fitToleranceIn, maxPrintableWidthIn)
       if (!sheetFit) return null
 
       return {

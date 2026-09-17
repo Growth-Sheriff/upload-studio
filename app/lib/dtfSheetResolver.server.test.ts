@@ -257,7 +257,7 @@ describe('resolveSheetVariant', () => {
     expect(result?.wholeSheetCopies).toBe(1)
   })
 
-  it('uses the normalized long edge to choose the smallest covering sheet', () => {
+  it('runs the long edge across the roll so only the film consumed is billed', () => {
     const optionDefs: ProductOptionDef[] = [{ name: 'Size', values: ['22 x 12', '22 x 24', '22 x 60'] }]
     const variants: ProductVariantDef[] = [
       buildVariant('501', '22 x 12', '12.00', [{ name: 'Size', value: '22 x 12' }]),
@@ -278,8 +278,8 @@ describe('resolveSheetVariant', () => {
     })
 
     expect(result).not.toBeNull()
-    expect(result?.selectedVariantId).toBe('503')
-    expect(result?.selectedSheetLabel).toContain('22 x 24')
+    expect(result?.selectedVariantId).toBe('501')
+    expect(result?.selectedSheetLabel).toContain('22 x 12')
   })
 
   it('chooses the shortest covering film length before comparing sheet width', () => {

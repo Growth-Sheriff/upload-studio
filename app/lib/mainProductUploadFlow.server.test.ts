@@ -92,7 +92,7 @@ function resolveMainProductUpload({
 }
 
 describe('main product upload measurement flow', () => {
-  it('normalizes an embedded-DPI 22x12 file and selects the 22x24 commercial length', () => {
+  it('normalizes an embedded-DPI 22x12 file onto the 22x12 sheet it actually consumes', () => {
     const { measurement, resolution } = resolveMainProductUpload({
       widthPx: 6600,
       heightPx: 3600,
@@ -103,7 +103,7 @@ describe('main product upload measurement flow', () => {
     expect(measurement.widthIn).toBe(22)
     expect(measurement.heightIn).toBe(12)
     expect(measurement.sizingSource).toBe('document_dpi')
-    expect(resolution?.selectedSheetLabel).toBe('22 x 24')
+    expect(resolution?.selectedSheetLabel).toBe('22 x 12')
   })
 
   it('routes metreicin-style 6485x2605 @ 118.4148 DPI to 22x60', () => {
@@ -120,7 +120,7 @@ describe('main product upload measurement flow', () => {
     expect(resolution?.selectedSheetLabel).toBe('22 x 60')
   })
 
-  it('routes Genuity-style 1494x668 no-DPI PNG to 22x24 by normalized length', () => {
+  it('routes Genuity-style 1494x668 no-DPI PNG to the 22x12 sheet it fits across the roll', () => {
     const { measurement, resolution } = resolveMainProductUpload({
       widthPx: 1494,
       heightPx: 668,
@@ -129,7 +129,7 @@ describe('main product upload measurement flow', () => {
     expect(measurement.widthIn).toBe(20.75)
     expect(measurement.heightIn).toBe(9.2778)
     expect(measurement.sizingSource).toBe('adobe_default_dpi')
-    expect(resolution?.selectedSheetLabel).toBe('22 x 24')
+    expect(resolution?.selectedSheetLabel).toBe('22 x 12')
   })
 
   it('keeps large no-DPI gang sheets press-width anchored and routes to 22x60', () => {
@@ -144,7 +144,7 @@ describe('main product upload measurement flow', () => {
     expect(resolution?.selectedSheetLabel).toBe('22 x 60')
   })
 
-  it('calibrates no-DPI dimensions from 22x12 but prices the normalized 22-inch length', () => {
+  it('calibrates no-DPI dimensions from 22x12 and bills only the film consumed', () => {
     const { measurement, resolution } = resolveMainProductUpload({
       widthPx: 6600,
       heightPx: 3600,
@@ -152,6 +152,6 @@ describe('main product upload measurement flow', () => {
 
     expect(Math.min(measurement.widthIn, measurement.heightIn)).toBe(12)
     expect(Math.max(measurement.widthIn, measurement.heightIn)).toBe(22)
-    expect(resolution?.selectedSheetLabel).toBe('22 x 24')
+    expect(resolution?.selectedSheetLabel).toBe('22 x 12')
   })
 })
