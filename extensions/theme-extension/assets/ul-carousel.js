@@ -132,17 +132,28 @@
     window.ULLineProperties.uploadAndBuild({
       file: ul3dData[bid].file,
       productId: ul3dData[bid].pid,
-      variantId: ul3dData[bid].vid
+      variantId: ul3dData[bid].vid,
+      line: {
+        copies: qty,
+        selectedVariantId: String(ul3dData[bid].vid || ''),
+        lockSelectedVariant: true
+      }
     })
     .then(function(result) {
+      var instruction = result.cartInstruction || {};
+      var verifiedVariantId = parseInt(instruction.variantId, 10);
+      var verifiedQuantity = parseInt(instruction.cartQuantity, 10);
+      if (!(verifiedVariantId > 0) || !(verifiedQuantity > 0)) {
+        throw new Error('The measured gang sheet could not be verified for cart.');
+      }
       btn.textContent = 'Adding...';
       return fetch('/cart/add.js', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
           items: [{
-            id: ul3dData[bid].vid,
-            quantity: qty,
+            id: verifiedVariantId,
+            quantity: verifiedQuantity,
             properties: result.properties
           }]
         })

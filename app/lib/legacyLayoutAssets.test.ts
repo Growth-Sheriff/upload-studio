@@ -10,6 +10,8 @@ const dtfUploadSource = readFileSync(join(assetsDir, 'dtf-upload.js'), 'utf8')
 const autoSheetSource = readFileSync(join(assetsDir, 'ul-auto-sheet.js'), 'utf8')
 const nestingSource = readFileSync(join(assetsDir, 'ul-nesting-engine.js'), 'utf8')
 const optimizerSource = readFileSync(join(assetsDir, 'ul-sheet-optimizer.js'), 'utf8')
+const carouselSource = readFileSync(join(assetsDir, 'ul-carousel.js'), 'utf8')
+const showcaseSource = readFileSync(join(assetsDir, 'ul-showcase.js'), 'utf8')
 
 type Listener = () => unknown
 
@@ -121,6 +123,15 @@ function evaluate(source: string, environment: ReturnType<typeof browserEnvironm
 }
 
 describe('retired layout assets', () => {
+  it('makes copied listing upload modals validate their manually selected variant', () => {
+    for (const source of [carouselSource, showcaseSource]) {
+      expect(source).toContain('lockSelectedVariant: true')
+      expect(source).toContain('result.cartInstruction')
+      expect(source).toContain('verifiedVariantId')
+      expect(source).toContain('verifiedQuantity')
+    }
+  })
+
   it('contains no network or legacy private-property cart plumbing', () => {
     for (const source of [dtfUploadSource, autoSheetSource, nestingSource, optimizerSource]) {
       expect(source).not.toMatch(/\bfetch\s*\(/)

@@ -127,6 +127,7 @@
         shopDomain: shop,
         productId: input.productId ? String(input.productId) : null,
         variantId: input.variantId ? String(input.variantId) : null,
+        measurementPolicy: 'finished_sheet',
         mode: 'dtf',
         fileName: file.name,
         contentType: file.type || 'application/octet-stream',

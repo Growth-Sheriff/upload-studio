@@ -665,6 +665,7 @@
           body: JSON.stringify({
             shopDomain,
             productId,
+            measurementPolicy: 'finished_sheet',
             mode: 'dtf',
             fileName: file.name,
             contentType: file.type || 'application/octet-stream',

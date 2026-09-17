@@ -17,8 +17,8 @@
     var root = document.querySelector('[data-ul-custom-price-mod2]');
     if (!root || root.getAttribute('data-ul-main-product-bound') === 'true') return;
     root.setAttribute('data-ul-main-product-bound', 'true');
-    var MAIN_PRODUCT_MEASUREMENT_POLICY = 'main_product_roll_width';
-    var MAIN_PRODUCT_ROLL_WIDTH_IN = 22;
+    var MAIN_PRODUCT_MEASUREMENT_POLICY = 'finished_sheet';
+    var MAX_PRINTABLE_WIDTH_IN = 22.5;
 
     function parseOptionalPositiveNumber(value) {
       var parsed = Number(value);
@@ -66,17 +66,17 @@
       return null;
     }
 
-    function applyMainProductRollMeasurement(target) {
+    function applyFinishedSheetMeasurement(target) {
       if (!target || !(target.widthPx > 0) || !(target.heightPx > 0)) return false;
       var shortSidePx = Math.min(target.widthPx, target.heightPx);
       var longSidePx = Math.max(target.widthPx, target.heightPx);
       if (!(shortSidePx > 0)) return false;
       var isPortrait = target.heightPx >= target.widthPx;
-      var longSideIn = (longSidePx / shortSidePx) * MAIN_PRODUCT_ROLL_WIDTH_IN;
-      target.widthIn = Number((isPortrait ? MAIN_PRODUCT_ROLL_WIDTH_IN : longSideIn).toFixed(2));
-      target.heightIn = Number((isPortrait ? longSideIn : MAIN_PRODUCT_ROLL_WIDTH_IN).toFixed(2));
-      target.effectiveDpi = Math.round(shortSidePx / MAIN_PRODUCT_ROLL_WIDTH_IN);
-      target.sizingSource = 'sheet_width_anchor';
+      var longSideIn = (longSidePx / shortSidePx) * MAX_PRINTABLE_WIDTH_IN;
+      target.widthIn = Number((isPortrait ? MAX_PRINTABLE_WIDTH_IN : longSideIn).toFixed(2));
+      target.heightIn = Number((isPortrait ? longSideIn : MAX_PRINTABLE_WIDTH_IN).toFixed(2));
+      target.effectiveDpi = Math.round(shortSidePx / MAX_PRINTABLE_WIDTH_IN);
+      target.sizingSource = 'max_printable_width_anchor';
       target.measurementMode = 'full';
       return target.widthIn > 0 && target.heightIn > 0;
     }
@@ -137,7 +137,7 @@
       if (applyMainProductDocumentDpiMeasurement(target)) {
         return true;
       }
-      return applyMainProductRollMeasurement(target);
+      return applyFinishedSheetMeasurement(target);
     }
 
     function getResolvedSizingSource(value) {
@@ -211,10 +211,11 @@
         var response = await fetch(configUrl, { credentials: 'same-origin' });
         var data = await response.json().catch(function() { return {}; });
         if (!response.ok) return;
-        var configuredRollWidth = parseOptionalPositiveNumber(
-          data && data.builderConfig ? data.builderConfig.rollWidthIn : null
+        var builderConfig = data && data.builderConfig ? data.builderConfig : {};
+        var configuredMaxWidth = parseOptionalPositiveNumber(
+          builderConfig.maxPrintableWidthIn
         );
-        if (configuredRollWidth) MAIN_PRODUCT_ROLL_WIDTH_IN = configuredRollWidth;
+        if (configuredMaxWidth) MAX_PRINTABLE_WIDTH_IN = configuredMaxWidth;
       } catch (error) {}
     }
 
@@ -2268,7 +2269,7 @@
           requestedQuantity: state.quantity,
           totalPrice: customerPricing.quoteTotal,
           selectedVariantTitle: customerPricing.quoteVariantTitle || (state.selectedResult && state.selectedResult.selectedVariantTitle) || '',
-          sheetsNeeded: customerPricing.quoteSheetsNeeded || (state.selectedResult && state.selectedResult.sheetsNeeded) || 0
+          sheetsNeeded: customerPricing.quoteSheetsNeeded || (state.selectedResult && state.selectedResult.wholeSheetCopies) || 0
         });
         if (singleItem) previewItems = [singleItem];
       }
@@ -2794,7 +2795,6 @@
               customerId: themeCustomerId || '',
               customerEmail: themeCustomerEmail || '',
               measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
-              rollWidthIn: MAIN_PRODUCT_ROLL_WIDTH_IN,
               items: [{
                 uploadId: workspaceItem.uploadId,
                 quantity: workspaceItem.requestedQuantity || 1,
@@ -2890,7 +2890,6 @@
                 customerId: themeCustomerId || '',
                 customerEmail: themeCustomerEmail || '',
                 measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
-                rollWidthIn: MAIN_PRODUCT_ROLL_WIDTH_IN,
                 items: [{
                   uploadId: queueItem.uploadId,
                   quantity: queueItem.requestedQuantity || 1,
@@ -2976,7 +2975,6 @@
           uploadId: state.uploadId,
           quantity: state.quantity,
           measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
-          rollWidthIn: MAIN_PRODUCT_ROLL_WIDTH_IN,
           selectedVariantId:
             state.selectedResult && state.selectedResult.selectedVariantId
               ? state.selectedResult.selectedVariantId
@@ -3214,8 +3212,7 @@
               state.selectedVariantId ||
               (hiddenVariantInput ? hiddenVariantInput.value : '') ||
               null,
-            measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
-            rollWidthIn: MAIN_PRODUCT_ROLL_WIDTH_IN
+            measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY
           })
         });
         var data = await response.json().catch(function() { return {}; });
@@ -3308,8 +3305,7 @@
             selectedVariantId: getFallbackVariantId() || state.selectedVariantId || null,
             customerId: root.getAttribute('data-customer-id') || null,
             customerEmail: root.getAttribute('data-customer-email') || null,
-            measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
-            rollWidthIn: MAIN_PRODUCT_ROLL_WIDTH_IN
+            measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY
           })
         });
         var data = await response.json().catch(function() { return {}; });
@@ -3325,7 +3321,7 @@
           if (uploadStatus) uploadStatus.textContent = 'Estimated sheet: ' + (data.resolution.selectedSheetLabel || data.resolution.selectedVariantTitle || '') + ' — confirming on the server...';
           clearError();
         } else if (!response.ok && data && data.error) {
-          // Preserve the server's exact roll-width explanation.
+          // Preserve the server's exact maximum-width explanation.
           showError(String(data.error));
         }
         updateDetectedUI();
@@ -4003,7 +3999,6 @@
               statusKey: customerPricing.statusKey,
               pricePerInch: customerPricing.pricePerInch,
               measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
-              rollWidthIn: MAIN_PRODUCT_ROLL_WIDTH_IN,
               selectedVariantId:
                 customerPricing.quoteVariantId ||
                 (state.selectedResult && state.selectedResult.selectedVariantId) ||

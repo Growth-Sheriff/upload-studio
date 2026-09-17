@@ -1,6 +1,6 @@
 (function() {
   var ROOT_SELECTOR = '[data-ul-main-product-upload-pro]';
-  var POLICY = 'main_product_roll_width';
+  var POLICY = 'finished_sheet';
 
   function toNumber(value) {
     var parsed = Number(value);
@@ -79,7 +79,7 @@
     if (!root || root.getAttribute('data-umpp-markup') === 'ready') return;
     var accept = escapeAttr(root.getAttribute('data-accepted-files') || '.png,.jpg,.jpeg,.webp,.tif,.tiff,.psd,.pdf,.ai,.eps,.svg');
     var checkoutEnabled = root.getAttribute('data-enable-checkout') === 'true';
-    var rollWidth = '22';
+    var maxPrintableWidth = '22.5';
     root.setAttribute('data-umpp-markup', 'ready');
     root.innerHTML = [
       '<div class="ump-pro__shell">',
@@ -125,7 +125,7 @@
           '<div class="ump__actions"><button class="ump__cart" type="button" data-ump-add data-default-label="Add to cart" disabled><span>Add to cart</span></button>' +
             (checkoutEnabled ? '<button class="ump__checkout" type="button" data-ump-checkout data-default-label="Checkout" disabled><span>Checkout</span></button>' : '') +
           '</div>',
-          '<div class="ump-pro__ticket"><div><p>Roll width</p><strong data-umpp-roll>' + rollWidth + '"</strong></div><div><p>Pricing</p><strong data-umpp-pricing-mode>Standard</strong></div><div><p>Ready</p><strong data-umpp-ready-count>0 files</strong></div></div>',
+          '<div class="ump-pro__ticket"><div><p>Maximum printable width</p><strong data-umpp-max-width>' + maxPrintableWidth + '"</strong></div><div><p>Pricing</p><strong data-umpp-pricing-mode>Standard</strong></div><div><p>Ready</p><strong data-umpp-ready-count>0 files</strong></div></div>',
           '<div class="ump__preview-card ump-pro__preview" data-ump-preview-card>',
             '<div class="ump__preview-head"><div><p class="ump__eyebrow">Detected gang sheet</p><h3 class="ump__size" data-ump-size>-- x --</h3></div><span class="ump__badge" data-ump-badge>Locked</span></div>',
             '<div class="ump-pro__spec-strip"><span>Active sheet <strong data-umpp-active-sheet>Pending</strong></span><span>Queue <strong data-umpp-queue-state>Empty</strong></span></div>',
@@ -149,7 +149,7 @@
     this.customerEmail = root.getAttribute('data-customer-email') || '';
     this.customerName = root.getAttribute('data-customer-name') || '';
     // Product config is authoritative. This is only the loading fallback.
-    this.rollWidthIn = 22;
+    this.maxPrintableWidthIn = 22.5;
     this.context = {
       status: 'loading',
       customerType: 'standard',
@@ -305,7 +305,7 @@
       var result = item.selectedResult || {};
       var length = toNumber(result.billableLengthIn) || Math.max(toNumber(item.widthIn), toNumber(item.heightIn));
       billable += length;
-      cartQuantity += Math.max(1, Number(result.cartQuantity || result.sheetsNeeded) || Math.ceil(length || 1));
+      cartQuantity += Math.max(1, Number(result.cartQuantity || result.wholeSheetCopies) || Math.ceil(length || 1));
     }
     billable = Number(billable.toFixed(2));
     var unitPrice = this.getLinearUnitPrice(billable, items[0] || null);
@@ -398,12 +398,12 @@
       this.productConfig.status = 'ready';
       this.productConfig.builderConfig = builderConfig;
       this.productConfig.customerOffer = builderConfig.customerOffer || null;
-      if (toNumber(builderConfig.rollWidthIn) > 0) {
-        this.rollWidthIn = toNumber(builderConfig.rollWidthIn);
+      if (toNumber(builderConfig.maxPrintableWidthIn) > 0) {
+        this.maxPrintableWidthIn = toNumber(builderConfig.maxPrintableWidthIn);
       }
-      this.root.setAttribute('data-roll-width-in', String(this.rollWidthIn));
-      var rollLabel = this.root.querySelector('[data-umpp-roll]');
-      if (rollLabel) rollLabel.textContent = this.rollWidthIn + '"';
+      this.root.setAttribute('data-max-printable-width-in', String(this.maxPrintableWidthIn));
+      var maxWidthLabel = this.root.querySelector('[data-umpp-max-width]');
+      if (maxWidthLabel) maxWidthLabel.textContent = this.maxPrintableWidthIn + '"';
       this.productConfig.error = '';
     } catch (error) {
       this.productConfig.status = 'ready';
@@ -421,8 +421,7 @@
         uploadId: item.uploadId,
         quantity: Math.max(1, Number(item.copies) || 1),
         selectedVariantId: item.selectedVariantId || null,
-        measurementPolicy: POLICY,
-        rollWidthIn: this.rollWidthIn
+        measurementPolicy: POLICY
       };
     }.bind(this));
   };
@@ -458,7 +457,6 @@
           customerId: this.customerId || null,
           customerEmail: this.customerEmail || null,
           measurementPolicy: POLICY,
-          rollWidthIn: this.rollWidthIn,
           items: this.buildCustomItems(items)
         })
       });
@@ -507,7 +505,6 @@
           customerId: this.customerId || null,
           customerEmail: this.customerEmail || null,
           measurementPolicy: POLICY,
-          rollWidthIn: this.rollWidthIn,
           items: this.buildCustomItems(readyItems)
         })
       });

@@ -24,7 +24,7 @@
   data-customer-email="{{ customer.email | default: '' | escape }}"
   data-customer-name="{{ customer.name | default: '' | escape }}"
   data-api-base="/apps/customizer"
-  data-roll-width-in="22"
+  data-max-printable-width-in="22.5"
   data-accepted-files="{{ ump_accept | escape }}"
   data-enable-checkout="{{ block.settings.enable_checkout_button }}"
   style="--ump-accent: {{ ump_accent }};"
@@ -45,7 +45,7 @@
             <em>or drop them here</em>
           </button>
           <ul class="ump__specs" aria-label="Accepted files">
-            <li class="ump__spec--roll">22&quot; roll</li>
+            <li class="ump__spec--max-width">22.5&quot; maximum width</li>
             <li>PNG</li><li>JPG</li><li>TIFF</li><li>PSD</li><li>PDF</li><li>AI</li><li>EPS</li><li>SVG</li>
           </ul>
         </div>
@@ -111,7 +111,7 @@
           <span class="ump__badge" data-ump-badge>Waiting</span>
         </div>
 
-        {%- comment -%} Signature: true-scale roll preview. Tiles are drawn by JS at the printer's placement. {%- endcomment -%}
+        {%- comment -%} True-scale finished-sheet preview. JS draws the uploaded sheet at its measured dimensions. {%- endcomment -%}
         <div class="ump__sheet" data-ump-sheet>
           <div class="ump__ruler ump__ruler--top" data-ump-ruler-top></div>
           <div class="ump__ruler ump__ruler--side" data-ump-ruler-side></div>

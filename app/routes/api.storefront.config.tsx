@@ -2,7 +2,7 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, corsJson } from "~/lib/cors.server";
 import { rateLimitGuard, getIdentifier } from "~/lib/rateLimit.server";
 import prisma from "~/lib/prisma.server";
-import { resolveServerMainProductRollWidth } from "~/lib/mainProductMeasurement.server";
+import { resolveFinishedSheetSettings } from "~/lib/finishedSheetMeasurement";
 import {
   applyAlphaProBuilderDefaults,
   buildAlphaProCustomerOffer,
@@ -137,7 +137,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const builderConfigRaw = productConfig
     ? (productConfig.builderConfig as Record<string, any>) || {}
     : {};
-  const rollWidthIn = resolveServerMainProductRollWidth(builderConfigRaw);
+  const finishedSheetSettings = resolveFinishedSheetSettings({
+    maxPrintableWidthIn: builderConfigRaw.maxPrintableWidthIn,
+    maxPrintableLengthIn: builderConfigRaw.maxPrintableLengthIn,
+    fitToleranceIn: builderConfigRaw.fitToleranceIn,
+  });
 
   const rawBuilderConfigResponse = productConfig
     ? {
@@ -146,7 +150,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         widthOptionName: builderConfigRaw.widthOptionName ?? null,
         heightOptionName: builderConfigRaw.heightOptionName ?? null,
         modalOptionNames: Array.isArray(builderConfigRaw.modalOptionNames) ? builderConfigRaw.modalOptionNames : [],
-        rollWidthIn,
+        ...finishedSheetSettings,
         colorProfile: builderConfigRaw.colorProfile ?? "CMYK",
         cartProductHandle: builderConfigRaw.cartProductHandle ?? null,
         maxFileSizeMb: builderConfigRaw.maxFileSizeMb ?? 500,

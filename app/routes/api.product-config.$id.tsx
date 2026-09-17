@@ -13,7 +13,7 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, getCorsHeaders } from "~/lib/cors.server";
 import prisma from "~/lib/prisma.server";
-import { resolveServerMainProductRollWidth } from "~/lib/mainProductMeasurement.server";
+import { resolveFinishedSheetSettings } from "~/lib/finishedSheetMeasurement";
 import {
   applyAlphaProBuilderDefaults,
   buildAlphaProCustomerOffer,
@@ -101,13 +101,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
 
     if (!config) {
+      const finishedSheetSettings = resolveFinishedSheetSettings(null);
       const builderConfig = applyAlphaProBuilderDefaults(shopDomain, productGid, {
         pricingMode: "area",
         sheetOptionName: null,
         widthOptionName: null,
         heightOptionName: null,
         modalOptionNames: [],
-        rollWidthIn: resolveServerMainProductRollWidth(null),
+        ...finishedSheetSettings,
         colorProfile: "CMYK",
         maxFileSizeMb: 500,
         supportedFormats: ["PNG","JPG","JPEG","SVG","PSD","AI","EPS","PDF"],
@@ -140,7 +141,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
 
     const builderConfig = (config.builderConfig as Record<string, any>) || {};
-    const rollWidthIn = resolveServerMainProductRollWidth(builderConfig);
+    const finishedSheetSettings = resolveFinishedSheetSettings({
+      maxPrintableWidthIn: builderConfig.maxPrintableWidthIn,
+      maxPrintableLengthIn: builderConfig.maxPrintableLengthIn,
+      fitToleranceIn: builderConfig.fitToleranceIn,
+    });
 
 
     const builderConfigResponse = applyAlphaProBuilderDefaults(shopDomain, productGid, {
@@ -149,7 +154,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       widthOptionName: builderConfig.widthOptionName ?? null,
       heightOptionName: builderConfig.heightOptionName ?? null,
       modalOptionNames: Array.isArray(builderConfig.modalOptionNames) ? builderConfig.modalOptionNames : [],
-      rollWidthIn,
+      ...finishedSheetSettings,
       colorProfile: builderConfig.colorProfile ?? "CMYK",
       maxFileSizeMb: builderConfig.maxFileSizeMb ?? 500,
       supportedFormats: builderConfig.supportedFormats ?? ["PNG","JPG","JPEG","SVG","PSD","AI","EPS","PDF"],

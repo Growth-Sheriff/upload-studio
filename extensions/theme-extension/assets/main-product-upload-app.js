@@ -1,6 +1,6 @@
 (function() {
   var ROOT_SELECTOR = '[data-ul-main-product-upload-app]';
-  var POLICY = 'main_product_roll_width';
+  var POLICY = 'finished_sheet';
 
   function parseJson(value, fallback) {
     try {
@@ -283,7 +283,7 @@
       root.setAttribute('data-customer-id', this.customerId);
     }
     // Product config is authoritative. This is only the loading fallback.
-    this.rollWidthIn = 22;
+    this.maxPrintableWidthIn = 22.5;
     this.enableCheckout = root.getAttribute('data-enable-checkout') === 'true';
     this.currency = root.getAttribute('data-currency') || 'USD';
     this.variants = parseJson(root.getAttribute('data-product-variants'), []);
@@ -510,8 +510,8 @@
     this.size = this.root.querySelector('[data-ump-size]');
     this.width = this.root.querySelector('[data-ump-width]');
     this.height = this.root.querySelector('[data-ump-height]');
-    this.rollLabel = this.root.querySelector('.ump__spec--roll');
-    if (this.rollLabel) this.rollLabel.textContent = formatInches(this.rollWidthIn) + ' roll';
+    this.maxWidthLabel = this.root.querySelector('.ump__spec--max-width');
+    if (this.maxWidthLabel) this.maxWidthLabel.textContent = formatInches(this.maxPrintableWidthIn) + ' maximum width';
     if (this.height && this.height.parentElement) {
       var heightLabel = this.height.parentElement.querySelector('span');
       if (heightLabel) heightLabel.textContent = 'Length';
@@ -784,7 +784,6 @@
         quantity: Math.max(1, Number(item.copies) || 1),
         selectedVariantId: item.selectedVariantId || this.getFallbackVariantId() || null,
         measurementPolicy: POLICY,
-        rollWidthIn: this.rollWidthIn,
         widthIn: item.widthIn || quoteItem.pageWidthIn || 0,
         heightIn: item.heightIn || quoteItem.pageLengthIn || 0,
         billableLengthIn: quoteItem.billableLengthIn || fallbackQuote.billableLengthIn || 0,
@@ -870,7 +869,7 @@
       sampleResult = sampleResult || result;
       var length = toNumber(result.billableLengthIn) || Math.max(toNumber(item && item.widthIn), toNumber(item && item.heightIn));
       billable += length;
-      cartQuantity += Math.max(1, Number(result.cartQuantity || result.sheetsNeeded) || Math.ceil(length || 1));
+      cartQuantity += Math.max(1, Number(result.cartQuantity || result.wholeSheetCopies) || Math.ceil(length || 1));
     });
     billable = Number(billable.toFixed(2));
 
@@ -1164,11 +1163,11 @@
       this.productConfig.status = 'ready';
       this.productConfig.builderConfig = builderConfig;
       this.productConfig.customerOffer = builderConfig.customerOffer || null;
-      if (toNumber(builderConfig.rollWidthIn) > 0) {
-        this.rollWidthIn = toNumber(builderConfig.rollWidthIn);
+      if (toNumber(builderConfig.maxPrintableWidthIn) > 0) {
+        this.maxPrintableWidthIn = toNumber(builderConfig.maxPrintableWidthIn);
       }
-      this.root.setAttribute('data-roll-width-in', String(this.rollWidthIn));
-      if (this.rollLabel) this.rollLabel.textContent = formatInches(this.rollWidthIn) + ' roll';
+      this.root.setAttribute('data-max-printable-width-in', String(this.maxPrintableWidthIn));
+      if (this.maxWidthLabel) this.maxWidthLabel.textContent = formatInches(this.maxPrintableWidthIn) + ' maximum width';
       this.productConfig.error = '';
     } catch (error) {
       this.productConfig.status = 'ready';
@@ -1371,7 +1370,7 @@
         self.renderPriceTable();
       });
     }
-    // The roll preview is drawn in pixels; redraw whenever the plane resizes.
+    // The finished-sheet preview is drawn in pixels; redraw whenever the plane resizes.
     if (this.sheetPlane && typeof ResizeObserver === 'function') {
       this.previewResizeObserver = new ResizeObserver(function() { self.updatePreviewGeometry(); });
       this.previewResizeObserver.observe(this.sheetPlane);
@@ -1701,8 +1700,7 @@
           customerId: this.customerId || null,
           customerEmail: this.customerEmail || null,
           customerName: this.customerName || null,
-          measurementPolicy: POLICY,
-          rollWidthIn: this.rollWidthIn
+          measurementPolicy: POLICY
         })
       });
       var data = await response.json().catch(function() { return {}; });
@@ -1713,7 +1711,7 @@
         this.state.selectedVariantId = String(data.resolution.selectedVariantId || '');
         this.setError('');
       } else if (!response.ok && data && data.error) {
-        // Preserve the server's exact roll-width explanation.
+        // Preserve the server's exact maximum-width explanation.
         this.setError(String(data.error));
       }
       this.render();
@@ -2019,7 +2017,9 @@
     if (this.state.provisional || source === 'client_probe') return 'Estimated from the file header — the server confirms the exact size once the upload lands.';
     if (source === 'document_dpi') return 'Measured from embedded document resolution.';
     if (source === 'adobe_default_dpi') return 'Measured with Adobe-compatible no-DPI handling.';
-    if (source === 'sheet_width_anchor') return 'Measured against the configured roll width.';
+    if (source === 'sheet_width_anchor' || source === 'max_printable_width_anchor') {
+      return 'Measured against the configured maximum printable width.';
+    }
     return this.state.uploadId ? 'Server-confirmed print size.' : 'Upload required before this product can be added to cart.';
   };
 
@@ -2043,10 +2043,10 @@
       : '';
     var parsed = parseSheetSize(label);
     return {
-      // The product's printable roll setting is the physical cross-roll
-      // width. A variant keeps its stored width × billable-length meaning;
-      // unlike the uploaded file, `22 × 12` is not normalized to `12 × 22`.
-      width: this.rollWidthIn,
+      // The press limit, not the variant's nominal width, decides whether the
+      // file fits cross-roll. The variant's second dimension remains its sold
+      // film length.
+      width: this.maxPrintableWidthIn,
       height: parsed && parsed.height > 0
         ? parsed.height
         : Math.max(this.state.widthIn || 0, this.state.heightIn || 0, 12),
@@ -2063,7 +2063,7 @@
     if (!this.sheetPlane || !this.art) return;
     var hasSize = this.state.widthIn > 0 && this.state.heightIn > 0;
     var sheet = this.parseSelectedSheet();
-    var sheetWidth = sheet.width || this.rollWidthIn || 22;
+    var sheetWidth = sheet.width || this.maxPrintableWidthIn || 22.5;
     var sheetLength = sheet.height || Math.max(this.state.widthIn || 0, this.state.heightIn || 0, 12);
     var trueRatio = sheetLength / sheetWidth;
     var displayRatio = Math.min(PREVIEW_MAX_RATIO, Math.max(0.8, trueRatio));
@@ -2205,8 +2205,7 @@
         uploadId: item.uploadId,
         quantity: Math.max(1, Number(item.copies || item.quantity) || 1),
         selectedVariantId: item.selectedVariantId || null,
-        measurementPolicy: item.measurementPolicy || POLICY,
-        rollWidthIn: toNumber(item.rollWidthIn) || this.rollWidthIn
+        measurementPolicy: POLICY
       };
     }.bind(this));
   };
@@ -2267,7 +2266,6 @@
           customerId: this.customerId || null,
           customerEmail: this.customerEmail || null,
           measurementPolicy: POLICY,
-          rollWidthIn: this.rollWidthIn,
           items: this.buildCustomItems(items)
         })
       });
@@ -2323,7 +2321,6 @@
           acceptAutomaticDiscounts: true,
           checkoutIntent: redirectTo === '/cart' ? 'add_to_cart' : 'checkout',
           measurementPolicy: POLICY,
-          rollWidthIn: this.rollWidthIn,
           items: this.buildCustomItems(checkoutEntries)
         })
       });
@@ -2736,7 +2733,6 @@
             variantId: this.getFallbackVariantId() || null,
             mode: 'dtf',
             measurementPolicy: POLICY,
-            rollWidthIn: this.rollWidthIn,
             fileName: file.name,
             contentType: file.type || 'application/octet-stream',
             fileSize: file.size,
@@ -2910,8 +2906,7 @@
         customerId: this.customerId || null,
         customerEmail: this.customerEmail || null,
         customerName: this.customerName || null,
-        measurementPolicy: POLICY,
-        rollWidthIn: this.rollWidthIn
+        measurementPolicy: POLICY
       })
     });
     var payload = await response.json().catch(function() { return {}; });
