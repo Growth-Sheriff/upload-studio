@@ -27,6 +27,10 @@ import {
 } from '~/lib/uploadUrls.server'
 import { corsJson } from '~/lib/cors.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
+import {
+  deriveUploadQuantityFacts,
+  hasUploadOrderHistory,
+} from '~/lib/uploadQuantitySemantics'
 
 function escapeHtml(input: unknown): string {
   return String(input ?? '')
@@ -108,6 +112,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           preflightResult: true,
         },
       },
+      ordersLink: {
+        select: { id: true },
+        take: 1,
+      },
     },
   })
 
@@ -131,14 +139,24 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       lifecycle.metadata,
       getStoredMeasurementBasis(item.preflightResult, runtimeMeasurementBasis)
     )
+    const firstDimensionIn = Number(metadata?.widthIn || 0)
+    const secondDimensionIn = Number(metadata?.heightIn || 0)
     return {
       itemId: item.id,
       fileName: item.originalName || 'design-file',
       mimeType: item.mimeType,
       fileSize: item.fileSize,
       location: item.location,
-      widthIn: metadata?.widthIn || 0,
-      heightIn: metadata?.heightIn || 0,
+      widthIn: firstDimensionIn,
+      heightIn: secondDimensionIn,
+      printableWidthIn:
+        firstDimensionIn > 0 && secondDimensionIn > 0
+          ? Math.min(firstDimensionIn, secondDimensionIn)
+          : 0,
+      measuredSheetLengthIn:
+        firstDimensionIn > 0 && secondDimensionIn > 0
+          ? Math.max(firstDimensionIn, secondDimensionIn)
+          : 0,
       dpi: metadata?.documentDpi || metadata?.dpi || 0,
       effectiveDpi: metadata?.effectiveDpi || 0,
       preflightStatus: item.preflightStatus,
@@ -147,9 +165,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     }
   })
 
-  // "Order again" deep link: the product page restores this upload from the
-  // status API (?ul_reorder=<id>) so the customer never re-sends the file.
-  const reorderUrl = await buildReorderUrl(upload.shop, upload.productId, upload.id)
+  const quantity = deriveUploadQuantityFacts(upload)
+  // An ordered upload is immutable evidence of what was sold. Reusing the row
+  // would make current sizing/quantity rules rewrite that history, so only an
+  // upload with no order history can be restored as a pending cart design.
+  const reorderUrl =
+    quantity.semantics === 'whole_sheet' && !hasUploadOrderHistory(upload)
+      ? await buildReorderUrl(upload.shop, upload.productId, upload.id)
+      : null
 
   const payload = {
     uploadId: upload.id,
@@ -162,21 +185,32 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     variantId: upload.variantId,
     orderId: upload.orderId,
     orderName: upload.orderName,
-    requestedCopies: upload.requestedCopies,
-    designsPerSheet: upload.designsPerSheet,
-    sheetsNeeded: upload.sheetsNeeded,
-    cartSheetLabel: upload.cartSheetLabel,
+    quantitySemantics: quantity.semantics,
+    wholeSheetCopies: quantity.wholeSheetCopies,
+    selectedSheetLabel:
+      quantity.semantics === 'whole_sheet' ? upload.cartSheetLabel : null,
+    legacyAudit:
+      quantity.semantics === 'legacy_nesting'
+        ? {
+            requestedDesigns: quantity.requestedCopies,
+            designsPerSheet: quantity.designsPerSheet,
+            physicalSheets: quantity.physicalSheets,
+            storedSheetLabel: upload.cartSheetLabel,
+          }
+        : null,
     createdAt: upload.createdAt,
     items,
   }
   const copiesBadge =
-    upload.requestedCopies && upload.requestedCopies > 0
-      ? `<span class="badge badge-copies">Copies ${escapeHtml(upload.requestedCopies)}` +
-        (upload.designsPerSheet ? ` · ${escapeHtml(upload.designsPerSheet)} per sheet` : '') +
-        (upload.sheetsNeeded ? ` · ${escapeHtml(upload.sheetsNeeded)} sheet${upload.sheetsNeeded === 1 ? '' : 's'}` : '') +
+    quantity.semantics === 'whole_sheet' && quantity.wholeSheetCopies
+      ? `<span class="badge badge-copies">${escapeHtml(quantity.wholeSheetCopies)} whole-sheet cop${quantity.wholeSheetCopies === 1 ? 'y' : 'ies'}` +
         (upload.cartSheetLabel ? ` · ${escapeHtml(upload.cartSheetLabel)}` : '') +
         '</span>'
-      : ''
+      : quantity.semantics === 'legacy_nesting'
+        ? `<span class="badge badge-history">Historical layout record · ${escapeHtml(quantity.requestedCopies || '—')} requested design${quantity.requestedCopies === 1 ? '' : 's'} · ${escapeHtml(quantity.designsPerSheet || '—')}/sheet · ${escapeHtml(quantity.physicalSheets || '—')} physical sheet${quantity.physicalSheets === 1 ? '' : 's'}` +
+          (upload.cartSheetLabel ? ` · stored label: ${escapeHtml(upload.cartSheetLabel)}` : '') +
+          '</span>'
+        : '<span class="badge badge-history">Historical quantity meaning was not recorded</span>'
 
   if (wantsJson) {
     return corsJson(payload, request, {
@@ -192,7 +226,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         <div class="facts">
           <h2>${escapeHtml(item.fileName)}</h2>
           <dl>
-            <div><dt>Measured size</dt><dd>${formatInches(item.widthIn)} × ${formatInches(item.heightIn)}</dd></div>
+            <div><dt>Printable width</dt><dd>${formatInches(item.printableWidthIn)}</dd></div>
+            <div><dt>Measured sheet length</dt><dd>${formatInches(item.measuredSheetLengthIn)}</dd></div>
             <div><dt>DPI</dt><dd>${item.dpi ? escapeHtml(item.dpi) : '—'}${item.effectiveDpi ? ` (effective ${escapeHtml(item.effectiveDpi)})` : ''}</dd></div>
             <div><dt>File type</dt><dd>${escapeHtml(item.mimeType || '—')}</dd></div>
             <div><dt>Preflight</dt><dd class="status status-${escapeHtml(item.preflightStatus)}">${escapeHtml(item.preflightStatus)}</dd></div>
@@ -220,6 +255,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   header.page p { color: #6b7280; font-size: 13px; margin-top: 4px; word-break: break-all; }
   .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #e0e7ff; color: #3730a3; margin-top: 8px; margin-right: 6px; }
   .badge-copies { background: #fff3d6; color: #7a4d00; }
+  .badge-history { background: #f3f4f6; color: #4b5563; border-radius: 8px; }
   .item { display: flex; gap: 16px; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
   .item img, .thumb-fallback { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb; flex-shrink: 0; }
   .thumb-fallback { display: flex; align-items: center; justify-content: center; background: #f3f4f6; color: #9ca3af; font-size: 11px; }

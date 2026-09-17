@@ -2,6 +2,7 @@ import type { LoaderFunctionArgs } from '@remix-run/node'
 import { json } from '@remix-run/node'
 import prisma from '~/lib/prisma.server'
 import { deriveUploadItemLifecycle } from '~/lib/uploadLifecycle.server'
+import { deriveUploadQuantityFacts } from '~/lib/uploadQuantitySemantics'
 import { DPI_PROPERTY, PRINT_READY_PROPERTY, SHEET_IDENTITY_PROPERTY } from '~/lib/orderMatching.server'
 import { buildFileUrl, buildIdentityUrl, buildThumbnailUrl, storageConfigForShop } from '~/lib/uploadUrls.server'
 import { authenticate } from '~/shopify.server'
@@ -60,6 +61,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
       orderPaidAt: true,
       createdAt: true,
       requestedCopies: true,
+      quantitySemantics: true,
+      designsPerSheet: true,
+      sheetsNeeded: true,
+      cartVariantId: true,
       items: {
         orderBy: { createdAt: 'asc' },
         take: 1,
@@ -70,6 +75,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   })
 
   const describe = (upload: (typeof uploads)[number]) => {
+    const quantity = deriveUploadQuantityFacts(upload)
+    if (quantity.semantics !== 'whole_sheet' || !quantity.wholeSheetCopies) return null
     const item = upload.items[0]
     if (!item || !item.storageKey) return null // ghost record: no file to reuse
     const lifecycle = deriveUploadItemLifecycle({
@@ -81,13 +88,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const identityUrl = buildIdentityUrl(upload.id)
     return {
       uploadId: upload.id,
+      // A historical upload is display-only until order-specific immutable
+      // measurement/quantity snapshots exist. Reusing this row would let a
+      // new cart overwrite facts shown for the previous order.
+      reusable: false,
       orderId: digits(upload.orderId),
       orderName: upload.orderName || null,
       orderedAt: (upload.orderPaidAt || upload.createdAt).toISOString(),
       fileName: item.originalName || 'Design',
       thumbnailUrl: buildThumbnailUrl(storageConfig, item.thumbnailKey),
-      variantId: digits(upload.variantId),
-      copies: upload.requestedCopies || 1,
+      variantId: digits(upload.cartVariantId || upload.variantId),
+      copies: quantity.wholeSheetCopies,
       properties: {
         [PRINT_READY_PROPERTY]: buildFileUrl(storageConfig, item.storageKey) || identityUrl,
         [SHEET_IDENTITY_PROPERTY]: identityUrl,
@@ -107,7 +118,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     const preferred =
       (variantCandidates.length ? fromOrder.find((upload) => upload.variantId && variantCandidates.includes(upload.variantId)) : null) ||
       (fromOrder.length === 1 ? fromOrder[0] : null)
-    match = preferred ? describe(preferred) : null
+    const described = preferred ? describe(preferred) : null
+    match = described?.reusable === true ? described : null
   }
 
   return json({ customer: true, match, history: history.slice(0, 8) })

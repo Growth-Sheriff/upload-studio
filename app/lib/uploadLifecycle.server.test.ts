@@ -8,6 +8,7 @@ import {
   deriveUploadClientStatus,
   deriveUploadItemLifecycle,
   getStoredMeasurementBasis,
+  resolveBestDimensions,
 } from './uploadLifecycle.server'
 
 describe('getStoredMeasurementBasis', () => {
@@ -60,6 +61,33 @@ describe('stored main-product projection', () => {
     const applied = applyFullCanvasMeasurementMetadata(lifecycle.metadata)
     expect(applied?.widthIn).toBe(22)
     expect(applied?.heightIn).toBe(24)
+  })
+
+  it('keeps valid unversioned physical facts instead of reinterpreting a past upload', () => {
+    const lifecycle = deriveUploadItemLifecycle({
+      preflightStatus: 'ok',
+      preflightResult: {
+        measurementBasis: 'full_page',
+        metadata: {
+          widthPx: 6000,
+          heightPx: 3000,
+          measurementWidthPx: 6000,
+          measurementHeightPx: 3000,
+          effectiveDpi: 251,
+          sizingSource: 'document_dpi',
+          sheetWidthIn: 22,
+          widthIn: 23.91,
+          heightIn: 21.14,
+          measurementMode: 'full',
+        },
+      },
+    })
+
+    expect(lifecycle.metadata?.widthIn).toBe(23.91)
+    expect(lifecycle.metadata?.heightIn).toBe(21.14)
+    expect(lifecycle.metadata?.usesStoredPhysicalDimensions).toBe(true)
+    expect(applyFullCanvasMeasurementMetadata(lifecycle.metadata)?.widthIn).toBe(23.91)
+    expect(applyFullCanvasMeasurementMetadata(lifecycle.metadata)?.heightIn).toBe(21.14)
   })
 })
 
@@ -215,12 +243,12 @@ describe('computeSheetAnchoredInches', () => {
 })
 
 describe('computeRollWidthAnchoredInches', () => {
-  it('snaps exact 22x12 sheet-ratio uploads to 22"x12" instead of forcing the short side to 22"', () => {
+  it('recovers an exact sold sheet size from a no-DPI pixel ratio without a tolerance', () => {
     const result = computeRollWidthAnchoredInches(6600, 3600, 22, [{ widthIn: 22, heightIn: 12 }])
     expect(result.widthIn).toBe(22)
     expect(result.heightIn).toBe(12)
     expect(result.effectiveDpi).toBe(300)
-    expect(result.sheetLengthIn).toBe(12)
+    expect(result.sheetLengthIn).toBe(22)
   })
 
   it('keeps variable-length uploads anchored to a 22" short side when no exact sheet ratio matches', () => {
@@ -601,5 +629,28 @@ describe('applyArtworkBoundsMeasurementMetadata', () => {
 
     expect(result?.widthIn).toBe(11)
     expect(result?.heightIn).toBe(30)
+  })
+
+  it('does not use a nearby sheet ratio to rewrite the anchored length', () => {
+    const result = computeRollWidthAnchoredInches(6603, 3600, 22, [
+      { widthIn: 22, heightIn: 12 },
+    ])
+    expect(result.widthIn).toBe(40.35)
+    expect(result.heightIn).toBe(22)
+  })
+})
+
+describe('resolveBestDimensions', () => {
+  it('anchors a no-DPI file whose Adobe short edge is 22.01 inches', () => {
+    const result = resolveBestDimensions(
+      7200,
+      1585,
+      0,
+      computeRollWidthAnchoredInches(7200, 1585, 22),
+      'sheet_width_anchor'
+    )
+
+    expect(result.sizingSource).toBe('sheet_width_anchor')
+    expect(Math.min(result.widthIn, result.heightIn)).toBe(22)
   })
 })

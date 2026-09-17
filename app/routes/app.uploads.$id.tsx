@@ -20,6 +20,12 @@ import { AlertCircleIcon, AlertTriangleIcon, CheckCircleIcon } from '@shopify/po
 import { useState } from 'react'
 import prisma from '~/lib/prisma.server'
 import { getDownloadSignedUrl, getStorageConfig } from '~/lib/storage.server'
+import {
+  applyMeasurementBasisMetadata,
+  deriveUploadItemLifecycle,
+  getStoredMeasurementBasis,
+} from '~/lib/uploadLifecycle.server'
+import { deriveUploadQuantityFacts } from '~/lib/uploadQuantitySemantics'
 import { authenticate } from '~/shopify.server'
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -65,6 +71,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     upload.items.map(async (item) => {
       let thumbnailUrl = null
       let previewUrl = null
+      const metadata = applyMeasurementBasisMetadata(
+        deriveUploadItemLifecycle(item).metadata,
+        getStoredMeasurementBasis(item.preflightResult, 'full_page')
+      )
+      const firstDimensionIn = Number(metadata?.widthIn || 0)
+      const secondDimensionIn = Number(metadata?.heightIn || 0)
 
 
       const thumbnailSource = item.thumbnailKey || item.storageKey
@@ -86,6 +98,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         ...item,
         thumbnailUrl,
         previewUrl,
+        printableWidthIn:
+          firstDimensionIn > 0 && secondDimensionIn > 0
+            ? Math.min(firstDimensionIn, secondDimensionIn)
+            : 0,
+        measuredSheetLengthIn:
+          firstDimensionIn > 0 && secondDimensionIn > 0
+            ? Math.max(firstDimensionIn, secondDimensionIn)
+            : 0,
         preflightResult: item.preflightResult as any,
       }
     })
@@ -307,11 +327,11 @@ function getPreflightMessage(check: {
 
   if (name.includes('dimension') || name.includes('width') || name.includes('height')) {
     if (status === 'ok') {
-      return { title: 'Dimensions', detail: 'Perfect size for print area ✓' }
+      return { title: 'Dimensions', detail: 'Measured; printable-width fit is checked against the product ✓' }
     } else if (status === 'warning') {
-      return { title: 'Dimensions', detail: 'Will be scaled to fit - quality preserved' }
+      return { title: 'Dimensions', detail: check.message || 'Measurement needs review' }
     } else {
-      return { title: 'Dimensions', detail: 'May need resizing' }
+      return { title: 'Dimensions', detail: check.message || 'Measurement failed' }
     }
   }
 
@@ -344,6 +364,7 @@ export default function UploadDetail() {
   const overallStatus = (upload.preflightSummary as any)?.overall || 'pending'
   const hasWarnings = upload.items.some((i) => i.preflightStatus === 'warning')
   const hasErrors = upload.items.some((i) => i.preflightStatus === 'error')
+  const quantity = deriveUploadQuantityFacts(upload)
 
   return (
     <Page
@@ -416,6 +437,19 @@ export default function UploadDetail() {
               </Text>
               <Text as="p">ID: {upload.id}</Text>
               <Text as="p">Mode: {upload.mode}</Text>
+              {quantity.semantics === 'whole_sheet' ? (
+                <Text as="p">
+                  Whole-sheet copies: {quantity.wholeSheetCopies}
+                  {upload.cartSheetLabel ? ` · Selected sheet: ${upload.cartSheetLabel}` : ''}
+                </Text>
+              ) : quantity.semantics === 'legacy_nesting' ? (
+                <Banner tone="warning" title="Historical layout record">
+                  {quantity.requestedCopies || '—'} requested designs · {quantity.designsPerSheet || '—'} per sheet ·{' '}
+                  {quantity.physicalSheets || '—'} physical sheets. This is audit history, not a current production instruction.
+                </Banner>
+              ) : (
+                <Text as="p" tone="subdued">Quantity meaning was not recorded for this historical upload.</Text>
+              )}
               <InlineStack gap="200" align="start">
                 <Text as="span">Status:</Text>
                 <Badge
@@ -482,6 +516,16 @@ export default function UploadDetail() {
                       <Text as="p" variant="bodySm">
                         Location: {item.location}
                       </Text>
+                      {item.printableWidthIn > 0 && item.measuredSheetLengthIn > 0 ? (
+                        <InlineStack gap="400" align="start">
+                          <Text as="p" variant="bodySm">
+                            Printable width: {item.printableWidthIn.toFixed(2)}&quot;
+                          </Text>
+                          <Text as="p" variant="bodySm">
+                            Measured sheet length: {item.measuredSheetLengthIn.toFixed(2)}&quot;
+                          </Text>
+                        </InlineStack>
+                      ) : null}
                       <InlineStack gap="200" align="start">
                         <Text as="p" variant="bodySm">
                           Size:{' '}

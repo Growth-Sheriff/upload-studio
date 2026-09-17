@@ -48,6 +48,10 @@ export interface UploadLifecycleMetadata {
   measurementMode: string | null
   measurementProjectionVersion?: number
   measurementProjectionPolicy?: string | null
+  /** Runtime provenance flag: the preflight row already contained physical
+   * dimensions. Keep those facts for historical/admin display; an active
+   * main-product resolve may still apply today's explicit roll policy. */
+  usesStoredPhysicalDimensions?: boolean
 }
 
 export interface UploadLifecycleState {
@@ -217,7 +221,7 @@ export function resolveBestDimensions(
   const adobeSized = computeDocumentDpiInches(widthPx, heightPx, ADOBE_DEFAULT_DPI)
   if (adobeSized) {
     const shortEdgeIn = Math.min(adobeSized.widthIn, adobeSized.heightIn)
-    if (shortEdgeIn <= rollWidthIn + 0.5) {
+    if (shortEdgeIn <= rollWidthIn) {
       return {
         widthIn: adobeSized.widthIn,
         heightIn: adobeSized.heightIn,
@@ -260,43 +264,34 @@ export function computeRollWidthAnchoredInches(
     return { widthIn: 0, heightIn: 0, effectiveDpi: 0, sheetWidthIn: rollWidthIn }
   }
 
+  // A no-DPI export can still encode an exact, merchant-sold sheet size in its
+  // pixel aspect ratio (for example 6600x3600 is exactly 22x12 at 300 DPI).
+  // Preserve that established measurement only for an exact ratio and exact
+  // roll-width match. There is deliberately no hidden fit/ratio tolerance.
   const pixelRatio = Math.max(widthPx, heightPx) / Math.min(widthPx, heightPx)
-  const ratioTolerance = 0.01
-  const rollTolerance = 0.01
-  const exactSheet = sheetSizes
-    .map((sheet) => {
-      const widthIn = Number(sheet.widthIn)
-      const heightIn = Number(sheet.heightIn)
-      if (!(widthIn > 0) || !(heightIn > 0)) return null
-      if (Math.min(Math.abs(widthIn - rollWidthIn), Math.abs(heightIn - rollWidthIn)) > rollTolerance) {
-        return null
-      }
+  const exactSheet = sheetSizes.find((sheet) => {
+    const first = Number(sheet.widthIn)
+    const second = Number(sheet.heightIn)
+    if (!(first > 0) || !(second > 0)) return false
+    const shortEdge = Math.min(first, second)
+    const longEdge = Math.max(first, second)
+    return (first === rollWidthIn || second === rollWidthIn) && longEdge / shortEdge === pixelRatio
+  })
 
-      const sheetRatio = Math.max(widthIn, heightIn) / Math.min(widthIn, heightIn)
-      const delta = Math.abs(sheetRatio - pixelRatio)
-      return delta <= ratioTolerance ? { widthIn, heightIn, delta } : null
-    })
-    .filter((sheet): sheet is { widthIn: number; heightIn: number; delta: number } => Boolean(sheet))
-    .sort((a, b) => a.delta - b.delta)[0]
-
-  if (!exactSheet) {
-    return computeSheetAnchoredInches(widthPx, heightPx, rollWidthIn)
+  if (exactSheet) {
+    const shortEdge = Math.min(Number(exactSheet.widthIn), Number(exactSheet.heightIn))
+    const longEdge = Math.max(Number(exactSheet.widthIn), Number(exactSheet.heightIn))
+    const landscape = widthPx >= heightPx
+    return {
+      widthIn: Number((landscape ? longEdge : shortEdge).toFixed(2)),
+      heightIn: Number((landscape ? shortEdge : longEdge).toFixed(2)),
+      effectiveDpi: Math.round(Math.min(widthPx, heightPx) / shortEdge),
+      sheetWidthIn: rollWidthIn,
+      sheetLengthIn: Number(longEdge.toFixed(2)),
+    }
   }
 
-  const shortSheetIn = Math.min(exactSheet.widthIn, exactSheet.heightIn)
-  const longSheetIn = Math.max(exactSheet.widthIn, exactSheet.heightIn)
-  const isLandscape = widthPx >= heightPx
-  const widthIn = isLandscape ? longSheetIn : shortSheetIn
-  const heightIn = isLandscape ? shortSheetIn : longSheetIn
-  const effectiveDpi = Math.round(Math.min(widthPx, heightPx) / shortSheetIn)
-
-  return {
-    widthIn: Number(widthIn.toFixed(2)),
-    heightIn: Number(heightIn.toFixed(2)),
-    effectiveDpi,
-    sheetWidthIn: rollWidthIn,
-    sheetLengthIn: Number((exactSheet.widthIn === rollWidthIn ? exactSheet.heightIn : exactSheet.widthIn).toFixed(2)),
-  }
+  return computeSheetAnchoredInches(widthPx, heightPx, rollWidthIn)
 }
 
 function normalizeSizingSource(value: unknown): string | null {
@@ -480,11 +475,11 @@ function extractMetadata(preflightResult: unknown, checks: Array<Record<string, 
       const storedWidthIn = parsePositiveNumber(metadata.widthIn)
       const storedHeightIn = parsePositiveNumber(metadata.heightIn)
       const storedEffectiveDpi = parsePositiveNumber(metadata.effectiveDpi)
+      const hasStoredPhysicalDimensions = storedWidthIn > 0 && storedHeightIn > 0
       const hasCanonicalProjection =
         projectionVersion === 1 &&
         projectionPolicy === 'main_product_roll_width' &&
-        storedWidthIn > 0 &&
-        storedHeightIn > 0
+        hasStoredPhysicalDimensions
       const resolved = resolveBestDimensions(
         measurementWidthPx,
         measurementHeightPx,
@@ -505,22 +500,25 @@ function extractMetadata(preflightResult: unknown, checks: Array<Record<string, 
         trimmedOffsetYPx: parsePositiveNumber(metadata.trimmedOffsetYPx),
         measurementWidthPx,
         measurementHeightPx,
-        effectiveDpi: hasCanonicalProjection
+        effectiveDpi: hasStoredPhysicalDimensions
           ? storedEffectiveDpi || resolved.effectiveDpi
           : resolved.effectiveDpi,
-        sizingSource: hasCanonicalProjection ? storedSizingSource : resolved.sizingSource,
-        sheetWidthIn: hasCanonicalProjection
+        sizingSource: hasStoredPhysicalDimensions
+          ? storedSizingSource || resolved.sizingSource
+          : resolved.sizingSource,
+        sheetWidthIn: hasStoredPhysicalDimensions
           ? sheetWidthInStored || resolved.sheetWidthIn
           : resolved.sheetWidthIn,
-        sheetLengthIn: hasCanonicalProjection
+        sheetLengthIn: hasStoredPhysicalDimensions
           ? sheetLengthInStored || resolved.sheetLengthIn
           : resolved.sheetLengthIn,
-        widthIn: hasCanonicalProjection ? storedWidthIn : resolved.widthIn,
-        heightIn: hasCanonicalProjection ? storedHeightIn : resolved.heightIn,
+        widthIn: hasStoredPhysicalDimensions ? storedWidthIn : resolved.widthIn,
+        heightIn: hasStoredPhysicalDimensions ? storedHeightIn : resolved.heightIn,
         measurementMode:
           typeof metadata.measurementMode === 'string' && metadata.measurementMode
             ? metadata.measurementMode
             : null,
+        usesStoredPhysicalDimensions: hasStoredPhysicalDimensions,
         ...(hasCanonicalProjection
           ? {
               measurementProjectionVersion: projectionVersion,
@@ -539,17 +537,26 @@ export function applyFullCanvasMeasurementMetadata(
 ): UploadLifecycleMetadata | null {
   if (!metadata) return null
 
-  if (
-    metadata.measurementProjectionVersion === 1 &&
-    metadata.measurementProjectionPolicy === 'main_product_roll_width' &&
+  const fullWidthPx = metadata.widthPx > 0 ? metadata.widthPx : metadata.measurementWidthPx
+  const fullHeightPx = metadata.heightPx > 0 ? metadata.heightPx : metadata.measurementHeightPx
+  const storedDimensionsCoverFullCanvas =
+    metadata.usesStoredPhysicalDimensions === true &&
     metadata.widthIn > 0 &&
-    metadata.heightIn > 0
+    metadata.heightIn > 0 &&
+    (metadata.measurementMode === 'full' ||
+      (metadata.measurementWidthPx === fullWidthPx &&
+        metadata.measurementHeightPx === fullHeightPx))
+
+  if (
+    storedDimensionsCoverFullCanvas ||
+    (metadata.measurementProjectionVersion === 1 &&
+      metadata.measurementProjectionPolicy === 'main_product_roll_width' &&
+      metadata.widthIn > 0 &&
+      metadata.heightIn > 0)
   ) {
     return { ...metadata, measurementMode: 'full' }
   }
 
-  const fullWidthPx = metadata.widthPx > 0 ? metadata.widthPx : metadata.measurementWidthPx
-  const fullHeightPx = metadata.heightPx > 0 ? metadata.heightPx : metadata.measurementHeightPx
   const anchored = computeSheetAnchoredInches(
     fullWidthPx,
     fullHeightPx,

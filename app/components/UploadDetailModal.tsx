@@ -17,6 +17,7 @@ import {
   TextField
 } from '@shopify/polaris';
 import { AlertCircleIcon, AlertTriangleIcon, CheckCircleIcon } from '@shopify/polaris-icons';
+import { deriveUploadQuantityFacts } from '~/lib/uploadQuantitySemantics';
 
 
 
@@ -82,9 +83,9 @@ function getPreflightMessage(check: {
     return { title: 'Colors', detail: 'Color conversion may be applied' }
   }
   if (name.includes('dimension') || name.includes('width') || name.includes('height')) {
-    if (status === 'ok') return { title: 'Dimensions', detail: 'Perfect size for print area ✓' }
-    if (status === 'warning') return { title: 'Dimensions', detail: 'Will be scaled to fit' }
-    return { title: 'Dimensions', detail: 'May need resizing' }
+    if (status === 'ok') return { title: 'Dimensions', detail: 'Measured; printable-width fit is checked against the product ✓' }
+    if (status === 'warning') return { title: 'Dimensions', detail: check.message || 'Measurement needs review' }
+    return { title: 'Dimensions', detail: check.message || 'Measurement failed' }
   }
 
   const friendlyName = check.name?.replace(/_/g, ' ').replace(/^\w/, (c: string) => c.toUpperCase()) || 'Check'
@@ -164,6 +165,7 @@ export function UploadDetailModal({ uploadId, onClose }: { uploadId: string | nu
   const overallStatus = (upload.preflightSummary as any)?.overall || 'pending';
   const hasWarnings = upload.items.some((i: any) => i.preflightStatus === 'warning');
   const hasErrors = upload.items.some((i: any) => i.preflightStatus === 'error');
+  const quantity = deriveUploadQuantityFacts(upload);
 
 
   const primaryAction = !rejectMode && upload.status === 'needs_review' && !hasErrors
@@ -253,6 +255,19 @@ export function UploadDetailModal({ uploadId, onClose }: { uploadId: string | nu
                                     <Text as="p" variant="bodySm">ID: {upload.id}</Text>
                                     <Text as="p" variant="bodySm">Mode: {upload.mode}</Text>
                                     <Text as="p" variant="bodySm">Date: {new Date(upload.createdAt).toLocaleDateString()}</Text>
+                                    {quantity.semantics === 'whole_sheet' ? (
+                                      <Text as="p" variant="bodySm">
+                                        Whole-sheet copies: {quantity.wholeSheetCopies}
+                                        {upload.cartSheetLabel ? ` · Selected sheet: ${upload.cartSheetLabel}` : ''}
+                                      </Text>
+                                    ) : quantity.semantics === 'legacy_nesting' ? (
+                                      <Text as="p" variant="bodySm" tone="subdued">
+                                        Historical layout: {quantity.requestedCopies || '—'} designs ·{' '}
+                                        {quantity.designsPerSheet || '—'}/sheet · {quantity.physicalSheets || '—'} physical sheets
+                                      </Text>
+                                    ) : (
+                                      <Text as="p" variant="bodySm" tone="subdued">Historical quantity meaning not recorded</Text>
+                                    )}
                                 </BlockStack>
                              </Card>
                              <Card>
@@ -299,6 +314,12 @@ export function UploadDetailModal({ uploadId, onClose }: { uploadId: string | nu
                                                  {(item.fileSize / 1024 / 1024).toFixed(2)} MB
                                              </Text>
                                          )}
+                                         {item.printableWidthIn > 0 && item.measuredSheetLengthIn > 0 ? (
+                                             <Text as="p" variant="bodySm">
+                                                 Printable width: {item.printableWidthIn.toFixed(2)}&quot; · Measured sheet length:{' '}
+                                                 {item.measuredSheetLengthIn.toFixed(2)}&quot;
+                                             </Text>
+                                         ) : null}
 
 
                                          {item.preflightResult?.checks && (

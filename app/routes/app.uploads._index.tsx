@@ -563,7 +563,7 @@ export default function UploadsPage() {
                     'Mode',
                     'Status',
                     'Quality',
-                    'Size',
+                    'File size',
                     'Time',
                     'Items',
                     'Source',
@@ -615,4 +615,3 @@ export default function UploadsPage() {
     </Page>
   )
 }
-

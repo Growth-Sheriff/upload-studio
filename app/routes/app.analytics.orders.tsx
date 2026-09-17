@@ -8,6 +8,7 @@ import { json } from '@remix-run/node'
 import { useLoaderData, useNavigate } from '@remix-run/react'
 import {
   Badge,
+  Banner,
   BlockStack,
   Box,
   Button,
@@ -28,6 +29,12 @@ import {
 import { NoteIcon } from '@shopify/polaris-icons'
 import { useCallback, useState } from 'react'
 import prisma from '~/lib/prisma.server'
+import {
+  applyMeasurementBasisMetadata,
+  deriveUploadItemLifecycle,
+  getStoredMeasurementBasis,
+} from '~/lib/uploadLifecycle.server'
+import { deriveUploadQuantityFacts } from '~/lib/uploadQuantitySemantics'
 import { authenticate } from '~/shopify.server'
 
 
@@ -148,12 +155,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
           orderCurrency: true,
           orderPaidAt: true,
           createdAt: true,
+          quantitySemantics: true,
+          requestedCopies: true,
+          designsPerSheet: true,
+          sheetsNeeded: true,
+          cartSheetLabel: true,
           items: {
             select: {
+              id: true,
               location: true,
               originalName: true,
               fileSize: true,
               preflightStatus: true,
+              preflightResult: true,
+              thumbnailKey: true,
             },
           },
         },
@@ -174,18 +189,44 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return {
       orderId,
       uploadCount: uploads.length,
-      uploads: uploads.map((u) => ({
-        id: u?.id,
-        mode: u?.mode,
-        status: u?.status,
-        locations: u?.items?.map((i) => i.location) || [],
-        files:
-          u?.items?.map((i) => ({
-            name: i.originalName,
-            size: i.fileSize,
-            preflightStatus: i.preflightStatus,
-          })) || [],
-      })),
+      uploads: uploads.map((upload) => {
+        const quantity = deriveUploadQuantityFacts(upload || {})
+        return {
+          id: upload?.id,
+          mode: upload?.mode,
+          status: upload?.status,
+          selectedSheetLabel:
+            quantity.semantics === 'whole_sheet' ? upload?.cartSheetLabel || null : null,
+          historicalSheetLabel:
+            quantity.semantics === 'legacy_nesting' ? upload?.cartSheetLabel || null : null,
+          quantity,
+          locations: upload?.items?.map((item) => item.location) || [],
+          items:
+          upload?.items?.map((item) => {
+            const metadata = applyMeasurementBasisMetadata(
+              deriveUploadItemLifecycle(item).metadata,
+              getStoredMeasurementBasis(item.preflightResult, 'full_page')
+            )
+            const firstDimensionIn = Number(metadata?.widthIn || 0)
+            const secondDimensionIn = Number(metadata?.heightIn || 0)
+            return {
+              id: item.id,
+              location: item.location,
+              originalName: item.originalName,
+              fileSize: item.fileSize,
+              preflightStatus: item.preflightStatus,
+              printableWidthIn:
+                firstDimensionIn > 0 && secondDimensionIn > 0
+                  ? Math.min(firstDimensionIn, secondDimensionIn)
+                  : 0,
+              measuredSheetLengthIn:
+                firstDimensionIn > 0 && secondDimensionIn > 0
+                  ? Math.max(firstDimensionIn, secondDimensionIn)
+                  : 0,
+            }
+          }) || [],
+        }
+      }),
       customerEmail: firstUpload?.customerEmail || null,
       orderTotal: firstUpload?.orderTotal ? Number(firstUpload.orderTotal) : null,
       orderCurrency: firstUpload?.orderCurrency || 'USD',
@@ -755,8 +796,8 @@ export default function OrderAnalyticsPage() {
       <Modal
         open={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title={`Uploads for Order #${selectedOrder?.shopifyData?.name || selectedOrder?.orderId}`}
-        large
+        title={`Uploads for Order ${selectedOrder?.shopifyData?.name || `#${selectedOrder?.orderId}`}`}
+        size="large"
       >
         <Modal.Section>
           {selectedOrder && (
@@ -772,6 +813,23 @@ export default function OrderAnalyticsPage() {
                         {upload.status}
                       </Badge>
                     </InlineStack>
+                    {upload.quantity?.semantics === 'whole_sheet' ? (
+                      <Text as="p" variant="bodySm">
+                        Whole-sheet copies: {upload.quantity.wholeSheetCopies}
+                        {upload.selectedSheetLabel ? ` · Selected sheet: ${upload.selectedSheetLabel}` : ''}
+                      </Text>
+                    ) : upload.quantity?.semantics === 'legacy_nesting' ? (
+                      <Banner tone="warning" title="Historical layout record">
+                        {upload.quantity.requestedCopies || '—'} requested designs ·{' '}
+                        {upload.quantity.designsPerSheet || '—'} per sheet ·{' '}
+                        {upload.quantity.physicalSheets || '—'} physical sheets
+                        {upload.historicalSheetLabel ? ` · Stored label: ${upload.historicalSheetLabel}` : ''}. This is audit history, not a current production instruction.
+                      </Banner>
+                    ) : (
+                      <Text as="p" variant="bodySm" tone="subdued">
+                        Quantity meaning was not recorded for this historical upload.
+                      </Text>
+                    )}
                     <Divider />
                     {upload.items?.map((item: any) => (
                       <InlineStack key={item.id} gap="400" blockAlign="center">
@@ -797,6 +855,12 @@ export default function OrderAnalyticsPage() {
                           <Text as="span" tone="subdued" variant="bodySm">
                             {item.originalName || 'No filename'}
                           </Text>
+                          {item.printableWidthIn > 0 && item.measuredSheetLengthIn > 0 ? (
+                            <Text as="span" variant="bodySm">
+                              Printable width: {item.printableWidthIn.toFixed(2)}&quot; · Measured sheet length:{' '}
+                              {item.measuredSheetLengthIn.toFixed(2)}&quot;
+                            </Text>
+                          ) : null}
                           <Button url={`/app/uploads/${upload.id}`} variant="plain" size="micro">
                             View Details
                           </Button>

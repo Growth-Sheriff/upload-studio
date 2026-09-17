@@ -16,6 +16,8 @@ import {
   getStoredMeasurementBasis,
 } from '~/lib/uploadLifecycle.server'
 import { getRuntimeMeasurementBasis } from '~/lib/customerPricingModel.server'
+import { matchUploadFromLineItem } from '~/lib/orderMatching.server'
+import { deriveUploadQuantityFacts } from '~/lib/uploadQuantitySemantics'
 import { authenticate } from '~/shopify.server'
 
 const RECENT_ORDER_DETAILS_QUERY = `
@@ -84,12 +86,6 @@ function getAttributeValue(
 ): string {
   const match = (attributes || []).find((attribute) => String(attribute?.key || '') === key)
   return String(match?.value || '').trim()
-}
-
-function parsePositiveInteger(value: string | number | null | undefined, fallback = 1): number {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback
-  return Math.max(1, Math.floor(parsed))
 }
 
 function buildProductCandidates(productId: string | null): string[] {
@@ -212,6 +208,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       variantId: true,
       orderId: true,
       orderPaidAt: true,
+      quantitySemantics: true,
       requestedCopies: true,
       designsPerSheet: true,
       sheetsNeeded: true,
@@ -310,7 +307,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
           .find((node) => {
             if (!node) return false
             const nodeLineItemId = extractTrailingDigits(node.id)
-            const uploadIdMatch = getAttributeValue(node.customAttributes, '_ul_upload_id') === upload.id
+            const uploadIdMatch =
+              matchUploadFromLineItem({
+                properties: (node.customAttributes || []).map((attribute) => ({
+                  name: String(attribute?.key || ''),
+                  value: attribute?.value,
+                })),
+              })?.uploadId === upload.id
             return (lineItemId && nodeLineItemId === lineItemId) || uploadIdMatch
           }) || null
 
@@ -325,25 +328,29 @@ export async function loader({ request }: LoaderFunctionArgs) {
       const fallbackProductLabel = normalizedUploadProductId
         ? productLabelById.get(normalizedUploadProductId) || normalizedUploadProductId
         : 'Custom Upload'
-      const lastOrderedQuantity = parsePositiveInteger(
-        upload.requestedCopies ||
-          lineItem?.quantity,
-        1
-      )
+      const quantity = deriveUploadQuantityFacts(upload)
+      const lastOrderedQuantity = quantity.wholeSheetCopies
       const storedSheetSize = parseSheetSizeFromTitle(upload.cartSheetLabel)
-      const billableLengthIn =
-        storedSheetSize && upload.sheetsNeeded
+      const measuredSheetLengthIn = metadata
+        ? Number(Math.max(metadata.widthIn, metadata.heightIn).toFixed(2))
+        : 0
+      const totalBillableLengthIn =
+        quantity.semantics === 'whole_sheet' &&
+        pricingContext.pricingMode === 'variant_length' &&
+        storedSheetSize &&
+        quantity.wholeSheetCopies
           ? Number(
               (
                 Math.max(storedSheetSize.widthIn, storedSheetSize.lengthIn) *
-                Math.max(1, upload.sheetsNeeded)
+                quantity.wholeSheetCopies
               ).toFixed(2)
             )
-          : metadata
+          : quantity.semantics === 'whole_sheet' &&
+              measuredSheetLengthIn > 0 &&
+              quantity.wholeSheetCopies
             ? Number(
                 (
-                  Math.max(metadata.widthIn, metadata.heightIn) *
-                  lastOrderedQuantity
+                  measuredSheetLengthIn * quantity.wholeSheetCopies
                 ).toFixed(2)
               )
             : 0
@@ -365,14 +372,27 @@ export async function loader({ request }: LoaderFunctionArgs) {
           'Print-ready upload',
         uploadUrl,
         thumbnailUrl,
+        // Upload-level sheet/quantity facts are mutable. Until orders own an
+        // immutable snapshot, every previously ordered file is display-only;
+        // a fresh upload row is required for the next order.
+        reorderable: false,
+        quantitySemantics: quantity.semantics,
         lastOrderedQuantity,
         requestedQuantity: lastOrderedQuantity,
         selectedVariantId: upload.cartVariantId || upload.variantId || '',
-        selectedVariantTitle: upload.cartSheetLabel || '',
-        selectedSheetLabel: upload.cartSheetLabel || '',
-        sheetsNeeded: upload.sheetsNeeded,
-        designsPerSheet: upload.designsPerSheet,
-        billableLengthIn,
+        selectedVariantTitle: '',
+        selectedSheetLabel: '',
+        measuredSheetLengthIn,
+        totalBillableLengthIn,
+        legacyAudit:
+          quantity.semantics === 'legacy_nesting'
+            ? {
+                requestedDesigns: quantity.requestedCopies,
+                designsPerSheet: quantity.designsPerSheet,
+                physicalSheets: quantity.physicalSheets,
+                storedSheetLabel: upload.cartSheetLabel,
+              }
+            : null,
         measurement: metadata
           ? {
               widthPx: metadata.widthPx,

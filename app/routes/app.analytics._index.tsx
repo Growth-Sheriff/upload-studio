@@ -31,8 +31,6 @@ import { authenticate } from '~/shopify.server'
 
 import { UploadDetailModal } from '~/components/UploadDetailModal'
 
-import { UploadDetailModal } from '~/components/UploadDetailModal'
-
 export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request)
   const shopDomain = session.shop

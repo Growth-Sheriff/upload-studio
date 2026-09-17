@@ -6,11 +6,13 @@
 // while every production fact lives in the DB and is served by the
 // /i/<uploadId> identity page.
 //
-// Request:  { uploadIds: string[], lines?: [{ uploadId, copies }] }
+// Request:  { uploadIds: string[], lines?: [{ uploadId, copies,
+//             selectedVariantId?, lockSelectedVariant? }] }
 // Response: { success, items: [{ uploadId, orderable, properties, fileName, thumbnailUrl }] }
 //
-// `lines` carries only the customer's requested copies. Variant, nesting and
-// sheet facts are recomputed here from the authoritative server measurement.
+// Automatic upload blocks let the server choose the shortest fitting variant.
+// Manual/reorder blocks can lock their selected variant so the server validates
+// that exact commercial choice instead of silently changing it.
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from '@remix-run/node'
 import prisma from '~/lib/prisma.server'
@@ -27,9 +29,9 @@ import {
 import { persistMainProductMeasurementProjection } from '~/lib/mainProductMeasurementPersistence.server'
 import {
   getRuntimeMeasurementBasis,
-  resolveCustomerPricingModelState,
 } from '~/lib/customerPricingModel.server'
 import { normalizeCustomerId } from '~/lib/customerPricing.server'
+import { hasUploadOrderHistory } from '~/lib/uploadQuantitySemantics'
 import { resolveForMetadata } from '~/lib/sheetResolution.server'
 import { shopifyProductIdCandidates } from '~/lib/shopifyProductIdentity'
 import { selectProductConfigForIdentity } from '~/lib/productConfigIdentity.server'
@@ -85,7 +87,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
   const lineByUpload = new Map<
     string,
-    { copies: number }
+    { copies: number; selectedVariantId: string | null; lockSelectedVariant: boolean }
   >()
   if (Array.isArray(body.lines)) {
     for (const raw of body.lines as Array<Record<string, unknown>>) {
@@ -94,6 +96,12 @@ export async function action({ request }: ActionFunctionArgs) {
       if (!uploadIds.includes(uploadId)) continue
       lineByUpload.set(uploadId, {
         copies: toInt(raw.copies, 1, 999) ?? 1,
+        selectedVariantId:
+          typeof (raw.selectedVariantId ?? raw.variantId) === 'string' &&
+          String(raw.selectedVariantId ?? raw.variantId).length <= 200
+            ? String(raw.selectedVariantId ?? raw.variantId).trim() || null
+            : null,
+        lockSelectedVariant: raw.lockSelectedVariant === true,
       })
     }
   }
@@ -127,6 +135,10 @@ export async function action({ request }: ActionFunctionArgs) {
           preflightResult: true,
         },
       },
+      ordersLink: {
+        select: { id: true },
+        take: 1,
+      },
     },
   })
   const byId = new Map(uploads.map((u) => [u.id, u]))
@@ -154,8 +166,8 @@ export async function action({ request }: ActionFunctionArgs) {
     string,
     {
       copies: number
-      designsPerSheet: number | null
       sheetsNeeded: number | null
+      cartQuantity: number | null
       variantId: string | null
       variantTitle: string | null
       sheetLabel: string | null
@@ -171,6 +183,14 @@ export async function action({ request }: ActionFunctionArgs) {
       const firstItem = upload.items[0]
       const firstLifecycle = lifecycleState?.lifecycles[0]
       if (!lifecycleState?.orderable || !firstItem || !firstLifecycle?.metadata) return
+      if (hasUploadOrderHistory(upload)) {
+        lifecycleByUploadId.set(upload.id, { ...lifecycleState, orderable: false })
+        preparationErrorByUpload.set(
+          upload.id,
+          'Upload this file again before ordering so the previous order record stays unchanged.'
+        )
+        return
+      }
       const uploadCustomerId = normalizeCustomerId(upload.customerId)
       if (uploadCustomerId && uploadCustomerId !== signedCustomerId) {
         lifecycleByUploadId.set(upload.id, { ...lifecycleState, orderable: false })
@@ -183,6 +203,11 @@ export async function action({ request }: ActionFunctionArgs) {
       if (!upload.productId || !shop.accessToken) {
         lifecycleByUploadId.set(upload.id, { ...lifecycleState, orderable: false })
         preparationErrorByUpload.set(upload.id, 'This upload is missing its product configuration.')
+        return
+      }
+      if (requestedLine.lockSelectedVariant && !requestedLine.selectedVariantId) {
+        lifecycleByUploadId.set(upload.id, { ...lifecycleState, orderable: false })
+        preparationErrorByUpload.set(upload.id, 'Select a valid product variant before adding this upload.')
         return
       }
 
@@ -208,11 +233,7 @@ export async function action({ request }: ActionFunctionArgs) {
       // full-page policy. Neither policy nor physical roll width is accepted
       // from the request body.
       const measurementPolicy = MAIN_PRODUCT_MEASUREMENT_POLICY
-      const pricingModel = resolveCustomerPricingModelState(shopDomain, shop.settings)
-      const configuredRollWidth = resolveServerMainProductRollWidth(builderConfig, {
-        policyExplicit: pricingModel.policyExplicit,
-        maxSheetWidthIn: pricingModel.policy.maxSheetWidthIn,
-      })
+      const configuredRollWidth = resolveServerMainProductRollWidth(builderConfig)
 
       const resolved = await resolveForMetadata({
         shopDomain,
@@ -225,7 +246,8 @@ export async function action({ request }: ActionFunctionArgs) {
         builderConfig,
         rawMetadata: firstLifecycle.metadata,
         quantity: requestedLine.copies,
-        selectedVariantId: upload.variantId,
+        selectedVariantId: requestedLine.selectedVariantId || upload.variantId,
+        lockSelectedVariant: requestedLine.lockSelectedVariant,
         customerId: signedCustomerId,
         measurementPolicy,
         measurementBasis: getStoredMeasurementBasis(
@@ -233,7 +255,6 @@ export async function action({ request }: ActionFunctionArgs) {
           getRuntimeMeasurementBasis(shopDomain, shop.settings)
         ),
         rollWidthIn: configuredRollWidth,
-        maxUploadWidth: configuredRollWidth,
       })
 
       if (resolved.kind !== 'ok') {
@@ -248,7 +269,7 @@ export async function action({ request }: ActionFunctionArgs) {
         preparationErrorByUpload.set(
           upload.id,
           resolved.kind === 'no_fit'
-            ? 'This design and copy count do not fit any available sheet.'
+            ? resolved.failure?.message || 'This design does not fit any available sheet.'
             : resolved.kind === 'product_not_found'
               ? 'The configured product could not be found.'
               : 'Upload measurement is not ready for cart yet.'
@@ -269,15 +290,23 @@ export async function action({ request }: ActionFunctionArgs) {
         resolution.selectedSheetLabel || resolution.selectedVariantTitle || ''
       ).trim()
       const variantTitle = String(resolution.selectedVariantTitle || '').trim() || null
-      const productionNote = String(resolution.productionNote || '').trim()
+      const carrierQuantity = Math.max(
+        1,
+        Math.floor(
+          Number(
+            resolved.pricingMode === 'linear_inches'
+              ? resolution.cartQuantity
+              : requestedLine.copies
+          ) || requestedLine.copies
+        )
+      )
       canonicalLineByUpload.set(upload.id, {
         copies: requestedLine.copies,
-        designsPerSheet: toInt(resolution.designsPerSheet, 1, 100000),
-        sheetsNeeded: toInt(resolution.sheetsNeeded, 1, 100000),
+        sheetsNeeded: requestedLine.copies,
+        cartQuantity: carrierQuantity,
         variantId,
         variantTitle,
-        sheetLabel:
-          [baseLabel, productionNote].filter(Boolean).join(' · ').slice(0, 200) || null,
+        sheetLabel: baseLabel.slice(0, 200) || null,
         dpi:
           Number(
             resolved.canonicalMetadata.effectiveDpi ||
@@ -289,9 +318,9 @@ export async function action({ request }: ActionFunctionArgs) {
     })
   )
 
-  // Persist production instructions only after the server measurement says
-  // the upload can be ordered. A pending/blocked upload must not leave ghost
-  // instructions that later look like a confirmed cart choice.
+  // Persist production facts only after the server measurement says the
+  // upload can be ordered. Orientation is normalized measurement data, not a
+  // production instruction.
   await Promise.all(
     Array.from(canonicalLineByUpload.entries())
       .filter(([uploadId]) => lifecycleByUploadId.get(uploadId)?.orderable === true)
@@ -299,8 +328,10 @@ export async function action({ request }: ActionFunctionArgs) {
         prisma.upload.update({
           where: { id: uploadId },
           data: {
+            quantitySemantics: 'whole_sheet',
             requestedCopies: line.copies,
-            designsPerSheet: line.designsPerSheet,
+            // Compatibility column: one uploaded file is always one sheet.
+            designsPerSheet: 1,
             sheetsNeeded: line.sheetsNeeded,
             cartVariantId: line.variantId,
             cartSheetLabel: line.sheetLabel,

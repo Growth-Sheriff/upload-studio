@@ -34,6 +34,12 @@ import { useCallback, useState } from 'react'
 import prisma from '~/lib/prisma.server'
 import { getDownloadSignedUrl, getStorageConfig } from '~/lib/storage.server'
 import {
+  applyMeasurementBasisMetadata,
+  deriveUploadItemLifecycle,
+  getStoredMeasurementBasis,
+} from '~/lib/uploadLifecycle.server'
+import { deriveUploadQuantityFacts } from '~/lib/uploadQuantitySemantics'
+import {
   EXPORT_JOB_OPTIONS,
   EXPORT_QUEUE_NAME,
   getExportJobOptions,
@@ -122,6 +128,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
             preflightStatus: true,
             thumbnailKey: true,
             originalName: true,
+            preflightResult: true,
           },
         },
       },
@@ -155,6 +162,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
     uploads.map(async (u) => {
       let thumbnailUrl: string | null = null
       const firstItem = u.items[0]
+      const metadata = firstItem
+        ? applyMeasurementBasisMetadata(
+            deriveUploadItemLifecycle(firstItem).metadata,
+            getStoredMeasurementBasis(firstItem.preflightResult, 'full_page')
+          )
+        : null
+      const firstDimensionIn = Number(metadata?.widthIn || 0)
+      const secondDimensionIn = Number(metadata?.heightIn || 0)
+      const quantity = deriveUploadQuantityFacts(u)
 
       if (firstItem?.thumbnailKey) {
         try {
@@ -173,6 +189,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
         cartAddedAt: u.cartAddedAt?.toISOString() || null,
         customerEmail: u.customerEmail,
         itemCount: u.items.length,
+        printableWidthIn:
+          firstDimensionIn > 0 && secondDimensionIn > 0
+            ? Math.min(firstDimensionIn, secondDimensionIn)
+            : 0,
+        measuredSheetLengthIn:
+          firstDimensionIn > 0 && secondDimensionIn > 0
+            ? Math.max(firstDimensionIn, secondDimensionIn)
+            : 0,
+        quantity,
+        selectedSheetLabel:
+          quantity.semantics === 'whole_sheet' ? u.cartSheetLabel : null,
         locations: u.items.map((i: { location: string }) => i.location),
         preflightStatus: u.items.some(
           (i: { preflightStatus: string }) => i.preflightStatus === 'error'
@@ -512,6 +539,25 @@ export default function ProductionQueuePage() {
         —
       </Text>
     ),
+    <BlockStack key={`print-${upload.id}`} gap="050">
+      {upload.printableWidthIn > 0 && upload.measuredSheetLengthIn > 0 ? (
+        <Text as="span" variant="bodySm">
+          W {upload.printableWidthIn.toFixed(2)}&quot; × L {upload.measuredSheetLengthIn.toFixed(2)}&quot;
+        </Text>
+      ) : (
+        <Text as="span" variant="bodySm" tone="subdued">Measurement unavailable</Text>
+      )}
+      {upload.quantity?.semantics === 'whole_sheet' ? (
+        <Text as="span" variant="bodySm" tone="subdued">
+          {upload.quantity.wholeSheetCopies} whole-sheet cop{upload.quantity.wholeSheetCopies === 1 ? 'y' : 'ies'}
+          {upload.selectedSheetLabel ? ` · ${upload.selectedSheetLabel}` : ''}
+        </Text>
+      ) : upload.quantity?.semantics === 'legacy_nesting' ? (
+        <Badge tone="warning">Historical layout record</Badge>
+      ) : (
+        <Badge>Quantity not recorded</Badge>
+      )}
+    </BlockStack>,
     <StatusBadge key={`status-${upload.id}`} facts={upload} />,
     <PreflightBadge key={`preflight-${upload.id}`} status={upload.preflightStatus} />,
     new Date(upload.createdAt).toLocaleDateString(),
@@ -674,6 +720,7 @@ export default function ProductionQueuePage() {
                         'text',
                         'text',
                         'text',
+                        'text',
                       ]}
                       headings={[
                         <Checkbox
@@ -685,6 +732,7 @@ export default function ProductionQueuePage() {
                         />,
                         'Upload',
                         'Order',
+                        'Print facts',
                         'Status',
                         'File check',
                         'Date',
