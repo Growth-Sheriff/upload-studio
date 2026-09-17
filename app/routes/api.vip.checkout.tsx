@@ -112,16 +112,12 @@ function normalizeCheckoutItems(body: Record<string, unknown>) {
           item.selectedVariantId != null && String(item.selectedVariantId).trim()
             ? String(item.selectedVariantId).trim()
             : null,
-        measurementPolicy: null,
-        rollWidthIn: null,
       }
     })
     .filter(Boolean) as Array<{
       uploadId: string
       quantity: number
       selectedVariantId: string | null
-      measurementPolicy: string | null
-      rollWidthIn: number | null
     }>
 
   if (normalizedItems.length) return normalizedItems
@@ -137,8 +133,6 @@ function normalizeCheckoutItems(body: Record<string, unknown>) {
         body.selectedVariantId != null && String(body.selectedVariantId).trim()
           ? String(body.selectedVariantId).trim()
           : null,
-      measurementPolicy: null,
-      rollWidthIn: null,
     },
   ]
 }
@@ -156,6 +150,7 @@ function errorStatusFromMessage(message: string): number {
   if (message === 'Upload product is missing') return 422
   if (message.includes('No product variant can fit')) return 422
   if (message.includes('maximum printable width')) return 422
+  if (message.includes('maximum printable length')) return 422
   if (message.includes('outside product limits')) return 422
   if (message.includes('exceeds')) return 422
   if (message.includes('must be at least')) return 422

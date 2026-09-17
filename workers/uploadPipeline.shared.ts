@@ -21,7 +21,7 @@ import { deriveUploadItemLifecycle } from '../app/lib/uploadLifecycle.server'
 import {
   getRuntimeMeasurementBasis,
 } from '../app/lib/customerPricingModel.server'
-import { resolveServerMainProductRollWidth } from '../app/lib/mainProductMeasurement.server'
+import { resolveFinishedSheetSettings } from '../app/lib/finishedSheetMeasurement'
 import { selectProductConfigForIdentity } from '../app/lib/productConfigIdentity.server'
 import { shopifyProductIdCandidates } from '../app/lib/shopifyProductIdentity'
 import { redactUploadLogLocation } from '../app/lib/uploadLogger.server'
@@ -864,7 +864,7 @@ export async function prepareUploadJobContext(
 
 
 
-  let sheetWidthIn = resolveServerMainProductRollWidth(null)
+  let finishedSheetSettings = resolveFinishedSheetSettings(null)
   try {
     if (item.upload.productId) {
       const productConfigs = await prisma.productConfig.findMany({
@@ -881,10 +881,7 @@ export async function prepareUploadJobContext(
         source: 'uploadPipeline',
       })
       const builderConfig = productConfig?.builderConfig as Record<string, unknown> | null
-      // New saves use the visible rollWidthIn field. Unsaved legacy products
-      // retain their previous effective anchor through the old maxWidth/
-      // maxHeight values until the merchant explicitly saves rollWidthIn.
-      sheetWidthIn = resolveServerMainProductRollWidth(builderConfig)
+      finishedSheetSettings = resolveFinishedSheetSettings(builderConfig)
     }
   } catch (configError) {
     workerLog.warn('SHEET_WIDTH_LOOKUP_FAILED', {
@@ -904,7 +901,8 @@ export async function prepareUploadJobContext(
     ...baseConfig,
     measurementBasis:
       storedMeasurementBasis || getRuntimeMeasurementBasis(shop.shopDomain, shop.settings),
-    sheetWidthIn,
+    maxPrintableWidthIn: finishedSheetSettings.maxPrintableWidthIn,
+    fitToleranceIn: finishedSheetSettings.fitToleranceIn,
   }
 
   return {

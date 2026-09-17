@@ -2,11 +2,14 @@ import prisma from '~/lib/prisma.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
 import { getDownloadSignedUrl, getStorageConfig } from '~/lib/storage.server'
 import {
-  applyMainProductMeasurementPolicy,
-  getMainProductSheetSizes,
-  MAIN_PRODUCT_MEASUREMENT_POLICY,
-  resolveServerMainProductRollWidth,
+  applyFinishedSheetMeasurementPolicy,
+  FINISHED_SHEET_MEASUREMENT_POLICY,
+  getFinishedSheetSizes,
 } from '~/lib/mainProductMeasurement.server'
+import {
+  resolveFinishedSheetSettings,
+  validateFinishedSheetFit,
+} from '~/lib/finishedSheetMeasurement'
 import {
   applyCustomerPricingDefaultsForShop,
   calculateMeasuredLengthQuote,
@@ -14,7 +17,7 @@ import {
   matchesTrustedUploadOwner,
   normalizeCustomerId,
   parseSheetSizeFromTitle,
-  validateMeasuredCrossRollFit,
+  validateMeasuredFinishedSheetFit,
   type CustomPricedQuote,
   type CustomerPricingContext,
   type VipUploadMeasurement,
@@ -29,7 +32,7 @@ import {
   resolveEffectivePricingForShop,
 } from '~/lib/customerPricingRuntime.server'
 import {
-  getPrintableWidthFailure,
+  getFinishedSheetWidthFailure,
   resolveSheetVariant,
   type BuilderResolveConfig,
   type ProductOptionDef,
@@ -149,8 +152,6 @@ export interface CustomPricingJobItemInput {
   uploadId: string
   quantity: number
   selectedVariantId?: string | null
-  measurementPolicy?: string | null
-  rollWidthIn?: number | string | null
 }
 
 export interface PreparedCustomPricingJobQuote {
@@ -168,21 +169,10 @@ export interface PreparedCustomPricingJobQuote {
   items: PreparedCustomPricingQuote[]
 }
 
-function parsePositiveNumber(value: unknown): number | null {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed <= 0) return null
-  return parsed
-}
-
-function normalizeMeasurementPolicy(value: unknown): string | null {
-  const raw = String(value || '').trim()
-  return raw || null
-}
-
 function buildEffectiveResolveConfig(
-  builderConfig: Record<string, unknown> | null | undefined,
-  rollWidthIn: number
+  builderConfig: Record<string, unknown> | null | undefined
 ): BuilderResolveConfig {
+  const settings = resolveFinishedSheetSettings(builderConfig)
   return {
     sheetOptionName:
       typeof builderConfig?.sheetOptionName === 'string' ? builderConfig.sheetOptionName : null,
@@ -195,7 +185,8 @@ function buildEffectiveResolveConfig(
           .map((value) => String(value || '').trim())
           .filter(Boolean)
       : [],
-    printableWidthIn: rollWidthIn,
+    maxPrintableWidthIn: settings.maxPrintableWidthIn,
+    fitToleranceIn: settings.fitToleranceIn,
   }
 }
 
@@ -245,8 +236,6 @@ export async function prepareCustomPricingQuote({
   uploadId,
   quantity,
   selectedVariantId,
-  measurementPolicy,
-  rollWidthIn,
 }: {
   shopDomain: string
   loggedInCustomerId: string | null
@@ -254,14 +243,12 @@ export async function prepareCustomPricingQuote({
   uploadId: string
   quantity: number
   selectedVariantId?: string | null
-  measurementPolicy?: string | null
-  rollWidthIn?: number | string | null
 }): Promise<PreparedCustomPricingQuote> {
   const preparedJob = await prepareCustomPricingJobQuote({
     shopDomain,
     loggedInCustomerId,
     loggedInCustomerEmail,
-    items: [{ uploadId, quantity, selectedVariantId, measurementPolicy, rollWidthIn }],
+    items: [{ uploadId, quantity, selectedVariantId }],
   })
 
   return preparedJob.items[0]
@@ -286,8 +273,6 @@ export async function prepareCustomPricingJobQuote({
         item.selectedVariantId != null && String(item.selectedVariantId).trim()
           ? String(item.selectedVariantId).trim()
           : null,
-      measurementPolicy: normalizeMeasurementPolicy(item.measurementPolicy),
-      rollWidthIn: parsePositiveNumber(item.rollWidthIn),
     }))
     .filter((item) => item.uploadId)
 
@@ -485,16 +470,17 @@ export async function prepareCustomPricingJobQuote({
       productCache.set(productId, cachedProduct)
     }
 
-    const configuredRollWidth = resolveServerMainProductRollWidth(cachedProduct.builderConfig)
-    const measurement = applyMainProductMeasurementPolicy(rawMeasurement, {
-      measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
-      rollWidthIn: configuredRollWidth,
-      sheetSizes: getMainProductSheetSizes(cachedProduct.variants),
+    const finishedSheetSettings = resolveFinishedSheetSettings(cachedProduct.builderConfig)
+    const measurement = applyFinishedSheetMeasurementPolicy(rawMeasurement, {
+      measurementPolicy: FINISHED_SHEET_MEASUREMENT_POLICY,
+      maxPrintableWidthIn: finishedSheetSettings.maxPrintableWidthIn,
+      fitToleranceIn: finishedSheetSettings.fitToleranceIn,
+      sheetSizes: getFinishedSheetSizes(cachedProduct.variants),
     })
     await persistMainProductMeasurementProjection(
       measuredItem.item.id,
       measurement,
-      configuredRollWidth
+      finishedSheetSettings
     )
 
     // First resolve eligibility and pricing mode. Variant-length tiers are
@@ -522,13 +508,12 @@ export async function prepareCustomPricingJobQuote({
 
     if (pricingContext.pricingMode === 'measured_length') {
       quote = calculateMeasuredLengthQuote(measurement, pricePerInch, itemInput.quantity)
-      const fitConfig = buildEffectiveResolveConfig(cachedProduct.builderConfig, configuredRollWidth)
-      const crossRollFit = validateMeasuredCrossRollFit({
+      const measuredFit = validateMeasuredFinishedSheetFit({
         measurement,
-        rollWidthIn: fitConfig.printableWidthIn || configuredRollWidth,
+        ...finishedSheetSettings,
       })
-      if (!crossRollFit.ok) {
-        throw new Error(crossRollFit.reason || 'Design is outside the configured roll width')
+      if (!measuredFit.ok) {
+        throw new Error(measuredFit.reason || 'The file is outside this product’s printable limits')
       }
       const requestedVariantId = String(
         itemInput.selectedVariantId || upload.variantId || ''
@@ -544,6 +529,7 @@ export async function prepareCustomPricingJobQuote({
           )?.id || null
         : null
     } else if (pricingContext.pricingMode === 'variant_length') {
+      const resolveConfig = buildEffectiveResolveConfig(cachedProduct.builderConfig)
       const resolution = resolveSheetVariant({
         widthIn: measurement.widthIn,
         heightIn: measurement.heightIn,
@@ -551,17 +537,31 @@ export async function prepareCustomPricingJobQuote({
         variants: cachedProduct.variants,
         optionDefs: cachedProduct.optionDefs,
         selectedVariantId: itemInput.selectedVariantId || null,
-        config: buildEffectiveResolveConfig(cachedProduct.builderConfig, configuredRollWidth),
+        config: resolveConfig,
       })
 
       if (!resolution) {
-        const widthFailure = getPrintableWidthFailure({
+        const widthFailure = getFinishedSheetWidthFailure({
           widthIn: measurement.widthIn,
           heightIn: measurement.heightIn,
-          config: buildEffectiveResolveConfig(cachedProduct.builderConfig, configuredRollWidth),
+          config: resolveConfig,
         })
+        const maxVariantLengthIn = getFinishedSheetSizes(cachedProduct.variants).reduce(
+          (largest, size) => Math.max(largest, size.heightIn),
+          0
+        )
+        const fitFailure = maxVariantLengthIn > 0
+          ? validateFinishedSheetFit({
+              widthIn: measurement.widthIn,
+              heightIn: measurement.heightIn,
+              maxPrintableWidthIn: finishedSheetSettings.maxPrintableWidthIn,
+              maxPrintableLengthIn: maxVariantLengthIn,
+              fitToleranceIn: finishedSheetSettings.fitToleranceIn,
+            })
+          : null
         throw new Error(
           widthFailure?.message ||
+            (fitFailure && !fitFailure.ok ? fitFailure.message : null) ||
             'No product variant can fit this upload with the available sheet sizes.'
         )
       }
@@ -571,8 +571,8 @@ export async function prepareCustomPricingJobQuote({
 
       const billableSheetLengthIn = Number(
         (
-          Math.max(parsedSheetSize.widthIn, parsedSheetSize.lengthIn) *
-          Math.max(1, resolution.sheetsNeeded)
+          parsedSheetSize.lengthIn *
+          Math.max(1, resolution.wholeSheetCopies)
         ).toFixed(2)
       )
       effective = await resolveEffectivePricingForShop({
@@ -592,7 +592,7 @@ export async function prepareCustomPricingJobQuote({
         measurement,
         pricePerInch,
         variantTitle: resolution.selectedVariantTitle,
-        sheetsNeeded: resolution.sheetsNeeded,
+        sheetsNeeded: resolution.wholeSheetCopies,
       })
       if (!variantLengthQuote) {
         throw new Error('Failed to calculate business quote from the selected variant')

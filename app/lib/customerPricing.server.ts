@@ -1,3 +1,5 @@
+import { validateFinishedSheetFit } from './finishedSheetMeasurement'
+
 export const DTF_PRINTHOUSE_SHOP_DOMAIN = 'e3bd2d-3.myshopify.com'
 
 export type CustomerPricingCustomerType = 'guest' | 'standard' | 'business' | 'vip'
@@ -231,12 +233,14 @@ function normalizeCustomerEmail(value: string | null | undefined): string {
     .toLowerCase()
 }
 
-export interface MeasuredCrossRollFitResult {
+export interface MeasuredFinishedSheetFitResult {
   ok: boolean
   reason: string | null
   code: string | null
-  crossRollLimitIn: number
+  maxPrintableWidthIn: number
+  maxPrintableLengthIn: number
   placedWidthIn: number
+  placedLengthIn: number
 }
 
 export function matchesTrustedUploadOwner(input: {
@@ -739,6 +743,9 @@ export function calculateMeasuredLengthQuote(
   const pageWidthIn = Number(Math.min(measurement.widthIn, measurement.heightIn).toFixed(2))
   const pageLengthIn = Number(Math.max(measurement.widthIn, measurement.heightIn).toFixed(2))
   const sheetsNeeded = Math.max(1, Math.floor(Number(requestedQuantity) || 1))
+  // The displayed two-decimal sheet length is the billing unit. Multiplying
+  // that same visible number makes quantity math explainable and preserves
+  // established prices when source metadata gains more precision.
   const billableLengthIn = Number((pageLengthIn * sheetsNeeded).toFixed(2))
   const rate = Number(pricePerInch)
   if (!Number.isFinite(rate) || rate <= 0) {
@@ -757,22 +764,27 @@ export function calculateMeasuredLengthQuote(
   }
 }
 
-export function validateMeasuredCrossRollFit(input: {
+export function validateMeasuredFinishedSheetFit(input: {
   measurement: Pick<VipUploadMeasurement, 'widthIn' | 'heightIn'>
-  rollWidthIn: number
-}): MeasuredCrossRollFitResult {
-  const rollWidth = toPositiveNumber(input.rollWidthIn)
-  const crossRollLimitIn = rollWidth
-  const pageWidthIn = Math.min(input.measurement.widthIn, input.measurement.heightIn)
-  const ok = crossRollLimitIn > 0 && pageWidthIn <= crossRollLimitIn
+  maxPrintableWidthIn: number
+  maxPrintableLengthIn: number
+  fitToleranceIn: number
+}): MeasuredFinishedSheetFitResult {
+  const fit = validateFinishedSheetFit({
+    widthIn: input.measurement.widthIn,
+    heightIn: input.measurement.heightIn,
+    maxPrintableWidthIn: input.maxPrintableWidthIn,
+    maxPrintableLengthIn: input.maxPrintableLengthIn,
+    fitToleranceIn: input.fitToleranceIn,
+  })
   return {
-    ok,
-    code: ok ? null : 'WIDTH_TOO_LARGE',
-    reason: ok
-      ? null
-      : `Your file is ${Number(pageWidthIn.toFixed(2))} inches wide; maximum printable width is ${Number(crossRollLimitIn.toFixed(2))} inches.`,
-    crossRollLimitIn,
-    placedWidthIn: pageWidthIn,
+    ok: fit.ok,
+    code: fit.ok ? null : fit.code,
+    reason: fit.ok ? null : fit.message,
+    maxPrintableWidthIn: input.maxPrintableWidthIn,
+    maxPrintableLengthIn: input.maxPrintableLengthIn,
+    placedWidthIn: fit.widthIn,
+    placedLengthIn: fit.lengthIn,
   }
 }
 
@@ -820,10 +832,9 @@ export function calculateVariantLengthQuote({
   const pageWidthIn = Number(Math.min(measurement.widthIn, measurement.heightIn).toFixed(2))
   const pageLengthIn = Number(Math.max(measurement.widthIn, measurement.heightIn).toFixed(2))
   const safeSheetsNeeded = Math.max(1, Math.floor(Number(sheetsNeeded) || 1))
-  // Shopify option titles are merchant-authored and appear in both
-  // "width x length" and "length x width" order. Billing must follow the
-  // physical long edge, not the title's second token.
-  const sheetLengthIn = Math.max(parsedVariant.widthIn, parsedVariant.lengthIn)
+  // Variant sizes retain their merchant-authored commercial width x length
+  // contract. Only the uploaded file is orientation-normalized.
+  const sheetLengthIn = parsedVariant.lengthIn
   const billableLengthIn = Number((sheetLengthIn * safeSheetsNeeded).toFixed(2))
   const rate = Number(pricePerInch)
   if (!Number.isFinite(rate) || rate <= 0) {

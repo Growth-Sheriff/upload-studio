@@ -26,12 +26,14 @@ describe('resolveLinearInchVariant', () => {
       dimensions: { ...measured, widthIn: 21.98, heightIn: 23.91 },
       quantity: 2,
       variants: [{ id: '1', title: '22x1', price: '1.00', availableForSale: true }],
-      printableWidthIn: 22,
+      maxPrintableWidthIn: 22.5,
+      maxPrintableLengthIn: 240,
+      fitToleranceIn: 0.02,
     })
 
     expect(result?.cartQuantity).toBe(48)
     expect(result?.billableLengthIn).toBe(47.82)
-    expect(result?.sheetsNeeded).toBe(2)
+    expect(result?.wholeSheetCopies).toBe(2)
     expect(result?.selectedSheetLabel).toBe('48 billable inches')
   })
 
@@ -41,7 +43,9 @@ describe('resolveLinearInchVariant', () => {
         dimensions: measured,
         quantity: 1,
         variants: [{ id: '1', title: '22x1', price: '1.00', availableForSale: true }],
-        printableWidthIn: 22,
+        maxPrintableWidthIn: 22.5,
+        maxPrintableLengthIn: 240,
+        fitToleranceIn: 0.02,
       })
     ).toBeNull()
   })
@@ -51,18 +55,22 @@ describe('resolveLinearInchVariant', () => {
       dimensions: { ...measured, widthIn: 21.5, heightIn: 40 },
       quantity: 1,
       variants: [{ id: '1', title: '22x1', price: '1.00', availableForSale: true }],
-      printableWidthIn: 22,
+      maxPrintableWidthIn: 22.5,
+      maxPrintableLengthIn: 240,
+      fitToleranceIn: 0.02,
     })
 
     expect(result?.placedWidthIn).toBe(21.5)
   })
 
-  it('does not use fit tolerance to accept an over-width measured-length file', () => {
+  it('rejects material width overflow beyond the visible tolerance', () => {
     const result = resolveLinearInchVariant({
       dimensions: { ...measured, widthIn: 24, heightIn: 20.1 },
       quantity: 1,
       variants: [{ id: '1', title: '22x1', price: '1.00', availableForSale: true }],
-      printableWidthIn: 20,
+      maxPrintableWidthIn: 20,
+      maxPrintableLengthIn: 240,
+      fitToleranceIn: 0.02,
     })
 
     expect(result).toBeNull()
@@ -73,10 +81,38 @@ describe('resolveLinearInchVariant', () => {
       dimensions: { ...measured, widthIn: 80, heightIn: 22 },
       quantity: 1,
       variants: [{ id: '1', title: '22x1', price: '1.00', availableForSale: true }],
-      printableWidthIn: 22,
+      maxPrintableWidthIn: 22.5,
+      maxPrintableLengthIn: 240,
+      fitToleranceIn: 0.02,
     })
 
     expect(result?.billableLengthIn).toBe(80)
+  })
+
+  it('accepts only export-rounding overflow at the custom width and length limits', () => {
+    const variants = [{ id: '1', title: '22x1', price: '1.00', availableForSale: true }]
+    const limits = {
+      maxPrintableWidthIn: 22.5,
+      maxPrintableLengthIn: 240,
+      fitToleranceIn: 0.02,
+    }
+
+    expect(
+      resolveLinearInchVariant({
+        dimensions: { ...measured, widthIn: 22.503, heightIn: 240.019 },
+        quantity: 1,
+        variants,
+        ...limits,
+      })?.pageLengthIn
+    ).toBe(240.02)
+    expect(
+      resolveLinearInchVariant({
+        dimensions: { ...measured, widthIn: 22, heightIn: 240.03 },
+        quantity: 1,
+        variants,
+        ...limits,
+      })
+    ).toBeNull()
   })
 
   it('does not select an unavailable unit variant', () => {
@@ -85,7 +121,9 @@ describe('resolveLinearInchVariant', () => {
         dimensions: { ...measured, widthIn: 20 },
         quantity: 1,
         variants: [{ id: '1', title: '22x1', price: '1.00', availableForSale: false }],
-        printableWidthIn: 22,
+        maxPrintableWidthIn: 22.5,
+        maxPrintableLengthIn: 240,
+        fitToleranceIn: 0.02,
       })
     ).toBeNull()
   })
@@ -99,7 +137,9 @@ describe('resolveLinearInchVariant', () => {
         { id: '2', title: '24 x 1 / Premium', price: '1.25', availableForSale: true },
       ],
       selectedVariantId: 'gid://shopify/ProductVariant/2',
-      printableWidthIn: 22,
+      maxPrintableWidthIn: 22.5,
+      maxPrintableLengthIn: 240,
+      fitToleranceIn: 0.02,
     })
 
     expect(result?.selectedVariantId).toBe('2')
@@ -143,7 +183,9 @@ describe('resolveLinearInchVariant', () => {
         },
       ],
       selectedVariantId: '10',
-      printableWidthIn: 22,
+      maxPrintableWidthIn: 22.5,
+      maxPrintableLengthIn: 240,
+      fitToleranceIn: 0.02,
     })
 
     expect(result?.selectedVariantId).toBe('12')
@@ -187,7 +229,9 @@ describe('resolveLinearInchVariant', () => {
         },
       ],
       selectedVariantId: '20',
-      printableWidthIn: 22,
+      maxPrintableWidthIn: 22.5,
+      maxPrintableLengthIn: 240,
+      fitToleranceIn: 0.02,
     })
 
     expect(result?.selectedVariantId).toBe('22')
@@ -196,17 +240,17 @@ describe('resolveLinearInchVariant', () => {
 })
 
 describe('metadataFromProbe', () => {
-  it('does not accept a 22.01-inch Adobe-default short edge on a 22-inch roll', () => {
+  it('uses Adobe 72 DPI when the probed short edge is within the visible export tolerance', () => {
     const result = metadataFromProbe({
       widthPx: 7200,
-      heightPx: 1585,
+      heightPx: 1621,
       dpi: 0,
-      rollWidthIn: 22,
+      maxPrintableWidthIn: 22.5,
+      fitToleranceIn: 0.02,
     })
 
-    expect(result.sizingSource).toBe('client_probe')
-    expect(result.effectiveDpi).toBe(0)
-    expect(result.widthIn).toBe(0)
-    expect(result.heightIn).toBe(0)
+    expect(result.sizingSource).toBe('adobe_default_dpi')
+    expect(result.effectiveDpi).toBe(72)
+    expect(Math.min(result.widthIn, result.heightIn)).toBe(22.5139)
   })
 })

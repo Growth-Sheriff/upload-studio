@@ -1,3 +1,9 @@
+import {
+  DEFAULT_MAX_PRINTABLE_WIDTH_IN,
+  isWithinFinishedSheetLimit,
+  normalizeFinishedSheet,
+} from './finishedSheetMeasurement'
+
 type LegacyPreflightStatus = 'pending' | 'ok' | 'warning' | 'error'
 type UploadStatusValue =
   | 'draft'
@@ -50,7 +56,7 @@ export interface UploadLifecycleMetadata {
   measurementProjectionPolicy?: string | null
   /** Runtime provenance flag: the preflight row already contained physical
    * dimensions. Keep those facts for historical/admin display; an active
-   * main-product resolve may still apply today's explicit roll policy. */
+   * finished-sheet resolve may still apply today's explicit product settings. */
   usesStoredPhysicalDimensions?: boolean
 }
 
@@ -73,7 +79,7 @@ export interface UploadItemLike {
   thumbnailKey?: string | null
 }
 
-const DEFAULT_SHEET_WIDTH_IN = 22
+const DEFAULT_PRINTABLE_WIDTH_IN = DEFAULT_MAX_PRINTABLE_WIDTH_IN
 
 function parsePositiveNumber(value: unknown): number {
   const parsed = Number(value)
@@ -119,7 +125,7 @@ export function computeSheetAnchoredInches(
   const sheetWidthIn =
     typeof sheetWidthInArg === 'number' && sheetWidthInArg > 0
       ? sheetWidthInArg
-      : DEFAULT_SHEET_WIDTH_IN
+      : DEFAULT_PRINTABLE_WIDTH_IN
   const sheetLengthIn =
     typeof sheetLengthInArg === 'number' && sheetLengthInArg > 0
       ? sheetLengthInArg
@@ -139,8 +145,8 @@ export function computeSheetAnchoredInches(
   const longSidePx = Math.max(widthPx, heightPx)
   const isPortrait = heightPx >= widthPx
   const longSideIn = (longSidePx / shortSidePx) * shortSheetIn
-  const widthIn = Number((isPortrait ? shortSheetIn : longSideIn).toFixed(2))
-  const heightIn = Number((isPortrait ? longSideIn : shortSheetIn).toFixed(2))
+  const widthIn = Number((isPortrait ? shortSheetIn : longSideIn).toFixed(4))
+  const heightIn = Number((isPortrait ? longSideIn : shortSheetIn).toFixed(4))
   const effectiveDpi = Math.round(shortSidePx / shortSheetIn)
   return { widthIn, heightIn, effectiveDpi, sheetWidthIn, sheetLengthIn }
 }
@@ -160,13 +166,13 @@ export function computeDocumentDpiInches(
   }
 
   return {
-    widthIn: Number((widthPx / documentDpi).toFixed(2)),
-    heightIn: Number((heightPx / documentDpi).toFixed(2)),
+    widthIn: Number((widthPx / documentDpi).toFixed(4)),
+    heightIn: Number((heightPx / documentDpi).toFixed(4)),
     effectiveDpi: Number(documentDpi.toFixed(4)),
   }
 }
 
-export interface RollWidthSheetSize {
+export interface FinishedSheetSize {
   widthIn: number
   heightIn: number
 }
@@ -197,7 +203,8 @@ export function resolveBestDimensions(
     sheetWidthIn: number
     sheetLengthIn?: number
   },
-  fallbackSizingSource: string
+  fallbackSizingSource: string,
+  fitToleranceIn = 0
 ): ResolvedDimensions {
   const documentSized = computeDocumentDpiInches(widthPx, heightPx, documentDpi || undefined)
   if (documentSized) {
@@ -217,11 +224,12 @@ export function resolveBestDimensions(
   // variant. Only fall through to anchoring when even the 72 DPI reading is
   // wider than the roll, which means the file genuinely is a full-width gang
   // sheet design that needs to be sized to the roll.
-  const rollWidthIn = anchored.sheetWidthIn > 0 ? anchored.sheetWidthIn : 22
+  const maxPrintableWidthIn =
+    anchored.sheetWidthIn > 0 ? anchored.sheetWidthIn : DEFAULT_MAX_PRINTABLE_WIDTH_IN
   const adobeSized = computeDocumentDpiInches(widthPx, heightPx, ADOBE_DEFAULT_DPI)
   if (adobeSized) {
     const shortEdgeIn = Math.min(adobeSized.widthIn, adobeSized.heightIn)
-    if (shortEdgeIn <= rollWidthIn) {
+    if (isWithinFinishedSheetLimit(shortEdgeIn, maxPrintableWidthIn, fitToleranceIn)) {
       return {
         widthIn: adobeSized.widthIn,
         heightIn: adobeSized.heightIn,
@@ -243,11 +251,12 @@ export function resolveBestDimensions(
   }
 }
 
-export function computeRollWidthAnchoredInches(
+export function computePrintableWidthAnchoredInches(
   widthPx: number,
   heightPx: number,
-  rollWidthInArg?: number,
-  sheetSizes: RollWidthSheetSize[] = []
+  maxPrintableWidthInArg?: number,
+  sheetSizes: FinishedSheetSize[] = [],
+  fitToleranceIn = 0
 ): {
   widthIn: number
   heightIn: number
@@ -255,43 +264,71 @@ export function computeRollWidthAnchoredInches(
   sheetWidthIn: number
   sheetLengthIn?: number
 } {
-  const rollWidthIn =
-    typeof rollWidthInArg === 'number' && rollWidthInArg > 0
-      ? rollWidthInArg
-      : DEFAULT_SHEET_WIDTH_IN
+  const maxPrintableWidthIn =
+    typeof maxPrintableWidthInArg === 'number' && maxPrintableWidthInArg > 0
+      ? maxPrintableWidthInArg
+      : DEFAULT_PRINTABLE_WIDTH_IN
 
   if (!(widthPx > 0) || !(heightPx > 0)) {
-    return { widthIn: 0, heightIn: 0, effectiveDpi: 0, sheetWidthIn: rollWidthIn }
-  }
-
-  // A no-DPI export can still encode an exact, merchant-sold sheet size in its
-  // pixel aspect ratio (for example 6600x3600 is exactly 22x12 at 300 DPI).
-  // Preserve that established measurement only for an exact ratio and exact
-  // roll-width match. There is deliberately no hidden fit/ratio tolerance.
-  const pixelRatio = Math.max(widthPx, heightPx) / Math.min(widthPx, heightPx)
-  const exactSheet = sheetSizes.find((sheet) => {
-    const first = Number(sheet.widthIn)
-    const second = Number(sheet.heightIn)
-    if (!(first > 0) || !(second > 0)) return false
-    const shortEdge = Math.min(first, second)
-    const longEdge = Math.max(first, second)
-    return (first === rollWidthIn || second === rollWidthIn) && longEdge / shortEdge === pixelRatio
-  })
-
-  if (exactSheet) {
-    const shortEdge = Math.min(Number(exactSheet.widthIn), Number(exactSheet.heightIn))
-    const longEdge = Math.max(Number(exactSheet.widthIn), Number(exactSheet.heightIn))
-    const landscape = widthPx >= heightPx
     return {
-      widthIn: Number((landscape ? longEdge : shortEdge).toFixed(2)),
-      heightIn: Number((landscape ? shortEdge : longEdge).toFixed(2)),
-      effectiveDpi: Math.round(Math.min(widthPx, heightPx) / shortEdge),
-      sheetWidthIn: rollWidthIn,
-      sheetLengthIn: Number(longEdge.toFixed(2)),
+      widthIn: 0,
+      heightIn: 0,
+      effectiveDpi: 0,
+      sheetWidthIn: maxPrintableWidthIn,
     }
   }
 
-  return computeSheetAnchoredInches(widthPx, heightPx, rollWidthIn)
+  // A no-DPI export can still encode a merchant-sold sheet size in its pixel
+  // aspect ratio (for example 6600x3600 is 22x12 at 300 DPI). The nominal
+  // variant width is checked against the same visible press limit before its
+  // ratio can calibrate a no-DPI file. The same visible fit tolerance used at
+  // checkout absorbs one-pixel export rounding here as well.
+  const pixelRatio = Math.max(widthPx, heightPx) / Math.min(widthPx, heightPx)
+  const exactSheet = sheetSizes
+    .map((sheet) => {
+      const configuredWidthIn = Number(sheet.widthIn)
+      const configuredLengthIn = Number(sheet.heightIn)
+      const normalized = normalizeFinishedSheet(configuredWidthIn, configuredLengthIn)
+      if (!normalized) return null
+      if (
+        !isWithinFinishedSheetLimit(
+          configuredWidthIn,
+          maxPrintableWidthIn,
+          fitToleranceIn
+        )
+      ) {
+        return null
+      }
+      const projectedLengthIn = pixelRatio * normalized.widthIn
+      const differenceIn = Math.abs(projectedLengthIn - normalized.lengthIn)
+      return differenceIn <= fitToleranceIn + Number.EPSILON * 16
+        ? { sheet: { widthIn: configuredWidthIn, heightIn: configuredLengthIn }, normalized, differenceIn }
+        : null
+    })
+    .filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate))
+    .sort(
+      (left, right) =>
+        left.differenceIn - right.differenceIn ||
+        left.sheet.heightIn - right.sheet.heightIn ||
+        left.sheet.widthIn - right.sheet.widthIn
+    )[0]
+
+  if (exactSheet) {
+    const shortEdge = exactSheet.normalized.widthIn
+    const longEdge = exactSheet.normalized.lengthIn
+    const landscape = widthPx >= heightPx
+    return {
+      widthIn: Number((landscape ? longEdge : shortEdge).toFixed(4)),
+      heightIn: Number((landscape ? shortEdge : longEdge).toFixed(4)),
+      effectiveDpi: Math.round(Math.min(widthPx, heightPx) / shortEdge),
+      sheetWidthIn: maxPrintableWidthIn,
+      // Keep the commercial width x length contract here too: the second
+      // configured variant dimension is its sold film length.
+      sheetLengthIn: Number(exactSheet.sheet.heightIn.toFixed(4)),
+    }
+  }
+
+  return computeSheetAnchoredInches(widthPx, heightPx, maxPrintableWidthIn)
 }
 
 function normalizeSizingSource(value: unknown): string | null {
@@ -477,9 +514,9 @@ function extractMetadata(preflightResult: unknown, checks: Array<Record<string, 
       const storedEffectiveDpi = parsePositiveNumber(metadata.effectiveDpi)
       const hasStoredPhysicalDimensions = storedWidthIn > 0 && storedHeightIn > 0
       const hasCanonicalProjection =
-        projectionVersion === 1 &&
-        projectionPolicy === 'main_product_roll_width' &&
-        hasStoredPhysicalDimensions
+        hasStoredPhysicalDimensions &&
+        ((projectionVersion === 1 && projectionPolicy === 'main_product_roll_width') ||
+          (projectionVersion === 2 && projectionPolicy === 'finished_sheet'))
       const resolved = resolveBestDimensions(
         measurementWidthPx,
         measurementHeightPx,
@@ -549,8 +586,10 @@ export function applyFullCanvasMeasurementMetadata(
 
   if (
     storedDimensionsCoverFullCanvas ||
-    (metadata.measurementProjectionVersion === 1 &&
-      metadata.measurementProjectionPolicy === 'main_product_roll_width' &&
+    (((metadata.measurementProjectionVersion === 1 &&
+      metadata.measurementProjectionPolicy === 'main_product_roll_width') ||
+      (metadata.measurementProjectionVersion === 2 &&
+        metadata.measurementProjectionPolicy === 'finished_sheet')) &&
       metadata.widthIn > 0 &&
       metadata.heightIn > 0)
   ) {

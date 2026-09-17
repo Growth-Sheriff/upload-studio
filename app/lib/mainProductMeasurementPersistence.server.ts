@@ -1,17 +1,20 @@
 import prisma from '~/lib/prisma.server'
 import type { UploadLifecycleMetadata } from '~/lib/uploadLifecycle.server'
+import type { FinishedSheetSettings } from '~/lib/finishedSheetMeasurement'
 
 export async function persistMainProductMeasurementProjection(
   itemId: string,
   metadata: UploadLifecycleMetadata,
-  rollWidthIn: number
+  settings: FinishedSheetSettings
 ): Promise<void> {
   const metadataJson = JSON.stringify(metadata)
   const basisJson = JSON.stringify('full_page')
   const projectionJson = JSON.stringify({
-    version: 1,
-    policy: 'main_product_roll_width',
-    rollWidthIn,
+    version: 2,
+    policy: 'finished_sheet',
+    maxPrintableWidthIn: settings.maxPrintableWidthIn,
+    maxPrintableLengthIn: settings.maxPrintableLengthIn,
+    fitToleranceIn: settings.fitToleranceIn,
   })
 
   const updated = await prisma.$executeRaw`

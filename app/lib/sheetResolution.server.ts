@@ -7,25 +7,25 @@
 
 import { shopifyGraphQL } from '~/lib/shopify.server'
 import {
-  getPrintableWidthFailure,
+  getFinishedSheetWidthFailure,
   resolveSheetVariant,
   variantIdsEqual,
   type BuilderResolveConfig,
-  type PrintableWidthFailure,
   type ProductOptionDef,
   type ProductVariantDef,
 } from '~/lib/dtfSheetResolver.server'
+import type { UploadLifecycleMetadata } from '~/lib/uploadLifecycle.server'
 import {
-  applyMeasurementBasisMetadata,
-  type UploadLifecycleMetadata,
-} from '~/lib/uploadLifecycle.server'
-import {
-  applyMainProductMeasurementPolicy,
-  getMainProductRollWidth,
-  getMainProductSheetSizes,
-  MAIN_PRODUCT_MEASUREMENT_POLICY,
-  shouldUseMainProductMeasurementPolicy,
+  applyFinishedSheetMeasurementPolicy,
+  FINISHED_SHEET_MEASUREMENT_POLICY,
+  getFinishedSheetSizes,
 } from '~/lib/mainProductMeasurement.server'
+import {
+  resolveFinishedSheetSettings,
+  validateFinishedSheetFit,
+  formatFinishedSheetInches,
+  type FinishedSheetFitFailure,
+} from '~/lib/finishedSheetMeasurement'
 import { applyAlphaProBuilderDefaults, buildAlphaProCustomerOffer } from '~/lib/alphaProDiscounts.server'
 import { collectShopifyConnectionPages } from '~/lib/shopifyVariantPagination.server'
 
@@ -253,30 +253,31 @@ export function resolveLinearInchVariant({
   quantity,
   variants,
   selectedVariantId,
-  printableWidthIn,
+  maxPrintableWidthIn,
+  maxPrintableLengthIn,
+  fitToleranceIn,
 }: {
   dimensions: UploadDimensions
   quantity: number
   variants: ProductVariantDef[]
   selectedVariantId?: string | null
-  printableWidthIn?: number | null
+  maxPrintableWidthIn: number
+  maxPrintableLengthIn: number
+  fitToleranceIn: number
 }) {
   const variant = findUnitVariant(variants, selectedVariantId)
   if (!variant) return null
 
-  const pageWidthIn = Math.min(dimensions.widthIn, dimensions.heightIn)
-  const pageLengthIn = Math.max(dimensions.widthIn, dimensions.heightIn)
-  const configuredCrossRollWidth = Number(printableWidthIn)
-  const usableCrossRollWidth =
-    Number.isFinite(configuredCrossRollWidth) && configuredCrossRollWidth > 0
-      ? configuredCrossRollWidth
-      : null
-  if (
-    usableCrossRollWidth != null &&
-    (usableCrossRollWidth <= 0 || pageWidthIn > usableCrossRollWidth)
-  ) {
-    return null
-  }
+  const fit = validateFinishedSheetFit({
+    widthIn: dimensions.widthIn,
+    heightIn: dimensions.heightIn,
+    maxPrintableWidthIn,
+    maxPrintableLengthIn,
+    fitToleranceIn,
+  })
+  if (!fit.ok) return null
+  const pageWidthIn = Number(fit.widthIn.toFixed(2))
+  const pageLengthIn = Number(fit.lengthIn.toFixed(2))
   const requestedQuantity = Math.max(1, Math.floor(quantity))
   const billableLengthIn = Number((pageLengthIn * requestedQuantity).toFixed(2))
   const cartQuantity = Math.max(1, Math.ceil(billableLengthIn))
@@ -286,13 +287,12 @@ export function resolveLinearInchVariant({
     selectedVariantId: variant.id,
     selectedVariantTitle: variant.title || 'Measured inch unit',
     selectedSheetLabel: `${cartQuantity} billable inches`,
-    designsPerSheet: 1,
-    // Shopify quantity is an integer-inch billing carrier. It is not a count
-    // of physical sheets; production prints one measured sheet per copy.
-    sheetsNeeded: requestedQuantity,
+    // Shopify quantity is an integer-inch billing carrier. Production still
+    // prints one complete uploaded sheet per requested copy.
+    wholeSheetCopies: requestedQuantity,
     requestedQuantity,
-    widthIn: dimensions.widthIn,
-    heightIn: dimensions.heightIn,
+    widthIn: pageWidthIn,
+    heightIn: pageLengthIn,
     pageWidthIn,
     pageLengthIn,
     placedWidthIn: pageWidthIn,
@@ -420,12 +420,12 @@ export interface ResolveForMetadataInput {
   customerEmail?: string | null
   customerName?: string | null
   measurementPolicy?: string | null
-  measurementBasis?: 'full_page' | 'artwork_bounds' | null
-  rollWidthIn?: number | string | null
 }
 
 export type EffectiveResolveConfig = BuilderResolveConfig & {
-  rollWidthIn: number
+  maxPrintableWidthIn: number
+  maxPrintableLengthIn: number
+  fitToleranceIn: number
   pricingMode?: string
   volumeDiscountTierUnit?: string
 }
@@ -438,7 +438,7 @@ export type ResolveForMetadataResult =
       dimensions: UploadDimensions
       canonicalMetadata: UploadLifecycleMetadata
       config: EffectiveResolveConfig
-      failure: PrintableWidthFailure | null
+      failure: FinishedSheetFitFailure | null
     }
   | {
       kind: 'ok'
@@ -458,7 +458,6 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
   if (!productResolveData.productData.product) return { kind: 'product_not_found' }
 
   const baseBuilderConfig = (input.builderConfig || {}) as Record<string, unknown>
-  const measurementBasis = 'full_page'
   const appliedBuilderConfig = applyAlphaProBuilderDefaults(shopDomain, productId, baseBuilderConfig, shop.settings)
   const customerOffer = buildAlphaProCustomerOffer({
     shopDomain,
@@ -471,11 +470,7 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
   const rawBuilderConfig = (customerOffer
     ? { ...appliedBuilderConfig, customerOffer }
     : appliedBuilderConfig) as Record<string, unknown>
-  const useMainPolicy = shouldUseMainProductMeasurementPolicy(input.measurementPolicy)
-  // The visible per-product printable roll width is the only physical fit
-  // limit. Legacy policy caps, design limits, margins and request hints are
-  // retained only as stored compatibility data and never affect price or fit.
-  const printableWidthIn = getMainProductRollWidth(input.rollWidthIn)
+  const finishedSheetSettings = resolveFinishedSheetSettings(rawBuilderConfig)
   const effectiveConfig: EffectiveResolveConfig = {
     sheetOptionName:
       typeof rawBuilderConfig.sheetOptionName === 'string' ? rawBuilderConfig.sheetOptionName : null,
@@ -486,20 +481,18 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
     modalOptionNames: Array.isArray(rawBuilderConfig.modalOptionNames)
       ? rawBuilderConfig.modalOptionNames.map((value) => String(value || '').trim()).filter(Boolean)
       : [],
-    printableWidthIn,
-    rollWidthIn: printableWidthIn,
+    ...finishedSheetSettings,
   }
 
   const optionDefs = productResolveData.optionDefs
   const variants = productResolveData.variants
 
-  const resolvedMetadata = useMainPolicy
-    ? applyMainProductMeasurementPolicy(input.rawMetadata, {
-        measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
-        rollWidthIn: getMainProductRollWidth(input.rollWidthIn),
-        sheetSizes: getMainProductSheetSizes(variants),
-      })
-    : applyMeasurementBasisMetadata(input.rawMetadata, measurementBasis)
+  const resolvedMetadata = applyFinishedSheetMeasurementPolicy(input.rawMetadata, {
+    measurementPolicy: FINISHED_SHEET_MEASUREMENT_POLICY,
+    maxPrintableWidthIn: effectiveConfig.maxPrintableWidthIn,
+    fitToleranceIn: effectiveConfig.fitToleranceIn,
+    sheetSizes: getFinishedSheetSizes(variants),
+  })
   if (!resolvedMetadata) return { kind: 'not_ready' }
   const dimensions = metadataToUploadDimensions(resolvedMetadata)
   if (!dimensions) return { kind: 'not_ready' }
@@ -512,7 +505,9 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
       quantity,
       variants,
       selectedVariantId: input.selectedVariantId,
-      printableWidthIn: effectiveConfig.printableWidthIn,
+      maxPrintableWidthIn: effectiveConfig.maxPrintableWidthIn,
+      maxPrintableLengthIn: effectiveConfig.maxPrintableLengthIn,
+      fitToleranceIn: effectiveConfig.fitToleranceIn,
     })
     if (!linear) {
       return {
@@ -520,13 +515,16 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
         dimensions,
         canonicalMetadata: resolvedMetadata,
         config: effectiveConfig,
-        failure: getPrintableWidthFailure({
-          widthIn: dimensions.widthIn,
-          heightIn: dimensions.heightIn,
-          config: {
-            printableWidthIn: effectiveConfig.printableWidthIn,
-          },
-        }),
+        failure: (() => {
+          const fit = validateFinishedSheetFit({
+            widthIn: dimensions.widthIn,
+            heightIn: dimensions.heightIn,
+            maxPrintableWidthIn: effectiveConfig.maxPrintableWidthIn,
+            maxPrintableLengthIn: effectiveConfig.maxPrintableLengthIn,
+            fitToleranceIn: effectiveConfig.fitToleranceIn,
+          })
+          return fit.ok ? null : fit
+        })(),
       }
     }
     return {
@@ -557,11 +555,32 @@ export async function resolveForMetadata(input: ResolveForMetadataInput): Promis
       dimensions,
       canonicalMetadata: resolvedMetadata,
       config: effectiveConfig,
-      failure: getPrintableWidthFailure({
+      failure: getFinishedSheetWidthFailure({
         widthIn: dimensions.widthIn,
         heightIn: dimensions.heightIn,
         config: effectiveConfig,
-      }),
+      }) || (() => {
+        const largestVariantLengthIn = getFinishedSheetSizes(sheetVariants).reduce(
+          (largest, size) => Math.max(largest, size.heightIn),
+          0
+        )
+        if (!(largestVariantLengthIn > 0)) return null
+        const fit = validateFinishedSheetFit({
+          widthIn: dimensions.widthIn,
+          heightIn: dimensions.heightIn,
+          maxPrintableWidthIn: effectiveConfig.maxPrintableWidthIn,
+          maxPrintableLengthIn: largestVariantLengthIn,
+          fitToleranceIn: effectiveConfig.fitToleranceIn,
+        })
+        if (fit.ok) return null
+        if (input.lockSelectedVariant && fit.code === 'LENGTH_TOO_LARGE') {
+          return {
+            ...fit,
+            message: `Your file is ${formatFinishedSheetInches(fit.lengthIn)} inches long; the selected sheet's maximum length is ${formatFinishedSheetInches(largestVariantLengthIn)} inches.`,
+          }
+        }
+        return fit
+      })(),
     }
   }
 
@@ -580,25 +599,39 @@ const ADOBE_DEFAULT_DPI = 72
 /** Metadata shape for dimensions the browser probed from file headers.
  *  Mirrors the server's no-DPI rule (uploadLifecycle.resolveBestDimensions):
  *  embedded DPI wins; otherwise Adobe's 72 DPI when the short edge fits the
- *  roll; otherwise inches stay 0 and the measurement policy anchors to the
- *  roll width — so the estimate lands on the same numbers the server will. */
+ *  printable press width; otherwise inches stay 0 and the measurement policy
+ *  anchors to that width so the estimate lands on the server's numbers. */
 export function metadataFromProbe(probe: {
   widthPx: number
   heightPx: number
   dpi?: number | null
   dpiSource?: string | null
-  rollWidthIn?: number | null
+  maxPrintableWidthIn: number
+  fitToleranceIn: number
 }): UploadLifecycleMetadata {
   const widthPx = Math.max(0, Math.round(Number(probe.widthPx) || 0))
   const heightPx = Math.max(0, Math.round(Number(probe.heightPx) || 0))
-  const documentDpi = Math.max(0, Number(probe.dpi) || 0)
-  const rollWidthIn = Number(probe.rollWidthIn) > 0 ? Number(probe.rollWidthIn) : 22
+  const rawDocumentDpi = Number(probe.dpi)
+  // Keep the provisional header path on the same validity rule as preflight:
+  // a density at or below 1 DPI, or above 10,000 DPI, is not document truth.
+  const documentDpi =
+    Number.isFinite(rawDocumentDpi) && rawDocumentDpi > 1 && rawDocumentDpi <= 10_000
+      ? rawDocumentDpi
+      : 0
+  const maxPrintableWidthIn = Number(probe.maxPrintableWidthIn)
 
   let dpi = documentDpi
   let sizingSource = 'document_dpi'
   if (!(dpi > 0)) {
     const shortEdgeIn = Math.min(widthPx, heightPx) / ADOBE_DEFAULT_DPI
-    if (shortEdgeIn <= rollWidthIn) {
+    if (
+      validateFinishedSheetFit({
+        widthIn: shortEdgeIn,
+        heightIn: Math.max(widthPx, heightPx) / ADOBE_DEFAULT_DPI,
+        maxPrintableWidthIn,
+        fitToleranceIn: probe.fitToleranceIn,
+      }).ok
+    ) {
       dpi = ADOBE_DEFAULT_DPI
       sizingSource = 'adobe_default_dpi'
     } else {
@@ -620,8 +653,8 @@ export function metadataFromProbe(probe: {
     measurementHeightPx: heightPx,
     effectiveDpi: dpi,
     sizingSource,
-    widthIn: dpi > 0 ? Number((widthPx / dpi).toFixed(2)) : 0,
-    heightIn: dpi > 0 ? Number((heightPx / dpi).toFixed(2)) : 0,
+    widthIn: dpi > 0 ? Number((widthPx / dpi).toFixed(4)) : 0,
+    heightIn: dpi > 0 ? Number((heightPx / dpi).toFixed(4)) : 0,
     measurementMode: 'full',
   } as UploadLifecycleMetadata
 }

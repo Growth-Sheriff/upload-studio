@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  getPrintableWidthFailure,
+  getFinishedSheetWidthFailure,
   resolveSheetVariant,
   type ProductOptionDef,
   type ProductVariantDef,
@@ -68,8 +68,7 @@ describe('resolveSheetVariant', () => {
     expect(result).not.toBeNull()
     expect(result?.selectedVariantId).toBe('103')
     expect(result?.selectedSheetLabel).toContain('22 x 12')
-    expect(result?.designsPerSheet).toBe(1)
-    expect(result?.sheetsNeeded).toBe(3)
+    expect(result?.wholeSheetCopies).toBe(3)
   })
 
   it('detects split width and height options and keeps service options matched', () => {
@@ -120,8 +119,7 @@ describe('resolveSheetVariant', () => {
     expect(result?.selectedVariantId).toBe('203')
     expect(result?.selectedSheetLabel).toContain('22')
     expect(result?.selectedSheetLabel).toContain('12')
-    expect(result?.designsPerSheet).toBe(1)
-    expect(result?.sheetsNeeded).toBe(3)
+    expect(result?.wholeSheetCopies).toBe(3)
   })
 
   it('preserves service options when Shopify sends the selected variant as a GID', () => {
@@ -179,7 +177,7 @@ describe('resolveSheetVariant', () => {
 
     const result = resolveSheetVariant({
       widthIn: 20,
-      heightIn: 20,
+      heightIn: 23,
       quantity: 1,
       variants,
       optionDefs,
@@ -224,7 +222,7 @@ describe('resolveSheetVariant', () => {
     const result = resolveSheetVariant({
       widthIn: 6.47,
       heightIn: 5.18,
-      quantity: 10,
+      quantity: 500,
       variants,
       optionDefs,
       selectedVariantId: '401',
@@ -235,8 +233,7 @@ describe('resolveSheetVariant', () => {
 
     expect(result).not.toBeNull()
     expect(result?.selectedVariantId).toBe('401')
-    expect(result?.designsPerSheet).toBe(1)
-    expect(result?.sheetsNeeded).toBe(10)
+    expect(result?.wholeSheetCopies).toBe(500)
   })
 
   it('treats every requested copy as one complete production sheet', () => {
@@ -248,7 +245,7 @@ describe('resolveSheetVariant', () => {
     const result = resolveSheetVariant({
       widthIn: 5,
       heightIn: 6.35,
-      quantity: 14,
+      quantity: 1,
       variants,
       optionDefs,
       selectedVariantId: '450',
@@ -257,8 +254,7 @@ describe('resolveSheetVariant', () => {
       },
     })
 
-    expect(result?.designsPerSheet).toBe(1)
-    expect(result?.sheetsNeeded).toBe(14)
+    expect(result?.wholeSheetCopies).toBe(1)
   })
 
   it('uses the normalized long edge to choose the smallest covering sheet', () => {
@@ -319,7 +315,8 @@ describe('resolveSheetVariant', () => {
       optionDefs,
       config: {
         sheetOptionName: 'Size',
-        printableWidthIn: 22,
+        maxPrintableWidthIn: 22.5,
+        fitToleranceIn: 0.02,
       },
     })
 
@@ -341,14 +338,15 @@ describe('resolveSheetVariant', () => {
       optionDefs,
       config: {
         sheetOptionName: 'Size',
-        printableWidthIn: 22,
+        maxPrintableWidthIn: 22.5,
+        fitToleranceIn: 0.02,
       },
     })
 
     expect(result).toBeNull()
   })
 
-  it('uses the printable roll width without hidden margins or tolerance', () => {
+  it('uses the maximum printable width without hidden margins', () => {
     const optionDefs: ProductOptionDef[] = [{ name: 'Size', values: ['22 x 240'] }]
     const variants: ProductVariantDef[] = [
       buildVariant('603', '22 x 240', '120.00', [{ name: 'Size', value: '22 x 240' }]),
@@ -362,7 +360,8 @@ describe('resolveSheetVariant', () => {
       optionDefs,
       config: {
         sheetOptionName: 'Size',
-        printableWidthIn: 22,
+        maxPrintableWidthIn: 22.5,
+        fitToleranceIn: 0.02,
       },
     })
 
@@ -384,7 +383,8 @@ describe('resolveSheetVariant', () => {
       optionDefs,
       config: {
         sheetOptionName: 'Size',
-        printableWidthIn: 22,
+        maxPrintableWidthIn: 22.5,
+        fitToleranceIn: 0.02,
       },
     })
 
@@ -403,11 +403,11 @@ describe('resolveSheetVariant', () => {
       quantity: 2,
       variants,
       optionDefs,
-      config: { sheetOptionName: 'Size', printableWidthIn: 21.75 },
+      config: { sheetOptionName: 'Size', maxPrintableWidthIn: 21.75, fitToleranceIn: 0.02 },
     })
 
     expect(result?.selectedVariantId).toBe('605')
-    expect(result?.sheetsNeeded).toBe(2)
+    expect(result?.wholeSheetCopies).toBe(2)
   })
 
   it('uses printable width as the sole cross-roll limit, not the nominal variant width', () => {
@@ -422,7 +422,7 @@ describe('resolveSheetVariant', () => {
       quantity: 1,
       variants,
       optionDefs,
-      config: { sheetOptionName: 'Size', printableWidthIn: 22.5 },
+      config: { sheetOptionName: 'Size', maxPrintableWidthIn: 22.5, fitToleranceIn: 0.02 },
     })
 
     expect(result?.selectedVariantId).toBe('606')
@@ -431,43 +431,71 @@ describe('resolveSheetVariant', () => {
   })
 
   it('resolves portrait and landscape exports of the same finished sheet identically', () => {
-    const optionDefs: ProductOptionDef[] = [{ name: 'Size', values: ['22 x 84'] }]
+    const optionDefs: ProductOptionDef[] = [{ name: 'Size', values: ['22 x 80'] }]
     const variants = [
-      buildVariant('701', '22 x 84', '42.00', [{ name: 'Size', value: '22 x 84' }]),
+      buildVariant('701', '22 x 80', '42.00', [{ name: 'Size', value: '22 x 80' }]),
     ]
     const input = {
       quantity: 2,
       variants,
       optionDefs,
-      config: { sheetOptionName: 'Size', printableWidthIn: 22 },
+      config: { sheetOptionName: 'Size', maxPrintableWidthIn: 22.5, fitToleranceIn: 0.02 },
     }
 
-    const portrait = resolveSheetVariant({ ...input, widthIn: 22, heightIn: 80 })
-    const landscape = resolveSheetVariant({ ...input, widthIn: 80, heightIn: 22 })
+    const portrait = resolveSheetVariant({ ...input, widthIn: 22.3, heightIn: 78 })
+    const landscape = resolveSheetVariant({ ...input, widthIn: 78, heightIn: 22.3 })
 
     expect(portrait?.selectedVariantId).toBe('701')
     expect(landscape?.selectedVariantId).toBe('701')
-    expect(portrait?.widthIn).toBe(22)
-    expect(landscape?.widthIn).toBe(22)
-    expect(portrait?.heightIn).toBe(80)
-    expect(landscape?.heightIn).toBe(80)
-    expect(portrait?.sheetsNeeded).toBe(2)
-    expect(landscape?.sheetsNeeded).toBe(2)
+    expect(portrait?.widthIn).toBe(22.3)
+    expect(landscape?.widthIn).toBe(22.3)
+    expect(portrait?.heightIn).toBe(78)
+    expect(landscape?.heightIn).toBe(78)
+    expect(portrait?.wholeSheetCopies).toBe(2)
+    expect(landscape?.wholeSheetCopies).toBe(2)
+  })
+
+  it('uses the visible tolerance only at width and variant-length boundaries', () => {
+    const optionDefs: ProductOptionDef[] = [{ name: 'Size', values: ['22 x 80'] }]
+    const variants = [
+      buildVariant('801', '22 x 80', '40.00', [{ name: 'Size', value: '22 x 80' }]),
+    ]
+    const input = {
+      quantity: 1,
+      variants,
+      optionDefs,
+      config: {
+        sheetOptionName: 'Size',
+        maxPrintableWidthIn: 22.5,
+        fitToleranceIn: 0.02,
+      },
+    }
+
+    expect(resolveSheetVariant({ ...input, widthIn: 22.5, heightIn: 80 })?.selectedVariantId).toBe(
+      '801'
+    )
+    expect(
+      resolveSheetVariant({ ...input, widthIn: 22.503, heightIn: 80.019 })?.selectedVariantId
+    ).toBe('801')
+    expect(resolveSheetVariant({ ...input, widthIn: 22.53, heightIn: 79 })).toBeNull()
+    expect(resolveSheetVariant({ ...input, widthIn: 22, heightIn: 80.03 })).toBeNull()
   })
 
   it('reports the exact normalized width and printable-width limit', () => {
     expect(
-      getPrintableWidthFailure({
+      getFinishedSheetWidthFailure({
         widthIn: 80,
         heightIn: 23.91,
-        config: { printableWidthIn: 22 },
+        config: { maxPrintableWidthIn: 22.5, fitToleranceIn: 0.02 },
       })
     ).toEqual({
+      ok: false,
       code: 'WIDTH_TOO_LARGE',
       widthIn: 23.91,
       lengthIn: 80,
-      printableWidthIn: 22,
-      message: 'Your file is 23.91 inches wide; maximum printable width is 22 inches.',
+      maxPrintableWidthIn: 22.5,
+      fitToleranceIn: 0.02,
+      message: 'Your file is 23.91 inches wide; maximum printable width is 22.5 inches.',
     })
   })
 })

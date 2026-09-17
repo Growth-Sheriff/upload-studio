@@ -8,10 +8,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from '@remix-run/node'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
-import {
-  MAIN_PRODUCT_MEASUREMENT_POLICY,
-  resolveServerMainProductRollWidth,
-} from '~/lib/mainProductMeasurement.server'
+import { resolveFinishedSheetSettings } from '~/lib/finishedSheetMeasurement'
 import { selectProductConfigForIdentity } from '~/lib/productConfigIdentity.server'
 import { shopifyProductIdCandidates } from '~/lib/shopifyProductIdentity'
 import {
@@ -81,7 +78,7 @@ export async function action({ request }: ActionFunctionArgs) {
       source: 'api.upload.resolve-preview',
     })
     const builderConfig = (productConfig?.builderConfig || null) as Record<string, unknown> | null
-    const serverRollWidthIn = resolveServerMainProductRollWidth(builderConfig)
+    const finishedSheetSettings = resolveFinishedSheetSettings(builderConfig)
 
     const result = await resolveForMetadata({
       shopDomain,
@@ -93,15 +90,14 @@ export async function action({ request }: ActionFunctionArgs) {
         heightPx,
         dpi,
         dpiSource: typeof body.dpiSource === 'string' ? body.dpiSource : null,
-        rollWidthIn: serverRollWidthIn,
+        maxPrintableWidthIn: finishedSheetSettings.maxPrintableWidthIn,
+        fitToleranceIn: finishedSheetSettings.fitToleranceIn,
       }),
       quantity,
       selectedVariantId,
       customerId: signedCustomerId,
       customerEmail: null,
       customerName: null,
-      measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
-      rollWidthIn: serverRollWidthIn,
     })
 
     if (result.kind === 'product_not_found') {

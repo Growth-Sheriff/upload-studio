@@ -5,9 +5,9 @@ import {
   type ProductVariantDef,
 } from './dtfSheetResolver.server'
 import {
-  applyMainProductMeasurementPolicy,
-  getMainProductSheetSizes,
-  MAIN_PRODUCT_MEASUREMENT_POLICY,
+  applyFinishedSheetMeasurementPolicy,
+  FINISHED_SHEET_MEASUREMENT_POLICY,
+  getFinishedSheetSizes,
 } from './mainProductMeasurement.server'
 import { deriveUploadItemLifecycle } from './uploadLifecycle.server'
 
@@ -29,7 +29,7 @@ const variants = [12, 24, 36, 48, 60, 72, 84, 96, 108, 120].map(buildVariant)
 const optionDefs: ProductOptionDef[] = [
   { name: 'Size', values: variants.map((variant) => variant.option1 || '') },
 ]
-const sheetSizes = getMainProductSheetSizes(variants)
+const sheetSizes = getFinishedSheetSizes(variants)
 
 function resolveMainProductUpload({
   widthPx,
@@ -58,7 +58,7 @@ function resolveMainProductUpload({
             measurementHeight: heightPx,
             documentDpi,
             documentDpiSource,
-            sheetWidthIn: 22,
+            sheetWidthIn: 22.5,
             measurementMode: 'full',
           },
         },
@@ -66,9 +66,10 @@ function resolveMainProductUpload({
     },
   })
 
-  const measurement = applyMainProductMeasurementPolicy(lifecycle.metadata, {
-    measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
-    rollWidthIn: 22,
+  const measurement = applyFinishedSheetMeasurementPolicy(lifecycle.metadata, {
+    measurementPolicy: FINISHED_SHEET_MEASUREMENT_POLICY,
+    maxPrintableWidthIn: 22.5,
+    fitToleranceIn: 0.02,
     sheetSizes,
   })
   if (!measurement) throw new Error('Expected measurement')
@@ -82,7 +83,8 @@ function resolveMainProductUpload({
     selectedVariantId: '12',
     config: {
       sheetOptionName: 'Size',
-      printableWidthIn: 22,
+      maxPrintableWidthIn: 22.5,
+      fitToleranceIn: 0.02,
     },
   })
 
@@ -90,7 +92,7 @@ function resolveMainProductUpload({
 }
 
 describe('main product upload measurement flow', () => {
-  it('routes Annette-style 6600x3600 @ 300 DPI to 22x24 after orientation normalization', () => {
+  it('normalizes an embedded-DPI 22x12 file and selects the 22x24 commercial length', () => {
     const { measurement, resolution } = resolveMainProductUpload({
       widthPx: 6600,
       heightPx: 3600,
@@ -112,8 +114,8 @@ describe('main product upload measurement flow', () => {
       documentDpiSource: 'png_phys',
     })
 
-    expect(measurement.widthIn).toBe(54.77)
-    expect(measurement.heightIn).toBe(22)
+    expect(measurement.widthIn).toBe(54.7651)
+    expect(measurement.heightIn).toBe(21.9989)
     expect(measurement.sizingSource).toBe('document_dpi')
     expect(resolution?.selectedSheetLabel).toBe('22 x 60')
   })
@@ -125,20 +127,31 @@ describe('main product upload measurement flow', () => {
     })
 
     expect(measurement.widthIn).toBe(20.75)
-    expect(measurement.heightIn).toBe(9.28)
+    expect(measurement.heightIn).toBe(9.2778)
     expect(measurement.sizingSource).toBe('adobe_default_dpi')
     expect(resolution?.selectedSheetLabel).toBe('22 x 24')
   })
 
-  it('keeps large no-DPI gang sheets roll-anchored and routes to 22x60', () => {
+  it('keeps large no-DPI gang sheets press-width anchored and routes to 22x60', () => {
     const { measurement, resolution } = resolveMainProductUpload({
       widthPx: 6485,
       heightPx: 2605,
     })
 
-    expect(measurement.widthIn).toBe(54.77)
-    expect(measurement.heightIn).toBe(22)
-    expect(measurement.sizingSource).toBe('sheet_width_anchor')
+    expect(Math.max(measurement.widthIn, measurement.heightIn)).toBe(56.0125)
+    expect(Math.min(measurement.widthIn, measurement.heightIn)).toBe(22.5)
+    expect(measurement.sizingSource).toBe('max_printable_width_anchor')
     expect(resolution?.selectedSheetLabel).toBe('22 x 60')
+  })
+
+  it('calibrates no-DPI dimensions from 22x12 but prices the normalized 22-inch length', () => {
+    const { measurement, resolution } = resolveMainProductUpload({
+      widthPx: 6600,
+      heightPx: 3600,
+    })
+
+    expect(Math.min(measurement.widthIn, measurement.heightIn)).toBe(12)
+    expect(Math.max(measurement.widthIn, measurement.heightIn)).toBe(22)
+    expect(resolution?.selectedSheetLabel).toBe('22 x 24')
   })
 })

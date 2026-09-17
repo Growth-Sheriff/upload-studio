@@ -3,17 +3,8 @@ import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
 import { normalizeCustomerId } from '~/lib/customerPricing.server'
-import {
-  deriveUploadItemLifecycle,
-  getStoredMeasurementBasis,
-} from '~/lib/uploadLifecycle.server'
-import {
-  getRuntimeMeasurementBasis,
-} from '~/lib/customerPricingModel.server'
-import {
-  MAIN_PRODUCT_MEASUREMENT_POLICY,
-  resolveServerMainProductRollWidth,
-} from '~/lib/mainProductMeasurement.server'
+import { deriveUploadItemLifecycle } from '~/lib/uploadLifecycle.server'
+import { resolveFinishedSheetSettings } from '~/lib/finishedSheetMeasurement'
 import { persistMainProductMeasurementProjection } from '~/lib/mainProductMeasurementPersistence.server'
 import {
   parsePositiveNumber,
@@ -36,8 +27,6 @@ interface ResolveRequestBody {
   uploadId?: string
   quantity?: number | string
   selectedVariantId?: string | number | null
-  measurementPolicy?: string | null
-  rollWidthIn?: number | string | null
   customerId?: string | number | null
   customerEmail?: string | null
   customerName?: string | null
@@ -139,7 +128,7 @@ export async function action({ request }: ActionFunctionArgs) {
       source: 'api.upload.resolve-product',
     })
     const builderConfig = (productConfig?.builderConfig || null) as Record<string, unknown> | null
-    const configuredRollWidth = resolveServerMainProductRollWidth(builderConfig)
+    const finishedSheetSettings = resolveFinishedSheetSettings(builderConfig)
     const result = await resolveForMetadata({
       shopDomain,
       shop,
@@ -149,12 +138,6 @@ export async function action({ request }: ActionFunctionArgs) {
       quantity,
       selectedVariantId,
       customerId: signedCustomerId,
-      measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
-      measurementBasis: getStoredMeasurementBasis(
-        firstItem?.preflightResult,
-        getRuntimeMeasurementBasis(shopDomain, shop.settings)
-      ),
-      rollWidthIn: configuredRollWidth,
     })
 
     if (result.kind === 'product_not_found') {
@@ -170,7 +153,7 @@ export async function action({ request }: ActionFunctionArgs) {
     await persistMainProductMeasurementProjection(
       firstItem.id,
       result.canonicalMetadata,
-      configuredRollWidth
+      finishedSheetSettings
     )
     const uploadPayload = { uploadId, fileName: firstItem?.originalName || '', ...result.dimensions }
     if (result.kind === 'no_fit') {

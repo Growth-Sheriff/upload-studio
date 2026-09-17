@@ -8,10 +8,10 @@ import {
   normalizeCustomerPricingSettings,
   parseSheetSizeFromTitle,
   resolveCustomerPricingContext,
-  validateMeasuredCrossRollFit,
+  validateMeasuredFinishedSheetFit,
 } from './customerPricing.server'
 
-describe('measured-length roll fit', () => {
+describe('measured-length finished-sheet fit', () => {
   it('uses requested copies as both billable lengths and production sheets', () => {
     const quote = calculateMeasuredLengthQuote(
       {
@@ -33,6 +33,29 @@ describe('measured-length roll fit', () => {
     expect(quote.billableLengthIn).toBe(120)
     expect(quote.totalPrice).toBe(24)
     expect(quote.sheetsNeeded).toBe(5)
+  })
+
+  it('multiplies the displayed per-sheet length across 500 complete copies', () => {
+    const quote = calculateMeasuredLengthQuote(
+      {
+        widthPx: 0,
+        heightPx: 0,
+        measurementWidthPx: 0,
+        measurementHeightPx: 0,
+        widthIn: 22,
+        heightIn: 237.994,
+        dpi: 300,
+        effectiveDpi: 300,
+        sizingSource: 'document_dpi',
+        measurementMode: 'full',
+      },
+      0.2,
+      500
+    )
+
+    expect(quote.pageLengthIn).toBe(237.99)
+    expect(quote.billableLengthIn).toBe(118995)
+    expect(quote.sheetsNeeded).toBe(500)
   })
 
   it('fails closed instead of inventing a per-inch rate', () => {
@@ -62,26 +85,54 @@ describe('measured-length roll fit', () => {
     ).toThrow('A positive configured price per inch is required')
   })
 
-  it('enforces the configured physical roll instead of a wider variant limit', () => {
-    const result = validateMeasuredCrossRollFit({
+  it('enforces the merchant-entered maximum printable width and length', () => {
+    const result = validateMeasuredFinishedSheetFit({
       measurement: { widthIn: 21, heightIn: 24 },
-      rollWidthIn: 20,
+      maxPrintableWidthIn: 20,
+      maxPrintableLengthIn: 240,
+      fitToleranceIn: 0.02,
     })
     expect(result.ok).toBe(false)
-    expect(result.crossRollLimitIn).toBe(20)
+    expect(result.maxPrintableWidthIn).toBe(20)
   })
 
-  it('rejects width overflow exactly without margin, tolerance, or rotation instructions', () => {
-    const result = validateMeasuredCrossRollFit({
+  it('reports material width overflow with both the measured and configured values', () => {
+    const result = validateMeasuredFinishedSheetFit({
       measurement: { widthIn: 24, heightIn: 20.1 },
-      rollWidthIn: 20,
+      maxPrintableWidthIn: 20,
+      maxPrintableLengthIn: 240,
+      fitToleranceIn: 0.02,
     })
     expect(result.ok).toBe(false)
-    expect(result.crossRollLimitIn).toBe(20)
+    expect(result.maxPrintableWidthIn).toBe(20)
     expect(result.placedWidthIn).toBe(20.1)
     expect(result.reason).toBe(
       'Your file is 20.1 inches wide; maximum printable width is 20 inches.'
     )
+  })
+
+  it('accepts export-rounding overflow but rejects a materially overlong custom sheet', () => {
+    const limits = {
+      maxPrintableWidthIn: 22.5,
+      maxPrintableLengthIn: 240,
+      fitToleranceIn: 0.02,
+    }
+
+    expect(
+      validateMeasuredFinishedSheetFit({
+        measurement: { widthIn: 22.503, heightIn: 240.019 },
+        ...limits,
+      }).ok
+    ).toBe(true)
+
+    const tooLong = validateMeasuredFinishedSheetFit({
+      measurement: { widthIn: 22, heightIn: 240.03 },
+      ...limits,
+    })
+    expect(tooLong.ok).toBe(false)
+    expect(tooLong.code).toBe('LENGTH_TOO_LARGE')
+    expect(tooLong.reason).toContain('240.03')
+    expect(tooLong.reason).toContain('240')
   })
 })
 
@@ -273,7 +324,7 @@ describe('parseSheetSizeFromTitle', () => {
     })
   })
 
-  it('bills the same physical long edge regardless of title orientation', () => {
+  it('bills the merchant-authored second dimension as commercial variant length', () => {
     const measurement = {
       widthPx: 6600,
       heightPx: 72000,
@@ -303,7 +354,7 @@ describe('parseSheetSizeFromTitle', () => {
     })
 
     expect(normal?.billableLengthIn).toBe(240)
-    expect(reversed?.billableLengthIn).toBe(240)
-    expect(reversed?.totalPrice).toBe(normal?.totalPrice)
+    expect(reversed?.billableLengthIn).toBe(22)
+    expect(reversed?.totalPrice).toBe(4.4)
   })
 })

@@ -1,14 +1,12 @@
 import {
-  computeRollWidthAnchoredInches,
+  computePrintableWidthAnchoredInches,
   resolveBestDimensions,
-  type RollWidthSheetSize,
+  type FinishedSheetSize,
 } from './uploadLifecycle.server'
 import type { ProductVariantDef } from './dtfSheetResolver.server'
 
-export const MAIN_PRODUCT_MEASUREMENT_POLICY = 'main_product_roll_width'
-export const DEFAULT_MAIN_PRODUCT_ROLL_WIDTH_IN = 22
-export const MIN_MAIN_PRODUCT_ROLL_WIDTH_IN = 0.1
-export const MAX_MAIN_PRODUCT_ROLL_WIDTH_IN = 120
+export const FINISHED_SHEET_MEASUREMENT_POLICY = 'finished_sheet'
+const LEGACY_FINISHED_SHEET_MEASUREMENT_POLICY = 'main_product_roll_width'
 
 interface MainProductMeasurementLike {
   widthPx: number
@@ -29,8 +27,9 @@ interface MainProductMeasurementLike {
 
 export interface MainProductMeasurementOptions {
   measurementPolicy?: string | null
-  rollWidthIn?: number | string | null
-  sheetSizes?: RollWidthSheetSize[]
+  maxPrintableWidthIn: number
+  fitToleranceIn: number
+  sheetSizes?: FinishedSheetSize[]
 }
 
 function parsePositiveNumber(value: unknown): number {
@@ -38,15 +37,12 @@ function parsePositiveNumber(value: unknown): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
 }
 
-function parseValidRollWidth(value: unknown): number {
-  const parsed = parsePositiveNumber(value)
-  return parsed >= MIN_MAIN_PRODUCT_ROLL_WIDTH_IN && parsed <= MAX_MAIN_PRODUCT_ROLL_WIDTH_IN
-    ? parsed
-    : 0
-}
-
-export function shouldUseMainProductMeasurementPolicy(value: unknown): boolean {
-  return String(value || '').trim() === MAIN_PRODUCT_MEASUREMENT_POLICY
+export function shouldUseFinishedSheetMeasurementPolicy(value: unknown): boolean {
+  const normalized = String(value || '').trim()
+  return (
+    normalized === FINISHED_SHEET_MEASUREMENT_POLICY ||
+    normalized === LEGACY_FINISHED_SHEET_MEASUREMENT_POLICY
+  )
 }
 
 export function resolveUploadIntentMeasurementBasis(
@@ -54,33 +50,11 @@ export function resolveUploadIntentMeasurementBasis(
   requestedPolicy: unknown
 ): 'full_page' | 'artwork_bounds' {
   // This hint can only select the more conservative full-page path. It never
-  // authorizes a roll width, sheet snap, variant, or price.
-  return shouldUseMainProductMeasurementPolicy(requestedPolicy) ? 'full_page' : runtimeBasis
+  // authorizes a physical limit, sheet snap, variant, or price.
+  return shouldUseFinishedSheetMeasurementPolicy(requestedPolicy) ? 'full_page' : runtimeBasis
 }
 
-export function getMainProductRollWidth(value: unknown): number {
-  return parseValidRollWidth(value) || DEFAULT_MAIN_PRODUCT_ROLL_WIDTH_IN
-}
-
-export function resolveServerMainProductRollWidth(
-  builderConfig: Record<string, unknown> | null | undefined
-): number {
-  const configured = parseValidRollWidth(builderConfig?.rollWidthIn)
-  // rollWidthIn is the explicit, purpose-built setting. Before that field
-  // existed the worker supplied maxWidthIn and maxHeightIn, and the preflight
-  // anchor used the shorter valid side. Reproduce that exact fallback until a
-  // merchant explicitly saves rollWidthIn.
-  const legacyMaxWidth = parseValidRollWidth(builderConfig?.maxWidthIn)
-  const legacyMaxHeight = parseValidRollWidth(builderConfig?.maxHeightIn)
-  const legacyConfiguredWidth =
-    legacyMaxWidth > 0 && legacyMaxHeight > 0
-      ? Math.min(legacyMaxWidth, legacyMaxHeight)
-      : legacyMaxWidth || legacyMaxHeight
-  const legacyWidth = configured || legacyConfiguredWidth || DEFAULT_MAIN_PRODUCT_ROLL_WIDTH_IN
-  return legacyWidth
-}
-
-function parseSheetSize(value: unknown): RollWidthSheetSize | null {
+function parseSheetSize(value: unknown): FinishedSheetSize | null {
   if (!value) return null
 
   const cleaned = String(value)
@@ -107,9 +81,9 @@ function parseSheetSize(value: unknown): RollWidthSheetSize | null {
   return { widthIn, heightIn }
 }
 
-export function getMainProductSheetSizes(variants: ProductVariantDef[]): RollWidthSheetSize[] {
+export function getFinishedSheetSizes(variants: ProductVariantDef[]): FinishedSheetSize[] {
   const seen = new Set<string>()
-  const sizes: RollWidthSheetSize[] = []
+  const sizes: FinishedSheetSize[] = []
 
   for (const variant of variants) {
     const values = [
@@ -142,44 +116,47 @@ function getFullCanvasPixels(measurement: MainProductMeasurementLike) {
 }
 
 function getDocumentDpi(measurement: MainProductMeasurementLike): number {
-  return (
+  const candidate =
     parsePositiveNumber(measurement.documentDpi) ||
     (measurement.documentDpiSource ? parsePositiveNumber(measurement.dpi) : 0)
-  )
+  return candidate > 1 && candidate <= 10_000 ? candidate : 0
 }
 
-export function applyMainProductMeasurementPolicy<T extends MainProductMeasurementLike>(
+export function applyFinishedSheetMeasurementPolicy<T extends MainProductMeasurementLike>(
   measurement: T,
   options: MainProductMeasurementOptions
 ): T
-export function applyMainProductMeasurementPolicy<T extends MainProductMeasurementLike>(
+export function applyFinishedSheetMeasurementPolicy<T extends MainProductMeasurementLike>(
   measurement: T | null,
   options: MainProductMeasurementOptions
 ): T | null
-export function applyMainProductMeasurementPolicy<T extends MainProductMeasurementLike>(
+export function applyFinishedSheetMeasurementPolicy<T extends MainProductMeasurementLike>(
   measurement: T | null,
   options: MainProductMeasurementOptions
 ): T | null {
   if (!measurement) return null
-  if (!shouldUseMainProductMeasurementPolicy(options.measurementPolicy)) return measurement
+  if (!shouldUseFinishedSheetMeasurementPolicy(options.measurementPolicy)) return measurement
 
   const { widthPx, heightPx } = getFullCanvasPixels(measurement)
-  const rollWidthIn = getMainProductRollWidth(
-    options.rollWidthIn ?? measurement.sheetWidthIn
-  )
   const documentDpi = getDocumentDpi(measurement)
-  const anchored = computeRollWidthAnchoredInches(
+  const hadInvalidDocumentDpi =
+    (parsePositiveNumber(measurement.documentDpi) > 0 ||
+      Boolean(measurement.documentDpiSource && parsePositiveNumber(measurement.dpi) > 0)) &&
+    !(documentDpi > 0)
+  const anchored = computePrintableWidthAnchoredInches(
     widthPx,
     heightPx,
-    rollWidthIn,
-    options.sheetSizes || []
+    options.maxPrintableWidthIn,
+    options.sheetSizes || [],
+    options.fitToleranceIn
   )
   const resolved = resolveBestDimensions(
     widthPx,
     heightPx,
     documentDpi,
     anchored,
-    'sheet_width_anchor'
+    'max_printable_width_anchor',
+    options.fitToleranceIn
   )
 
   return {
@@ -190,6 +167,12 @@ export function applyMainProductMeasurementPolicy<T extends MainProductMeasureme
           documentDpi,
           documentDpiSource: measurement.documentDpiSource || 'document_dpi',
         }
+      : hadInvalidDocumentDpi
+        ? {
+            dpi: resolved.effectiveDpi,
+            documentDpi: 0,
+            documentDpiSource: null,
+          }
       : {}),
     measurementWidthPx: widthPx,
     measurementHeightPx: heightPx,

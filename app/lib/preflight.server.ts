@@ -8,13 +8,16 @@ import {
   computeSheetAnchoredInches,
   resolveBestDimensions,
 } from './uploadLifecycle.server'
+import {
+  DEFAULT_FIT_TOLERANCE_IN,
+  DEFAULT_MAX_PRINTABLE_WIDTH_IN,
+} from './finishedSheetMeasurement'
 
 const execAsync = promisify(exec)
 const IMAGE_COMMAND_TIMEOUT_MS = 10 * 60 * 1000
 const FAST_METADATA_PREFIX_BYTES = 2 * 1024 * 1024
 const MAX_EMBEDDED_TEXT_BYTES = 4 * 1024 * 1024
 
-const DEFAULT_SHEET_WIDTH_IN = 22
 
 interface DpiCandidate {
   dpi: number
@@ -868,12 +871,8 @@ export interface PreflightConfig {
 
 
 
-  sheetWidthIn?: number
-
-
-
-
-  sheetLengthIn?: number
+  maxPrintableWidthIn?: number
+  fitToleranceIn?: number
 }
 
 export const PLAN_CONFIGS: Record<string, PreflightConfig> = {
@@ -1478,29 +1477,29 @@ export async function runPreflightChecks(
 
 
 
-    const sheetWidthIn =
-      typeof config.sheetWidthIn === 'number' && config.sheetWidthIn > 0
-        ? config.sheetWidthIn
-        : DEFAULT_SHEET_WIDTH_IN
-    const sheetLengthIn =
-      typeof config.sheetLengthIn === 'number' && config.sheetLengthIn > 0
-        ? config.sheetLengthIn
-        : undefined
+    const maxPrintableWidthIn =
+      typeof config.maxPrintableWidthIn === 'number' && config.maxPrintableWidthIn > 0
+        ? config.maxPrintableWidthIn
+        : DEFAULT_MAX_PRINTABLE_WIDTH_IN
+    const fitToleranceIn =
+      typeof config.fitToleranceIn === 'number' && config.fitToleranceIn >= 0
+        ? config.fitToleranceIn
+        : DEFAULT_FIT_TOLERANCE_IN
 
 
 
     const anchored = computeSheetAnchoredInches(
       measurementWidth,
       measurementHeight,
-      sheetWidthIn,
-      sheetLengthIn
+      maxPrintableWidthIn
     )
     const resolvedDimensions = resolveBestDimensions(
       measurementWidth,
       measurementHeight,
       imageInfo.dpi,
       anchored,
-      'sheet_width_anchor'
+      'max_printable_width_anchor',
+      fitToleranceIn
     )
     const { widthIn, heightIn, effectiveDpi, sizingSource } = resolvedDimensions
     const sizingSourceDetail =
@@ -1517,7 +1516,7 @@ export async function runPreflightChecks(
         status: 'warning',
         value: effectiveDpi,
         message: 'Could not determine artwork resolution.',
-        details: { source: sizingSourceDetail, sheetWidthIn },
+        details: { source: sizingSourceDetail, sheetWidthIn: maxPrintableWidthIn },
       })
     } else if (effectiveDpi < config.requiredDPI) {
       checks.push({
@@ -1525,7 +1524,7 @@ export async function runPreflightChecks(
         status: 'warning',
         value: effectiveDpi,
         message: `Effective print DPI is ${effectiveDpi} (recommended ${config.requiredDPI}). Print may appear pixelated at full size.`,
-        details: { source: sizingSourceDetail, sheetWidthIn },
+        details: { source: sizingSourceDetail, sheetWidthIn: maxPrintableWidthIn },
       })
       if (overall === 'ok') overall = 'warning'
     } else {
@@ -1534,7 +1533,7 @@ export async function runPreflightChecks(
         status: 'ok',
         value: effectiveDpi,
         message: `Effective print DPI: ${effectiveDpi}`,
-        details: { source: sizingSourceDetail, sheetWidthIn },
+        details: { source: sizingSourceDetail, sheetWidthIn: maxPrintableWidthIn },
       })
     }
 
@@ -1560,8 +1559,7 @@ export async function runPreflightChecks(
         effectiveDpi,
         sizingSource,
         sizingSourceDetail,
-        sheetWidthIn,
-        sheetLengthIn,
+        sheetWidthIn: maxPrintableWidthIn,
         measurementMode: 'full',
         widthIn,
         heightIn,

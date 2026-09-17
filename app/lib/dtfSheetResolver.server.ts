@@ -1,3 +1,10 @@
+import {
+  isWithinFinishedSheetLimit,
+  normalizeFinishedSheet,
+  validateFinishedSheetFit,
+  type FinishedSheetWidthFailure,
+} from './finishedSheetMeasurement'
+
 export function variantIdsEqual(left: unknown, right: unknown): boolean {
   const normalize = (value: unknown) => {
     const text = String(value ?? '').trim()
@@ -38,8 +45,9 @@ export interface BuilderResolveConfig {
   widthOptionName?: string | null
   heightOptionName?: string | null
   modalOptionNames?: string[] | null
-  /** The merchant-entered printable roll width. This is the only fit limit. */
-  printableWidthIn?: number | null
+  /** The merchant-entered physical press limit. Nominal variant width is a label. */
+  maxPrintableWidthIn?: number | null
+  fitToleranceIn?: number | null
 }
 
 interface Measurement {
@@ -76,8 +84,7 @@ export interface SheetVariantResolution {
   selectedVariantId: string
   selectedVariantTitle: string
   selectedSheetLabel: string
-  designsPerSheet: number
-  sheetsNeeded: number
+  wholeSheetCopies: number
   requestedQuantity: number
   widthIn: number
   heightIn: number
@@ -87,22 +94,19 @@ export interface SheetVariantResolution {
   placedHeightIn: number
 }
 
-export interface PrintableWidthFailure {
-  code: 'WIDTH_TOO_LARGE'
-  widthIn: number
-  lengthIn: number
-  printableWidthIn: number
-  message: string
-}
-
 function configuredPrintableWidth(config: BuilderResolveConfig): number | null {
-  const printableWidthIn = Number(config.printableWidthIn)
-  return Number.isFinite(printableWidthIn) && printableWidthIn > 0
-    ? printableWidthIn
+  const maxPrintableWidthIn = Number(config.maxPrintableWidthIn)
+  return Number.isFinite(maxPrintableWidthIn) && maxPrintableWidthIn > 0
+    ? maxPrintableWidthIn
     : null
 }
 
-export function getPrintableWidthFailure({
+function configuredFitTolerance(config: BuilderResolveConfig): number {
+  const fitToleranceIn = Number(config.fitToleranceIn)
+  return Number.isFinite(fitToleranceIn) && fitToleranceIn >= 0 ? fitToleranceIn : 0
+}
+
+export function getFinishedSheetWidthFailure({
   widthIn,
   heightIn,
   config,
@@ -110,28 +114,16 @@ export function getPrintableWidthFailure({
   widthIn: number
   heightIn: number
   config: BuilderResolveConfig
-}): PrintableWidthFailure | null {
-  const printableWidthIn = configuredPrintableWidth(config)
-  const normalizedWidthIn = Math.min(widthIn, heightIn)
-  const normalizedLengthIn = Math.max(widthIn, heightIn)
-  if (
-    !(normalizedWidthIn > 0) ||
-    !(normalizedLengthIn > 0) ||
-    printableWidthIn == null ||
-    normalizedWidthIn <= printableWidthIn
-  ) {
-    return null
-  }
-
-  const displayWidth = Number(normalizedWidthIn.toFixed(2))
-  const displayLimit = Number(printableWidthIn.toFixed(2))
-  return {
-    code: 'WIDTH_TOO_LARGE',
-    widthIn: normalizedWidthIn,
-    lengthIn: normalizedLengthIn,
-    printableWidthIn,
-    message: `Your file is ${displayWidth} inches wide; maximum printable width is ${displayLimit} inches.`,
-  }
+}): FinishedSheetWidthFailure | null {
+  const maxPrintableWidthIn = configuredPrintableWidth(config)
+  if (maxPrintableWidthIn == null) return null
+  const result = validateFinishedSheetFit({
+    widthIn,
+    heightIn,
+    maxPrintableWidthIn,
+    fitToleranceIn: configuredFitTolerance(config),
+  })
+  return !result.ok && result.code === 'WIDTH_TOO_LARGE' ? result : null
 }
 
 function normalizeOptionName(value: string | null | undefined): string {
@@ -496,24 +488,27 @@ function resolveVariantForFamily(
 
 function calculateFinishedSheetFit(
   design: Measurement,
-  sheet: Measurement
+  sheet: Measurement,
+  fitToleranceIn: number
 ): FinishedSheetFit | null {
   // A gang-sheet upload is already the production sheet. Normalization only
   // makes portrait and landscape exports equivalent for measurement; it does
   // not authorize arranging copies or rotating the production bytes.
-  const designWidthIn = Math.min(design.widthInch, design.heightInch)
-  const designLengthIn = Math.max(design.widthInch, design.heightInch)
-  // Product variants retain the merchant's stored width x length meaning.
-  // `22 x 12` is twelve billable inches on a nominal 22-inch product; unlike
-  // the uploaded file, the commercial variant is not orientation-normalized.
+  const normalizedDesign = normalizeFinishedSheet(design.widthInch, design.heightInch)
+  if (!normalizedDesign || !(sheet.widthInch > 0) || !(sheet.heightInch > 0)) return null
+  const designWidthIn = normalizedDesign.widthIn
+  const designLengthIn = normalizedDesign.lengthIn
+  // Shopify sheet sizes retain their commercial width × length meaning. The
+  // first value is the nominal product width and the second is the amount of
+  // film sold. Only the uploaded file is orientation-normalized.
   const sheetWidthIn = sheet.widthInch
   const sheetLengthIn = sheet.heightInch
 
-  // Cross-roll fit was already decided once, against config.printableWidthIn.
+  // Cross-roll fit was already decided once, against maxPrintableWidthIn.
   // The smaller number in a variant title is a nominal product label (shops
   // can have a 22-inch-labelled variant on 22.5 inches of printable film), so
   // it must not silently reintroduce a second, narrower roll-width limit.
-  if (designLengthIn > sheetLengthIn) return null
+  if (!isWithinFinishedSheetLimit(designLengthIn, sheetLengthIn, fitToleranceIn)) return null
 
   const designArea = designWidthIn * designLengthIn
   const sheetArea = sheetWidthIn * sheetLengthIn
@@ -549,24 +544,24 @@ export function resolveSheetVariant({
   const selectedServiceValues = getSelectedServiceOptionValues(matrix, variants, selectedVariantId)
   const design = { widthInch: widthIn, heightInch: heightIn }
   const requestedQuantity = Math.max(1, Math.floor(quantity))
-  // Width overflow is never a tolerance case. The short edge is the only
-  // cross-roll candidate, so no other orientation can make this file fit.
-  if (getPrintableWidthFailure({ widthIn, heightIn, config })) return null
+  // The short edge is the only cross-roll candidate. The merchant-visible
+  // fit tolerance is the sole allowance; no alternate orientation can help.
+  if (getFinishedSheetWidthFailure({ widthIn, heightIn, config })) return null
+
+  const fitToleranceIn = configuredFitTolerance(config)
 
   const validResults = matrix.sheetFamilies
     .map((family) => {
       const variant = resolveVariantForFamily(family, matrix, selectedServiceValues)
       if (!variant) return null
 
-      const sheetFit = calculateFinishedSheetFit(design, family)
+      const sheetFit = calculateFinishedSheetFit(design, family, fitToleranceIn)
       if (!sheetFit) return null
 
       return {
         family,
         variant,
         sheetFit,
-        designsPerSheet: 1,
-        sheetsNeeded: requestedQuantity,
         efficiency: sheetFit.efficiency,
       }
     })
@@ -590,8 +585,7 @@ export function resolveSheetVariant({
     selectedVariantId: selected.variant.id,
     selectedVariantTitle: selected.variant.title,
     selectedSheetLabel: selected.family.displayName,
-    designsPerSheet: selected.designsPerSheet,
-    sheetsNeeded: selected.sheetsNeeded,
+    wholeSheetCopies: requestedQuantity,
     requestedQuantity,
     widthIn: Math.min(widthIn, heightIn),
     heightIn: Math.max(widthIn, heightIn),

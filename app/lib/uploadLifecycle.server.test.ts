@@ -3,7 +3,7 @@ import {
   applyArtworkBoundsMeasurementMetadata,
   applyFullCanvasMeasurementMetadata,
   computeDocumentDpiInches,
-  computeRollWidthAnchoredInches,
+  computePrintableWidthAnchoredInches,
   computeSheetAnchoredInches,
   deriveUploadClientStatus,
   deriveUploadItemLifecycle,
@@ -181,10 +181,10 @@ describe('computeSheetAnchoredInches', () => {
     expect(lowDpi.effectiveDpi).toBe(72)
   })
 
-  it('falls back to 22" sheet width when none provided', () => {
+  it('falls back to the 22.5-inch maximum printable width when none is provided', () => {
     const result = computeSheetAnchoredInches(1584, 4320)
-    expect(result.sheetWidthIn).toBe(22)
-    expect(result.heightIn).toBe(60)
+    expect(result.sheetWidthIn).toBe(22.5)
+    expect(result.heightIn).toBe(61.3636)
   })
 
   it('honors a non-default sheet width (e.g. 24" press)', () => {
@@ -202,8 +202,8 @@ describe('computeSheetAnchoredInches', () => {
 
   it('rejects negative or zero sheet widths and uses default', () => {
     const r = computeSheetAnchoredInches(1584, 4320, 0)
-    expect(r.sheetWidthIn).toBe(22)
-    expect(r.heightIn).toBe(60)
+    expect(r.sheetWidthIn).toBe(22.5)
+    expect(r.heightIn).toBe(61.3636)
   })
 
 
@@ -242,23 +242,36 @@ describe('computeSheetAnchoredInches', () => {
   })
 })
 
-describe('computeRollWidthAnchoredInches', () => {
-  it('recovers an exact sold sheet size from a no-DPI pixel ratio without a tolerance', () => {
-    const result = computeRollWidthAnchoredInches(6600, 3600, 22, [{ widthIn: 22, heightIn: 12 }])
+describe('computePrintableWidthAnchoredInches', () => {
+  it('recovers a sold sheet size from a no-DPI pixel ratio under a wider press limit', () => {
+    const result = computePrintableWidthAnchoredInches(
+      6600,
+      3600,
+      22.5,
+      [{ widthIn: 22, heightIn: 12 }],
+      0.02
+    )
     expect(result.widthIn).toBe(22)
     expect(result.heightIn).toBe(12)
     expect(result.effectiveDpi).toBe(300)
-    expect(result.sheetLengthIn).toBe(22)
+    expect(result.sheetWidthIn).toBe(22.5)
+    expect(result.sheetLengthIn).toBe(12)
   })
 
-  it('keeps variable-length uploads anchored to a 22" short side when no exact sheet ratio matches', () => {
-    const result = computeRollWidthAnchoredInches(6485, 2605, 22, [
-      { widthIn: 22, heightIn: 48 },
-      { widthIn: 22, heightIn: 60 },
-    ])
-    expect(result.widthIn).toBe(54.77)
-    expect(result.heightIn).toBe(22)
-    expect(result.effectiveDpi).toBe(118)
+  it('anchors to 22.5 when no sold-sheet ratio matches', () => {
+    const result = computePrintableWidthAnchoredInches(
+      6485,
+      2605,
+      22.5,
+      [
+        { widthIn: 22, heightIn: 48 },
+        { widthIn: 22, heightIn: 60 },
+      ],
+      0.02
+    )
+    expect(result.widthIn).toBe(56.0125)
+    expect(result.heightIn).toBe(22.5)
+    expect(result.effectiveDpi).toBe(116)
   })
 })
 
@@ -412,8 +425,8 @@ describe('computeDocumentDpiInches', () => {
   it('matches Adobe dimensions from embedded DPI for non-roll-width artwork', () => {
     const result = computeDocumentDpiInches(6485, 2605, 300)
 
-    expect(result?.widthIn).toBe(21.62)
-    expect(result?.heightIn).toBe(8.68)
+    expect(result?.widthIn).toBe(21.6167)
+    expect(result?.heightIn).toBe(8.6833)
   })
 
   it('rejects missing or implausible document DPI so callers can fall back', () => {
@@ -450,8 +463,8 @@ describe('lifecycle prefers document DPI over sheet anchor when present', () => 
       thumbnailKey: 'preview/key',
     })
 
-    expect(lifecycle.metadata?.widthIn).toBe(54.77)
-    expect(lifecycle.metadata?.heightIn).toBe(22)
+    expect(lifecycle.metadata?.widthIn).toBe(54.7651)
+    expect(lifecycle.metadata?.heightIn).toBe(21.9989)
     expect(lifecycle.metadata?.sizingSource).toBe('document_dpi')
     expect(lifecycle.metadata?.documentDpi).toBeCloseTo(118.4148, 2)
     expect(lifecycle.metadata?.effectiveDpi).toBeCloseTo(118.4148, 2)
@@ -482,8 +495,8 @@ describe('lifecycle prefers document DPI over sheet anchor when present', () => 
       thumbnailKey: 'preview/key',
     })
 
-    expect(lifecycle.metadata?.widthIn).toBe(21.62)
-    expect(lifecycle.metadata?.heightIn).toBe(8.68)
+    expect(lifecycle.metadata?.widthIn).toBe(21.6167)
+    expect(lifecycle.metadata?.heightIn).toBe(8.6834)
     expect(lifecycle.metadata?.sizingSource).toBe('document_dpi')
   })
 
@@ -514,7 +527,7 @@ describe('lifecycle prefers document DPI over sheet anchor when present', () => 
 
     expect(lifecycle.metadata?.sizingSource).toBe('adobe_default_dpi')
     expect(lifecycle.metadata?.widthIn).toBe(20.75)
-    expect(lifecycle.metadata?.heightIn).toBe(9.28)
+    expect(lifecycle.metadata?.heightIn).toBe(9.2778)
     expect(lifecycle.metadata?.documentDpi).toBe(0)
   })
 
@@ -572,8 +585,8 @@ describe('applyFullCanvasMeasurementMetadata — uses documentDpi when present',
       measurementMode: 'full',
     })
 
-    expect(result?.widthIn).toBe(54.77)
-    expect(result?.heightIn).toBe(22)
+    expect(result?.widthIn).toBe(54.7651)
+    expect(result?.heightIn).toBe(21.9989)
     expect(result?.sizingSource).toBe('document_dpi')
   })
 })
@@ -631,26 +644,47 @@ describe('applyArtworkBoundsMeasurementMetadata', () => {
     expect(result?.heightIn).toBe(30)
   })
 
-  it('does not use a nearby sheet ratio to rewrite the anchored length', () => {
-    const result = computeRollWidthAnchoredInches(6603, 3600, 22, [
-      { widthIn: 22, heightIn: 12 },
-    ])
-    expect(result.widthIn).toBe(40.35)
-    expect(result.heightIn).toBe(22)
+  it('uses the visible tolerance for one-pixel sold-sheet ratio drift', () => {
+    const result = computePrintableWidthAnchoredInches(
+      6603,
+      3600,
+      22.5,
+      [{ widthIn: 22, heightIn: 12 }],
+      0.02
+    )
+    expect(result.widthIn).toBe(22)
+    expect(result.heightIn).toBe(12)
   })
 })
 
 describe('resolveBestDimensions', () => {
-  it('anchors a no-DPI file whose Adobe short edge is 22.01 inches', () => {
+  it('ignores absurd embedded DPI and falls back to Adobe 72 DPI sizing', () => {
     const result = resolveBestDimensions(
-      7200,
-      1585,
-      0,
-      computeRollWidthAnchoredInches(7200, 1585, 22),
-      'sheet_width_anchor'
+      1584,
+      4320,
+      20000,
+      computePrintableWidthAnchoredInches(1584, 4320, 22.5, [], 0.02),
+      'max_printable_width_anchor',
+      0.02
     )
 
-    expect(result.sizingSource).toBe('sheet_width_anchor')
-    expect(Math.min(result.widthIn, result.heightIn)).toBe(22)
+    expect(result.sizingSource).toBe('adobe_default_dpi')
+    expect(result.widthIn).toBe(22)
+    expect(result.heightIn).toBe(60)
+    expect(result.effectiveDpi).toBe(72)
+  })
+
+  it('anchors a no-DPI file whose Adobe short edge materially exceeds 22.5', () => {
+    const result = resolveBestDimensions(
+      7200,
+      1622,
+      0,
+      computePrintableWidthAnchoredInches(7200, 1622, 22.5, [], 0.02),
+      'max_printable_width_anchor',
+      0.02
+    )
+
+    expect(result.sizingSource).toBe('max_printable_width_anchor')
+    expect(Math.min(result.widthIn, result.heightIn)).toBe(22.5)
   })
 })

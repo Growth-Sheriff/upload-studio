@@ -18,18 +18,9 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from '@remix-run/node'
 import prisma from '~/lib/prisma.server'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
-import {
-  deriveUploadItemLifecycle,
-  getStoredMeasurementBasis,
-} from '~/lib/uploadLifecycle.server'
-import {
-  MAIN_PRODUCT_MEASUREMENT_POLICY,
-  resolveServerMainProductRollWidth,
-} from '~/lib/mainProductMeasurement.server'
+import { deriveUploadItemLifecycle } from '~/lib/uploadLifecycle.server'
 import { persistMainProductMeasurementProjection } from '~/lib/mainProductMeasurementPersistence.server'
-import {
-  getRuntimeMeasurementBasis,
-} from '~/lib/customerPricingModel.server'
+import { resolveFinishedSheetSettings } from '~/lib/finishedSheetMeasurement'
 import { normalizeCustomerId } from '~/lib/customerPricing.server'
 import { hasUploadOrderHistory } from '~/lib/uploadQuantitySemantics'
 import { resolveForMetadata } from '~/lib/sheetResolution.server'
@@ -229,11 +220,9 @@ export async function action({ request }: ActionFunctionArgs) {
         productConfig?.builderConfig && typeof productConfig.builderConfig === 'object'
           ? (productConfig.builderConfig as Record<string, unknown>)
           : null
-      // Supplying a main-product cart line selects this server endpoint's
-      // full-page policy. Neither policy nor physical roll width is accepted
-      // from the request body.
-      const measurementPolicy = MAIN_PRODUCT_MEASUREMENT_POLICY
-      const configuredRollWidth = resolveServerMainProductRollWidth(builderConfig)
+      // The product's three visible settings are authoritative. The request
+      // body cannot supply or override measurement limits.
+      const finishedSheetSettings = resolveFinishedSheetSettings(builderConfig)
 
       const resolved = await resolveForMetadata({
         shopDomain,
@@ -249,12 +238,6 @@ export async function action({ request }: ActionFunctionArgs) {
         selectedVariantId: requestedLine.selectedVariantId || upload.variantId,
         lockSelectedVariant: requestedLine.lockSelectedVariant,
         customerId: signedCustomerId,
-        measurementPolicy,
-        measurementBasis: getStoredMeasurementBasis(
-          firstItem.preflightResult,
-          getRuntimeMeasurementBasis(shopDomain, shop.settings)
-        ),
-        rollWidthIn: configuredRollWidth,
       })
 
       if (resolved.kind !== 'ok') {
@@ -262,7 +245,7 @@ export async function action({ request }: ActionFunctionArgs) {
           await persistMainProductMeasurementProjection(
             firstItem.id,
             resolved.canonicalMetadata,
-            configuredRollWidth
+            finishedSheetSettings
           )
         }
         lifecycleByUploadId.set(upload.id, { ...lifecycleState, orderable: false })
@@ -280,7 +263,7 @@ export async function action({ request }: ActionFunctionArgs) {
       await persistMainProductMeasurementProjection(
         firstItem.id,
         resolved.canonicalMetadata,
-        configuredRollWidth
+        finishedSheetSettings
       )
 
       const resolution = resolved.resolution

@@ -1,16 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
-  applyMainProductMeasurementPolicy,
-  getMainProductSheetSizes,
-  MAIN_PRODUCT_MEASUREMENT_POLICY,
+  applyFinishedSheetMeasurementPolicy,
+  FINISHED_SHEET_MEASUREMENT_POLICY,
+  getFinishedSheetSizes,
   resolveUploadIntentMeasurementBasis,
-  resolveServerMainProductRollWidth,
 } from './mainProductMeasurement.server'
-import {
-  resolveSheetVariant,
-  type ProductOptionDef,
-  type ProductVariantDef,
-} from './dtfSheetResolver.server'
+import type { ProductVariantDef } from './dtfSheetResolver.server'
 import type { UploadLifecycleMetadata } from './uploadLifecycle.server'
 
 function measurement(overrides: Partial<UploadLifecycleMetadata>): UploadLifecycleMetadata {
@@ -28,7 +23,7 @@ function measurement(overrides: Partial<UploadLifecycleMetadata>): UploadLifecyc
     measurementHeightPx: 0,
     effectiveDpi: 0,
     sizingSource: null,
-    sheetWidthIn: 22,
+    sheetWidthIn: 22.5,
     sheetLengthIn: undefined,
     widthIn: 0,
     heightIn: 0,
@@ -37,19 +32,19 @@ function measurement(overrides: Partial<UploadLifecycleMetadata>): UploadLifecyc
   }
 }
 
-describe('resolveUploadIntentMeasurementBasis', () => {
-  it('lets only the exact main-product marker select full-page intent', () => {
-    expect(resolveUploadIntentMeasurementBasis('artwork_bounds', MAIN_PRODUCT_MEASUREMENT_POLICY)).toBe(
+describe('finished-sheet measurement policy', () => {
+  it('selects the full production canvas for canonical and historical policy markers', () => {
+    expect(
+      resolveUploadIntentMeasurementBasis('artwork_bounds', FINISHED_SHEET_MEASUREMENT_POLICY)
+    ).toBe('full_page')
+    expect(resolveUploadIntentMeasurementBasis('artwork_bounds', 'main_product_roll_width')).toBe(
       'full_page'
     )
     expect(resolveUploadIntentMeasurementBasis('artwork_bounds', 'other')).toBe('artwork_bounds')
-    expect(resolveUploadIntentMeasurementBasis('full_page', null)).toBe('full_page')
   })
-})
 
-describe('applyMainProductMeasurementPolicy', () => {
-  it('preserves document-DPI truth for metreicin-style uploads', () => {
-    const result = applyMainProductMeasurementPolicy(
+  it('keeps embedded-DPI dimensions instead of anchoring them to the press limit', () => {
+    const result = applyFinishedSheetMeasurementPolicy(
       measurement({
         widthPx: 6485,
         heightPx: 2605,
@@ -58,205 +53,65 @@ describe('applyMainProductMeasurementPolicy', () => {
         dpi: 118.4148,
         documentDpi: 118.4148,
         documentDpiSource: 'png_phys',
-        sizingSource: 'document_dpi',
-        widthIn: 54.77,
-        heightIn: 22,
-      }),
-      { measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY, rollWidthIn: 22 }
-    )
-
-    expect(result?.widthIn).toBe(54.77)
-    expect(result?.heightIn).toBe(22)
-    expect(result?.sizingSource).toBe('document_dpi')
-    expect(result?.effectiveDpi).toBeCloseTo(118.4148, 4)
-  })
-
-  it('does not re-anchor Adobe-default no-DPI truth for Genuity-style uploads', () => {
-    const result = applyMainProductMeasurementPolicy(
-      measurement({
-        widthPx: 1494,
-        heightPx: 668,
-        measurementWidthPx: 1494,
-        measurementHeightPx: 668,
-        effectiveDpi: 72,
-        sizingSource: 'adobe_default_dpi',
-        widthIn: 20.75,
-        heightIn: 9.28,
-      }),
-      { measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY, rollWidthIn: 22 }
-    )
-
-    expect(result?.widthIn).toBe(20.75)
-    expect(result?.heightIn).toBe(9.28)
-    expect(result?.sizingSource).toBe('adobe_default_dpi')
-  })
-
-  it('uses Genuity-style normalized length to select 22x24', () => {
-    const variants: ProductVariantDef[] = [
-      {
-        id: '12',
-        title: '22 x 12',
-        price: '12.00',
-        available: true,
-        availableForSale: true,
-        option1: '22 x 12',
-        options: ['22 x 12'],
-        selectedOptions: [{ name: 'Size', value: '22 x 12' }],
-      },
-      {
-        id: '24',
-        title: '22 x 24',
-        price: '20.00',
-        available: true,
-        availableForSale: true,
-        option1: '22 x 24',
-        options: ['22 x 24'],
-        selectedOptions: [{ name: 'Size', value: '22 x 24' }],
-      },
-      {
-        id: '60',
-        title: '22 x 60',
-        price: '27.00',
-        available: true,
-        availableForSale: true,
-        option1: '22 x 60',
-        options: ['22 x 60'],
-        selectedOptions: [{ name: 'Size', value: '22 x 60' }],
-      },
-    ]
-    const optionDefs: ProductOptionDef[] = [{ name: 'Size', values: ['22 x 12', '22 x 24', '22 x 60'] }]
-
-    const result = applyMainProductMeasurementPolicy(
-      measurement({
-        widthPx: 1494,
-        heightPx: 668,
-        measurementWidthPx: 1494,
-        measurementHeightPx: 668,
-        effectiveDpi: 72,
-        sizingSource: 'adobe_default_dpi',
-        widthIn: 20.75,
-        heightIn: 9.28,
       }),
       {
-        measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
-        rollWidthIn: 22,
-        sheetSizes: getMainProductSheetSizes(variants),
+        measurementPolicy: FINISHED_SHEET_MEASUREMENT_POLICY,
+        maxPrintableWidthIn: 22.5,
+        fitToleranceIn: 0.02,
       }
     )
 
-    const resolution = resolveSheetVariant({
-      widthIn: result.widthIn,
-      heightIn: result.heightIn,
-      quantity: 1,
-      variants,
-      optionDefs,
-      selectedVariantId: '12',
-      config: {
-        sheetOptionName: 'Size',
-      },
-    })
-
-    expect(result.widthIn).toBe(20.75)
-    expect(result.heightIn).toBe(9.28)
-    expect(resolution?.selectedVariantId).toBe('24')
+    expect(result?.widthIn).toBe(54.7651)
+    expect(result?.heightIn).toBe(21.9989)
+    expect(result?.sizingSource).toBe('document_dpi')
   })
 
-  it('recovers an exact sold sheet ratio before normalizing width and length', () => {
-    const result = applyMainProductMeasurementPolicy(
+  it('calibrates a no-DPI 6600x3600 export to its 22x12 sold variant under a 22.5 press limit', () => {
+    const result = applyFinishedSheetMeasurementPolicy(
       measurement({
         widthPx: 6600,
         heightPx: 3600,
         measurementWidthPx: 6600,
         measurementHeightPx: 3600,
-        effectiveDpi: 164,
-        sizingSource: 'sheet_width_anchor',
-        widthIn: 40.33,
-        heightIn: 22,
       }),
       {
-        measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
-        rollWidthIn: 22,
+        measurementPolicy: FINISHED_SHEET_MEASUREMENT_POLICY,
+        maxPrintableWidthIn: 22.5,
+        fitToleranceIn: 0.02,
         sheetSizes: [{ widthIn: 22, heightIn: 12 }],
       }
     )
 
     expect(result?.widthIn).toBe(22)
     expect(result?.heightIn).toBe(12)
-    expect(result?.sizingSource).toBe('sheet_width_anchor')
-    expect(result?.sheetLengthIn).toBe(22)
+    expect(result?.sheetWidthIn).toBe(22.5)
+    expect(result?.sheetLengthIn).toBe(12)
+    expect(result?.sizingSource).toBe('max_printable_width_anchor')
   })
 
-  it('keeps large no-DPI gang sheets anchored to the roll when no exact sheet ratio matches', () => {
-    const result = applyMainProductMeasurementPolicy(
+  it('uses Adobe 72 DPI for a no-DPI file whose short edge already fits', () => {
+    const result = applyFinishedSheetMeasurementPolicy(
       measurement({
-        widthPx: 6485,
-        heightPx: 2605,
-        measurementWidthPx: 6485,
-        measurementHeightPx: 2605,
-        effectiveDpi: 118,
-        sizingSource: 'sheet_width_anchor',
-        widthIn: 54.77,
-        heightIn: 22,
+        widthPx: 1494,
+        heightPx: 668,
+        measurementWidthPx: 1494,
+        measurementHeightPx: 668,
       }),
       {
-        measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
-        rollWidthIn: 22,
-        sheetSizes: [{ widthIn: 22, heightIn: 60 }],
+        measurementPolicy: FINISHED_SHEET_MEASUREMENT_POLICY,
+        maxPrintableWidthIn: 22.5,
+        fitToleranceIn: 0.02,
       }
     )
 
-    expect(result?.widthIn).toBe(54.77)
-    expect(result?.heightIn).toBe(22)
-    expect(result?.sizingSource).toBe('sheet_width_anchor')
-  })
-
-  it('inherits the server-measured roll width when no provisional width is supplied', () => {
-    const result = applyMainProductMeasurementPolicy(
-      measurement({
-        widthPx: 2250,
-        heightPx: 4500,
-        measurementWidthPx: 2250,
-        measurementHeightPx: 4500,
-        sheetWidthIn: 22.5,
-        sizingSource: 'sheet_width_anchor',
-        widthIn: 22.5,
-        heightIn: 45,
-      }),
-      { measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY }
-    )
-
-    expect(result?.sheetWidthIn).toBe(22.5)
-    expect(result?.widthIn).toBe(22.5)
-    expect(result?.heightIn).toBe(45)
+    expect(result?.widthIn).toBe(20.75)
+    expect(result?.heightIn).toBe(9.2778)
+    expect(result?.sizingSource).toBe('adobe_default_dpi')
   })
 })
 
-describe('resolveServerMainProductRollWidth', () => {
-  it('preserves the legacy 22-inch main-product default', () => {
-    expect(resolveServerMainProductRollWidth(null)).toBe(22)
-  })
-
-  it('uses a dedicated server-side roll width instead of maxWidthIn', () => {
-    expect(resolveServerMainProductRollWidth({ rollWidthIn: 24, maxWidthIn: 1 })).toBe(24)
-  })
-
-  it('keeps the legacy maxWidthIn roll anchor until rollWidthIn is explicitly saved', () => {
-    expect(resolveServerMainProductRollWidth({ maxWidthIn: 22.5 })).toBe(22.5)
-    expect(resolveServerMainProductRollWidth({ maxWidthIn: 60, maxHeightIn: 35.75 })).toBe(35.75)
-  })
-
-  it('takes the printable width only from the product configuration', () => {
-    expect(resolveServerMainProductRollWidth({ rollWidthIn: 24 })).toBe(24)
-  })
-
-  it('rejects corrupt roll widths outside the admin contract', () => {
-    expect(resolveServerMainProductRollWidth({ rollWidthIn: 0.01 })).toBe(22)
-    expect(resolveServerMainProductRollWidth({ rollWidthIn: 121 })).toBe(22)
-  })
-})
-
-describe('getMainProductSheetSizes', () => {
-  it('parses sheet sizes from composite variant titles and selected options', () => {
+describe('getFinishedSheetSizes', () => {
+  it('parses nominal sheet dimensions without treating nominal width as the press limit', () => {
     const variants: ProductVariantDef[] = [
       {
         id: '1',
@@ -278,7 +133,7 @@ describe('getMainProductSheetSizes', () => {
       },
     ]
 
-    expect(getMainProductSheetSizes(variants)).toEqual([
+    expect(getFinishedSheetSizes(variants)).toEqual([
       { widthIn: 22, heightIn: 12 },
       { widthIn: 22, heightIn: 60 },
     ])
