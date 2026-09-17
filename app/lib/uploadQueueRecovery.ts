@@ -42,10 +42,180 @@ export function resolvePreviewStatusAfterMeasurement(input: {
   hasThumbnail: boolean
   usedPlaceholder: boolean
 }): UploadStageStatus {
-  if (!input.hasThumbnail) return input.storedStatus || 'pending'
+  if (!input.hasThumbnail) {
+    return input.storedStatus === 'warning' || input.storedStatus === 'error'
+      ? input.storedStatus
+      : 'pending'
+  }
   if (input.usedPlaceholder || input.storedStatus === 'warning') return 'warning'
   if (input.storedStatus === 'error') return 'error'
   return 'ready'
+}
+
+export function deriveDurablePreviewEvidence(
+  thumbnailKey: string | null | undefined,
+  storedPreview: unknown
+): { hasThumbnail: boolean; usedPlaceholder: boolean } {
+  const hasThumbnail = typeof thumbnailKey === 'string' && thumbnailKey.trim().length > 0
+  const preview =
+    storedPreview && typeof storedPreview === 'object'
+      ? (storedPreview as Record<string, unknown>)
+      : {}
+  return {
+    hasThumbnail,
+    // JSON flags are descriptive, not proof that an asset still has a durable
+    // location. A stale flag must never manufacture preview capability.
+    usedPlaceholder:
+      hasThumbnail &&
+      (preview.usedPlaceholder === true || thumbnailKey.includes('_placeholder.webp')),
+  }
+}
+
+export type MeasurementFailureTransition =
+  | {
+      kind: 'retry'
+      message: string
+      attempt: number
+      maxAttempts: number
+    }
+  | {
+      kind: 'terminal'
+      code: string
+      message: string
+      checks: Array<Record<string, unknown>>
+    }
+
+export type MeasurementFailureProjection =
+  | {
+      kind: 'retry'
+      preflightStatus: 'pending'
+      preflightResult: Record<string, unknown>
+    }
+  | {
+      kind: 'terminal'
+      preflightStatus: 'error'
+      preflightResult: Record<string, unknown>
+    }
+
+function normalizeStageStatus(value: unknown): UploadStageStatus | null {
+  if (value === 'pending' || value === 'ready' || value === 'warning' || value === 'error') {
+    return value
+  }
+  return null
+}
+
+function mergeMeasurementProblems(
+  existing: unknown,
+  next: Record<string, unknown>
+): Array<Record<string, unknown>> {
+  const merged = new Map<string, Record<string, unknown>>()
+  const candidates = Array.isArray(existing) ? [...existing, next] : [next]
+
+  for (const problem of candidates) {
+    if (!problem || typeof problem !== 'object') continue
+    const value = problem as Record<string, unknown>
+    const key = `${String(value.scope || 'processing')}:${String(value.code || 'unknown')}:${String(value.message || '')}`
+    merged.set(key, value)
+  }
+
+  return Array.from(merged.values())
+}
+
+/**
+ * Projects a failed measurement execution into the durable upload shape.
+ *
+ * The processor catch, BullMQ failed event, and queue reconciler all converge
+ * here so retries and terminal failures cannot disagree about preview state,
+ * capabilities, or preservation of independently-owned stage records.
+ */
+export function buildMeasurementFailureProjection(input: {
+  existingResult: Record<string, unknown>
+  hasThumbnail: boolean
+  usedPlaceholder: boolean
+  transition: MeasurementFailureTransition
+}): MeasurementFailureProjection {
+  const existingStages =
+    input.existingResult.stages && typeof input.existingResult.stages === 'object'
+      ? (input.existingResult.stages as Record<string, unknown>)
+      : {}
+  const existingPreviewStage =
+    existingStages.preview && typeof existingStages.preview === 'object'
+      ? (existingStages.preview as Record<string, unknown>)
+      : {}
+  const existingPreview =
+    input.existingResult.preview && typeof input.existingResult.preview === 'object'
+      ? (input.existingResult.preview as Record<string, unknown>)
+      : {}
+  const previewStatus = resolvePreviewStatusAfterMeasurement({
+    storedStatus: normalizeStageStatus(existingPreviewStage.status),
+    hasThumbnail: input.hasThumbnail,
+    usedPlaceholder: input.usedPlaceholder,
+  })
+  const previewStage = {
+    ...existingPreviewStage,
+    status: previewStatus,
+    hasThumbnail: input.hasThumbnail,
+    usedPlaceholder: input.usedPlaceholder,
+  }
+  const preview = {
+    ...existingPreview,
+    hasThumbnail: input.hasThumbnail,
+    usedPlaceholder: input.usedPlaceholder,
+  }
+  const capabilities = {
+    canAddToCart: false,
+    canResolveProduct: false,
+    hasPreview: input.hasThumbnail,
+  }
+
+  if (input.transition.kind === 'retry') {
+    return {
+      kind: 'retry',
+      preflightStatus: 'pending',
+      preflightResult: {
+        ...input.existingResult,
+        overall: 'processing',
+        stages: {
+          ...existingStages,
+          measurement: {
+            status: 'pending',
+            retrying: true,
+            attempt: input.transition.attempt,
+            maxAttempts: input.transition.maxAttempts,
+            lastError: input.transition.message,
+          },
+          preview: previewStage,
+          orderability: { status: 'processing' },
+        },
+        capabilities,
+        preview,
+      },
+    }
+  }
+
+  return {
+    kind: 'terminal',
+    preflightStatus: 'error',
+    preflightResult: {
+      ...input.existingResult,
+      overall: 'error',
+      problems: mergeMeasurementProblems(input.existingResult.problems, {
+        scope: 'processing',
+        code: input.transition.code,
+        severity: 'error',
+        message: input.transition.message,
+      }),
+      stages: {
+        ...existingStages,
+        measurement: { status: 'error' },
+        preview: previewStage,
+        orderability: { status: 'blocked' },
+      },
+      capabilities,
+      preview,
+      checks: input.transition.checks.map((check) => ({ ...check })),
+    },
+  }
 }
 
 /** A fresh ImageMagick result supersedes the retry marker written by an

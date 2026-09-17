@@ -1,8 +1,9 @@
 import { Queue } from 'bullmq'
 import {
+  buildMeasurementFailureProjection,
+  deriveDurablePreviewEvidence,
   getUploadQueueRecoveryPlan,
   normalizeUploadQueueJobState,
-  resolvePreviewStatusAfterMeasurement,
   type UploadQueueJobState,
 } from '../app/lib/uploadQueueRecovery'
 import { deriveUploadItemLifecycle } from '../app/lib/uploadLifecycle.server'
@@ -143,59 +144,31 @@ async function persistReconciledMeasurementFailure(input: {
     }
 
     const existingResult = getResultRecord(item.preflightResult)
-    const existingStages =
-      existingResult.stages && typeof existingResult.stages === 'object'
-        ? (existingResult.stages as Record<string, unknown>)
-        : {}
     const existingPreview =
       existingResult.preview && typeof existingResult.preview === 'object'
         ? (existingResult.preview as Record<string, unknown>)
         : {}
-    const hasThumbnail = Boolean(item.thumbnailKey) || existingPreview.hasThumbnail === true
-    const usedPlaceholder =
-      existingPreview.usedPlaceholder === true ||
-      Boolean(item.thumbnailKey?.includes('_placeholder.webp'))
-    const previewStage =
-      existingStages.preview && typeof existingStages.preview === 'object'
-        ? (existingStages.preview as Record<string, unknown>)
-        : {}
-    const previewStatus = resolvePreviewStatusAfterMeasurement({
-      storedStatus:
-        previewStage.status === 'pending' ||
-        previewStage.status === 'ready' ||
-        previewStage.status === 'warning' ||
-        previewStage.status === 'error'
-          ? previewStage.status
-          : null,
+    const { hasThumbnail, usedPlaceholder } = deriveDurablePreviewEvidence(
+      item.thumbnailKey,
+      existingPreview
+    )
+    const projection = buildMeasurementFailureProjection({
+      existingResult,
       hasThumbnail,
       usedPlaceholder,
+      transition: {
+        kind: 'terminal',
+        code,
+        message,
+        checks: [{ name: 'processing', status: 'error', message }],
+      },
     })
-    const nextResult = {
-      ...existingResult,
-      overall: 'error',
-      problems: mergeProblems(existingResult.problems, [
-        { scope: 'processing', code, severity: 'error', message },
-      ]),
-      stages: {
-        ...existingStages,
-        measurement: { status: 'error' },
-        preview: { status: previewStatus, hasThumbnail, usedPlaceholder },
-        orderability: { status: 'blocked' },
-      },
-      capabilities: {
-        canAddToCart: false,
-        canResolveProduct: false,
-        hasPreview: hasThumbnail,
-      },
-      preview: { ...existingPreview, hasThumbnail, usedPlaceholder },
-      checks: [{ name: 'processing', status: 'error', message }],
-    }
     const saved = await compareAndSwapUploadItemResult({
       itemId: input.itemId,
       expectedStatus: item.preflightStatus,
       expectedResult: item.preflightResult,
-      nextStatus: 'error',
-      nextResult,
+      nextStatus: projection.preflightStatus,
+      nextResult: projection.preflightResult,
       expectedThumbnailKey: item.thumbnailKey,
       expectedPreviewKey: item.previewKey,
       thumbnailKey: item.thumbnailKey,

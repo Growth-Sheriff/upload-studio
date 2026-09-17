@@ -6,7 +6,9 @@ import {
   MEASURE_PREFLIGHT_JOB_OPTIONS,
 } from '../app/lib/uploadQueues'
 import {
+  buildMeasurementFailureProjection,
   clearStoredMeasurementStage,
+  deriveDurablePreviewEvidence,
   resolvePreviewStatusAfterMeasurement,
 } from '../app/lib/uploadQueueRecovery'
 import {
@@ -34,20 +36,6 @@ function normalizeStageStatus(value: unknown): 'pending' | 'ready' | 'warning' |
     return value
   }
   return null
-}
-
-function mergeProblems(
-  existingProblems: Array<Record<string, unknown>>,
-  nextProblems: Array<Record<string, unknown>>
-): Array<Record<string, unknown>> {
-  const merged = new Map<string, Record<string, unknown>>()
-
-  for (const problem of [...existingProblems, ...nextProblems]) {
-    const key = `${String(problem.scope || 'processing')}:${String(problem.code || 'unknown')}:${String(problem.message || '')}`
-    merged.set(key, problem)
-  }
-
-  return Array.from(merged.values())
 }
 
 async function repairUploadAggregateStatus(uploadId: string, shopId: string) {
@@ -251,11 +239,10 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
             ? (existingStages.preview as Record<string, unknown>)
             : {}
         const storedPreviewStatus = normalizeStageStatus(storedPreviewStage.status)
-        const previewHasThumbnail =
-          Boolean(latestItem.thumbnailKey) || existingPreview.hasThumbnail === true
-        const previewUsedPlaceholder =
-          existingPreview.usedPlaceholder === true ||
-          Boolean(latestItem.thumbnailKey?.includes('_placeholder.webp'))
+        const {
+          hasThumbnail: previewHasThumbnail,
+          usedPlaceholder: previewUsedPlaceholder,
+        } = deriveDurablePreviewEvidence(latestItem.thumbnailKey, existingPreview)
         // A durable thumbnail supersedes an old pending retry marker. Preserve
         // warning/error, but never leave preview pending when the asset exists.
         const previewStatus = resolvePreviewStatusAfterMeasurement({
@@ -280,7 +267,7 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
           capabilities: {
             canAddToCart: lifecycle.canAddToCart,
             canResolveProduct: lifecycle.canResolveProduct,
-            hasPreview: lifecycle.hasPreview,
+            hasPreview: previewHasThumbnail,
           },
           preview: {
             ...existingPreview,
@@ -366,61 +353,31 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
         existingResult.preview && typeof existingResult.preview === 'object'
           ? (existingResult.preview as Record<string, unknown>)
           : {}
-      const existingProblems = Array.isArray(existingResult.problems)
-        ? (existingResult.problems as unknown[]).filter(
-            (problem): problem is Record<string, unknown> =>
-              Boolean(problem) && typeof problem === 'object'
-          )
-        : []
-      const hasThumbnail = Boolean(latestItem?.thumbnailKey) || existingPreview.hasThumbnail === true
-      const usedPlaceholder =
-        existingPreview.usedPlaceholder === true ||
-        Boolean(latestItem?.thumbnailKey?.includes('_placeholder.webp'))
+      const { hasThumbnail, usedPlaceholder } = deriveDurablePreviewEvidence(
+        latestItem.thumbnailKey,
+        existingPreview
+      )
       const finalAttempt = isFinalUploadJobAttempt(job.attemptsMade, job.opts.attempts)
+      const message = error instanceof Error ? error.message : 'Unknown error'
 
       if (!finalAttempt) {
-        const message = error instanceof Error ? error.message : 'Unknown error'
-        const existingStages =
-          existingResult.stages && typeof existingResult.stages === 'object'
-            ? (existingResult.stages as Record<string, unknown>)
-            : {}
-
-        const nextRetryResult = {
-          ...existingResult,
-          overall: 'processing',
-          stages: {
-            ...existingStages,
-            measurement: {
-              status: 'pending',
-              retrying: true,
-              attempt: job.attemptsMade + 1,
-              maxAttempts: Math.max(1, Number(job.opts.attempts) || 1),
-              lastError: message,
-            },
-            preview: {
-              status: hasThumbnail ? (usedPlaceholder ? 'warning' : 'ready') : 'pending',
-              hasThumbnail,
-              usedPlaceholder,
-            },
-            orderability: { status: 'processing' },
+        const projection = buildMeasurementFailureProjection({
+          existingResult,
+          hasThumbnail,
+          usedPlaceholder,
+          transition: {
+            kind: 'retry',
+            message,
+            attempt: job.attemptsMade + 1,
+            maxAttempts: Math.max(1, Number(job.opts.attempts) || 1),
           },
-          capabilities: {
-            canAddToCart: false,
-            canResolveProduct: false,
-            hasPreview: hasThumbnail,
-          },
-          preview: {
-            ...existingPreview,
-            hasThumbnail,
-            usedPlaceholder,
-          },
-        }
+        })
         await compareAndSwapUploadItemResult({
           itemId,
           expectedStatus: latestItem.preflightStatus,
           expectedResult: latestItem.preflightResult,
-          nextStatus: 'pending',
-          nextResult: nextRetryResult,
+          nextStatus: projection.preflightStatus,
+          nextResult: projection.preflightResult,
           expectedThumbnailKey: latestItem.thumbnailKey,
           expectedPreviewKey: latestItem.previewKey,
           thumbnailKey: latestItem.thumbnailKey,
@@ -442,50 +399,23 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
         throw error
       }
 
-      const nextTerminalResult = {
-        ...existingResult,
-        overall: 'error',
-        problems: mergeProblems(existingProblems, [
-          {
-            scope: 'processing',
-            code: 'processing',
-            severity: 'error',
-            message: error instanceof Error ? error.message : 'Unknown error',
-          },
-        ]),
-        stages: {
-          measurement: { status: 'error' },
-          preview: {
-            status: hasThumbnail ? (usedPlaceholder ? 'warning' : 'ready') : 'pending',
-            hasThumbnail,
-            usedPlaceholder,
-          },
-          orderability: { status: 'blocked' },
+      const projection = buildMeasurementFailureProjection({
+        existingResult,
+        hasThumbnail,
+        usedPlaceholder,
+        transition: {
+          kind: 'terminal',
+          code: 'processing',
+          message,
+          checks: [{ name: 'processing', status: 'error', message }],
         },
-        capabilities: {
-          canAddToCart: false,
-          canResolveProduct: false,
-          hasPreview: hasThumbnail,
-        },
-        preview: {
-          ...existingPreview,
-          hasThumbnail,
-          usedPlaceholder,
-        },
-        checks: [
-          {
-            name: 'processing',
-            status: 'error',
-            message: error instanceof Error ? error.message : 'Unknown error',
-          },
-        ],
-      }
+      })
       await compareAndSwapUploadItemResult({
         itemId,
         expectedStatus: latestItem.preflightStatus,
         expectedResult: latestItem.preflightResult,
-        nextStatus: 'error',
-        nextResult: nextTerminalResult,
+        nextStatus: projection.preflightStatus,
+        nextResult: projection.preflightResult,
         expectedThumbnailKey: latestItem.thumbnailKey,
         expectedPreviewKey: latestItem.previewKey,
         thumbnailKey: latestItem.thumbnailKey,
@@ -573,61 +503,29 @@ measurePreflightWorker.on('failed', async (job, err) => {
       existingResult.preview && typeof existingResult.preview === 'object'
         ? (existingResult.preview as Record<string, unknown>)
         : {}
-    const existingProblems = Array.isArray(existingResult.problems)
-      ? (existingResult.problems as unknown[]).filter(
-          (problem): problem is Record<string, unknown> => Boolean(problem) && typeof problem === 'object'
-        )
-      : []
-    const hasThumbnail = Boolean(item.thumbnailKey) || existingPreview.hasThumbnail === true
-    const usedPlaceholder =
-      existingPreview.usedPlaceholder === true ||
-      Boolean(item.thumbnailKey?.includes('_placeholder.webp'))
+    const { hasThumbnail, usedPlaceholder } = deriveDurablePreviewEvidence(
+      item.thumbnailKey,
+      existingPreview
+    )
 
     const terminalMessage = err.message || 'Measurement worker stopped before completing the file.'
-    const nextTerminalResult = {
-      ...existingResult,
-      overall: 'error',
-      problems: mergeProblems(existingProblems, [
-        {
-          scope: 'processing',
-          code: 'measurement_worker_exhausted',
-          severity: 'error',
-          message: terminalMessage,
-        },
-      ]),
-      stages: {
-        measurement: { status: 'error' },
-        preview: {
-          status: hasThumbnail ? (usedPlaceholder ? 'warning' : 'ready') : 'pending',
-          hasThumbnail,
-          usedPlaceholder,
-        },
-        orderability: { status: 'blocked' },
+    const projection = buildMeasurementFailureProjection({
+      existingResult,
+      hasThumbnail,
+      usedPlaceholder,
+      transition: {
+        kind: 'terminal',
+        code: 'measurement_worker_exhausted',
+        message: terminalMessage,
+        checks: [{ name: 'processing', status: 'error', message: terminalMessage }],
       },
-      capabilities: {
-        canAddToCart: false,
-        canResolveProduct: false,
-        hasPreview: hasThumbnail,
-      },
-      preview: {
-        ...existingPreview,
-        hasThumbnail,
-        usedPlaceholder,
-      },
-      checks: [
-        {
-          name: 'processing',
-          status: 'error',
-          message: terminalMessage,
-        },
-      ],
-    }
+    })
     const saved = await compareAndSwapUploadItemResult({
       itemId,
       expectedStatus: item.preflightStatus,
       expectedResult: item.preflightResult,
-      nextStatus: 'error',
-      nextResult: nextTerminalResult,
+      nextStatus: projection.preflightStatus,
+      nextResult: projection.preflightResult,
       expectedThumbnailKey: item.thumbnailKey,
       expectedPreviewKey: item.previewKey,
       thumbnailKey: item.thumbnailKey,

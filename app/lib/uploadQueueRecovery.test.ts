@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildMeasurementFailureProjection,
   canPipelineUpdateUploadStatus,
   clearStoredMeasurementStage,
+  deriveDurablePreviewEvidence,
   getUploadQueueRecoveryPlan,
   normalizeUploadQueueJobState,
   resolvePipelineAutoApprove,
   resolvePreviewStatusAfterMeasurement,
 } from './uploadQueueRecovery'
+
+function getProjectedStages(projection: ReturnType<typeof buildMeasurementFailureProjection>) {
+  return projection.preflightResult.stages as Record<string, Record<string, unknown>>
+}
+
+function getProjectedProblems(projection: ReturnType<typeof buildMeasurementFailureProjection>) {
+  return projection.preflightResult.problems as Array<Record<string, unknown>>
+}
 
 describe('pipeline upload status ownership', () => {
   it('preserves an explicit manual-approval setting', () => {
@@ -86,6 +96,194 @@ describe('resolvePreviewStatusAfterMeasurement', () => {
         usedPlaceholder: false,
       })
     ).toBe('error')
+  })
+
+  it('does not preserve ready when no durable thumbnail exists', () => {
+    expect(
+      resolvePreviewStatusAfterMeasurement({
+        storedStatus: 'ready',
+        hasThumbnail: false,
+        usedPlaceholder: false,
+      })
+    ).toBe('pending')
+  })
+})
+
+describe('deriveDurablePreviewEvidence', () => {
+  it('does not trust a stale JSON thumbnail flag without a durable key', () => {
+    expect(
+      deriveDurablePreviewEvidence(null, {
+        hasThumbnail: true,
+        usedPlaceholder: true,
+      })
+    ).toEqual({ hasThumbnail: false, usedPlaceholder: false })
+  })
+
+  it('recognizes both explicit and key-derived placeholders', () => {
+    expect(deriveDurablePreviewEvidence('tenant/item_thumbnail.webp', { usedPlaceholder: true }))
+      .toEqual({ hasThumbnail: true, usedPlaceholder: true })
+    expect(deriveDurablePreviewEvidence('tenant/item_placeholder.webp', {}))
+      .toEqual({ hasThumbnail: true, usedPlaceholder: true })
+  })
+})
+
+describe('buildMeasurementFailureProjection', () => {
+  it('keeps independently-owned warning and error preview outcomes during retries', () => {
+    const cases = [
+      { storedStatus: 'warning', hasThumbnail: false },
+      { storedStatus: 'error', hasThumbnail: true },
+    ] as const
+
+    for (const { storedStatus, hasThumbnail } of cases) {
+      const projection = buildMeasurementFailureProjection({
+        existingResult: {
+          stages: {
+            preview: { status: storedStatus, renderer: 'imagemagick' },
+            audit: { status: 'retained', marker: storedStatus },
+          },
+          preview: { format: 'webp' },
+        },
+        hasThumbnail,
+        usedPlaceholder: false,
+        transition: {
+          kind: 'retry',
+          message: 'temporary storage failure',
+          attempt: 2,
+          maxAttempts: 3,
+        },
+      })
+
+      expect(projection.kind).toBe('retry')
+      expect(projection.preflightStatus).toBe('pending')
+      expect(projection.preflightResult.overall).toBe('processing')
+      expect(getProjectedStages(projection)).toMatchObject({
+        measurement: {
+          status: 'pending',
+          retrying: true,
+          attempt: 2,
+          maxAttempts: 3,
+          lastError: 'temporary storage failure',
+        },
+        preview: {
+          status: storedStatus,
+          renderer: 'imagemagick',
+          hasThumbnail,
+          usedPlaceholder: false,
+        },
+        audit: { status: 'retained', marker: storedStatus },
+        orderability: { status: 'processing' },
+      })
+      expect(projection.preflightResult.capabilities).toEqual({
+        canAddToCart: false,
+        canResolveProduct: false,
+        hasPreview: hasThumbnail,
+      })
+    }
+  })
+
+  it('projects no thumbnail, a real thumbnail, and a placeholder consistently', () => {
+    const cases = [
+      { hasThumbnail: false, usedPlaceholder: false, previewStatus: 'pending', hasPreview: false },
+      { hasThumbnail: true, usedPlaceholder: false, previewStatus: 'ready', hasPreview: true },
+      { hasThumbnail: true, usedPlaceholder: true, previewStatus: 'warning', hasPreview: true },
+    ] as const
+
+    for (const testCase of cases) {
+      const projection = buildMeasurementFailureProjection({
+        existingResult: { stages: { preview: { status: 'pending' } } },
+        hasThumbnail: testCase.hasThumbnail,
+        usedPlaceholder: testCase.usedPlaceholder,
+        transition: {
+          kind: 'terminal',
+          code: 'processing',
+          message: 'decode failed',
+          checks: [{ name: 'processing', status: 'error', message: 'decode failed' }],
+        },
+      })
+
+      expect(getProjectedStages(projection).preview).toMatchObject({
+        status: testCase.previewStatus,
+        hasThumbnail: testCase.hasThumbnail,
+        usedPlaceholder: testCase.usedPlaceholder,
+      })
+      expect(projection.preflightResult.capabilities).toMatchObject({
+        hasPreview: testCase.hasPreview,
+      })
+    }
+  })
+
+  it('terminalizes measurement without erasing unknown stages or cause-specific checks', () => {
+    const projection = buildMeasurementFailureProjection({
+      existingResult: {
+        stages: {
+          preview: { status: 'error', diagnostic: 'renderer timeout' },
+          malwareScan: { status: 'ready', engine: 'example' },
+        },
+        problems: [
+          { scope: 'preview', code: 'thumbnail_generation_failed', severity: 'warning' },
+        ],
+      },
+      hasThumbnail: false,
+      usedPlaceholder: false,
+      transition: {
+        kind: 'terminal',
+        code: 'measurement_worker_exhausted',
+        message: 'worker stalled',
+        checks: [
+          {
+            name: 'measurement_worker',
+            status: 'error',
+            message: 'worker stalled',
+            source: 'bullmq',
+          },
+        ],
+      },
+    })
+
+    expect(projection.kind).toBe('terminal')
+    expect(projection.preflightStatus).toBe('error')
+    expect(projection.preflightResult.overall).toBe('error')
+    expect(getProjectedStages(projection)).toMatchObject({
+      measurement: { status: 'error' },
+      preview: { status: 'error', diagnostic: 'renderer timeout' },
+      malwareScan: { status: 'ready', engine: 'example' },
+      orderability: { status: 'blocked' },
+    })
+    expect(projection.preflightResult.checks).toEqual([
+      {
+        name: 'measurement_worker',
+        status: 'error',
+        message: 'worker stalled',
+        source: 'bullmq',
+      },
+    ])
+  })
+
+  it('keeps processor, exhausted-worker, and missing-result failures distinguishable', () => {
+    const codes = ['processing', 'measurement_worker_exhausted', 'measurement_result_missing']
+
+    const projectedCodes = codes.map((code) => {
+      const projection = buildMeasurementFailureProjection({
+        existingResult: {},
+        hasThumbnail: false,
+        usedPlaceholder: false,
+        transition: {
+          kind: 'terminal',
+          code,
+          message: `failure:${code}`,
+          checks: [{ name: code, status: 'error', message: `failure:${code}` }],
+        },
+      })
+      const matchingProblem = getProjectedProblems(projection).find(
+        (problem) => problem.message === `failure:${code}`
+      )
+      expect(projection.preflightResult.checks).toEqual([
+        { name: code, status: 'error', message: `failure:${code}` },
+      ])
+      return matchingProblem?.code
+    })
+
+    expect(projectedCodes).toEqual(codes)
   })
 })
 
