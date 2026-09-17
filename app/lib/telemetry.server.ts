@@ -350,7 +350,12 @@ async function collectCommissionMetrics(
     prisma.commission.aggregate({
       _count: true,
       _sum: { commissionAmount: true },
-      where: { status: 'pending' },
+      where: {
+        status: 'pending',
+        paymentRef: null,
+        collectibleAt: { not: null },
+        reviewRequiredAt: null,
+      },
     }),
     prisma.commission.aggregate({
       _count: true,

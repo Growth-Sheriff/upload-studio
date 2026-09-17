@@ -42,6 +42,10 @@ export type HostedCheckoutSettlementRow = {
   status: string
   paymentRef: string | null
   paymentProvider: string | null
+  reviewRequiredAt?: Date | string | null
+  reviewReason?: string | null
+  shopifyRefundStatus?: string | null
+  shopifyCancelledAt?: Date | string | null
 }
 
 export class HostedCheckoutReservationError extends Error {
@@ -157,6 +161,8 @@ export async function reserveFeesForHostedCheckout(input: {
           where shop_id = ${input.shopId}
             and status = 'pending'
             and payment_ref is null
+            and collectible_at is not null
+            and review_required_at is null
             and order_id in (${Prisma.join(requestedOrderIds)})
           returning order_id, commission_amount, order_currency, created_at`
       : await tx.$queryRaw<ReservationRow[]>`
@@ -168,6 +174,8 @@ export async function reserveFeesForHostedCheckout(input: {
           where shop_id = ${input.shopId}
             and status = 'pending'
             and payment_ref is null
+            and collectible_at is not null
+            and review_required_at is null
           returning order_id, commission_amount, order_currency, created_at`
 
     rows.sort(
@@ -374,6 +382,99 @@ export function validateHostedCheckoutSettlement(input: {
   return { alreadyProcessed: false, totalCents }
 }
 
+/**
+ * A provider-confirmed payment must be recorded as paid, even if Shopify sent
+ * a cancellation/refund while the checkout was open. These rows remain
+ * explicitly quarantined for refund/credit review after settlement.
+ */
+export function getHostedCheckoutSettlementReviewOrderIds(
+  rows: HostedCheckoutSettlementRow[]
+): string[] {
+  return rows
+    .filter(
+      (row) =>
+        Boolean(row.reviewRequiredAt) ||
+        Boolean(row.shopifyCancelledAt) ||
+        Boolean(row.shopifyRefundStatus)
+    )
+    .map((row) => String(row.orderId))
+}
+
+export function validateHostedCheckoutPreCapture(input: {
+  snapshot: HostedCheckoutReservationSnapshot
+  rows: HostedCheckoutSettlementRow[]
+  provider: HostedCheckoutProvider
+}): { totalCents: number } {
+  const validation = validateHostedCheckoutSettlement({
+    snapshot: input.snapshot,
+    rows: input.rows,
+    provider: input.provider,
+    captureRef: `${input.snapshot.reservationRef}:pre_capture`,
+    providerAmountCents: input.snapshot.totalCents,
+    providerCurrency: input.snapshot.currency,
+  })
+  if (validation.alreadyProcessed) {
+    throw new HostedCheckoutReservationError(
+      'This fee reservation has already been settled.',
+      'reservation_conflict'
+    )
+  }
+
+  const unsafeOrderIds = getHostedCheckoutSettlementReviewOrderIds(input.rows)
+  if (unsafeOrderIds.length > 0) {
+    throw new HostedCheckoutReservationError(
+      `The reserved fee is under cancellation/refund review for order(s): ${unsafeOrderIds.join(', ')}.`,
+      'reservation_conflict'
+    )
+  }
+  return { totalCents: validation.totalCents }
+}
+
+/**
+ * Final local gate immediately before an app-initiated provider capture. A
+ * provider-confirmed payment is still settled later, but the app must not
+ * initiate one after Shopify has supplied a cancellation/refund review fact.
+ */
+export async function assertHostedCheckoutReservationCapturable(input: {
+  shopId: string
+  snapshot: HostedCheckoutReservationSnapshot
+  provider: HostedCheckoutProvider
+}): Promise<{ totalCents: number }> {
+  const databaseRows = await prisma.commission.findMany({
+    where: {
+      shopId: input.shopId,
+      OR: [
+        { orderId: { in: input.snapshot.orderIds } },
+        {
+          status: HOSTED_CHECKOUT_RESERVED_STATUS,
+          paymentRef: input.snapshot.reservationRef,
+        },
+      ],
+    },
+    select: {
+      orderId: true,
+      commissionAmount: true,
+      orderCurrency: true,
+      status: true,
+      paymentRef: true,
+      paymentProvider: true,
+      reviewRequiredAt: true,
+      reviewReason: true,
+      shopifyRefundStatus: true,
+      shopifyCancelledAt: true,
+    },
+  })
+  const rows: HostedCheckoutSettlementRow[] = databaseRows.map((row) => ({
+    ...row,
+    commissionAmount: Number(row.commissionAmount),
+  }))
+  return validateHostedCheckoutPreCapture({
+    snapshot: input.snapshot,
+    rows,
+    provider: input.provider,
+  })
+}
+
 export async function settleHostedCheckoutReservation(input: {
   shopId: string
   snapshot: HostedCheckoutReservationSnapshot
@@ -394,6 +495,10 @@ export async function settleHostedCheckoutReservation(input: {
       status: true,
       paymentRef: true,
       paymentProvider: true,
+      reviewRequiredAt: true,
+      reviewReason: true,
+      shopifyRefundStatus: true,
+      shopifyCancelledAt: true,
     } as const
     const databaseRows = await tx.commission.findMany({
       where: { shopId: input.shopId, orderId: { in: input.snapshot.orderIds } },
@@ -415,7 +520,6 @@ export async function settleHostedCheckoutReservation(input: {
     if (validation.alreadyProcessed) {
       return { markedCount: rows.length, alreadyProcessed: true }
     }
-
     const allRowsForReservation = await tx.commission.findMany({
       where: {
         shopId: input.shopId,
@@ -484,6 +588,45 @@ export async function settleHostedCheckoutReservation(input: {
       )
     }
 
+    // Money has already moved, so the provider-confirmed outcome wins the
+    // payment status. A Shopify terminal fact that arrived before or during
+    // settlement still wins the review decision. This update never clears an
+    // existing review marker or the exact provider capture.
+    await tx.commission.updateMany({
+      where: {
+        shopId: input.shopId,
+        orderId: { in: input.snapshot.orderIds },
+        status: 'paid',
+        paymentRef: input.captureRef,
+        paymentProvider: input.provider,
+        reviewRequiredAt: null,
+        OR: [
+          { shopifyCancelledAt: { not: null } },
+          { shopifyRefundStatus: { not: null } },
+        ],
+      },
+      data: {
+        reviewRequiredAt: paidAt,
+        reviewReason: 'shopify_terminal_fact_before_checkout_settlement',
+      },
+    })
+    const settledRows = await tx.commission.findMany({
+      where: {
+        shopId: input.shopId,
+        orderId: { in: input.snapshot.orderIds },
+        status: 'paid',
+        paymentRef: input.captureRef,
+        paymentProvider: input.provider,
+      },
+      select,
+    })
+    const reviewOrderIds = getHostedCheckoutSettlementReviewOrderIds(
+      settledRows.map((row) => ({
+        ...row,
+        commissionAmount: Number(row.commissionAmount),
+      }))
+    )
+
     const existingAudit = await tx.auditLog.findUnique({
       where: { id: input.snapshot.reservationRef },
       select: { metadata: true },
@@ -512,6 +655,8 @@ export async function settleHostedCheckoutReservation(input: {
           providerCurrency: normalizeCurrency(input.providerCurrency),
           settledAt: paidAt.toISOString(),
           markedCount: updated.count,
+          reviewRequired: reviewOrderIds.length > 0,
+          reviewOrderIds,
         },
       },
     })

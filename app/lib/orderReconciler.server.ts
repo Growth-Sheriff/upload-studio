@@ -21,6 +21,7 @@
 //   - fulfilled: only printed -> shipped     ... old orders-fulfilled
 
 import crypto from 'crypto'
+import type { Prisma } from '@prisma/client'
 import { Decimal } from '@prisma/client/runtime/library'
 import prisma from '~/lib/prisma.server'
 import { COMMISSION_PERCENT, calculateCommissionAmount, isZeroPaymentOrder } from '~/lib/billing.server'
@@ -33,6 +34,11 @@ import {
   normalizeCartToken,
 } from '~/lib/orderMatching.server'
 import { buildIdentityUrl } from '~/lib/uploadUrls.server'
+import {
+  COMMISSION_AWAITING_PAYMENT_STATUS,
+  extractShopifyCommissionFacts,
+  planCommissionReconciliation,
+} from '~/lib/commissionEligibility.server'
 
 /** Constant-time webhook HMAC check shared by every order webhook adapter.
  *  (Two of the legacy handlers compared strings with `!==`; unified here on
@@ -82,18 +88,16 @@ export function calculateServedOrderAmount(
     total_price?: string | number | null
   },
   servedLineItemIds: Iterable<string>
-): number {
+): number | null {
   const served = new Set(Array.from(servedLineItemIds, (value) => String(value)))
-  if (served.size === 0) {
-    return (
-      parseFloat(
-        String(order.subtotal_price ?? order.total_line_items_price ?? order.total_price ?? '0')
-      ) || 0
-    )
-  }
+  if (served.size === 0) return null
+
+  const lineItems = Array.isArray(order.line_items) ? order.line_items : []
+  const availableLineItemIds = new Set(lineItems.map((line) => String(line.id)))
+  if ([...served].some((lineItemId) => !availableLineItemIds.has(lineItemId))) return null
 
   let servedAmount = 0
-  for (const line of order.line_items || []) {
+  for (const line of lineItems) {
     if (!served.has(String(line.id))) continue
     const gross = (parseFloat(String(line.price ?? '0')) || 0) * (Number(line.quantity) || 0)
     const discounts = Array.isArray(line.discount_allocations)
@@ -105,6 +109,485 @@ export function calculateServedOrderAmount(
     servedAmount += Math.max(0, gross - discounts)
   }
   return servedAmount
+}
+
+/**
+ * A linked upload is billable only when at least one persisted file exists.
+ * Zero-item uploads are just as unserved as the explicit empty-storage-key
+ * ghost rows created for bypassed storefront uploads.
+ */
+export function isGhostUploadItems(
+  items: Array<{ storageKey?: string | null }>
+): boolean {
+  return (
+    items.length === 0 ||
+    items.every((item) => !String(item.storageKey || '').trim())
+  )
+}
+
+async function recordCommissionFactOnce(input: {
+  shopId: string
+  orderId: string
+  action: string
+  topic: string
+  metadata: Prisma.InputJsonObject
+  factFingerprint: string
+}) {
+  const digest = crypto
+    .createHash('sha256')
+    .update(
+      [input.shopId, input.orderId, input.action, input.topic, input.factFingerprint].join('|')
+    )
+    .digest('hex')
+    .slice(0, 32)
+
+  await prisma.auditLog.upsert({
+    where: { id: `commission_fact_${digest}` },
+    create: {
+      id: `commission_fact_${digest}`,
+      shopId: input.shopId,
+      action: input.action,
+      resourceType: 'commission',
+      resourceId: input.orderId,
+      metadata: input.metadata,
+    },
+    update: {},
+  })
+}
+
+type RefundSnapshotReviewStore = {
+  commission: {
+    findUnique(args: any): Promise<{
+      id: string
+      status: string
+      paymentRef: string | null
+      reviewRequiredAt: Date | null
+    } | null>
+    updateMany(args: any): Promise<{ count: number }>
+  }
+  auditLog: {
+    upsert(args: any): Promise<unknown>
+  }
+}
+
+type DeferredRefundReviewStore = {
+  auditLog: {
+    findFirst(args: any): Promise<{ metadata: unknown } | null>
+  }
+}
+
+export async function findUnresolvedRefundSnapshotReviewReason(
+  input: { shopId: string; orderId: string },
+  store: DeferredRefundReviewStore = prisma as unknown as DeferredRefundReviewStore
+): Promise<string | null> {
+  const deferred = await store.auditLog.findFirst({
+    where: {
+      shopId: input.shopId,
+      action: 'commission_refund_snapshot_review_deferred',
+      resourceType: 'commission',
+      resourceId: input.orderId,
+    },
+    orderBy: { createdAt: 'desc' },
+    select: { metadata: true },
+  })
+  if (!deferred) return null
+
+  const metadata =
+    deferred.metadata && typeof deferred.metadata === 'object' && !Array.isArray(deferred.metadata)
+      ? (deferred.metadata as Record<string, unknown>)
+      : null
+  const recordedReason = typeof metadata?.reason === 'string' ? metadata.reason.trim() : ''
+  return recordedReason || 'shopify_refund_snapshot_unavailable'
+}
+
+/**
+ * A verified refunds/create payload proves that a refund event exists, but it
+ * does not prove whether the order is partially or fully refunded. If the
+ * authoritative order snapshot cannot be read, quarantine the existing fee
+ * without changing its amount, provider claim, or guessed refund state.
+ */
+export async function quarantineCommissionForVerifiedRefundSnapshotFailure(
+  input: {
+    shopId: string
+    orderId: string
+    refundId?: string | null
+    snapshotError: string
+  },
+  store: RefundSnapshotReviewStore = prisma as unknown as RefundSnapshotReviewStore
+): Promise<{ commissionFound: boolean; reviewFlagAdded: boolean }> {
+  const existing = await store.commission.findUnique({
+    where: {
+      commission_shop_order: { shopId: input.shopId, orderId: input.orderId },
+    },
+    select: {
+      id: true,
+      status: true,
+      paymentRef: true,
+      reviewRequiredAt: true,
+    },
+  })
+  const now = new Date()
+  const reviewReason = 'shopify_refund_snapshot_unavailable'
+  const auditDigest = crypto
+    .createHash('sha256')
+    .update(
+      [input.shopId, input.orderId, input.refundId || 'unknown-refund', reviewReason].join('|')
+    )
+    .digest('hex')
+    .slice(0, 32)
+  await store.auditLog.upsert({
+    where: { id: `commission_refund_snapshot_${auditDigest}` },
+    create: {
+      id: `commission_refund_snapshot_${auditDigest}`,
+      shopId: input.shopId,
+      action: existing
+        ? 'commission_review_required'
+        : 'commission_refund_snapshot_review_deferred',
+      resourceType: 'commission',
+      resourceId: input.orderId,
+      metadata: {
+        orderId: input.orderId,
+        topic: 'refunds/create',
+        refundId: input.refundId || null,
+        reason: reviewReason,
+        refundExtent: 'unknown',
+        snapshotError: input.snapshotError.slice(0, 500),
+        preservedStatus: existing?.status || null,
+        preservedPaymentRef: existing?.paymentRef || null,
+        commissionFound: Boolean(existing),
+      },
+    },
+    update: {},
+  })
+
+  // Write the durable refund fact first, then quarantine by business key. If
+  // order reconciliation creates the fee concurrently, it either observes the
+  // audit or is caught by this update without changing a provider claim.
+  const updated = await store.commission.updateMany({
+    where: {
+      shopId: input.shopId,
+      orderId: input.orderId,
+      reviewRequiredAt: null,
+    },
+    data: {
+      reviewRequiredAt: now,
+      reviewReason,
+    },
+  })
+
+  return {
+    commissionFound: Boolean(existing) || updated.count > 0,
+    reviewFlagAdded: updated.count > 0,
+  }
+}
+
+async function reconcileCommission(input: {
+  shopId: string
+  orderId: string
+  orderName: string | null
+  order: any
+  orderCurrency: string
+  servedAmount: number
+  topic: string
+  forcedReviewReason?: string | null
+}) {
+  const facts = extractShopifyCommissionFacts(input.order)
+  const requestedReviewReason = String(input.forcedReviewReason || '').trim() || null
+  let forcedReviewReason =
+    requestedReviewReason ||
+    (await findUnresolvedRefundSnapshotReviewReason({
+      shopId: input.shopId,
+      orderId: input.orderId,
+    }))
+  const zeroPayment = !forcedReviewReason && (isZeroPaymentOrder(input.order) || input.servedAmount <= 0)
+  const calculatedAmount =
+    zeroPayment || requestedReviewReason ? 0 : calculateCommissionAmount(input.servedAmount)
+  const now = new Date()
+  const observedAt = facts.observedAt || now
+  const commissionKey = {
+    commission_shop_order: { shopId: input.shopId, orderId: input.orderId },
+  }
+
+  const existingBeforeUpsert = await prisma.commission.findUnique({
+    where: commissionKey,
+    select: {
+      status: true,
+      paymentRef: true,
+      collectibleAt: true,
+      reviewRequiredAt: true,
+      shopifyRefundStatus: true,
+      shopifyCancelledAt: true,
+    },
+  })
+  const createPlan = forcedReviewReason
+    ? {
+        action: 'review' as const,
+        status: COMMISSION_AWAITING_PAYMENT_STATUS,
+        reason: forcedReviewReason,
+      }
+    : planCommissionReconciliation({
+        current: { status: null, paymentRef: null },
+        facts,
+        servedAmount: input.servedAmount,
+        zeroPayment,
+      })
+  const initialReview = createPlan.action === 'review' ? createPlan.reason : null
+  const stageBeforeCollectible = createPlan.action === 'make_collectible'
+
+  await prisma.commission.upsert({
+    where: commissionKey,
+    create: {
+      shopId: input.shopId,
+      orderId: input.orderId,
+      orderNumber: input.orderName || input.order.order_number?.toString(),
+      orderTotal: new Decimal(input.order.total_price || '0'),
+      orderCurrency: input.orderCurrency,
+      commissionRate: new Decimal(COMMISSION_PERCENT),
+      commissionAmount: new Decimal(createPlan.action === 'void' ? 0 : calculatedAmount),
+      status: stageBeforeCollectible ? COMMISSION_AWAITING_PAYMENT_STATUS : createPlan.status,
+      collectibleAt: null,
+      eligibilitySource: null,
+      attributableCapturedAmount: null,
+      shopifyFinancialStatus: facts.financialStatus || null,
+      shopifyRefundStatus: facts.refundState === 'none' ? null : facts.refundState,
+      shopifyCancelledAt: facts.cancelledAt,
+      shopifyObservedAt: observedAt,
+      reviewRequiredAt: initialReview ? now : null,
+      reviewReason: initialReview,
+    },
+    update: {},
+  })
+
+  // Re-read the durable refund guard after the insert. Together with the
+  // audit-first quarantine update, this closes the missing-row race: a fee is
+  // staged as non-collectible until both checks have passed.
+  if (!forcedReviewReason) {
+    forcedReviewReason = await findUnresolvedRefundSnapshotReviewReason({
+      shopId: input.shopId,
+      orderId: input.orderId,
+    })
+  }
+
+  const factFingerprint = JSON.stringify({
+    financialStatus: facts.financialStatus,
+    cancelledAt: facts.cancelledAt?.toISOString() || null,
+    refundState: facts.refundState,
+    observedAt: facts.observedAt?.toISOString() || null,
+    currentTotalPrice: input.order.current_total_price ?? null,
+    totalPrice: input.order.total_price ?? null,
+    refunds: Array.isArray(input.order.refunds)
+      ? input.order.refunds.map((refund: any) => ({
+          id: refund?.id ?? null,
+          transactions: Array.isArray(refund?.transactions)
+            ? refund.transactions.map((transaction: any) => ({
+                id: transaction?.id ?? null,
+                kind: transaction?.kind ?? null,
+                status: transaction?.status ?? null,
+                amount: transaction?.amount ?? null,
+              }))
+            : [],
+        }))
+      : [],
+    forcedReviewReason,
+  })
+
+  const current = await prisma.commission.findUnique({
+    where: commissionKey,
+    select: {
+      id: true,
+      status: true,
+      paymentRef: true,
+      collectibleAt: true,
+      reviewRequiredAt: true,
+      shopifyRefundStatus: true,
+      shopifyCancelledAt: true,
+    },
+  })
+  if (!current) throw new Error(`Commission row disappeared for order ${input.orderId}`)
+
+  const plan = forcedReviewReason
+    ? {
+        action: 'review' as const,
+        status: current.status || COMMISSION_AWAITING_PAYMENT_STATUS,
+        reason: forcedReviewReason,
+      }
+    : existingBeforeUpsert
+      ? planCommissionReconciliation({
+          current,
+          facts,
+          servedAmount: input.servedAmount,
+          zeroPayment,
+        })
+      : createPlan
+
+  const observedData = {
+    shopifyFinancialStatus: facts.financialStatus || null,
+    shopifyObservedAt: observedAt,
+    ...(facts.refundState === 'none' ? {} : { shopifyRefundStatus: facts.refundState }),
+    ...(facts.cancelledAt ? { shopifyCancelledAt: facts.cancelledAt } : {}),
+  }
+
+  const quarantineForReview = async (
+    row: { id: string; status: string; paymentRef: string | null },
+    reason: string
+  ) => {
+    // Never alter the provider-owned status/reference. The review flag also
+    // excludes a legacy/pending row from every collector.
+    await prisma.commission.updateMany({
+      where: { id: row.id, reviewRequiredAt: null },
+      data: {
+        reviewRequiredAt: now,
+        reviewReason: reason,
+        ...observedData,
+      },
+    })
+    await recordCommissionFactOnce({
+      shopId: input.shopId,
+      orderId: input.orderId,
+      action: 'commission_review_required',
+      topic: input.topic,
+      factFingerprint,
+      metadata: {
+        orderId: input.orderId,
+        topic: input.topic,
+        reason,
+        preservedStatus: row.status,
+        preservedPaymentRef: row.paymentRef,
+        financialStatus: facts.financialStatus,
+        refundState: facts.refundState,
+        cancelledAt: facts.cancelledAt?.toISOString() || null,
+      },
+    })
+  }
+
+  if (plan.action === 'make_collectible') {
+    // Both the status and explicit evidence are required by every collector.
+    // Refund/cancellation observations are sticky and block a late paid event.
+    const result = await prisma.commission.updateMany({
+      where: {
+        id: current.id,
+        status: { in: [COMMISSION_AWAITING_PAYMENT_STATUS, 'pending'] },
+        paymentRef: null,
+        reviewRequiredAt: null,
+        shopifyRefundStatus: null,
+        shopifyCancelledAt: null,
+      },
+      data: {
+        orderTotal: new Decimal(input.order.total_price || '0'),
+        orderCurrency: input.orderCurrency,
+        commissionRate: new Decimal(COMMISSION_PERCENT),
+        commissionAmount: new Decimal(calculatedAmount),
+        status: 'pending',
+        collectibleAt: current.collectibleAt || observedAt,
+        eligibilitySource: input.topic,
+        attributableCapturedAmount: new Decimal(input.servedAmount),
+        ...observedData,
+      },
+    })
+    if (result.count > 0) {
+      await recordCommissionFactOnce({
+        shopId: input.shopId,
+        orderId: input.orderId,
+        action: 'commission_became_collectible',
+        topic: input.topic,
+        factFingerprint,
+        metadata: {
+          orderId: input.orderId,
+          topic: input.topic,
+          financialStatus: facts.financialStatus,
+          attributableCapturedAmount: input.servedAmount,
+          commissionAmount: calculatedAmount,
+          eligibilitySource: input.topic,
+        },
+      })
+    }
+  } else if (plan.action === 'void') {
+    // A provider claim owns charging/reserved rows. The predicate deliberately
+    // cannot release one; such a row is handled by the review branch instead.
+    const result = await prisma.commission.updateMany({
+      where: {
+        id: current.id,
+        status: { in: [COMMISSION_AWAITING_PAYMENT_STATUS, 'pending'] },
+        paymentRef: null,
+      },
+      data: {
+        status: 'void',
+        commissionAmount: new Decimal(0),
+        collectibleAt: null,
+        eligibilitySource: null,
+        attributableCapturedAmount: null,
+        reviewRequiredAt: null,
+        reviewReason: null,
+        ...observedData,
+      },
+    })
+    const createdAsVoid = !existingBeforeUpsert && createPlan.action === 'void'
+    if (result.count > 0 || createdAsVoid) {
+      await recordCommissionFactOnce({
+        shopId: input.shopId,
+        orderId: input.orderId,
+        action: 'commission_voided',
+        topic: input.topic,
+        factFingerprint,
+        metadata: {
+          orderId: input.orderId,
+          topic: input.topic,
+          reason: plan.reason,
+          financialStatus: facts.financialStatus,
+          refundState: facts.refundState,
+          cancelledAt: facts.cancelledAt?.toISOString() || null,
+          calculatedFeeBeforeVoid: calculatedAmount,
+        },
+      })
+    } else {
+      // Auto-charge/hosted checkout can claim the row after our read but
+      // before the conditional void. Re-read the winner and quarantine it;
+      // never report a void that did not commit and never clear its reference.
+      const latest = await prisma.commission.findUnique({
+        where: commissionKey,
+        select: {
+          id: true,
+          status: true,
+          paymentRef: true,
+          collectibleAt: true,
+          reviewRequiredAt: true,
+          shopifyRefundStatus: true,
+          shopifyCancelledAt: true,
+        },
+      })
+      if (latest) {
+        const racePlan = planCommissionReconciliation({
+          current: latest,
+          facts,
+          servedAmount: input.servedAmount,
+          zeroPayment,
+        })
+        if (racePlan.action === 'review') {
+          await quarantineForReview(latest, racePlan.reason)
+        }
+      }
+    }
+  } else if (plan.action === 'review') {
+    await quarantineForReview(current, plan.reason)
+  } else if (plan.action === 'await_payment') {
+    await recordCommissionFactOnce({
+      shopId: input.shopId,
+      orderId: input.orderId,
+      action: 'commission_awaiting_shopify_capture',
+      topic: input.topic,
+      factFingerprint,
+      metadata: {
+        orderId: input.orderId,
+        topic: input.topic,
+        financialStatus: facts.financialStatus || 'unknown',
+        calculatedFeeIfCaptured: calculatedAmount,
+      },
+    })
+  }
+
+  console.log(
+    `[Reconcile] Commission order=${input.orderId} action=${plan.action} status=${plan.status} financial=${facts.financialStatus || 'unknown'} amount=$${calculatedAmount.toFixed(2)}`
+  )
 }
 
 /** Pure: next upload status for these order facts, or null for "no change".
@@ -195,6 +678,10 @@ export async function reconcileOrder(
   const orderTotal = parseFloat(order.total_price) || 0
   const orderCurrency = order.currency || 'USD'
   const orderName = order.name ? String(order.name) : null
+  // orders/updated can itself be caused by an order metafield write. Never
+  // write the mirrors again from that catch-all topic (or its refund refresh),
+  // otherwise Shopify can feed our own update back into the webhook loop.
+  const mayWriteOrderMetafields = topic !== 'orders/updated' && topic !== 'refunds/create'
 
   const summary: ReconcileSummary = {
     linked: [],
@@ -269,7 +756,7 @@ export async function reconcileOrder(
     // sees the gap, but it is never a served line: no commission, no design
     // manifest. Without this guard the paid webhook re-applied the ghost via
     // Pass 2 and billed 4% on an order this app never handled.
-    const isGhost = upload.items.length > 0 && upload.items.every((item) => !item.storageKey)
+    const isGhost = isGhostUploadItems(upload.items)
 
     await prisma.orderLink.upsert({
       where: { orderId_uploadId: { orderId, uploadId } },
@@ -489,13 +976,11 @@ export async function reconcileOrder(
   }
 
   // ── Pass 3: VIP/measured-checkout note ids ───────────────────────────────
-  const fallbackLineItem = order.line_items?.[0] || null
   for (const vipUploadId of extractVipUploadIdsFromOrderNote(order.note)) {
-    await applyUpload(
-      vipUploadId,
-      fallbackLineItem?.id ? String(fallbackLineItem.id) : null,
-      'order_note'
-    )
+    // The order note proves an upload id, but not which paid Shopify line it
+    // served. Keep the production link and fail billing closed below instead
+    // of attributing the first line (or the whole subtotal) by assumption.
+    await applyUpload(vipUploadId, null, 'order_note')
   }
 
   // ── Commission ───────────────────────────────────────────────────────────
@@ -504,64 +989,29 @@ export async function reconcileOrder(
   // lines — are operational warnings, never billable events: billing an
   // order this app did not serve is wrong revenue.
   if (summary.linked.length > 0) {
-    // Basis: the app's own line items, net of their discount allocations.
-    // A note-only match (VIP/measured checkout: every line is ours) falls
-    // back to the order subtotal.
+    // Basis: exact app line ids, net of their discount allocations. An order
+    // note proves a production link but not a monetary line attribution, so a
+    // missing/mismatched id creates a non-collectible review row with no
+    // guessed fee amount.
     const servedAmount = calculateServedOrderAmount(order, summary.servedLineItemIds)
-    // A $0 order (free, fully discounted, test) is never billed: the row is
-    // kept as void so the merchant sees it was considered and skipped.
-    // A mixed order can have a positive total while the app-attributable line
-    // is fully discounted. A zero app basis is not a collectible fee.
-    const zeroPayment = isZeroPaymentOrder(order) || servedAmount <= 0
-    const commissionAmount = zeroPayment ? 0 : calculateCommissionAmount(servedAmount)
-    const commissionStatus = zeroPayment ? 'void' : 'pending'
-
-    const commissionKey = { commission_shop_order: { shopId: shop.id, orderId } }
-    // Create if absent without mutating an existing row. The follow-up update
-    // is conditional in SQL terms: if an auto-charge claims pending -> charging
-    // between these statements, reconciliation cannot reopen the claim.
-    await prisma.commission.upsert({
-      where: commissionKey,
-      create: {
-        shopId: shop.id,
-        orderId,
-        orderNumber: order.name || order.order_number?.toString(),
-        orderTotal: new Decimal(order.total_price || '0'),
-        orderCurrency,
-        commissionRate: new Decimal(COMMISSION_PERCENT),
-        commissionAmount: new Decimal(commissionAmount),
-        status: commissionStatus,
-      },
-      update: {},
+    // The row is an audit record at order creation, not a debt. Only a Shopify
+    // `paid` fact can attach collectible evidence. Cancellation/refunds are
+    // monotone and provider-owned claims are quarantined, never released here.
+    await reconcileCommission({
+      shopId: shop.id,
+      orderId,
+      orderName,
+      order,
+      orderCurrency,
+      servedAmount: servedAmount ?? 0,
+      topic,
+      forcedReviewReason:
+        servedAmount === null ? 'missing_exact_served_line_attribution' : null,
     })
-
-    // Never rewrite a claimed, settled, voided, or waived row. Requiring a
-    // null paymentRef also protects legacy rows affected by an interrupted
-    // claim even if their status was incorrectly restored to pending.
-    await prisma.commission.updateMany({
-      where: {
-        shopId: shop.id,
-        orderId,
-        status: 'pending',
-        paymentRef: null,
-      },
-      data: {
-        orderTotal: new Decimal(order.total_price || '0'),
-        orderCurrency,
-        commissionRate: new Decimal(COMMISSION_PERCENT),
-        commissionAmount: new Decimal(commissionAmount),
-        status: commissionStatus,
-      },
-    })
-    console.log(
-      zeroPayment
-        ? `[Reconcile] Order ${orderId} paid $0; fee voided`
-        : `[Reconcile] Commission upserted (${Math.round(COMMISSION_PERCENT * 100)}% of $${servedAmount.toFixed(2)} = $${commissionAmount.toFixed(2)}, cap applied=${commissionAmount < servedAmount * COMMISSION_PERCENT - 0.005}) for order ${orderId}`
-    )
   }
 
   // ── Metafield mirrors (best-effort, never fail the webhook) ──────────────
-  if (summary.linked.length > 0 && shop.accessToken) {
+  if (mayWriteOrderMetafields && summary.linked.length > 0 && shop.accessToken) {
     try {
       await shopifyGraphQL(shop.shopDomain, shop.accessToken, ORDER_UPLOADS_METAFIELD_MUTATION, {
         metafields: [
@@ -585,7 +1035,7 @@ export async function reconcileOrder(
     }
   }
 
-  if (facts.paid && designManifest.length > 0 && shop.accessToken) {
+  if (mayWriteOrderMetafields && facts.paid && designManifest.length > 0 && shop.accessToken) {
     try {
       await shopifyGraphQL(shop.shopDomain, shop.accessToken, ORDER_DESIGNS_METAFIELD_MUTATION, {
         input: {

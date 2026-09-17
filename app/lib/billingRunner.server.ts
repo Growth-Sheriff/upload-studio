@@ -170,6 +170,61 @@ export function buildFailedProviderDisableUpdates(
   return {};
 }
 
+export type AutoChargeClaimStateRow = {
+  orderId: string;
+  status: string;
+  paymentRef: string | null;
+  collectibleAt: Date | string | null;
+  reviewRequiredAt: Date | string | null;
+  shopifyFinancialStatus?: string | null;
+  shopifyRefundStatus?: string | null;
+  shopifyCancelledAt?: Date | string | null;
+};
+
+/** Final local gate before any provider request. A refund/cancellation webhook
+ * can race with the initial atomic claim, so the exact claimed set and its
+ * eligibility facts must be re-read after the claim/audit are durable. */
+export function validateAutoChargeClaimBeforeProvider(input: {
+  claimRef: string;
+  expectedOrderIds: string[];
+  rows: AutoChargeClaimStateRow[];
+}): { safe: boolean; reason: string | null; unsafeOrderIds: string[] } {
+  const expected = new Set(input.expectedOrderIds.map(String));
+  const actual = new Set(input.rows.map((row) => String(row.orderId)));
+  if (
+    input.rows.length !== expected.size ||
+    actual.size !== expected.size ||
+    [...expected].some((orderId) => !actual.has(orderId))
+  ) {
+    return {
+      safe: false,
+      reason: 'claimed_row_set_changed',
+      unsafeOrderIds: [...expected].filter((orderId) => !actual.has(orderId)),
+    };
+  }
+
+  const unsafe = input.rows.filter((row) => {
+    const financialStatus = String(row.shopifyFinancialStatus || '').trim().toLowerCase();
+    return (
+      row.status !== 'charging' ||
+      row.paymentRef !== input.claimRef ||
+      !row.collectibleAt ||
+      Boolean(row.reviewRequiredAt) ||
+      Boolean(row.shopifyCancelledAt) ||
+      Boolean(row.shopifyRefundStatus) ||
+      ['voided', 'refunded', 'partially_refunded'].includes(financialStatus)
+    );
+  });
+  if (unsafe.length > 0) {
+    return {
+      safe: false,
+      reason: 'eligibility_changed_after_claim',
+      unsafeOrderIds: unsafe.map((row) => String(row.orderId)),
+    };
+  }
+  return { safe: true, reason: null, unsafeOrderIds: [] };
+}
+
 export async function runShopAutoCharge(shopId: string): Promise<ChargeOutcome> {
   const shop = await prisma.shop.findUnique({ where: { id: shopId } });
   if (!shop) return { status: 'skipped', reason: 'shop_not_found' };
@@ -190,7 +245,13 @@ export async function runShopAutoCharge(shopId: string): Promise<ChargeOutcome> 
   if (!hasStripe && !hasPaypal) return { status: 'skipped', reason: 'no_vault_or_disabled' };
 
   const pendingCurrencies = await prisma.commission.findMany({
-    where: { shopId: shop.id, status: 'pending', paymentRef: null },
+    where: {
+      shopId: shop.id,
+      status: 'pending',
+      paymentRef: null,
+      collectibleAt: { not: null },
+      reviewRequiredAt: null,
+    },
     distinct: ['orderCurrency'],
     select: { orderCurrency: true },
   });
@@ -270,6 +331,8 @@ export async function runShopAutoCharge(shopId: string): Promise<ChargeOutcome> 
     where shop_id = ${shop.id}
       and status = 'pending'
       and payment_ref is null
+      and collectible_at is not null
+      and review_required_at is null
       and upper(coalesce(order_currency, '')) = 'USD'
     returning order_id, commission_amount, order_currency`;
   const pendingOrderIds = claimedRows.map((row) => String(row.order_id));
@@ -337,6 +400,97 @@ export async function runShopAutoCharge(shopId: string): Promise<ChargeOutcome> 
       console.error(`[AutoCharge] ${shop.shopDomain}: failed to release unaudited claim ${claimRef}:`, releaseError)
     );
     throw auditError;
+  }
+
+  let finalClaimGate: ReturnType<typeof validateAutoChargeClaimBeforeProvider>;
+  try {
+    const finalClaimRows = await prisma.commission.findMany({
+      where: { shopId: shop.id, orderId: { in: pendingOrderIds } },
+      select: {
+        orderId: true,
+        status: true,
+        paymentRef: true,
+        collectibleAt: true,
+        reviewRequiredAt: true,
+        shopifyFinancialStatus: true,
+        shopifyRefundStatus: true,
+        shopifyCancelledAt: true,
+      },
+    });
+    finalClaimGate = validateAutoChargeClaimBeforeProvider({
+      claimRef,
+      expectedOrderIds: pendingOrderIds,
+      rows: finalClaimRows,
+    });
+  } catch (revalidationError) {
+    // No provider call has started. Never charge from stale in-memory facts
+    // when the authoritative row set cannot be re-read.
+    await releaseClaim().catch(() => undefined);
+    const errorMessage =
+      revalidationError instanceof Error ? revalidationError.message : String(revalidationError);
+    await prisma.auditLog
+      .update({
+        where: { id: auditEntry.id },
+        data: {
+          action: 'auto_charge_claim_revalidation_failed',
+          resourceId: claimRef,
+          metadata: {
+            claimRef,
+            idempotencyKey,
+            orderIds: pendingOrderIds,
+            amount: totalAmount,
+            providerRequestStarted: false,
+            reviewRequired: true,
+            error: errorMessage,
+          },
+        },
+      })
+      .catch(() => undefined);
+    return {
+      status: 'needs_review',
+      reason: 'claim_revalidation_failed',
+      claimRef,
+      idempotencyKey,
+    };
+  }
+
+  if (!finalClaimGate.safe) {
+    let released = false;
+    try {
+      await releaseClaim();
+      released = true;
+    } catch (releaseError) {
+      console.error(
+        `[AutoCharge] ${shop.shopDomain}: failed to release ineligible pre-provider claim ${claimRef}:`,
+        releaseError
+      );
+    }
+    await prisma.auditLog
+      .update({
+        where: { id: auditEntry.id },
+        data: {
+          action: 'auto_charge_claim_invalidated_before_provider',
+          resourceId: claimRef,
+          metadata: {
+            claimRef,
+            idempotencyKey,
+            orderIds: pendingOrderIds,
+            unsafeOrderIds: finalClaimGate.unsafeOrderIds,
+            amount: totalAmount,
+            reason: finalClaimGate.reason,
+            providerRequestStarted: false,
+            reviewRequired: true,
+            claimReleased: released,
+          },
+        },
+      })
+      .catch(() => undefined);
+    return {
+      status: 'needs_review',
+      reason: finalClaimGate.reason || 'claim_ineligible_before_provider',
+      claimRef,
+      idempotencyKey,
+    };
   }
 
   // Set once the provider has taken the money; from then on the claim must

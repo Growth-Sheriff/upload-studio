@@ -103,6 +103,8 @@ export async function getOutstandingFeeSelection(
       shopId,
       status: "pending",
       paymentRef: null,
+      collectibleAt: { not: null },
+      reviewRequiredAt: null,
       ...(requestedOrderIds?.length ? { orderId: { in: requestedOrderIds } } : {}),
       ...(options.orderCurrency
         ? { orderCurrency: { equals: options.orderCurrency, mode: 'insensitive' as const } }
@@ -151,7 +153,14 @@ export async function calculatePendingCommissions(
     return { totalAmount: 0, orderRates: new Map(), description: "" };
   }
   const rows = await prisma.commission.findMany({
-    where: { shopId, orderId: { in: pendingOrderIds } },
+    where: {
+      shopId,
+      orderId: { in: pendingOrderIds },
+      status: 'pending',
+      paymentRef: null,
+      collectibleAt: { not: null },
+      reviewRequiredAt: null,
+    },
     select: { orderId: true, commissionAmount: true },
   });
   const orderRates = new Map<string, number>();

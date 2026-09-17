@@ -47,6 +47,10 @@ const shopify = shopifyApp({
       deliveryMethod: DeliveryMethod.Http,
       callbackUrl: "/webhooks/orders-paid",
     },
+    ORDERS_UPDATED: {
+      deliveryMethod: DeliveryMethod.Http,
+      callbackUrl: "/webhooks/orders-updated",
+    },
     ORDERS_CANCELLED: {
       deliveryMethod: DeliveryMethod.Http,
       callbackUrl: "/webhooks/orders-cancelled",
@@ -54,6 +58,10 @@ const shopify = shopifyApp({
     ORDERS_FULFILLED: {
       deliveryMethod: DeliveryMethod.Http,
       callbackUrl: "/webhooks/orders-fulfilled",
+    },
+    REFUNDS_CREATE: {
+      deliveryMethod: DeliveryMethod.Http,
+      callbackUrl: "/webhooks/refunds-create",
     },
     PRODUCTS_UPDATE: {
       deliveryMethod: DeliveryMethod.Http,
@@ -66,10 +74,10 @@ const shopify = shopifyApp({
   },
   hooks: {
     afterAuth: async ({ session }) => {
-
-      shopify.registerWebhooks({ session });
-
-
+      // Webhook subscriptions are managed declaratively in every tenant's
+      // shopify.app.*.toml. Registering the same topics again here can create
+      // duplicate deliveries and makes authentication depend on a second
+      // Shopify API call.
       // Reinstall must reactivate a shop that webhooks.app-uninstalled
       // deactivated (data is retained through uninstall; see that handler).
       const existing = await prisma.shop.findUnique({
@@ -121,4 +129,3 @@ export const authenticate = shopify.authenticate;
 export const unauthenticated = shopify.unauthenticated;
 export const login = shopify.login;
 export const registerWebhooks = shopify.registerWebhooks;
-

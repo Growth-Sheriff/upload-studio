@@ -17,6 +17,7 @@ import prisma from '~/lib/prisma.server';
 import { authenticate } from '~/shopify.server';
 import {
   amountStringToCents,
+  assertHostedCheckoutReservationCapturable,
   HostedCheckoutReservationError,
   parseHostedCheckoutReservation,
   settleHostedCheckoutReservation,
@@ -104,6 +105,11 @@ export async function action({ request }: ActionFunctionArgs) {
           { status: 400 }
         );
       }
+      await assertHostedCheckoutReservationCapturable({
+        shopId: shop.id,
+        snapshot,
+        provider: 'paypal',
+      });
       capture = await capturePayPalOrder(paypalOrderId);
     }
 

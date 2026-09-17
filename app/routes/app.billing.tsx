@@ -6,6 +6,7 @@ import { isPayPalConfigured } from '~/lib/paypal.server'
 import { isStripeConfigured } from '~/lib/stripe.server'
 import { authenticate } from '~/shopify.server'
 import { COMMISSION_PERCENT } from '~/lib/billing.server'
+import { isCommissionCollectible } from '~/lib/commissionEligibility.server'
 import { BillingPageView, type BillingMonth, type BillingOrderRecord } from '~/components/BillingPageView'
 
 const PAYPAL_EMAIL = process.env.PAYPAL_EMAIL || 'billing@techifyboost.com'
@@ -56,20 +57,35 @@ export async function loader({ request }: LoaderFunctionArgs) {
       createdAt: true,
       paidAt: true,
       paymentRef: true,
+      collectibleAt: true,
+      reviewRequiredAt: true,
+      reviewReason: true,
     },
     orderBy: { createdAt: 'desc' },
   })
 
   const records: BillingOrderRecord[] = allCommissions
-    .map((commission) => ({
-      orderId: commission.orderId,
-      orderNumber: commission.orderNumber || `#${commission.orderId.slice(-6)}`,
-      commissionAmount: Number(commission.commissionAmount),
-      status: commission.status,
-      createdAt: (orderDateMap.get(commission.orderId) || commission.createdAt).toISOString(),
-      paidAt: commission.paidAt?.toISOString() || null,
-      paymentRef: commission.paymentRef || null,
-    }))
+    .map((commission) => {
+      const collectible = isCommissionCollectible(commission)
+      const displayStatus = commission.reviewRequiredAt
+        ? 'review_required'
+        : commission.status === 'pending' && !collectible
+          ? 'awaiting_payment'
+          : commission.status
+      return {
+        orderId: commission.orderId,
+        orderNumber: commission.orderNumber || `#${commission.orderId.slice(-6)}`,
+        commissionAmount: Number(commission.commissionAmount),
+        status: commission.status,
+        displayStatus,
+        collectible,
+        reviewRequired: Boolean(commission.reviewRequiredAt),
+        reviewReason: commission.reviewReason || null,
+        createdAt: (orderDateMap.get(commission.orderId) || commission.createdAt).toISOString(),
+        paidAt: commission.paidAt?.toISOString() || null,
+        paymentRef: commission.paymentRef || null,
+      }
+    })
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
   const monthMap = new Map<string, BillingOrderRecord[]>()
@@ -85,7 +101,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     .map(([monthKey, orders]) => {
       const [year, month] = monthKey.split('-').map(Number)
       const monthLabel = new Date(year, month - 1, 1).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })
-      const pendingOrders = orders.filter((o) => o.status === 'pending')
+      const pendingOrders = orders.filter((o) => o.collectible)
       const paidOrders = orders.filter((o) => o.status === 'paid')
       const waivedOrders = orders.filter((o) => o.status === 'waived')
       return {
@@ -103,7 +119,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       }
     })
 
-  const pending = records.filter((r) => r.status === 'pending')
+  const pending = records.filter((r) => r.collectible)
   const paid = records.filter((r) => r.status === 'paid')
   const summary = {
     pendingAmount: pending.reduce((sum, r) => sum + r.commissionAmount, 0),
@@ -213,6 +229,8 @@ export async function action({ request }: ActionFunctionArgs) {
             status: true,
             paymentRef: true,
             commissionAmount: true,
+            collectibleAt: true,
+            reviewRequiredAt: true,
           },
         })
         if (rows.length !== ids.length) throw new CommissionPaymentConflictError()
@@ -224,7 +242,15 @@ export async function action({ request }: ActionFunctionArgs) {
           return { count: rows.length, alreadyProcessed: true }
         }
 
-        if (rows.some((row) => row.status !== 'pending' || row.paymentRef !== null)) {
+        if (
+          rows.some(
+            (row) =>
+              row.status !== 'pending' ||
+              row.paymentRef !== null ||
+              !row.collectibleAt ||
+              Boolean(row.reviewRequiredAt)
+          )
+        ) {
           throw new CommissionPaymentConflictError()
         }
 
@@ -234,6 +260,8 @@ export async function action({ request }: ActionFunctionArgs) {
             orderId: { in: ids },
             status: 'pending',
             paymentRef: null,
+            collectibleAt: { not: null },
+            reviewRequiredAt: null,
           },
           data: { status: 'paid', paidAt: new Date(), paymentRef },
         })

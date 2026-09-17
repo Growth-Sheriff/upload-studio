@@ -67,7 +67,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
     if (!hasVault || hasOverdueRetry) {
       const pendingAgg = await prisma.commission.aggregate({
-        where: { shopId: shop.id, status: 'pending' },
+        where: {
+          shopId: shop.id,
+          status: 'pending',
+          paymentRef: null,
+          collectibleAt: { not: null },
+          reviewRequiredAt: null,
+        },
         _sum: { commissionAmount: true },
         _count: true,
       });

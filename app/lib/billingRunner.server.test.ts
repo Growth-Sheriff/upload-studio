@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildFailedProviderDisableUpdates,
   shouldQuarantineClaimAfterProviderError,
+  validateAutoChargeClaimBeforeProvider,
 } from './billingRunner.server'
 
 describe('auto-charge saved-method isolation', () => {
@@ -66,6 +67,65 @@ describe('auto-charge provider outcome safety', () => {
   it('releases a claim when no provider request started', () => {
     expect(
       shouldQuarantineClaimAfterProviderError(false, 'local validation failed')
+    ).toBe(false)
+  })
+})
+
+describe('auto-charge final eligibility gate', () => {
+  const eligibleRow = {
+    orderId: 'order-1',
+    status: 'charging',
+    paymentRef: 'claim-1',
+    collectibleAt: new Date('2026-09-17T10:00:00Z'),
+    reviewRequiredAt: null,
+    shopifyFinancialStatus: 'paid',
+    shopifyRefundStatus: null,
+    shopifyCancelledAt: null,
+  }
+
+  it('allows only the exact still-eligible claimed row set', () => {
+    expect(
+      validateAutoChargeClaimBeforeProvider({
+        claimRef: 'claim-1',
+        expectedOrderIds: ['order-1'],
+        rows: [eligibleRow],
+      })
+    ).toEqual({ safe: true, reason: null, unsafeOrderIds: [] })
+  })
+
+  it.each([
+    { reviewRequiredAt: new Date('2026-09-17T10:01:00Z') },
+    { shopifyCancelledAt: new Date('2026-09-17T10:01:00Z') },
+    { shopifyRefundStatus: 'partial' },
+    { shopifyFinancialStatus: 'refunded' },
+  ])('aborts before the provider when terminal/review facts race the claim: %o', (change) => {
+    expect(
+      validateAutoChargeClaimBeforeProvider({
+        claimRef: 'claim-1',
+        expectedOrderIds: ['order-1'],
+        rows: [{ ...eligibleRow, ...change }],
+      })
+    ).toEqual({
+      safe: false,
+      reason: 'eligibility_changed_after_claim',
+      unsafeOrderIds: ['order-1'],
+    })
+  })
+
+  it('aborts when the exact claimed set or claim ownership changed', () => {
+    expect(
+      validateAutoChargeClaimBeforeProvider({
+        claimRef: 'claim-1',
+        expectedOrderIds: ['order-1', 'order-2'],
+        rows: [eligibleRow],
+      }).safe
+    ).toBe(false)
+    expect(
+      validateAutoChargeClaimBeforeProvider({
+        claimRef: 'claim-1',
+        expectedOrderIds: ['order-1'],
+        rows: [{ ...eligibleRow, paymentRef: 'another-claim' }],
+      }).safe
     ).toBe(false)
   })
 })

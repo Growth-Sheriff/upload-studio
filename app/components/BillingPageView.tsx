@@ -31,6 +31,10 @@ export interface BillingOrderRecord {
   orderNumber: string | null
   commissionAmount: number
   status: string
+  displayStatus: string
+  collectible: boolean
+  reviewRequired: boolean
+  reviewReason: string | null
   createdAt: string
   paidAt: string | null
   paymentRef: string | null
@@ -95,9 +99,26 @@ function orderStatus(status: string): { tone: 'success' | 'info' | 'attention'; 
   if (status === 'paid') return { tone: 'success', label: 'Settled' }
   if (status === 'waived') return { tone: 'info', label: 'Waived' }
   if (status === 'void') return { tone: 'info', label: 'Not billed' }
+  if (status === 'awaiting_payment') return { tone: 'info', label: 'Awaiting customer payment' }
+  if (status === 'review_required') return { tone: 'attention', label: 'Review required' }
   if (status === 'checkout_reserved') return { tone: 'attention', label: 'Checkout pending' }
   if (status === 'charging') return { tone: 'attention', label: 'Payment review' }
   return { tone: 'attention', label: 'Due' }
+}
+
+function recordStatus(order: BillingOrderRecord): { tone: 'success' | 'info' | 'attention'; label: string } {
+  if (!order.reviewRequired) return orderStatus(order.displayStatus)
+  const reason = order.reviewReason || ''
+  if (reason.includes('partially_refunded')) {
+    return { tone: 'attention', label: 'Review partial refund' }
+  }
+  if (reason.includes('fully_refunded')) {
+    return { tone: 'attention', label: 'Review full refund' }
+  }
+  if (reason.includes('cancelled')) {
+    return { tone: 'attention', label: 'Review cancellation' }
+  }
+  return { tone: 'attention', label: 'Review required' }
 }
 
 function csvCell(value: string | number | null | undefined): string {
@@ -115,7 +136,7 @@ function downloadMonthCsv(month: BillingMonth, shopDomain: string) {
       order.orderNumber || order.orderId,
       formatDate(order.createdAt),
       (Number(order.commissionAmount) || 0).toFixed(2),
-      orderStatus(order.status).label,
+      recordStatus(order).label,
       order.status === 'paid' ? formatDate(order.paidAt) : '',
       order.paymentRef || '',
     ])
@@ -195,10 +216,11 @@ export function BillingPageView(data: BillingPageData) {
   const settlements = useMemo(() => groupSettlements(records), [records])
   const hasMethod = stripeSaved || paypalVaulted
   const autoPayOn = stripeAutoCharge || autoChargeEnabled
-  const pendingOrderIds = records.filter((r) => r.status === 'pending').map((r) => r.orderId).join(',')
+  const pendingOrderIds = records.filter((r) => r.collectible).map((r) => r.orderId).join(',')
   const chargingOrderCount = records.filter(
     (r) => r.status === 'charging' || r.status === 'checkout_reserved'
   ).length
+  const reviewOrderCount = records.filter((r) => r.reviewRequired).length
 
   const toggleMonth = useCallback((monthKey: string) => {
     setExpandedMonths((prev) => {
@@ -393,15 +415,20 @@ export function BillingPageView(data: BillingPageData) {
                 <InlineStack align="space-between" blockAlign="center">
                   <Text as="h2" variant="headingMd">Amount due</Text>
                   <InlineStack gap="100">
-                    <Badge tone={summary.pendingAmount > 0 || chargingOrderCount > 0 ? 'attention' : 'success'}>
+                    <Badge tone={summary.pendingAmount > 0 || chargingOrderCount > 0 || reviewOrderCount > 0 ? 'attention' : 'success'}>
                       {summary.pendingAmount > 0
                         ? `${formatCount(summary.pendingOrders)} orders`
                         : chargingOrderCount > 0
                           ? 'Payment review'
+                          : reviewOrderCount > 0
+                            ? 'Review required'
                           : 'All settled'}
                     </Badge>
                     {summary.pendingAmount > 0 && chargingOrderCount > 0 ? (
                       <Badge tone="attention">Payment review</Badge>
+                    ) : null}
+                    {reviewOrderCount > 0 ? (
+                      <Badge tone="attention">{`${formatCount(reviewOrderCount)} need review`}</Badge>
                     ) : null}
                   </InlineStack>
                 </InlineStack>
@@ -445,9 +472,9 @@ export function BillingPageView(data: BillingPageData) {
                   </BlockStack>
                 ) : (
                   <Text as="p" variant="bodySm" tone="subdued">
-                    {chargingOrderCount > 0
+                    {chargingOrderCount > 0 || reviewOrderCount > 0
                       ? 'A payment is awaiting review.'
-                      : 'Nothing to pay right now. New fees appear here as orders come in.'}
+                      : 'Nothing to pay right now. A fee appears only after Shopify confirms customer payment.'}
                   </Text>
                 )}
               </BlockStack>
@@ -472,15 +499,16 @@ export function BillingPageView(data: BillingPageData) {
               ) : null}
               {monthlyBreakdowns.map((month) => {
                 const expanded = expandedMonths.has(month.monthKey)
-                const monthPendingIds = month.orders.filter((o) => o.status === 'pending').map((o) => o.orderId)
+                const monthPendingIds = month.orders.filter((o) => o.collectible).map((o) => o.orderId)
                 const monthChargingOrders = month.orders.filter(
                   (o) => o.status === 'charging' || o.status === 'checkout_reserved'
                 ).length
                 const monthVoidOrders = month.orders.filter((o) => o.status === 'void').length
+                const monthReviewOrders = month.orders.filter((o) => o.reviewRequired).length
                 const status =
                   month.pendingOrders > 0
                     ? { tone: 'attention' as const, label: `${formatCount(month.pendingOrders)} due` }
-                    : monthChargingOrders > 0
+                    : monthChargingOrders > 0 || monthReviewOrders > 0
                       ? { tone: 'attention' as const, label: 'Payment review' }
                       : monthVoidOrders === month.totalOrders
                         ? { tone: 'info' as const, label: 'Not billed' }
@@ -491,7 +519,7 @@ export function BillingPageView(data: BillingPageData) {
                   order.orderNumber || order.orderId,
                   formatDate(order.createdAt),
                   formatMoney(order.commissionAmount),
-                  <Badge key={order.orderId} tone={orderStatus(order.status).tone}>{orderStatus(order.status).label}</Badge>,
+                  <Badge key={order.orderId} tone={recordStatus(order).tone}>{recordStatus(order).label}</Badge>,
                   order.status === 'paid' ? formatDate(order.paidAt) : order.status === 'waived' ? 'Waived' : '-',
                 ])
                 return (
@@ -574,6 +602,9 @@ export function BillingPageView(data: BillingPageData) {
                 </Text>
                 <Text as="p" variant="bodySm">
                   Fees are tracked per order. Pay everything due at once, pay a single month, or let auto-pay settle them at {formatMoney(autoChargeThreshold)}.
+                </Text>
+                <Text as="p" variant="bodySm">
+                  A fee becomes due only after Shopify confirms the customer payment. Cancelled, unpaid, or fully refunded orders are not collected; partial refunds and payments already in flight are held for review.
                 </Text>
                 <Divider />
                 <Text as="p" variant="bodySm" tone="subdued">Questions? support@{typeof window === 'undefined' ? 'uploadstudio.app.techifyboost.com' : window.location.hostname}</Text>
