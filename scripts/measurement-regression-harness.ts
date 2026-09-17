@@ -56,7 +56,7 @@ interface CaseFixture {
   measurementPolicy?: string | null
   rollWidthIn?: number | null
   metadata: JsonRecord
-  expectedClassification: 'same' | 'intended_fix' | 'regression'
+  expectedClassification: 'same' | 'intended_fix' | 'approved_correction' | 'regression'
   expectedChangedFields: OutputField[]
   expected?: {
     previous: Partial<VersionOutput>
@@ -120,17 +120,7 @@ interface UploadLifecycleModule {
 
 interface MainProductMeasurementModule {
   getMainProductRollWidth: (value: unknown) => number
-  resolveServerMainProductRollWidth?: (
-    builderConfig: JsonRecord | null | undefined,
-    options?: { policyExplicit?: boolean; maxSheetWidthIn?: number | string | null }
-  ) => number
-}
-
-interface CustomerPricingModelModule {
-  resolveCustomerPricingModelState: (
-    shopDomain: string,
-    settings: unknown
-  ) => { policyExplicit: boolean; policy: { maxSheetWidthIn: number } }
+  resolveServerMainProductRollWidth?: (builderConfig: JsonRecord | null | undefined) => number
 }
 
 interface LegacyCustomerPricingModule {
@@ -393,9 +383,6 @@ const previousMainProductMeasurement = previousLoader.load<MainProductMeasuremen
 const currentMainProductMeasurement = currentLoader.load<MainProductMeasurementModule>(
   'app/lib/mainProductMeasurement.server.ts'
 )
-const currentCustomerPricingModel = currentLoader.load<CustomerPricingModelModule>(
-  'app/lib/customerPricingModel.server.ts'
-)
 const previousCustomerPricing = previousLoader.load<LegacyCustomerPricingModule>(
   'app/lib/customerPricing.server.ts'
 )
@@ -425,16 +412,8 @@ async function resolveVersion(
   if (version === 'previous') {
     rollWidthIn = previousMainProductMeasurement.getMainProductRollWidth(rollWidthIn)
   } else if (currentMainProductMeasurement.resolveServerMainProductRollWidth) {
-    const pricingModel = currentCustomerPricingModel.resolveCustomerPricingModelState(
-      product.shopDomain,
-      product.shopSettings || {}
-    )
     rollWidthIn = currentMainProductMeasurement.resolveServerMainProductRollWidth(
-      product.builderConfig,
-      {
-        policyExplicit: pricingModel.policyExplicit,
-        maxSheetWidthIn: pricingModel.policy.maxSheetWidthIn,
-      }
+      product.builderConfig
     )
     maxUploadWidth = rollWidthIn
   }

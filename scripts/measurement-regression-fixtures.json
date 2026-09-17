@@ -165,8 +165,8 @@
         "sheetWidthIn": 22,
         "measurementMode": "full"
       },
-      "expectedClassification": "same",
-      "expectedChangedFields": [],
+      "expectedClassification": "intended_fix",
+      "expectedChangedFields": ["chosenVariant", "designsPerSheet", "sheetsNeeded", "finalPrice"],
       "expected": {
         "previous": {
           "widthIn": 22.26,
@@ -187,10 +187,10 @@
           "widthIn": 22.26,
           "heightIn": 237.05,
           "effectiveDpi": 299.9994,
-          "chosenVariant": null,
-          "designsPerSheet": null,
-          "sheetsNeeded": null,
-          "finalPrice": null,
+          "chosenVariant": "22\" / 240\"",
+          "designsPerSheet": 1,
+          "sheetsNeeded": 1,
+          "finalPrice": 120,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
@@ -199,7 +199,7 @@
           "productionNote": null
         }
       },
-      "explanation": "Both versions honor the embedded 300-DPI scale. At 22.26 inches across, this real file has no fit under the live zero-tolerance alpha resolver."
+      "explanation": "Both versions honor the embedded 300-DPI scale. The corrected resolver uses the product's 22.5-inch printable width as the sole cross-roll limit, so this 22.26-inch-wide file now selects the 240-inch length variant at $120 instead of being rejected by the variant's nominal 22-inch label."
     },
     {
       "caseId": "alpha-order-43232-long",
@@ -220,8 +220,8 @@
         "sheetWidthIn": 22,
         "measurementMode": "full"
       },
-      "expectedClassification": "regression",
-      "expectedChangedFields": ["chosenVariant", "designsPerSheet", "sheetsNeeded", "finalPrice"],
+      "expectedClassification": "same",
+      "expectedChangedFields": [],
       "expected": {
         "previous": {
           "widthIn": 237.99,
@@ -242,10 +242,10 @@
           "widthIn": 237.99,
           "heightIn": 21.98,
           "effectiveDpi": 299.9994,
-          "chosenVariant": null,
-          "designsPerSheet": null,
-          "sheetsNeeded": null,
-          "finalPrice": null,
+          "chosenVariant": "22\" / 240\"",
+          "designsPerSheet": 1,
+          "sheetsNeeded": 1,
+          "finalPrice": 120,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
@@ -254,7 +254,7 @@
           "productionNote": null
         }
       },
-      "explanation": "The previous effective resolver ignored the stored 0.125-inch margins and selected 22 x 240. The current effective resolver activates those margins with zero tolerance, so 21.98 inches no longer fits the 21.75-inch printable width. This is release-gated by the media-width versus printable-width owner decision."
+      "explanation": "The product roll width is the printable width. The 21.98-inch short edge fits the 22-inch roll, so both revisions select 22 x 240 at $120. Orientation normalization remains internal and emits no production instruction."
     },
     {
       "caseId": "alpha-order-43232-rotated",
@@ -275,8 +275,8 @@
         "sheetWidthIn": 22,
         "measurementMode": "full"
       },
-      "expectedClassification": "regression",
-      "expectedChangedFields": ["chosenVariant", "finalPrice", "placementMode", "rotationApplied", "productionNote"],
+      "expectedClassification": "same",
+      "expectedChangedFields": [],
       "expected": {
         "previous": {
           "widthIn": 23.91,
@@ -297,19 +297,19 @@
           "widthIn": 23.91,
           "heightIn": 21.14,
           "effectiveDpi": 299.9994,
-          "chosenVariant": "22\" / 36\"",
+          "chosenVariant": "22\" / 24\"",
           "designsPerSheet": 1,
           "sheetsNeeded": 1,
-          "finalPrice": 45,
+          "finalPrice": 30,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": "rotated",
-          "rotationApplied": true,
-          "productionNote": "Rotate artwork 90°"
+          "placementMode": null,
+          "rotationApplied": null,
+          "productionNote": null
         }
       },
-      "explanation": "The previous resolver rotates the 23.91 x 21.14 design onto 22 x 24. With the live stored margins newly active and no tolerance, the 23.91-inch edge exceeds the 23.75-inch printable length, so current code escalates to 22 x 36 and raises retail price from $30 to $45."
+      "explanation": "Orientation is normalized internally to 21.14 inches across the roll and 23.91 inches of length. The file remains on 22 x 24 at $30, with no rotation instruction or hidden margin adjustment."
     },
     {
       "caseId": "alpha-short-sheet-orientation",
@@ -330,8 +330,8 @@
         "sheetWidthIn": 22,
         "measurementMode": "full"
       },
-      "expectedClassification": "regression",
-      "expectedChangedFields": ["placementMode", "rotationApplied", "productionNote"],
+      "expectedClassification": "intended_fix",
+      "expectedChangedFields": ["chosenVariant", "finalPrice"],
       "expected": {
         "previous": {
           "widthIn": 21.26,
@@ -352,19 +352,19 @@
           "widthIn": 21.26,
           "heightIn": 11.73,
           "effectiveDpi": 299.9994,
-          "chosenVariant": "22\" / 12\"",
+          "chosenVariant": "22\" / 24\"",
           "designsPerSheet": 1,
           "sheetsNeeded": 1,
-          "finalPrice": 6,
+          "finalPrice": 12,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": "rotated",
-          "rotationApplied": true,
-          "productionNote": "Rotate artwork 90°"
+          "placementMode": null,
+          "rotationApplied": null,
+          "productionNote": null
         }
       },
-      "explanation": "Variant and retail price stay the same, so the A1 silent-repricing hypothesis is rejected for this live split product. Current code nevertheless treats the 12-inch short edge as cross-roll and emits Rotate 90°, while Shopify calls the first 22-inch option Transfer Width. Because changing that convention would also change custom checkout validation and billable length, this operational difference remains a release-gated regression rather than a safe local fix."
+      "explanation": "Final owner rule correction: the file normalizes to 11.73 inches across the roll and 21.26 billable inches long. It therefore needs the merchant's 24-inch length variant at $12 rather than the 12-inch variant at $6; no rotation instruction is emitted."
     },
     {
       "caseId": "alpha-eight-up",
@@ -385,8 +385,8 @@
         "sheetWidthIn": 22,
         "measurementMode": "full"
       },
-      "expectedClassification": "intended_fix",
-      "expectedChangedFields": ["placementMode", "rotationApplied"],
+      "expectedClassification": "approved_correction",
+      "expectedChangedFields": ["designsPerSheet", "sheetsNeeded", "finalPrice"],
       "expected": {
         "previous": {
           "widthIn": 5,
@@ -408,18 +408,18 @@
           "heightIn": 5,
           "effectiveDpi": 299.9994,
           "chosenVariant": "22\" / 12\"",
-          "designsPerSheet": 8,
-          "sheetsNeeded": 1,
-          "finalPrice": 6,
+          "designsPerSheet": 1,
+          "sheetsNeeded": 8,
+          "finalPrice": 48,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": "normal",
-          "rotationApplied": false,
+          "placementMode": null,
+          "rotationApplied": null,
           "productionNote": null
         }
       },
-      "explanation": "The real 5 x 5, eight-copy job still nests eight-up on 22 x 12 at the same price. Current code additionally records the canonical normal/no-rotation production decision; that metadata addition is intentional."
+      "explanation": "Owner-approved correction: the uploaded file is the finished sheet, so quantity 8 means eight complete 22 x 12 sheets. Removing the nonexistent eight-up layout raises this scenario from $6 to $48."
     },
     {
       "caseId": "alpha-margin-reprice",
@@ -440,8 +440,8 @@
         "sheetWidthIn": 22,
         "measurementMode": "full"
       },
-      "expectedClassification": "regression",
-      "expectedChangedFields": ["designsPerSheet", "sheetsNeeded", "finalPrice", "placementMode", "rotationApplied"],
+      "expectedClassification": "approved_correction",
+      "expectedChangedFields": ["designsPerSheet", "sheetsNeeded", "finalPrice"],
       "expected": {
         "previous": {
           "widthIn": 10.99,
@@ -469,12 +469,12 @@
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": "normal",
-          "rotationApplied": false,
+          "placementMode": null,
+          "rotationApplied": null,
           "productionNote": null
         }
       },
-      "explanation": "The previous effective resolver placed two copies on each 22 x 12 sheet. Activating the stored 0.125-inch artboard and image margins leaves 22 x 12 as the smallest fitting family but reduces it to one copy per sheet, doubling the retail total from $30 to $60. Current normal/no-rotation metadata is intentional, but the commercial margin change remains a regression until the owner explicitly approves it."
+      "explanation": "Owner-approved correction: quantity means complete sheet copies, never two layouts on one sheet. Ten copies therefore require ten 22 x 12 sheets and cost $60 instead of the undercharged $30; margins play no role."
     },
     {
       "caseId": "alpha-adobe-72",
@@ -499,8 +499,8 @@
         "heightIn": 21.33,
         "measurementMode": "full"
       },
-      "expectedClassification": "intended_fix",
-      "expectedChangedFields": ["placementMode", "rotationApplied"],
+      "expectedClassification": "same",
+      "expectedChangedFields": [],
       "expected": {
         "previous": {
           "widthIn": 14.22,
@@ -528,12 +528,12 @@
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": "normal",
-          "rotationApplied": false,
+          "placementMode": null,
+          "rotationApplied": null,
           "productionNote": null
         }
       },
-      "explanation": "Both route-equivalent revisions normalize the real stored row through lifecycle parsing, apply Adobe 72 DPI, and select 22 x 24 at $12. Current code only adds explicit normal/no-rotation production metadata; the earlier raw-metadata-only harness result of 47 DPI was a false comparison and is not blessed."
+      "explanation": "Both route-equivalent revisions normalize the real stored row through lifecycle parsing, apply Adobe 72 DPI, and select 22 x 24 at $12. The earlier raw-metadata-only harness result of 47 DPI was a false comparison and is not blessed."
     },
     {
       "caseId": "dtfph-two-copies",
@@ -554,8 +554,8 @@
         "sheetWidthIn": 22,
         "measurementMode": "full"
       },
-      "expectedClassification": "intended_fix",
-      "expectedChangedFields": ["placementMode", "rotationApplied"],
+      "expectedClassification": "same",
+      "expectedChangedFields": [],
       "expected": {
         "previous": {
           "widthIn": 22,
@@ -583,12 +583,12 @@
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
-          "placementMode": "normal",
-          "rotationApplied": false,
+          "placementMode": null,
+          "rotationApplied": null,
           "productionNote": null
         }
       },
-      "explanation": "The live full-width, two-copy job remains two physical 22 x 72 sheets with the same $63.36 retail total. Current code intentionally makes the normal/no-rotation production decision explicit."
+      "explanation": "The live full-width, two-copy job remains two physical 22 x 72 sheets with the same $63.36 retail total. Orientation normalization remains internal and emits no production instruction."
     },
     {
       "caseId": "alpha-linear-copy-scenario",
@@ -612,7 +612,7 @@
         "measurementMode": "full"
       },
       "expectedClassification": "intended_fix",
-      "expectedChangedFields": ["sheetsNeeded", "rotationApplied"],
+      "expectedChangedFields": ["sheetsNeeded"],
       "expected": {
         "previous": {
           "widthIn": 22.25,
@@ -641,7 +641,7 @@
           "pricePerInch": 0.28,
           "chosenTier": "1-249 @ $0.28",
           "placementMode": null,
-          "rotationApplied": false,
+          "rotationApplied": null,
           "productionNote": null
         }
       },
@@ -669,7 +669,7 @@
         "measurementMode": "full"
       },
       "expectedClassification": "intended_fix",
-      "expectedChangedFields": ["sheetsNeeded", "rotationApplied"],
+      "expectedChangedFields": ["sheetsNeeded"],
       "expected": {
         "previous": {
           "widthIn": 22.25,
@@ -698,7 +698,7 @@
           "pricePerInch": 0.22,
           "chosenTier": "250-499 @ $0.22",
           "placementMode": null,
-          "rotationApplied": false,
+          "rotationApplied": null,
           "productionNote": null
         }
       },
@@ -726,7 +726,7 @@
         "measurementMode": "full"
       },
       "expectedClassification": "intended_fix",
-      "expectedChangedFields": ["sheetsNeeded", "rotationApplied"],
+      "expectedChangedFields": ["sheetsNeeded"],
       "expected": {
         "previous": {
           "widthIn": 22.25,
@@ -755,7 +755,7 @@
           "pricePerInch": 0.2,
           "chosenTier": "500-∞ @ $0.20",
           "placementMode": null,
-          "rotationApplied": false,
+          "rotationApplied": null,
           "productionNote": null
         }
       },
