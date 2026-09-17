@@ -5,6 +5,8 @@ import {
   getExportJobOptions,
   getMeasurePreflightJobOptions,
   getPreviewRenderJobOptions,
+  handoffRenderedPreview,
+  inspectPreviewMeasurementOnce,
   isFinalUploadJobAttempt,
   MEASURE_PREFLIGHT_JOB_OPTIONS,
   PREVIEW_RENDER_JOB_OPTIONS,
@@ -23,7 +25,7 @@ describe('upload queue contracts', () => {
     expect(MEASURE_PREFLIGHT_JOB_OPTIONS.backoff.delay).toBe(60_000)
   })
 
-  it('uses separate deterministic ids for initial preview and merge passes', () => {
+  it('keeps deterministic initial ids and legacy merge-job compatibility', () => {
     expect(getPreviewRenderJobOptions('item_123')).toEqual({
       ...PREVIEW_RENDER_JOB_OPTIONS,
       priority: 20,
@@ -32,6 +34,70 @@ describe('upload queue contracts', () => {
     })
     expect(getPreviewRenderJobOptions('item_123', 2).jobId).toBe('preview-item_123-v1-2')
     expect(getPreviewRenderJobOptions('item_123', 2).delay).toBe(5_000)
+  })
+
+  it('re-reads a measurement race instead of rendering the source again', async () => {
+    const pending = { preflightStatus: 'pending', thumbnailKey: null }
+    const ready = { preflightStatus: 'ok', thumbnailKey: null }
+    let reads = 0
+
+    const result = await handoffRenderedPreview({
+      initialItem: pending,
+      persist: async () => false,
+      reread: async () => {
+        reads += 1
+        return ready
+      },
+    })
+
+    expect(result).toEqual({ item: ready, persisted: false, attempts: 1 })
+    expect(reads).toBe(1)
+  })
+
+  it('retries a pending compare-and-swap with the refreshed row', async () => {
+    const versions = [
+      { preflightStatus: 'pending', version: 1 },
+      { preflightStatus: 'pending', version: 2 },
+    ]
+    const persistedVersions: number[] = []
+
+    const result = await handoffRenderedPreview({
+      initialItem: versions[0],
+      persist: async (item) => {
+        persistedVersions.push(item.version)
+        return item.version === 2
+      },
+      reread: async () => versions[1],
+    })
+
+    expect(result).toEqual({ item: versions[1], persisted: true, attempts: 2 })
+    expect(persistedVersions).toEqual([1, 2])
+  })
+
+  it('lets three pending probes yield their slots so a fourth probe can start', async () => {
+    const readCounts = [0, 0, 0, 0]
+    const started: number[] = []
+    const tasks = readCounts.map((_, index) => async () => {
+      started.push(index)
+      return inspectPreviewMeasurementOnce(async () => {
+        readCounts[index] += 1
+        return { preflightStatus: index === 3 ? 'ok' : 'pending' }
+      })
+    })
+
+    let nextTask = 0
+    const runSlot = async () => {
+      while (nextTask < tasks.length) {
+        const taskIndex = nextTask
+        nextTask += 1
+        await tasks[taskIndex]()
+      }
+    }
+
+    await Promise.all([runSlot(), runSlot(), runSlot()])
+
+    expect(started).toEqual([0, 1, 2, 3])
+    expect(readCounts).toEqual([1, 1, 1, 1])
   })
 
   it('does not expose a retryable execution as the final failure', () => {

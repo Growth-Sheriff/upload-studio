@@ -940,36 +940,16 @@ export async function cleanupTempDir(tempDir: string): Promise<void> {
   }
 }
 
-export async function waitForMeasurementResolution(
-  itemId: string,
-  timeoutMs: number = 20000
-): Promise<{
+/** Read measurement state once. Preview workers must yield their concurrency
+ * slot and hand a durable thumbnail to the measurement writer instead of
+ * polling this row in-process. */
+export async function readMeasurementResolution(itemId: string): Promise<{
   id: string
   preflightStatus: string
   preflightResult: unknown
   thumbnailKey: string | null
   previewKey: string | null
 } | null> {
-  const startedAt = Date.now()
-
-  while (Date.now() - startedAt < timeoutMs) {
-    const item = await prisma.uploadItem.findUnique({
-      where: { id: itemId },
-      select: {
-        id: true,
-        preflightStatus: true,
-        preflightResult: true,
-        thumbnailKey: true,
-        previewKey: true,
-      },
-    })
-
-    if (!item) return null
-    if (item.preflightStatus !== 'pending') return item
-
-    await new Promise((resolve) => setTimeout(resolve, 500))
-  }
-
   return prisma.uploadItem.findUnique({
     where: { id: itemId },
     select: {

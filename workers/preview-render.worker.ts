@@ -1,12 +1,12 @@
-import { DelayedError, Job, Queue, Worker } from 'bullmq'
+import { DelayedError, Job, Worker } from 'bullmq'
 import path from 'path'
 import { generateThumbnail } from '../app/lib/preflight.server'
 import { deriveUploadItemLifecycle } from '../app/lib/uploadLifecycle.server'
 import {
   buildThumbnailStorageKey,
-  getPreviewRenderJobOptions,
+  handoffRenderedPreview,
+  inspectPreviewMeasurementOnce,
   isFinalUploadJobAttempt,
-  PREVIEW_RENDER_JOB_OPTIONS,
 } from '../app/lib/uploadQueues'
 import {
   acquireLargeImageLease,
@@ -26,7 +26,7 @@ import {
   type UploadPipelineJobData,
   updateUploadAggregateStatus,
   uploadGeneratedAsset,
-  waitForMeasurementResolution,
+  readMeasurementResolution,
   workerLog,
 } from './uploadPipeline.shared'
 
@@ -52,7 +52,7 @@ function mergeProblems(
 }
 
 type ResolvedMeasurementItem = NonNullable<
-  Awaited<ReturnType<typeof waitForMeasurementResolution>>
+  Awaited<ReturnType<typeof readMeasurementResolution>>
 >
 
 async function persistTerminalPreviewFailure(input: {
@@ -302,7 +302,9 @@ async function mergeRenderedPreview(input: {
   if (!saved) {
     const casAttempt = (input.casAttempt || 0) + 1
     if (casAttempt > 3) throw new Error(`Preview merge kept changing for item ${input.itemId}`)
-    const refreshed = await waitForMeasurementResolution(input.itemId, 1)
+    const { item: refreshed } = await inspectPreviewMeasurementOnce(() =>
+      readMeasurementResolution(input.itemId)
+    )
     if (!refreshed || refreshed.preflightStatus === 'pending') {
       throw new Error(`Measurement was not ready while retrying preview merge for item ${input.itemId}`)
     }
@@ -325,11 +327,6 @@ async function mergeRenderedPreview(input: {
   return { nextPreflightStatus, uploadStatus }
 }
 
-export const previewRenderQueue = new Queue<UploadPipelineJobData>(PREVIEW_RENDER_QUEUE_NAME, {
-  connection,
-  defaultJobOptions: PREVIEW_RENDER_JOB_OPTIONS,
-})
-
 const previewRenderWorker = new Worker<UploadPipelineJobData>(
   PREVIEW_RENDER_QUEUE_NAME,
   async (job: Job<UploadPipelineJobData>) => {
@@ -351,9 +348,11 @@ const previewRenderWorker = new Worker<UploadPipelineJobData>(
       const alreadyRendered = await prisma.uploadItem.findUnique({
         where: { id: itemId },
         select: {
+          id: true,
           preflightStatus: true,
           preflightResult: true,
           thumbnailKey: true,
+          previewKey: true,
           fileSize: true,
           storageKey: true,
         },
@@ -373,37 +372,28 @@ const previewRenderWorker = new Worker<UploadPipelineJobData>(
       }
 
       // Follow-up jobs exist only to merge an already-rendered preview after a
-      // slow measurement. Wait before downloading/decoding again; on a 475 MP
-      // file the old ordering repeated the expensive render on every merge
-      // pass while measurement was still pending.
+      // slow measurement. Reuse the row read above and yield immediately while
+      // measurement is pending: polling here would occupy all three preview
+      // concurrency slots and starve unrelated renders.
       if ((job.data.mergeAttempt || 0) > 0) {
-        const measurementBeforeRender = await waitForMeasurementResolution(itemId, 20000)
+        const { item: measurementBeforeRender, pending: measurementPending } =
+          await inspectPreviewMeasurementOnce(async () => alreadyRendered)
         if (
-          (!measurementBeforeRender || measurementBeforeRender.preflightStatus === 'pending') &&
+          measurementPending &&
           measurementBeforeRender?.thumbnailKey
         ) {
-          if ((job.data.mergeAttempt || 0) < 3) {
-            const nextMergeAttempt = (job.data.mergeAttempt || 0) + 1
-            await previewRenderQueue.add(
-              'preview-render',
-              { ...job.data, mergeAttempt: nextMergeAttempt },
-              getPreviewRenderJobOptions(itemId, nextMergeAttempt)
-            )
-          }
           workerLog.warn('PREVIEW_MERGE_WAITING_FOR_MEASUREMENT', {
             jobId: job.id,
             uploadId,
             itemId,
             mergeAttempt: job.data.mergeAttempt || 0,
           })
-          // The rendered thumbnail is already durable. Once the bounded merge
-          // follow-ups are exhausted, leave it for the measurement worker to
-          // merge instead of misclassifying a slow measurement as a preview
-          // generation failure.
+          // The rendered thumbnail is already durable. The measurement worker
+          // reads and merges that key when it commits, so this legacy follow-up
+          // can release its slot without scheduling another queue start.
           return {
             status: 'pending',
             deferredBeforeRender: true,
-            mergeFollowUpsExhausted: (job.data.mergeAttempt || 0) >= 3,
           }
         }
         if (measurementBeforeRender?.thumbnailKey) {
@@ -550,54 +540,87 @@ const previewRenderWorker = new Worker<UploadPipelineJobData>(
         largeImageLease = null
       }
 
-      const measurementItem = await waitForMeasurementResolution(itemId, 20000)
+      const { item: measurementItem, pending: measurementPending } =
+        await inspectPreviewMeasurementOnce(() => readMeasurementResolution(itemId))
       const resolvedThumbnailKey =
         thumbnailGenerated && thumbnailUploaded ? generatedThumbnailKey : measurementItem?.thumbnailKey || null
-
-      if (!measurementItem || measurementItem.preflightStatus === 'pending') {
-        await prisma.uploadItem.updateMany({
-          where: {
-            id: itemId,
-            preflightStatus: 'pending',
-            thumbnailKey: measurementItem?.thumbnailKey || null,
-            previewKey: measurementItem?.previewKey || null,
-          },
-          data: {
-            thumbnailKey: resolvedThumbnailKey,
-            previewKey: measurementItem?.previewKey || storageKey,
-          },
-        })
-
-        if ((job.data.mergeAttempt || 0) < 3) {
-          const nextMergeAttempt = (job.data.mergeAttempt || 0) + 1
-          await previewRenderQueue.add(
-            'preview-render',
-            {
-              ...job.data,
-              mergeAttempt: nextMergeAttempt,
-            },
-            getPreviewRenderJobOptions(itemId, nextMergeAttempt)
-          )
-        }
-
-        workerLog.warn('PREVIEW_MERGE_DEFERRED', {
-          itemId,
-          uploadId,
-          mergeAttempt: job.data.mergeAttempt || 0,
-          resolvedThumbnailKey: resolvedThumbnailKey?.substring(0, 60) || null,
-        })
-
-        return {
-          status: 'pending',
-          thumbnailKey: resolvedThumbnailKey,
-        }
-      }
 
       if (!resolvedThumbnailKey) {
         throw new Error(
           'Preview thumbnail could not be stored. Original file is preserved and measurement data remains usable.'
         )
       }
+
+      if (!measurementItem) {
+        throw new Error(`Upload item disappeared before preview could be stored: ${itemId}`)
+      }
+
+      if (measurementPending) {
+        const handoff = await handoffRenderedPreview({
+          initialItem: measurementItem,
+          persist: async (pendingItem) => {
+            return compareAndSwapUploadItemResult({
+              itemId,
+              expectedStatus: pendingItem.preflightStatus,
+              expectedResult: pendingItem.preflightResult,
+              nextStatus: pendingItem.preflightStatus,
+              nextResult: getResultRecord(pendingItem.preflightResult),
+              expectedThumbnailKey: pendingItem.thumbnailKey,
+              expectedPreviewKey: pendingItem.previewKey,
+              thumbnailKey: resolvedThumbnailKey,
+              previewKey: pendingItem.previewKey || storageKey,
+            })
+          },
+          reread: () => readMeasurementResolution(itemId),
+        })
+
+        workerLog.warn('PREVIEW_MERGE_DEFERRED', {
+          itemId,
+          uploadId,
+          persisted: handoff.persisted,
+          handoffAttempts: handoff.attempts,
+          resolvedThumbnailKey: resolvedThumbnailKey?.substring(0, 60) || null,
+        })
+
+        if (handoff.persisted) {
+          return {
+            status: 'pending',
+            thumbnailKey: resolvedThumbnailKey,
+          }
+        }
+        if (!handoff.item) {
+          throw new Error(`Upload item disappeared during preview handoff: ${itemId}`)
+        }
+        if (handoff.item.preflightStatus === 'pending') {
+          if (handoff.item.thumbnailKey) {
+            return {
+              status: 'pending',
+              thumbnailKey: handoff.item.thumbnailKey,
+              previewPersistedByOther: true,
+            }
+          }
+          throw new Error(`Preview handoff kept changing for item ${itemId}`)
+        }
+
+        const mergedAfterRace = await mergeRenderedPreview({
+          measurementItem: handoff.item,
+          itemId,
+          uploadId,
+          shopId,
+          storageKey,
+          resolvedThumbnailKey,
+          usedPlaceholder,
+          thumbnailGenerated,
+          thumbnailUploaded,
+          shopSettings: context.shop.settings,
+        })
+        return {
+          status: mergedAfterRace.nextPreflightStatus,
+          thumbnailKey: resolvedThumbnailKey,
+          mergedAfterMeasurementRace: true,
+        }
+      }
+
       const merged = await mergeRenderedPreview({
         measurementItem,
         itemId,
@@ -632,34 +655,20 @@ const previewRenderWorker = new Worker<UploadPipelineJobData>(
       }
     } catch (error) {
       if (error instanceof DelayedError) throw error
-      const measurementItem = await waitForMeasurementResolution(itemId, 1000)
+      const { item: measurementItem, pending: measurementPending } =
+        await inspectPreviewMeasurementOnce(() => readMeasurementResolution(itemId))
 
-      if (
-        (!measurementItem || measurementItem.preflightStatus === 'pending') &&
-        measurementItem?.thumbnailKey &&
-        (job.data.mergeAttempt || 0) < 3
-      ) {
-        const nextMergeAttempt = (job.data.mergeAttempt || 0) + 1
-        await previewRenderQueue.add(
-          'preview-render',
-          {
-            ...job.data,
-            mergeAttempt: nextMergeAttempt,
-          },
-          getPreviewRenderJobOptions(itemId, nextMergeAttempt)
-        )
-
-        workerLog.warn('PREVIEW_JOB_REQUEUED_AFTER_ERROR', {
+      if (measurementPending && measurementItem?.thumbnailKey) {
+        workerLog.warn('PREVIEW_JOB_YIELDED_AFTER_ERROR', {
           jobId: job.id,
           uploadId,
           itemId,
-          mergeAttempt: job.data.mergeAttempt || 0,
           error: error instanceof Error ? error.message : String(error),
         })
 
         return {
           status: 'pending',
-          requeued: true,
+          durableThumbnailPreserved: true,
         }
       }
 

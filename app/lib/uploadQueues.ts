@@ -51,6 +51,50 @@ export interface UploadPipelineJobData {
   mergeAttempt?: number
 }
 
+export interface PreviewMeasurementSnapshot {
+  preflightStatus: string
+}
+
+/**
+ * Preview workers inspect measurement state once and yield their BullMQ slot.
+ * The measurement writer merges any durable thumbnail later; this helper has
+ * no polling or timer so three pending previews cannot starve a fourth job.
+ */
+export async function inspectPreviewMeasurementOnce<T extends PreviewMeasurementSnapshot>(
+  readMeasurement: () => Promise<T | null>
+): Promise<{ item: T | null; pending: boolean }> {
+  const item = await readMeasurement()
+  return {
+    item,
+    pending: item?.preflightStatus === 'pending',
+  }
+}
+
+/** Persist a rendered asset while measurement is pending. A failed compare-
+ * and-swap means measurement or another preview changed the row, so re-read
+ * instead of downloading and decoding the source again. */
+export async function handoffRenderedPreview<T extends PreviewMeasurementSnapshot>(input: {
+  initialItem: T | null
+  persist: (item: T) => Promise<boolean>
+  reread: () => Promise<T | null>
+  maxAttempts?: number
+}): Promise<{ item: T | null; persisted: boolean; attempts: number }> {
+  const maxAttempts = Math.max(1, Math.floor(Number(input.maxAttempts) || 4))
+  let item = input.initialItem
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (!item || item.preflightStatus !== 'pending') {
+      return { item, persisted: false, attempts: attempt - 1 }
+    }
+    if (await input.persist(item)) {
+      return { item, persisted: true, attempts: attempt }
+    }
+    item = await input.reread()
+  }
+
+  return { item, persisted: false, attempts: maxAttempts }
+}
+
 export interface ExportJobData {
   exportId: string
   shopId: string
