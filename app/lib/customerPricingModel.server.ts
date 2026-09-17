@@ -20,7 +20,7 @@ import {
   type CustomerPricingContext,
   type CustomerPricingMode,
   type CustomerPricingSettings,
-} from '~/lib/customerPricing.server'
+} from './customerPricing.server'
 
 import {
   ALPHA_PRINT_SHOP_DOMAINS,
@@ -39,7 +39,7 @@ import {
   type VolumeBillingBasis,
   type VolumeCheckoutMode,
   type VolumeTier,
-} from '~/lib/customerPricingShared'
+} from './customerPricingShared'
 
 export {
   ALPHA_PRINT_SHOP_DOMAINS,

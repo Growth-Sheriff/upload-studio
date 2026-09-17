@@ -1,7 +1,7 @@
 // Client-safe constants and helpers for the volume-tier program. Anything
 // that reads shop settings lives in alphaProDiscounts.server.ts.
 
-import { DEFAULT_VOLUME_TIERS, isAlphaPrintShop, type VolumeTier } from '~/lib/customerPricingShared'
+import { DEFAULT_VOLUME_TIERS, isAlphaPrintShop, type VolumeTier } from './customerPricingShared'
 
 export { isAlphaPrintShop }
 
