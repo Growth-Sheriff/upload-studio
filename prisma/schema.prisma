@@ -182,13 +182,15 @@ model Upload {
 
   cartAddedAt   DateTime? @map("cart_added_at")
   cartToken     String?   @map("cart_token")
-  // Customer's nesting request, written at add-to-cart time and shown on the
-  // order line / identity page so the print shop knows how many copies to gang.
-  requestedCopies Int?    @map("requested_copies")
-  designsPerSheet Int?    @map("designs_per_sheet")
-  sheetsNeeded    Int?    @map("sheets_needed")
-  cartVariantId   String? @map("cart_variant_id")
-  cartSheetLabel  String? @map("cart_sheet_label")
+  // Quantity columns predate the finished-sheet rule. The nullable marker is
+  // the only proof that a row was written with one-file/one-sheet semantics;
+  // unmarked historical rows must fail closed instead of being reinterpreted.
+  quantitySemantics String? @map("quantity_semantics")
+  requestedCopies   Int?    @map("requested_copies")
+  designsPerSheet   Int?    @map("designs_per_sheet")
+  sheetsNeeded      Int?    @map("sheets_needed")
+  cartVariantId     String? @map("cart_variant_id")
+  cartSheetLabel    String? @map("cart_sheet_label")
   orderName     String?   @map("order_name")
   orderPaidAt   DateTime? @map("order_paid_at")
   orderTotal    Decimal?  @map("order_total") @db.Decimal(10, 2)
@@ -620,6 +622,19 @@ model Commission {
   paymentRef      String?  @map("payment_ref")
   paymentProvider String?  @map("payment_provider")
 
+  // `pending` is collectible only when Shopify capture evidence exists.
+  // Nullable-by-design makes pre-migration rows fail closed until a fresh
+  // order fact is reconciled; no historical payment state is guessed.
+  collectibleAt               DateTime? @map("collectible_at")
+  eligibilitySource           String?   @map("eligibility_source")
+  attributableCapturedAmount  Decimal?  @map("attributable_captured_amount") @db.Decimal(10, 2)
+  shopifyFinancialStatus      String?   @map("shopify_financial_status")
+  shopifyRefundStatus         String?   @map("shopify_refund_status")
+  shopifyCancelledAt          DateTime? @map("shopify_cancelled_at")
+  shopifyObservedAt           DateTime? @map("shopify_observed_at")
+  reviewRequiredAt            DateTime? @map("review_required_at")
+  reviewReason                String?   @map("review_reason")
+
 
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
@@ -629,6 +644,7 @@ model Commission {
 
   @@unique([shopId, orderId], name: "commission_shop_order")
   @@index([shopId, status])
+  @@index([shopId, status, collectibleAt])
   @@index([shopId, createdAt])
   @@map("commissions")
 }

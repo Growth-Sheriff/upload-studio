@@ -15,6 +15,7 @@ docs
 envs/
 *.log
 *.sql
+!prisma/migrations/*.sql
 *.csv
 temp/
 uploads/

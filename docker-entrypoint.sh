@@ -41,7 +41,13 @@ echo "============================================"
 
 
 echo "[Init] Syncing database schema..."
-prisma db push --accept-data-loss --skip-generate 2>&1 || echo "[Init] Schema sync warning (may already be up to date)"
+# Financial eligibility and finished-sheet quantity markers are release gates,
+# not optional drift. Apply their idempotent DDL before any worker can claim a
+# fee or reinterpret an old upload, then require the full Prisma schema sync to
+# succeed without accepting destructive changes.
+prisma db execute --schema ./prisma/schema.prisma --file ./prisma/migrations/add_commission_eligibility.sql
+prisma db execute --schema ./prisma/schema.prisma --file ./prisma/migrations/add_finished_sheet_quantity_semantics.sql
+prisma db push --skip-generate
 
 
 start_worker() {
