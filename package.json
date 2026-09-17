@@ -23,6 +23,7 @@
     "worker:preview-render:prod": "node --import tsx workers/preview-render.worker.ts",
     "worker:export": "tsx watch workers/export.worker.ts",
     "worker:export:prod": "node --import tsx workers/export.worker.ts",
+    "measurement:regression": "tsx scripts/measurement-regression-harness.ts",
     "shopify:check": "npx tsx scripts/shopify-check.ts"
   },
   "dependencies": {
