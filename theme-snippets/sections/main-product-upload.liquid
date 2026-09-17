@@ -410,6 +410,7 @@
 </script>
 
 <script src="/apps/customizer/api/ext-assets/ul-multipart-uploader.js" defer></script>
+<script src="/apps/customizer/api/ext-assets/ul-line-properties.js" defer></script>
 
 <script>
   (function() {
@@ -610,6 +611,25 @@
     var apiBase = root.getAttribute('data-api-base') || '/apps/customizer';
     var shopDomain = root.getAttribute('data-shop-domain') || '';
     var customerLoggedIn = root.getAttribute('data-customer-logged-in') === 'true';
+    var productMeasurementConfigPromise = null;
+
+    async function loadProductMeasurementConfig() {
+      try {
+        var configUrl =
+          apiBase +
+          '/api/product-config/' +
+          encodeURIComponent(String(productData.productId || '')) +
+          '?shop=' +
+          encodeURIComponent(shopDomain);
+        var response = await fetch(configUrl, { credentials: 'same-origin' });
+        var data = await response.json().catch(function() { return {}; });
+        if (!response.ok) return;
+        var configuredRollWidth = parseOptionalPositiveNumber(
+          data && data.builderConfig ? data.builderConfig.rollWidthIn : null
+        );
+        if (configuredRollWidth) MAIN_PRODUCT_ROLL_WIDTH_IN = configuredRollWidth;
+      } catch (error) {}
+    }
 
     function sendUploadXhr(url, method, file, headers, onProgress) {
       return new Promise(function(resolve, reject) {
@@ -743,10 +763,6 @@
 
     var customerFirstName = root.getAttribute('data-customer-first-name') || '';
     var customerLastName = root.getAttribute('data-customer-last-name') || '';
-    var effectiveRules = {
-      maxUploadWidth: parseOptionalPositiveNumber(root.getAttribute('data-max-upload-width'))
-    };
-
     var galleryPanel = root.querySelector('.ul-main-gallery-panel');
     var customerWorkspace = root.querySelector('.ul-main-customer-workspace');
     var customerWorkspaceStatus = root.querySelector('.ul-main-customer-workspace-status');
@@ -1781,13 +1797,20 @@
         measurementMode: measurement.measurementMode || 'full',
         widthIn: parsePositiveNumber(measurement.widthIn) || 0,
         heightIn: parsePositiveNumber(measurement.heightIn) || 0,
-        requestedQuantity: Math.max(1, parseInt(item.requestedQuantity || item.lastOrderedQuantity || 1, 10) || 1),
+        reorderable: item.reorderable === true,
+        quantitySemantics: item.quantitySemantics || 'unknown',
+        legacyAudit: item.legacyAudit || null,
+        requestedQuantity: item.reorderable === true
+          ? Math.max(1, parseInt(item.requestedQuantity || item.lastOrderedQuantity || 1, 10) || 1)
+          : 0,
         selectedVariantId: item.selectedVariantId || '',
         selectedVariantTitle: item.selectedVariantTitle || '',
         selectedSheetLabel: item.selectedSheetLabel || '',
         sheetsNeeded: 0,
         designsPerSheet: 0,
         billableLengthIn: parsePositiveNumber(item.billableLengthIn) || 0,
+        measuredSheetLengthIn: parsePositiveNumber(item.measuredSheetLengthIn) || 0,
+        totalBillableLengthIn: parsePositiveNumber(item.totalBillableLengthIn) || 0,
         totalPrice: null,
         uploadToken: '',
         quoteStatus: 'processing',
@@ -1799,7 +1822,7 @@
     }
 
     function ensureWorkspaceItemInQueue(workspaceItem) {
-      if (!workspaceItem) return null;
+      if (!workspaceItem || workspaceItem.reorderable !== true) return null;
       var existing = getCustomQueueItemById(workspaceItem.uploadId);
       if (existing) {
         existing.requestedQuantity = Math.max(1, parseInt(workspaceItem.requestedQuantity || 1, 10) || 1);
@@ -1816,8 +1839,9 @@
     }
 
     function getWorkspaceActionLabel(item) {
+      if (!item || item.reorderable !== true) return 'Re-upload required';
       var quantity = Math.max(1, parseInt(item.requestedQuantity || item.lastOrderedQuantity || 1, 10) || 1);
-      return quantity + ' cop' + (quantity === 1 ? 'y' : 'ies');
+      return quantity + ' whole-sheet ' + (quantity === 1 ? 'copy' : 'copies');
     }
 
     function renderCustomerWorkspace() {
@@ -1899,13 +1923,30 @@
 
       var workspaceHtml = items.map(function(item) {
         var previewSrc = item.thumbnailUrl || '';
-        var quantity = Math.max(1, parseInt(item.requestedQuantity || item.lastOrderedQuantity || 1, 10) || 1);
+        var reorderable = item.reorderable === true;
+        var quantity = reorderable
+          ? Math.max(1, parseInt(item.requestedQuantity || item.lastOrderedQuantity || 1, 10) || 1)
+          : 0;
         var actionBusy = String(customerWorkspaceState.activeActionId) === String(item.uploadId);
         var sizeText = '';
         if (item.measurement && item.measurement.widthIn && item.measurement.heightIn) {
           sizeText = formatInches(Math.min(item.measurement.widthIn, item.measurement.heightIn)) + ' x ' + formatInches(Math.max(item.measurement.widthIn, item.measurement.heightIn));
         }
-        var billableText = item.billableLengthIn ? 'Billable length ' + formatInches(item.billableLengthIn) : '';
+        var billableText = item.measuredSheetLengthIn
+          ? 'Measured sheet length ' + formatInches(item.measuredSheetLengthIn)
+          : '';
+        var quantityText = reorderable
+          ? 'Last whole-sheet qty ' + String(item.lastOrderedQuantity || quantity)
+          : 'Previous order record — re-upload required';
+        var purchaseControls = reorderable
+          ? '<div class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 p-1">' +
+              '<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-full text-base font-semibold text-slate-700 hover:bg-white" data-workspace-qty="' + escapeHtml(item.uploadId) + '" data-delta="-1" aria-label="Fewer whole-sheet copies">-</button>' +
+              '<input type="number" min="1" step="1" value="' + quantity + '" class="w-14 border-0 bg-transparent text-center text-sm font-semibold text-slate-900 focus:outline-none focus:ring-0" data-workspace-qty-input="' + escapeHtml(item.uploadId) + '" aria-label="Whole-sheet copies">' +
+              '<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-full text-base font-semibold text-slate-700 hover:bg-white" data-workspace-qty="' + escapeHtml(item.uploadId) + '" data-delta="1" aria-label="More whole-sheet copies">+</button>' +
+            '</div>' +
+            '<button type="button" class="inline-flex items-center rounded-full border border-slate-900 bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition-colors duration-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60" data-workspace-add="' + escapeHtml(item.uploadId) + '"' + (actionBusy ? ' disabled' : '') + '>' + (actionBusy ? 'Working...' : 'Add to Cart') + '</button>' +
+            '<button type="button" class="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900 transition-colors duration-200 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60" data-workspace-buy="' + escapeHtml(item.uploadId) + '"' + (actionBusy ? ' disabled' : '') + '>Buy Now</button>'
+          : '<span class="rounded-full border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">Upload this file again so the previous order record stays unchanged</span>';
         return '' +
           '<div class="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md" data-workspace-item="' + escapeHtml(item.uploadId) + '">' +
             '<div class="flex items-start gap-4">' +
@@ -1921,7 +1962,7 @@
                     '<div class="mt-3 truncate text-sm font-semibold text-slate-900">' + escapeHtml(item.fileName || 'Print-ready upload') + '</div>' +
                     '<div class="mt-2 flex flex-wrap gap-2 text-[11px] font-medium text-slate-500">' +
                       '<span class="rounded-full border border-slate-200 bg-white px-3 py-1">Last order ' + escapeHtml(formatWorkspaceDate(item.orderedAt)) + '</span>' +
-                      '<span class="rounded-full border border-slate-200 bg-white px-3 py-1">Last qty ' + escapeHtml(String(item.lastOrderedQuantity || quantity)) + '</span>' +
+                      '<span class="rounded-full border border-slate-200 bg-white px-3 py-1">' + escapeHtml(quantityText) + '</span>' +
                       (sizeText ? '<span class="rounded-full border border-slate-200 bg-white px-3 py-1">' + escapeHtml(sizeText) + '</span>' : '') +
                       (billableText ? '<span class="rounded-full border border-slate-200 bg-white px-3 py-1">' + escapeHtml(billableText) + '</span>' : '') +
                     '</div>' +
@@ -1933,13 +1974,7 @@
                 '</div>' +
                 '<div class="mt-4 flex flex-wrap items-center gap-2">' +
                   '<a href="' + escapeHtml(item.uploadUrl || '#') + '" target="_blank" rel="noopener noreferrer" class="inline-flex items-center rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"' + (item.uploadUrl ? '' : ' aria-disabled="true" tabindex="-1"') + '>Print READY</a>' +
-                  '<div class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 p-1">' +
-                    '<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-full text-base font-semibold text-slate-700 hover:bg-white" data-workspace-qty="' + escapeHtml(item.uploadId) + '" data-delta="-1">-</button>' +
-                    '<input type="number" min="1" step="1" value="' + quantity + '" class="w-14 border-0 bg-transparent text-center text-sm font-semibold text-slate-900 focus:outline-none focus:ring-0" data-workspace-qty-input="' + escapeHtml(item.uploadId) + '">' +
-                    '<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-full text-base font-semibold text-slate-700 hover:bg-white" data-workspace-qty="' + escapeHtml(item.uploadId) + '" data-delta="1">+</button>' +
-                  '</div>' +
-                  '<button type="button" class="inline-flex items-center rounded-full border border-slate-900 bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition-colors duration-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60" data-workspace-add="' + escapeHtml(item.uploadId) + '"' + (actionBusy ? ' disabled' : '') + '>' + (actionBusy ? 'Working...' : 'Add to Cart') + '</button>' +
-                  '<button type="button" class="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900 transition-colors duration-200 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60" data-workspace-buy="' + escapeHtml(item.uploadId) + '"' + (actionBusy ? ' disabled' : '') + '>Buy Now</button>' +
+                  purchaseControls +
                 '</div>' +
               '</div>' +
             '</div>' +
@@ -2522,12 +2557,6 @@
       syncUploadInputMode();
     }
 
-    function syncEffectiveRules(config) {
-      if (!config) return;
-      effectiveRules.maxUploadWidth =
-        parseOptionalPositiveNumber(config.maxWidthIn) || effectiveRules.maxUploadWidth;
-    }
-
     function setVipPricingMessage(titleText, rateText, lengthText, totalText) {
       if (vipPricingTitle) vipPricingTitle.textContent = titleText || '';
       if (vipPricingRate) vipPricingRate.textContent = rateText || '';
@@ -2853,10 +2882,15 @@
                 orderedAt: item.orderedAt || '',
                 lastOrderedQuantity: Math.max(1, parseInt(item.lastOrderedQuantity || requestedQuantity, 10) || requestedQuantity),
                 requestedQuantity: requestedQuantity,
+                reorderable: item.reorderable === true,
+                quantitySemantics: String(item.quantitySemantics || 'unknown'),
+                legacyAudit: item.legacyAudit && typeof item.legacyAudit === 'object' ? item.legacyAudit : null,
                 selectedVariantId: String(item.selectedVariantId || ''),
                 selectedVariantTitle: String(item.selectedVariantTitle || ''),
                 selectedSheetLabel: String(item.selectedSheetLabel || ''),
                 billableLengthIn: parsePositiveNumber(item.billableLengthIn) || 0,
+                measuredSheetLengthIn: parsePositiveNumber(item.measuredSheetLengthIn) || 0,
+                totalBillableLengthIn: parsePositiveNumber(item.totalBillableLengthIn) || 0,
                 measurement: item.measurement && typeof item.measurement === 'object' ? item.measurement : null
               };
             }).filter(function(item) {
@@ -2880,6 +2914,10 @@
 
     async function checkoutWorkspaceItem(workspaceItem) {
       if (!workspaceItem) return;
+      if (workspaceItem.reorderable !== true) {
+        showError('Upload this file again so its previous order record stays unchanged.');
+        return;
+      }
       clearError();
       customerWorkspaceState.activeActionId = workspaceItem.uploadId;
       renderCustomerWorkspace();
@@ -2916,6 +2954,10 @@
 
     function addWorkspaceItemToQueue(workspaceItem) {
       if (!workspaceItem) return;
+      if (workspaceItem.reorderable !== true) {
+        showError('Upload this file again so its previous order record stays unchanged.');
+        return;
+      }
       clearError();
       var queueItem = ensureWorkspaceItemInQueue(workspaceItem);
       if (!queueItem) return;
@@ -3254,20 +3296,16 @@
         return;
       }
       detectedBox.classList.remove('hidden');
-      if (detectedWidth) detectedWidth.value = state.widthIn.toFixed(2) + '"';
-      if (detectedHeight) detectedHeight.value = state.heightIn.toFixed(2) + '"';
+      var displayWidthIn = Math.min(state.widthIn, state.heightIn);
+      var displayLengthIn = Math.max(state.widthIn, state.heightIn);
+      if (detectedWidth) detectedWidth.value = displayWidthIn.toFixed(2) + '"';
+      if (detectedHeight) detectedHeight.value = displayLengthIn.toFixed(2) + '"';
       if (detectedNote) {
         var notes = isVipPricingActive()
           ? ['Measured on the server. Pricing uses the full uploaded page size.']
           : isBusinessPricingActive()
             ? ['Resolved on the server using the matched sheet size. Checkout uses your assigned per-inch rate on the selected sheet length.']
             : ['Resolved on server using the saved product sheet rules.'];
-        if ((isBusinessPricingActive() || !hasCustomPricingActive()) && state.selectedResult && state.selectedResult.designsPerSheet && state.selectedResult.sheetsNeeded) {
-          notes.push(
-            state.selectedResult.designsPerSheet + ' design(s) per sheet, ' +
-            state.selectedResult.sheetsNeeded + ' sheet(s) needed.'
-          );
-        }
         if (hasSeparateArtworkBounds()) {
           notes.push('Artwork bounds were also detected for preview, but billing keeps the full uploaded page size.');
         }
@@ -3308,14 +3346,12 @@
               state.selectedVariantId ||
               (hiddenVariantInput ? hiddenVariantInput.value : '') ||
               null,
-            maxUploadWidth: effectiveRules.maxUploadWidth,
             measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
             rollWidthIn: MAIN_PRODUCT_ROLL_WIDTH_IN
           })
         });
         var data = await response.json().catch(function() { return {}; });
         if (requestToken !== resolveRequestToken) return;
-        syncEffectiveRules(data && data.config ? data.config : null);
 
       if (data && data.upload) {
           applyServerMeasurement(data.upload);
@@ -3766,6 +3802,7 @@
     }
 
     async function handleCustomPricingFiles(fileList) {
+      if (productMeasurementConfigPromise) await productMeasurementConfigPromise;
       var files = Array.prototype.slice.call(fileList || []);
       if (!files.length) return;
 
@@ -3817,6 +3854,7 @@
 
     async function handleFile(file) {
       if (!file) return;
+      if (productMeasurementConfigPromise) await productMeasurementConfigPromise;
       if (!isAcceptedFile(file)) {
         showError('Unsupported file format. Please upload PNG, JPG, WEBP, TIFF, PSD, PDF, AI, EPS or SVG.');
         return;
@@ -4033,30 +4071,43 @@
         }
 
         var quantityValue = quantitySelect ? parseInt(quantitySelect.value || '1', 10) || 1 : 1;
-        var properties = uploadRequired ? {
-          _ul_upload_id: state.uploadId,
-          _ul_uploaded: 'true',
-          'Print READY': state.originalUrl || '',
-          'Design File': state.fileName || '',
-          _ul_width_in: String(state.widthIn || 0),
-          _ul_height_in: String(state.heightIn || 0),
-          _ul_resolution_dpi: String(state.embeddedDpi || 0),
-          _ul_effective_dpi: String(state.effectiveDpi || 0),
-          _ul_measurement_mode: String(state.measurementMode || ''),
-          _ul_mode: 'main_product_sheet',
-          _ul_requested_copies: String(quantityValue),
-          _ul_sheet_name: state.selectedResult ? (state.selectedResult.selectedSheetLabel || state.selectedResult.selectedVariantTitle || '') : '',
-          _ul_designs_per_sheet: state.selectedResult ? String(state.selectedResult.designsPerSheet || '') : '',
-          _ul_sheets_needed: state.selectedResult ? String(state.selectedResult.sheetsNeeded || '') : ''
-        } : {};
+        if (uploadRequired && !window.ULLineProperties) {
+          throw new Error('Upload verification is still loading. Please try again.');
+        }
+        // The server re-resolves the current product and returns both the
+        // authoritative Shopify carrier and exactly three visible properties:
+        // Print Ready, Sheet Identity and DPI.
+        var preparedCartLine = uploadRequired
+          ? await window.ULLineProperties.prepare({
+              uploadId: state.uploadId,
+              fileUrl: state.originalUrl || '',
+              dpi: state.effectiveDpi || state.embeddedDpi || 0,
+              line: {
+                copies: quantityValue,
+                designsPerSheet: 1,
+                sheetsNeeded: quantityValue,
+                variantId: String(variantId || ''),
+                sheetLabel: state.selectedResult
+                  ? (state.selectedResult.selectedSheetLabel || state.selectedResult.selectedVariantTitle || '')
+                  : ''
+              }
+            })
+          : { properties: {}, cartInstruction: null };
+        var properties = preparedCartLine.properties || {};
+        var canonicalInstruction = preparedCartLine.cartInstruction || {};
+        var canonicalVariantId = parseInt(canonicalInstruction.variantId, 10);
+        var canonicalCartQuantity = parseInt(canonicalInstruction.cartQuantity, 10);
+        if (uploadRequired && (!(canonicalVariantId > 0) || !(canonicalCartQuantity > 0))) {
+          throw new Error('The measured gang sheet could not be verified for cart.');
+        }
 
         var response = await fetch('/cart/add.js', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             items: [{
-              id: parseInt(variantId, 10),
-              quantity: state.selectedResult ? state.selectedResult.sheetsNeeded : quantityValue,
+              id: uploadRequired ? canonicalVariantId : parseInt(variantId, 10),
+              quantity: uploadRequired ? canonicalCartQuantity : Math.max(1, quantityValue),
               properties: properties
             }]
           })
@@ -4327,6 +4378,7 @@
 
     updateCustomerStatusUI();
     syncUploadInputMode();
+    productMeasurementConfigPromise = loadProductMeasurementConfig();
     customerPricingPromise = loadCustomerPricingContext();
     setSelectedVariant(getFallbackVariantId());
     updateVipPreviewUI();

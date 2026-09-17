@@ -61,7 +61,8 @@
         item.uploadId || '',
         item.selectedVariantId || '',
         item.widthIn || '',
-        item.heightIn || ''
+        item.heightIn || '',
+        Math.max(1, Number(item.copies) || 1)
       ].join(':');
     }).join('|');
   }
@@ -78,7 +79,7 @@
     if (!root || root.getAttribute('data-umpp-markup') === 'ready') return;
     var accept = escapeAttr(root.getAttribute('data-accepted-files') || '.png,.jpg,.jpeg,.webp,.tif,.tiff,.psd,.pdf,.ai,.eps,.svg');
     var checkoutEnabled = root.getAttribute('data-enable-checkout') === 'true';
-    var rollWidth = escapeAttr(root.getAttribute('data-roll-width-in') || '22');
+    var rollWidth = '22';
     root.setAttribute('data-umpp-markup', 'ready');
     root.innerHTML = [
       '<div class="ump-pro__shell">',
@@ -129,7 +130,7 @@
             '<div class="ump__preview-head"><div><p class="ump__eyebrow">Detected gang sheet</p><h3 class="ump__size" data-ump-size>-- x --</h3></div><span class="ump__badge" data-ump-badge>Locked</span></div>',
             '<div class="ump-pro__spec-strip"><span>Active sheet <strong data-umpp-active-sheet>Pending</strong></span><span>Queue <strong data-umpp-queue-state>Empty</strong></span></div>',
             '<div class="ump__sheet" data-ump-sheet><div class="ump__ruler ump__ruler--top" data-ump-ruler-top></div><div class="ump__ruler ump__ruler--side" data-ump-ruler-side></div><div class="ump__sheet-plane"><div class="ump__art" data-ump-art><span data-ump-art-label>Upload preview</span></div></div></div>',
-            '<div class="ump__metrics"><div><span>Width</span><strong data-ump-width>--</strong></div><div><span>Height</span><strong data-ump-height>--</strong></div><div><span>Sheet</span><strong data-ump-sheet-label>--</strong></div></div>',
+            '<div class="ump__metrics"><div><span>Width</span><strong data-ump-width>--</strong></div><div><span>Length</span><strong data-ump-height>--</strong></div><div><span>Sheet</span><strong data-ump-sheet-label>--</strong></div></div>',
             '<div class="ump__quality" data-ump-quality hidden><span class="ump__quality-badge" data-ump-quality-badge></span><span class="ump__quality-text" data-ump-quality-text></span></div>',
             '<p class="ump__method" data-ump-method>Upload required before this product can be added to cart.</p>',
           '</div>',
@@ -147,7 +148,8 @@
     this.customerId = root.getAttribute('data-customer-id') || '';
     this.customerEmail = root.getAttribute('data-customer-email') || '';
     this.customerName = root.getAttribute('data-customer-name') || '';
-    this.rollWidthIn = toNumber(root.getAttribute('data-roll-width-in')) || 22;
+    // Product config is authoritative. This is only the loading fallback.
+    this.rollWidthIn = 22;
     this.context = {
       status: 'loading',
       customerType: 'standard',
@@ -173,8 +175,8 @@
     };
     this.bindDom();
     this.bindEvents();
-    this.loadContext();
-    this.loadProductConfig();
+    this.contextPromise = this.loadContext();
+    this.productConfigPromise = this.loadProductConfig();
     this.render();
   }
 
@@ -398,9 +400,10 @@
       this.productConfig.customerOffer = builderConfig.customerOffer || null;
       if (toNumber(builderConfig.rollWidthIn) > 0) {
         this.rollWidthIn = toNumber(builderConfig.rollWidthIn);
-        var rollLabel = this.root.querySelector('[data-umpp-roll]');
-        if (rollLabel) rollLabel.textContent = this.rollWidthIn + '"';
       }
+      this.root.setAttribute('data-roll-width-in', String(this.rollWidthIn));
+      var rollLabel = this.root.querySelector('[data-umpp-roll]');
+      if (rollLabel) rollLabel.textContent = this.rollWidthIn + '"';
       this.productConfig.error = '';
     } catch (error) {
       this.productConfig.status = 'ready';
@@ -416,7 +419,7 @@
     return items.map(function(item) {
       return {
         uploadId: item.uploadId,
-        quantity: 1,
+        quantity: Math.max(1, Number(item.copies) || 1),
         selectedVariantId: item.selectedVariantId || null,
         measurementPolicy: POLICY,
         rollWidthIn: this.rollWidthIn
@@ -426,6 +429,7 @@
 
   ProUpload.prototype.requestQuoteIfNeeded = function(items) {
     if (!this.isCustomPricing()) return;
+    if (this.productConfig.status === 'loading') return;
     if (!items.length) {
       this.quote.key = '';
       this.quote.status = 'idle';

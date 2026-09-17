@@ -99,8 +99,6 @@
             maxFileSizeMB: 1024, // 1GB default, backend validates the ceiling
             minDPI: 150,
             extraQuestions: [],
-            bulkDiscountThreshold: 10,
-            bulkDiscountPercent: 10,
           },
         },
 
@@ -146,7 +144,6 @@
         qtyInput: $('qty-input'),
         qtyMinus: $('qty-minus'),
         qtyPlus: $('qty-plus'),
-        bulkHint: $('bulk-hint'),
         qtyDisplay: $('qty-display'),
 
         questionsSection: $('questions-section'),
@@ -1863,7 +1860,7 @@
       }
 
       const { elements, state } = instance
-      const { form, config } = state
+      const { form } = state
 
       console.log('[UL] updatePriceDisplay called:', {
         productId,
@@ -1886,17 +1883,7 @@
         elements.qtyDisplay.textContent = form.quantity || 1
       }
 
-      let total = unitPrice * (form.quantity || 1)
-
-      if (elements.bulkHint) {
-        if (form.quantity >= (config.bulkDiscountThreshold || 999)) {
-          const discount = total * ((config.bulkDiscountPercent || 0) / 100)
-          total = total - discount
-          elements.bulkHint.style.display = 'flex'
-        } else {
-          elements.bulkHint.style.display = 'none'
-        }
-      }
+      const total = unitPrice * (form.quantity || 1)
 
       if (elements.totalPrice) {
         elements.totalPrice.textContent = this.formatMoney(total)
@@ -2058,26 +2045,41 @@
 
       try {
 
-        // Exactly the three properties every block writes (server-built);
-        // merchant-defined extra questions are appended as their own labels.
-        const properties = await window.ULLineProperties.build({
+        // The server verifies orderability, the printable-width rule and the
+        // exact Shopify cart carrier. `copies` remains the customer's number
+        // of complete prints of this finished sheet.
+        const preparedLine = await window.ULLineProperties.prepare({
           uploadId: upload.uploadId,
           fileUrl: upload.result.originalUrl,
           dpi: upload.result.dpi || upload.result.effectiveDpi,
+          line: {
+            copies: form.quantity,
+            selectedVariantId: String(form.selectedVariantId || ''),
+            lockSelectedVariant: true,
+            sheetLabel: form.selectedVariantTitle || '',
+          },
         })
+        const properties = preparedLine.properties || {}
+        const cartInstruction = preparedLine.cartInstruction
+        const variantId = parseInt(cartInstruction && cartInstruction.variantId, 10)
+        const cartQuantity = parseInt(cartInstruction && cartInstruction.cartQuantity, 10)
+        if (!(variantId > 0) || !(cartQuantity > 0)) {
+          throw new Error('The measured gang sheet could not be verified for cart.')
+        }
 
+        // Exactly the three system properties are server-built; merchant-
+        // defined extra questions are appended as their own labels.
         for (const [key, value] of Object.entries(form.extraAnswers)) {
           if (value && value !== '') {
             properties[key] = value
           }
         }
 
-        const variantId = parseInt(form.selectedVariantId, 10)
         const cartAddPayload = {
           items: [
             {
               id: variantId,
-              quantity: form.quantity,
+              quantity: cartQuantity,
               properties,
             },
           ],

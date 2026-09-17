@@ -10,11 +10,12 @@
    *   Sheet Identity  https://<shop>/apps/customizer/i/<uploadId>
    *   DPI             measured DPI
    *
-   * The server builds them (/api/cart/prepare) so the values are canonical;
-   * when the app API is unreachable the same three keys are built locally.
+   * The server builds them (/api/cart/prepare) so the values are canonical.
+   * Current purchase paths fail closed when that verification is unavailable;
+   * `fallback` remains exported only for dormant legacy integrations.
    *
    *   const props = await window.ULLineProperties.build({ uploadId, fileUrl, dpi })
-   *   const { uploadId, properties } = await window.ULLineProperties.uploadAndBuild({ file, productId, variantId })
+   *   const { uploadId, properties, cartInstruction } = await window.ULLineProperties.uploadAndBuild({ file, productId, variantId, line })
    */
 
   var API_BASE = '/apps/customizer';
@@ -181,8 +182,19 @@
       throw new Error('This design is still being measured. Please try adding it to cart again in a moment.');
     }
 
-    var properties = await build({ uploadId: intent.uploadId, fileUrl: fileUrl, dpi: dpi });
-    return { uploadId: intent.uploadId, properties: properties, fileUrl: fileUrl, dpi: dpi };
+    var prepared = await prepare({
+      uploadId: intent.uploadId,
+      fileUrl: fileUrl,
+      dpi: dpi,
+      line: input.line || null
+    });
+    return {
+      uploadId: intent.uploadId,
+      properties: prepared.properties,
+      cartInstruction: prepared.cartInstruction,
+      fileUrl: fileUrl,
+      dpi: dpi
+    };
   }
 
   window.ULLineProperties = { prepare: prepare, build: build, fallback: fallback, identityUrl: identityUrl, uploadAndBuild: uploadAndBuild };

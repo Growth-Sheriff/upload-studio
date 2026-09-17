@@ -22,6 +22,20 @@
     return Math.abs(n - Math.round(n)) < 0.01 ? String(Math.round(n)) + '"' : n.toFixed(2) + '"';
   }
 
+  function getDisplaySheetDimensions(widthIn, heightIn) {
+    var first = toNumber(widthIn);
+    var second = toNumber(heightIn);
+    if (!(first > 0) || !(second > 0)) return null;
+    return { widthIn: Math.min(first, second), lengthIn: Math.max(first, second) };
+  }
+
+  function formatDisplaySheetDimensions(widthIn, heightIn) {
+    var dimensions = getDisplaySheetDimensions(widthIn, heightIn);
+    return dimensions
+      ? 'W ' + formatInches(dimensions.widthIn) + ' x L ' + formatInches(dimensions.lengthIn)
+      : '-- x --';
+  }
+
   // Shopify's storefront JSON (`product.variants | json`, `/products/x.js`,
   // `/cart.js`) always carries prices as integer minor units (cents). Never
   // guess: variant prices go through variantPriceToDollars, and formatMoney
@@ -102,7 +116,8 @@
         item.uploadId || '',
         item.selectedVariantId || '',
         item.widthIn || '',
-        item.heightIn || ''
+        item.heightIn || '',
+        Math.max(1, Number(item.copies || item.quantity) || 1)
       ].join(':');
     }).join('|');
   }
@@ -267,7 +282,8 @@
     if (this.customerId && !root.getAttribute('data-customer-id')) {
       root.setAttribute('data-customer-id', this.customerId);
     }
-    this.rollWidthIn = toNumber(root.getAttribute('data-roll-width-in')) || 22;
+    // Product config is authoritative. This is only the loading fallback.
+    this.rollWidthIn = 22;
     this.enableCheckout = root.getAttribute('data-enable-checkout') === 'true';
     this.currency = root.getAttribute('data-currency') || 'USD';
     this.variants = parseJson(root.getAttribute('data-product-variants'), []);
@@ -494,6 +510,12 @@
     this.size = this.root.querySelector('[data-ump-size]');
     this.width = this.root.querySelector('[data-ump-width]');
     this.height = this.root.querySelector('[data-ump-height]');
+    this.rollLabel = this.root.querySelector('.ump__spec--roll');
+    if (this.rollLabel) this.rollLabel.textContent = formatInches(this.rollWidthIn) + ' roll';
+    if (this.height && this.height.parentElement) {
+      var heightLabel = this.height.parentElement.querySelector('span');
+      if (heightLabel) heightLabel.textContent = 'Length';
+    }
     this.sheetLabel = this.root.querySelector('[data-ump-sheet-label]');
     this.quality = this.root.querySelector('[data-ump-quality]');
     this.qualityBadge = this.root.querySelector('[data-ump-quality-badge]');
@@ -670,10 +692,11 @@
     }
     if (this.exactCartList) {
       this.exactCartList.innerHTML = entries.slice(0, 4).map(function(entry) {
-        var size = entry.widthIn && entry.heightIn ? formatInches(entry.widthIn) + ' x ' + formatInches(entry.heightIn) : 'Measured upload';
+        var size = entry.widthIn && entry.heightIn ? formatDisplaySheetDimensions(entry.widthIn, entry.heightIn) : 'Measured upload';
+        var copies = Math.max(1, Number(entry.quantity || entry.copies) || 1);
         return [
           '<div class="ump__exact-cart-item">',
-            '<span>', escapeHtml(entry.fileName || entry.productTitle || 'Gang sheet'), '</span>',
+            '<span>', escapeHtml(entry.fileName || entry.productTitle || 'Gang sheet'), ' × ', copies, '</span>',
             '<strong>', escapeHtml(size), '</strong>',
           '</div>'
         ].join('');
@@ -758,7 +781,7 @@
         productId: this.productId,
         productTitle: this.productTitle,
         fileName: item.fileName || quoteItem.fileName || '',
-        quantity: 1,
+        quantity: Math.max(1, Number(item.copies) || 1),
         selectedVariantId: item.selectedVariantId || this.getFallbackVariantId() || null,
         measurementPolicy: POLICY,
         rollWidthIn: this.rollWidthIn,
@@ -777,7 +800,8 @@
   MainProductUpload.prototype.isCurrentExactUploadSaved = function() {
     if (!this.state.uploadId) return false;
     return this.readExactCart().some(function(entry) {
-      return String(entry.uploadId) === String(this.state.uploadId);
+      return String(entry.uploadId) === String(this.state.uploadId) &&
+        Math.max(1, Number(entry.quantity || entry.copies) || 1) === this.getRequestedCopies();
     }, this);
   };
 
@@ -983,7 +1007,7 @@
     var qtyByVariant = {};
     readyItems.forEach(function(item) {
       var result = item.selectedResult || {};
-      var qty = Math.max(1, Number(result.cartQuantity || result.sheetsNeeded) || 1);
+      var qty = Math.max(1, Number(item.copies) || 1);
       var id = String(item.selectedVariantId || '');
       if (id) qtyByVariant[id] = (qtyByVariant[id] || 0) + qty;
     });
@@ -1143,6 +1167,8 @@
       if (toNumber(builderConfig.rollWidthIn) > 0) {
         this.rollWidthIn = toNumber(builderConfig.rollWidthIn);
       }
+      this.root.setAttribute('data-roll-width-in', String(this.rollWidthIn));
+      if (this.rollLabel) this.rollLabel.textContent = formatInches(this.rollWidthIn) + ' roll';
       this.productConfig.error = '';
     } catch (error) {
       this.productConfig.status = 'ready';
@@ -1315,9 +1341,8 @@
         self.addToCart('/checkout');
       });
     }
-    // Per-file copies stepper lives in each queue row (delegated). Changing it
-    // re-resolves that upload with the new quantity so designs-per-sheet and
-    // sheets-needed come from the server nesting logic.
+    // Per-file whole-sheet quantity lives in each queue row (delegated).
+    // Re-resolving keeps account pricing and the selected variant current.
     if (this.queue) {
       this.queue.addEventListener('click', function(event) {
         var minus = event.target.closest('[data-ump-copies-minus]');
@@ -1677,8 +1702,7 @@
           customerEmail: this.customerEmail || null,
           customerName: this.customerName || null,
           measurementPolicy: POLICY,
-          rollWidthIn: this.rollWidthIn,
-          maxUploadWidth: this.rollWidthIn
+          rollWidthIn: this.rollWidthIn
         })
       });
       var data = await response.json().catch(function() { return {}; });
@@ -1687,6 +1711,10 @@
       if (response.ok && data.resolution) {
         this.state.selectedResult = data.resolution;
         this.state.selectedVariantId = String(data.resolution.selectedVariantId || '');
+        this.setError('');
+      } else if (!response.ok && data && data.error) {
+        // Preserve the server's exact roll-width explanation.
+        this.setError(String(data.error));
       }
       this.render();
     } catch (_) {}
@@ -1697,12 +1725,11 @@
     return (this.state.items || []).find(function(item) { return sameUploadId(item.uploadId, uploadId); }) || null;
   };
 
-  // Copies are per gang sheet. Changing them re-resolves that upload only
-  // (server nesting: designs per sheet, sheets needed) and leaves the other
-  // files untouched.
+  // Quantity means complete copies of this uploaded gang sheet. Changing it
+  // re-resolves that upload only and leaves the other files untouched.
   MainProductUpload.prototype.setItemCopies = async function(uploadId, next) {
     var item = this.findItem(uploadId);
-    if (!item || this.isExactMeasuredMode()) return;
+    if (!item) return;
     var n = Math.floor(Number(next));
     if (!(n > 0)) n = 1;
     if (n > 999) n = 999;
@@ -1711,6 +1738,15 @@
     item.copies = n;
     var isActive = sameUploadId(this.state.uploadId, uploadId);
     if (isActive) this.state.copies = n;
+    if (this.isExactMeasuredMode()) {
+      // Exact-price quotes are quantity-sensitive, but they do not need a
+      // second sheet-variant resolution. Changing whole-sheet copies simply
+      // invalidates the quote key; render() requests the fresh server quote.
+      this.quote.key = '';
+      this.persistItems();
+      this.render();
+      return;
+    }
     this.render();
     try {
       var resolved = await this.resolveForUpload(uploadId, n);
@@ -1727,7 +1763,7 @@
       var rollback = this.findItem(uploadId);
       if (rollback && rollback.copies === n) rollback.copies = previous;
       if (isActive) this.state.copies = previous;
-      this.setError(error && error.message ? error.message : 'No sheet can fit that many copies.');
+      this.setError(error && error.message ? error.message : 'Could not update the whole-sheet quantity.');
     }
     this.persistItems();
     this.render();
@@ -1736,17 +1772,6 @@
   MainProductUpload.prototype.getRequestedCopies = function() {
     var n = Math.floor(Number(this.state && this.state.copies));
     return n > 0 ? Math.min(n, 999) : 1;
-  };
-
-  // Rotation hint: the policy measures against the roll width; a design that
-  // only fits sideways is worth telling the customer about.
-  MainProductUpload.prototype.getRotationHint = function() {
-    var roll = toNumber(this.rollWidthIn);
-    var w = toNumber(this.state.widthIn);
-    var h = toNumber(this.state.heightIn);
-    if (!(roll > 0) || !(w > 0) || !(h > 0)) return '';
-    if (w > roll && h <= roll) return 'Wider than the ' + formatInches(roll) + ' roll — it will be placed rotated (' + formatInches(h) + ' x ' + formatInches(w) + ').';
-    return '';
   };
 
   // ── Reorder deep link (Step 3) ──────────────────────────────────────────
@@ -1949,23 +1974,18 @@
           var sheetLabel = exact && isReady
             ? 'Exact measured'
             : (result.selectedSheetLabel || result.selectedVariantTitle || '');
-          if (result.productionNote) {
-            sheetLabel += (sheetLabel ? ' · ' : '') + result.productionNote;
-          }
-          var sheets = Number(result.cartQuantity || result.sheetsNeeded) || 0;
-          var perSheet = Number(result.designsPerSheet) || 0;
+          var copies = Math.max(1, Number(item.copies) || 1);
           var sizeText = item.widthIn && item.heightIn
-            ? formatInches(item.widthIn) + ' × ' + formatInches(item.heightIn)
+            ? formatDisplaySheetDimensions(item.widthIn, item.heightIn)
             : '';
           var metaParts = [];
           if (sizeText) metaParts.push(escapeHtml(sizeText));
-          if (sheetLabel) metaParts.push('<b>' + escapeHtml(sheetLabel) + '</b>' + (sheets > 1 ? ' ×' + sheets : ''));
-          if (isReady && perSheet > 1) metaParts.push(perSheet + ' per sheet');
+          if (sheetLabel) metaParts.push('<b>' + escapeHtml(sheetLabel) + '</b>');
+          if (isReady) metaParts.push(copies + ' whole-sheet ' + (copies === 1 ? 'copy' : 'copies'));
           if (item.provisional && sizeText) metaParts.push('est.');
           var thumbUrl = item.thumbnailUrl || item.localPreviewUrl || '';
           var isBusy = !isReady && item.status !== 'error';
-          var copies = Math.max(1, Number(item.copies) || 1);
-          var canEdit = isReady && !exact;
+          var canEdit = isReady;
           return '' +
             '<div class="ump__queue-item' + (isActive ? ' is-active' : '') + (isBusy ? ' is-busy' : '') + (item.status === 'error' ? ' is-error' : '') + '">' +
               '<span class="ump__queue-thumb" data-ump-select-item="' + id + '"' + (thumbUrl ? ' style="background-image:url(&quot;' + escapeHtml(thumbUrl.replace(/"/g, '%22')) + '&quot;)"' : '') + '></span>' +
@@ -1976,10 +1996,10 @@
               '<span class="ump__queue-status' + (isReady ? ' is-ready' : '') + '">' + escapeHtml(statusLabel) + '</span>' +
               '<span class="ump__queue-tools">' +
                 (canEdit
-                  ? '<span class="ump__copies" role="group" aria-label="Copies">' +
-                      '<button type="button" class="ump__copies-btn" data-ump-copies-minus data-upload-id="' + id + '" aria-label="Fewer copies"' + (copies <= 1 ? ' disabled' : '') + '>−</button>' +
-                      '<input type="number" class="ump__copies-input" data-ump-copies-input data-upload-id="' + id + '" value="' + copies + '" min="1" max="999" inputmode="numeric" aria-label="Copies">' +
-                      '<button type="button" class="ump__copies-btn" data-ump-copies-plus data-upload-id="' + id + '" aria-label="More copies"' + (copies >= 999 ? ' disabled' : '') + '>+</button>' +
+                  ? '<span class="ump__copies" role="group" aria-label="Whole-sheet copies">' +
+                      '<button type="button" class="ump__copies-btn" data-ump-copies-minus data-upload-id="' + id + '" aria-label="Fewer whole-sheet copies"' + (copies <= 1 ? ' disabled' : '') + '>−</button>' +
+                      '<input type="number" class="ump__copies-input" data-ump-copies-input data-upload-id="' + id + '" value="' + copies + '" min="1" max="999" inputmode="numeric" aria-label="Whole-sheet copies">' +
+                      '<button type="button" class="ump__copies-btn" data-ump-copies-plus data-upload-id="' + id + '" aria-label="More whole-sheet copies"' + (copies >= 999 ? ' disabled' : '') + '>+</button>' +
                     '</span>'
                   : '') +
                 (isReady ? '<button class="ump__queue-remove" type="button" data-ump-remove-item="' + id + '" aria-label="Remove ' + escapeHtml(item.fileName || 'gang sheet') + '">×</button>' : '') +
@@ -2015,57 +2035,50 @@
 
   MainProductUpload.prototype.parseSelectedSheet = function() {
     if (this.isExactMeasuredMode() && this.state.widthIn > 0 && this.state.heightIn > 0) {
-      return { width: this.state.widthIn, height: this.state.heightIn, label: 'Exact measured' };
+      var exact = getDisplaySheetDimensions(this.state.widthIn, this.state.heightIn);
+      return { width: exact.widthIn, height: exact.lengthIn, label: 'Exact measured' };
     }
     var label = this.state.selectedResult
       ? (this.state.selectedResult.selectedSheetLabel || this.state.selectedResult.selectedVariantTitle || '')
       : '';
-    var parsed = parseSheetSize(label) || { width: this.rollWidthIn, height: Math.max(this.rollWidthIn, this.state.heightIn || 12) };
-    var designLandscape = this.state.widthIn >= this.state.heightIn;
-    var sheetLong = Math.max(parsed.width, parsed.height);
-    var sheetShort = Math.min(parsed.width, parsed.height);
-    return designLandscape
-      ? { width: sheetLong, height: sheetShort, label: label || '--' }
-      : { width: sheetShort, height: sheetLong, label: label || '--' };
+    var parsed = parseSheetSize(label);
+    return {
+      // The product's printable roll setting is the physical cross-roll
+      // width. A variant keeps its stored width × billable-length meaning;
+      // unlike the uploaded file, `22 × 12` is not normalized to `12 × 22`.
+      width: this.rollWidthIn,
+      height: parsed && parsed.height > 0
+        ? parsed.height
+        : Math.max(this.state.widthIn || 0, this.state.heightIn || 0, 12),
+      label: label || '--'
+    };
   };
 
-  // ── True-scale roll preview ─────────────────────────────────────────────
-  // The sheet is drawn as a roll segment (long edge horizontal) at a real
-  // pixels-per-inch scale; the design is placed exactly as the nesting logic
-  // places it (rotated when that fits more copies), and every requested copy
-  // is tiled from the top-left corner. Very long sheets are cut at 2.4:1 with
-  // a marker so the short edge (the roll width) always stays exact.
+  // ── True-scale finished-sheet preview ───────────────────────────────────
+  // One uploaded file is one finished sheet. The preview normalizes the short
+  // edge as width and the long edge as length; quantity never tiles artwork.
   var PREVIEW_MAX_RATIO = 4; // 22x6 … 22x88 draw in full; longer rolls are cut with a marker
-  var PREVIEW_MAX_TILES = 200;
-
-  function fitTiles(tileW, tileH, longIn, shortIn) {
-    if (!(tileW > 0) || !(tileH > 0)) return { cols: 0, rows: 0, count: 0 };
-    var cols = Math.floor(longIn / tileW + 0.0001);
-    var rows = Math.floor(shortIn / tileH + 0.0001);
-    if (cols <= 0 || rows <= 0) return { cols: 0, rows: 0, count: 0 };
-    return { cols: cols, rows: rows, count: cols * rows };
-  }
 
   MainProductUpload.prototype.updatePreviewGeometry = function() {
     if (!this.sheetPlane || !this.art) return;
     var hasSize = this.state.widthIn > 0 && this.state.heightIn > 0;
     var sheet = this.parseSelectedSheet();
-    var sheetLong = Math.max(sheet.width, sheet.height) || Math.max(this.rollWidthIn, 12);
-    var sheetShort = Math.min(sheet.width, sheet.height) || this.rollWidthIn || 22;
-    var trueRatio = sheetLong / sheetShort;
+    var sheetWidth = sheet.width || this.rollWidthIn || 22;
+    var sheetLength = sheet.height || Math.max(this.state.widthIn || 0, this.state.heightIn || 0, 12);
+    var trueRatio = sheetLength / sheetWidth;
     var displayRatio = Math.min(PREVIEW_MAX_RATIO, Math.max(0.8, trueRatio));
     this.root.style.setProperty('--ump-sheet-ratio', displayRatio.toFixed(4));
 
     var planeW = this.sheetPlane.clientWidth || 0;
     var planeH = planeW / displayRatio;
-    var scale = sheetShort > 0 ? planeH / sheetShort : 0; // px per inch
+    var scale = sheetWidth > 0 ? planeH / sheetWidth : 0; // px per inch
     if (scale > 0) this.root.style.setProperty('--ump-inch', scale.toFixed(3) + 'px');
-    if (this.rulerTop) this.rulerTop.setAttribute('data-label', formatInches(sheetLong));
-    if (this.rulerSide) this.rulerSide.setAttribute('data-label', formatInches(sheetShort));
+    if (this.rulerTop) this.rulerTop.setAttribute('data-label', formatInches(sheetLength));
+    if (this.rulerSide) this.rulerSide.setAttribute('data-label', formatInches(sheetWidth));
     if (this.sheetCut) {
       var cut = trueRatio > PREVIEW_MAX_RATIO + 0.01;
       this.sheetCut.hidden = !cut;
-      if (cut) this.sheetCut.textContent = 'continues to ' + formatInches(sheetLong);
+      if (cut) this.sheetCut.textContent = 'continues to ' + formatInches(sheetLength);
     }
 
     var existing = this.art.querySelectorAll('.ump__tile');
@@ -2079,47 +2092,31 @@
 
     var dw = this.state.widthIn;
     var dh = this.state.heightIn;
-    var normal = fitTiles(dw, dh, sheetLong, sheetShort);
-    var rotated = dw !== dh ? fitTiles(dh, dw, sheetLong, sheetShort) : { cols: 0, rows: 0, count: 0 };
-    var useRotated = rotated.count > normal.count;
-    var fit = useRotated ? rotated : normal;
-    var tileW = useRotated ? dh : dw;
-    var tileH = useRotated ? dw : dh;
-    if (fit.count === 0) {
-      // Oversize for the drawn sheet: show one tile clipped by the plane.
-      fit = { cols: 1, rows: 1, count: 1 };
-    }
-    var result = this.state.selectedResult || {};
-    var copies = Math.max(1, Number(this.state.copies) || 1);
-    var perSheet = Math.max(1, Number(result.designsPerSheet) || fit.count);
-    var count = Math.min(copies, perSheet, fit.count, PREVIEW_MAX_TILES);
+    var dimensions = getDisplaySheetDimensions(dw, dh);
+    var tileW = dimensions.lengthIn;
+    var tileH = dimensions.widthIn;
+    var normalizePortraitForDisplay = dh > dw;
     var imageUrl = this.state.thumbnailUrl || this.state.localPreviewUrl || '';
-    var frag = document.createDocumentFragment();
-    for (var i = 0; i < count; i += 1) {
-      var c = i % fit.cols;
-      var r = Math.floor(i / fit.cols);
-      var tile = document.createElement('i');
-      tile.className = 'ump__tile' + (this.state.provisional ? ' is-provisional' : '');
-      tile.style.left = (c * tileW * scale).toFixed(2) + 'px';
-      tile.style.top = (r * tileH * scale).toFixed(2) + 'px';
-      tile.style.width = (tileW * scale).toFixed(2) + 'px';
-      tile.style.height = (tileH * scale).toFixed(2) + 'px';
-      if (imageUrl) {
-        var img = document.createElement('img');
-        img.alt = '';
-        img.decoding = 'async';
-        img.src = imageUrl;
-        img.style.width = (dw * scale).toFixed(2) + 'px';
-        img.style.height = (dh * scale).toFixed(2) + 'px';
-        img.style.transform = 'translate(-50%, -50%)' + (useRotated ? ' rotate(90deg)' : '');
-        tile.appendChild(img);
-      }
-      frag.appendChild(tile);
+    var tile = document.createElement('i');
+    tile.className = 'ump__tile' + (this.state.provisional ? ' is-provisional' : '');
+    tile.style.left = '0';
+    tile.style.top = '0';
+    tile.style.width = (tileW * scale).toFixed(2) + 'px';
+    tile.style.height = (tileH * scale).toFixed(2) + 'px';
+    if (imageUrl) {
+      var img = document.createElement('img');
+      img.alt = '';
+      img.decoding = 'async';
+      img.src = imageUrl;
+      img.style.width = (dw * scale).toFixed(2) + 'px';
+      img.style.height = (dh * scale).toFixed(2) + 'px';
+      img.style.transform = 'translate(-50%, -50%)' + (normalizePortraitForDisplay ? ' rotate(90deg)' : '');
+      tile.appendChild(img);
     }
-    this.art.appendChild(frag);
+    this.art.appendChild(tile);
     this.art.classList.add('has-tiles');
 
-    // Dimension callouts on the first tile: the two numbers a buyer checks.
+    // Dimension callouts: top is length, side is width.
     if (this.artDimW) {
       this.artDimW.hidden = false;
       this.artDimW.textContent = formatInches(tileW);
@@ -2134,7 +2131,7 @@
       this.artDimH.style.top = (tileH * scale / 2).toFixed(2) + 'px';
       this.artDimH.style.transform = 'translateY(-50%)';
     }
-    this.previewLayout = { rotated: useRotated, cols: fit.cols, rows: fit.rows, perSheet: perSheet, copies: copies };
+    this.previewLayout = { normalizedSheet: true };
   };
 
   MainProductUpload.prototype.getSelectedVariantPrice = function() {
@@ -2146,11 +2143,9 @@
     return 0;
   };
 
-  // Cart total: exactly what Shopify will charge — Σ(variant price × sheets)
-  // over every ready gang sheet, with copies folded into the sheet count by
-  // the server nesting. Rendered as the orange badge under Add to cart, one
-  // line per file, and re-run on every render so it can never drift from the
-  // per-row copies.
+  // Cart total: exactly what Shopify will charge — each requested copy is one
+  // complete uploaded sheet. Re-run on every render so it cannot drift from
+  // the per-row whole-sheet quantity.
   MainProductUpload.prototype.computeCartTotal = function(readyItems) {
     var lines = [];
     var total = 0;
@@ -2165,7 +2160,6 @@
         sheetLabel: line.sheetLabel,
         sheets: line.sheetsNeeded,
         copies: line.copies,
-        perSheet: line.designsPerSheet,
         unit: unit,
         subtotal: subtotal
       });
@@ -2192,15 +2186,13 @@
     this.total.hidden = false;
     this.totalValue.textContent = formatMoney(summary.total, this.currency);
     if (this.totalMeta) {
-      this.totalMeta.textContent = summary.sheets + ' sheet' + (summary.sheets === 1 ? '' : 's') +
-        (summary.copies > summary.lines.length ? ' · ' + summary.copies + ' copies' : '');
+      this.totalMeta.textContent = summary.sheets + ' whole-sheet ' + (summary.sheets === 1 ? 'copy' : 'copies');
     }
     if (this.totalLines) {
       this.totalLines.innerHTML = summary.lines.map(function(line) {
         return '<li>' +
           '<span>' + escapeHtml(line.fileName) + '</span>' +
-          '<span>' + line.sheets + ' × ' + escapeHtml(line.sheetLabel || 'sheet') +
-            (line.copies > 1 ? ' <small>(' + line.copies + ' copies)</small>' : '') + '</span>' +
+          '<span>' + line.sheets + ' × ' + escapeHtml(line.sheetLabel || 'sheet') + '</span>' +
           '<strong>' + escapeHtml(formatMoney(line.subtotal, this.currency)) + '</strong>' +
         '</li>';
       }, this).join('');
@@ -2211,7 +2203,7 @@
     return items.map(function(item) {
       return {
         uploadId: item.uploadId,
-        quantity: Math.max(1, Number(item.quantity || 1) || 1),
+        quantity: Math.max(1, Number(item.copies || item.quantity) || 1),
         selectedVariantId: item.selectedVariantId || null,
         measurementPolicy: item.measurementPolicy || POLICY,
         rollWidthIn: toNumber(item.rollWidthIn) || this.rollWidthIn
@@ -2378,16 +2370,15 @@
       fileMetaText = 'Ready' + (dur ? ' in ' + dur : '') + '. ' + this.getMethodText();
     } else if (this.state.status === 'uploading') {
       var provisionalText = this.state.provisional && this.state.widthIn && this.state.heightIn
-        ? 'Estimated ' + formatInches(this.state.widthIn) + ' x ' + formatInches(this.state.heightIn) +
+        ? 'Estimated ' + formatDisplaySheetDimensions(this.state.widthIn, this.state.heightIn) +
           (this.state.selectedResult && this.state.selectedResult.selectedSheetLabel ? ' → ' + this.state.selectedResult.selectedSheetLabel : '') +
           ' · confirming on server. '
         : '';
-      var rotationHint = this.getRotationHint();
       fileMetaText = provisionalText + (this.state.resumedParts > 0
         ? 'Resuming upload — ' + this.state.resumedParts + ' chunks already on the server...'
         : this.state.isMultipart
         ? 'Uploading in parallel chunks...'
-        : 'Uploading and measuring...') + (rotationHint ? ' ' + rotationHint : '');
+        : 'Uploading and measuring...');
     } else if (this.state.status === 'error') {
       fileMetaText = 'Upload failed. You can try again or pick a different file.';
     }
@@ -2408,16 +2399,14 @@
     if (this.cancel) this.cancel.hidden = this.state.status !== 'uploading';
     if (this.retry) this.retry.hidden = this.state.status !== 'error';
     if (this.note) {
-      var noteText = this.state.status === 'ready' ? this.getRotationHint() : '';
-      this.note.hidden = !noteText;
-      this.note.textContent = noteText;
+      this.note.hidden = true;
+      this.note.textContent = '';
     }
 
-    this.size.textContent = this.state.widthIn && this.state.heightIn
-      ? formatInches(this.state.widthIn) + ' x ' + formatInches(this.state.heightIn)
-      : '-- x --';
-    this.width.textContent = formatInches(this.state.widthIn);
-    this.height.textContent = formatInches(this.state.heightIn);
+    var displayDimensions = getDisplaySheetDimensions(this.state.widthIn, this.state.heightIn);
+    this.size.textContent = formatDisplaySheetDimensions(this.state.widthIn, this.state.heightIn);
+    this.width.textContent = displayDimensions ? formatInches(displayDimensions.widthIn) : '--';
+    this.height.textContent = displayDimensions ? formatInches(displayDimensions.lengthIn) : '--';
     this.sheetLabel.textContent = exactMode && this.state.widthIn && this.state.heightIn
       ? 'Exact measured'
       : this.state.selectedResult
@@ -2665,6 +2654,9 @@
   MainProductUpload.prototype.startUploads = async function(files) {
     var list = toFileArray(files);
     if (!list.length) return;
+    if (this.productConfig.status === 'loading' && this.productConfigPromise) {
+      try { await this.productConfigPromise; } catch (_) {}
+    }
     var batchToken = (this.state.batchToken || 0) + 1;
     this.state.batchToken = batchToken;
     for (var i = 0; i < list.length; i += 1) {
@@ -2849,7 +2841,7 @@
           var measurementStatus = item.measurementStatus || 'pending';
           var blocked = data.orderabilityStatus === 'blocked' || item.orderabilityStatus === 'blocked' || data.status === 'error';
           if (blocked || measurementStatus === 'error') {
-            throw new Error((item.errors && item.errors[0]) || (data.errors && data.errors[0]) || 'Upload could not be measured.');
+            throw new Error((item.errors && item.errors[0]) || (data.errors && data.errors[0]) || data.error || 'Upload could not be measured.');
           }
           if (this.state.widthIn && this.state.heightIn && measurementStatus !== 'pending') {
             await this.resolveProduct();
@@ -2919,8 +2911,7 @@
         customerEmail: this.customerEmail || null,
         customerName: this.customerName || null,
         measurementPolicy: POLICY,
-        rollWidthIn: this.rollWidthIn,
-        maxUploadWidth: this.rollWidthIn
+        rollWidthIn: this.rollWidthIn
       })
     });
     var payload = await response.json().catch(function() { return {}; });
@@ -2931,11 +2922,11 @@
   MainProductUpload.prototype.resolveForUpload = async function(uploadId, quantity) {
     var data = await this.requestResolve(uploadId, quantity);
     if (!data.ok || !data.payload.resolution) {
-      throw new Error((data.payload && data.payload.error) || 'No sheet can fit that many copies.');
+      throw new Error((data.payload && data.payload.error) || 'Could not resolve this gang sheet.');
     }
     var resolution = data.payload.resolution;
     var selectedVariantId = String(resolution.selectedVariantId || '');
-    if (!selectedVariantId) throw new Error('No sheet can fit that many copies.');
+    if (!selectedVariantId) throw new Error('Could not resolve this gang sheet.');
     return { resolution: resolution, selectedVariantId: selectedVariantId };
   };
 
@@ -3022,21 +3013,18 @@
     };
   };
 
-  // What the customer asked for on this gang sheet. The server accepts only
-  // the copy count and recomputes every nesting, variant and sheet fact.
+  // What the customer asked for: every quantity unit is one complete copy of
+  // the uploaded gang sheet. Legacy fields remain on the request wire only so
+  // older servers can parse it; they carry the same one-sheet-per-copy rule.
   function buildCartLineRequest(item) {
     var result = item.selectedResult || {};
     var copies = Math.max(1, Number(item.copies) || 1);
-    var perSheet = Math.max(1, Number(result.designsPerSheet) || 1);
-    var sheets = Math.max(1, Number(result.cartQuantity || result.sheetsNeeded) || Math.ceil(copies / perSheet));
     var sheetLabel = String(result.selectedSheetLabel || result.selectedVariantTitle || '');
-    var productionNote = String(result.productionNote || '').trim();
-    if (productionNote) sheetLabel += (sheetLabel ? ' · ' : '') + productionNote;
     return {
       uploadId: item.uploadId,
       copies: copies,
-      designsPerSheet: perSheet,
-      sheetsNeeded: sheets,
+      designsPerSheet: 1,
+      sheetsNeeded: copies,
       variantId: String(item.selectedVariantId || ''),
       sheetLabel: sheetLabel
     };
@@ -3062,8 +3050,8 @@
     return ((cart && cart.items) || []).filter(function(line) { return cartLineMatchesUpload(line, uploadId); });
   }
 
-  // A line is "exactly what we want" when variant, quantity and the
-  // customer-facing copies property all match; anything else is stale.
+  // A line is "exactly what we want" when variant and whole-sheet quantity
+  // match; anything else is stale.
   function cartLineIsExact(line, cartItem) {
     if (Number(line.variant_id || line.id) !== Number(cartItem.id)) return false;
     if ((Number(line.quantity) || 0) !== cartItem.quantity) return false;
@@ -3089,13 +3077,12 @@
 
   // Idempotent, Shopify-native cart sync for one gang sheet:
   //   1. read the cart (/cart.js)
-  //   2. if a line for this upload already matches variant + quantity +
-  //      copies → done
+  //   2. if a line for this upload already matches variant + quantity → done
   //   3. otherwise drop every stale line for this upload (/cart/change.js by
   //      line key, quantity 0 — never by index, which shifts)
   //   4. add the desired line once (/cart/add.js)
   //   5. re-read and verify the line is there with the right quantity.
-  // Quantity is the number of SHEETS Shopify bills; copies live in properties.
+  // Quantity is the number of complete sheets Shopify bills.
   MainProductUpload.prototype.ensureCartLine = async function(cartItem, uploadId) {
     var attempts = 0;
     var maxAttempts = 3;
@@ -3176,7 +3163,16 @@
         if (!preparedLine) throw new Error('A measured gang sheet could not be verified for cart.');
         var variantId = parseInt(preparedLine.cartInstruction.variantId || item.selectedVariantId, 10);
         if (!(variantId > 0)) throw new Error('A measured gang sheet has no matching variant.');
-        var quantity = parseInt(preparedLine.cartInstruction.sheetsNeeded, 10) || buildCartLineRequest(item).sheetsNeeded;
+        var requestedLine = buildCartLineRequest(item);
+        // A linear-inch variant uses Shopify quantity as the integer-inch
+        // billing carrier. Physical production quantity remains `copies` and
+        // is what /api/cart/prepare validates. Sheet-priced variants continue
+        // to use one Shopify unit per whole-sheet copy.
+        var quantity = self.isLinearInchPricing()
+          ? Math.max(1, Math.ceil(Number(
+              preparedLine.cartInstruction.cartQuantity || result.cartQuantity || 0
+            ) || 1))
+          : requestedLine.sheetsNeeded;
         var properties = preparedLine.properties;
         var pageVariant = (self.variants || []).find(function(v) {
           return Number(v && v.id) === variantId;

@@ -273,11 +273,50 @@
     }
   }
 
+  function variantIdsEqual(left, right) {
+    const normalize = (value) => String(value || '').trim().split('/').pop();
+    return Boolean(normalize(left)) && normalize(left) === normalize(right);
+  }
+
+  async function prepareReorderDesign(item, design) {
+    const copies = Math.max(1, Number(design && design.copies) || 1);
+    const selectedVariantId = String(item && item.variant_id || '');
+    const response = await fetch(`${CONFIG.apiBase}/api/cart/prepare`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        shopDomain: (window.Shopify && window.Shopify.shop) || '',
+        uploadIds: [design.uploadId],
+        lines: [{
+          uploadId: design.uploadId,
+          copies,
+          selectedVariantId,
+          lockSelectedVariant: true,
+        }],
+      }),
+    });
+    if (!response.ok) throw new Error('Design verification failed');
+    const payload = await response.json();
+    const prepared = payload && Array.isArray(payload.items) ? payload.items[0] : null;
+    if (!prepared || prepared.found !== true || prepared.orderable !== true || !prepared.properties) {
+      throw new Error(prepared && prepared.error || 'This design cannot be ordered with the selected sheet.');
+    }
+    const instruction = prepared.cartInstruction || {};
+    if (!variantIdsEqual(instruction.variantId, selectedVariantId)) {
+      throw new Error('This design does not fit the selected sheet variant.');
+    }
+    return {
+      properties: prepared.properties,
+      quantity: Math.max(1, Number(instruction.cartQuantity) || copies),
+    };
+  }
+
   async function attachDesignToLine(item, design) {
+    const prepared = await prepareReorderDesign(item, design);
     const res = await fetch('/cart/change.js', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: item.key, quantity: item.quantity, properties: design.properties }),
+      body: JSON.stringify({ id: item.key, quantity: prepared.quantity, properties: prepared.properties }),
     });
     if (!res.ok) throw new Error('Cart update failed');
     try {
@@ -309,7 +348,9 @@
       return div;
     }
 
-    const history = Array.isArray(data.history) ? data.history : [];
+    const history = Array.isArray(data.history)
+      ? data.history.filter((design) => design && design.reusable === true)
+      : [];
     if (!history.length) {
       div.innerHTML = `
         <strong>No design attached to this gang sheet</strong>

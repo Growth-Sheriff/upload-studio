@@ -36,7 +36,7 @@
 .ul-card-price{margin:10px 0}
 .ul-compare-price{text-decoration:line-through;color:#999;font-size:13px;margin-right:8px}
 .ul-current-price{font-size:18px;font-weight:700;color:#1a1a2e}
-.ul-upload-btn{width:100%;padding:12px;background:linear-gradient(135deg,#7367f0 0%,#9d4edd 100%);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .3s}
+.ul-upload-btn{width:100%;padding:12px;background:linear-gradient(135deg,#7367f0 0%,#9d4edd 100%);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .3s;text-decoration:none}
 .ul-upload-btn:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(115,103,240,0.4)}
 .ul-carousel-prev,.ul-carousel-next{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;background:#fff;border:none;cursor:pointer;box-shadow:0 4px 15px rgba(0,0,0,0.1);display:flex;align-items:center;justify-content:center;z-index:10;transition:all .2s}
 .ul-carousel-prev{left:0}

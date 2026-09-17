@@ -154,6 +154,7 @@
   margin-top: auto;
   background: var(--dtf-gradient);
   color: #fff;
+  text-decoration: none;
   border: none;
   border-radius: 10px;
   font-family: var(--dtf-font);

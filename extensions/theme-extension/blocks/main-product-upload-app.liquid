@@ -8,7 +8,6 @@
 {%- if ump_accept == ".png" or ump_accept == ".png,image/png" -%}
   {%- assign ump_accept = ump_default_accept -%}
 {%- endif -%}
-{%- assign ump_roll_width = block.settings.roll_width_in | default: 22 -%}
 {%- assign ump_accent = block.settings.accent_color | default: "#4f7cff" -%}
 <section
   class="ump"
@@ -25,7 +24,7 @@
   data-customer-email="{{ customer.email | default: '' | escape }}"
   data-customer-name="{{ customer.name | default: '' | escape }}"
   data-api-base="/apps/customizer"
-  data-roll-width-in="{{ ump_roll_width }}"
+  data-roll-width-in="22"
   data-accepted-files="{{ ump_accept | escape }}"
   data-enable-checkout="{{ block.settings.enable_checkout_button }}"
   style="--ump-accent: {{ ump_accent }};"
@@ -46,7 +45,7 @@
             <em>or drop them here</em>
           </button>
           <ul class="ump__specs" aria-label="Accepted files">
-            <li class="ump__spec--roll">{{ ump_roll_width }}&quot; roll</li>
+            <li class="ump__spec--roll">22&quot; roll</li>
             <li>PNG</li><li>JPG</li><li>TIFF</li><li>PSD</li><li>PDF</li><li>AI</li><li>EPS</li><li>SVG</li>
           </ul>
         </div>
@@ -129,7 +128,7 @@
         <div class="ump__facts" data-ump-facts>
           <span class="ump__fact"><small>Sheet</small><strong data-ump-sheet-label>--</strong></span>
           <span class="ump__fact"><small>Width</small><strong data-ump-width>--</strong></span>
-          <span class="ump__fact"><small>Height</small><strong data-ump-height>--</strong></span>
+          <span class="ump__fact"><small>Length</small><strong data-ump-height>--</strong></span>
           <span class="ump__fact ump__quality" data-ump-quality hidden>
             <small>Quality</small>
             <strong><i class="ump__quality-dot" aria-hidden="true"></i><span data-ump-quality-badge></span></strong>
@@ -190,12 +189,6 @@
       "id": "accepted_files",
       "label": "Accepted file extensions",
       "default": ".png,.jpg,.jpeg,.webp,.tif,.tiff,.psd,.pdf,.ai,.eps,.svg,image/png,image/jpeg,image/webp,image/tiff,image/x-tiff,image/vnd.adobe.photoshop,application/vnd.adobe.photoshop,application/x-photoshop,image/x-psd,application/photoshop,application/psd,application/pdf,application/postscript,application/illustrator,application/vnd.adobe.illustrator,application/eps,application/x-eps,image/x-eps,image/svg+xml"
-    },
-    {
-      "type": "text",
-      "id": "roll_width_in",
-      "label": "Roll width in inches",
-      "default": "22"
     },
     {
       "type": "color",

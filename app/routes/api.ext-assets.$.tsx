@@ -15,6 +15,12 @@ import { join, basename, extname } from 'path'
 
 
 const ALLOWED_EXTENSIONS = new Set(['.css', '.js', '.png', '.jpg', '.jpeg', '.svg', '.webp', '.woff', '.woff2'])
+const RETIRED_LAYOUT_ASSETS = new Set([
+  'dtf-upload.js',
+  'ul-auto-sheet.js',
+  'ul-nesting-engine.js',
+  'ul-sheet-optimizer.js',
+])
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -70,9 +76,14 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
       status: 200,
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': process.env.NODE_ENV === 'production'
-          ? 'public, max-age=3600, s-maxage=86400'
-          : 'no-cache',
+        'Cache-Control': RETIRED_LAYOUT_ASSETS.has(safe)
+          ? 'no-store, max-age=0'
+          : process.env.NODE_ENV === 'production'
+            ? 'public, max-age=3600, s-maxage=86400'
+            : 'no-cache',
+        ...(RETIRED_LAYOUT_ASSETS.has(safe)
+          ? { 'X-Upload-Studio-Legacy-Asset': 'retired' }
+          : {}),
         'Content-Length': String(buffer.length),
         'Access-Control-Allow-Origin': '*',
         'X-Content-Type-Options': 'nosniff',

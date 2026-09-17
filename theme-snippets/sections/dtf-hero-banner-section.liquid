@@ -19,10 +19,6 @@
       assign card_count = card_count | plus: 1
       if block.settings.upload_mode == 'upload_studio'
         assign has_upload_studio = true
-      elsif block.settings.upload_mode == 'dtf_by_size'
-        assign has_dtf_by_size = true
-      elsif block.settings.upload_mode == 'auto_sheet'
-        assign has_auto_sheet = true
       endif
     endif
   endfor
@@ -127,6 +123,7 @@
   <script src="{{ asset_base }}ul-hide-defaults.js" defer></script>
   <script src="{{ asset_base }}ul-analytics.js" defer></script>
   <script src="{{ asset_base }}ul-error-handler.js" defer></script>
+  <script src="{{ asset_base }}ul-line-properties.js" defer></script>
   <script src="{{ asset_base }}dtf-uploader.js" defer></script>
   <script src="{{ asset_base }}tshirt-modal.js" defer></script>
 {% endif %}
@@ -1573,7 +1570,7 @@
     var fallbackUrl = slot.fallbackUrl || '/';
     var target = slot.target;
 
-    if (mode === 'redirect') {
+    if (mode === 'redirect' || mode === 'dtf_by_size' || mode === 'auto_sheet') {
       window.location.href = slot.entityType === 'collection' ? fallbackUrl : (target && target.url ? target.url : fallbackUrl);
       return;
     }
@@ -1597,14 +1594,6 @@
       return;
     }
 
-    if (mode === 'dtf_by_size') {
-      openDtfBySize(target, fallbackUrl);
-      return;
-    }
-
-    if (mode === 'auto_sheet') {
-      openAutoSheet(target, fallbackUrl);
-    }
   }
 
   function initSlider() {
@@ -1959,8 +1948,8 @@
           "label": "Upload Mode",
           "options": [
             { "value": "upload_studio", "label": "Upload Studio (Gang Sheet Uploader)" },
-            { "value": "dtf_by_size", "label": "DTF Transfer By Size" },
-            { "value": "auto_sheet", "label": "Auto Sheet Calculator" },
+            { "value": "dtf_by_size", "label": "Legacy DTF mode (opens product page)" },
+            { "value": "auto_sheet", "label": "Legacy auto-sheet mode (opens product page)" },
             { "value": "builder", "label": "Builder Redirect" },
             { "value": "redirect", "label": "Direct Redirect" }
           ],

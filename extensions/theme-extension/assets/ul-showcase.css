@@ -26,7 +26,7 @@
 .ul-sh-price{margin:10px 0}
 .ul-sh-old{text-decoration:line-through;color:#999;font-size:12px;margin-right:6px}
 .ul-sh-now{font-size:17px;font-weight:700;color:#1a1a2e}
-.ul-sh-upload-btn{width:100%;padding:11px;background:linear-gradient(135deg,#7367f0,#9d4edd);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .3s}
+.ul-sh-upload-btn{width:100%;padding:11px;background:linear-gradient(135deg,#7367f0,#9d4edd);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .3s;text-decoration:none}
 .ul-sh-upload-btn:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(115,103,240,0.35)}
 .ul-sh-modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:none;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)}
 .ul-sh-modal-overlay.active{display:flex}

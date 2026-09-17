@@ -18,10 +18,6 @@
   for block in section.blocks
     if block.settings.upload_mode == 'upload_studio'
       assign has_upload_studio = true
-    elsif block.settings.upload_mode == 'dtf_by_size'
-      assign has_dtf_by_size = true
-    elsif block.settings.upload_mode == 'auto_sheet'
-      assign has_auto_sheet = true
     endif
   endfor
 -%}
@@ -58,6 +54,7 @@
   <script src="{{ asset_base }}ul-hide-defaults.js" defer></script>
   <script src="{{ asset_base }}ul-analytics.js" defer></script>
   <script src="{{ asset_base }}ul-error-handler.js" defer></script>
+  <script src="{{ asset_base }}ul-line-properties.js" defer></script>
   <script src="{{ asset_base }}dtf-uploader.js" defer></script>
   <script src="{{ asset_base }}tshirt-modal.js" defer></script>
 {% endif %}
@@ -285,7 +282,7 @@
 
     var productData = getProductData(productId);
 
-    if (mode === 'redirect' || mode === 'builder') {
+    if (mode === 'redirect' || mode === 'builder' || mode === 'dtf_by_size' || mode === 'auto_sheet') {
       window.location.href = '/products/' + productHandle;
       return;
     }
@@ -569,7 +566,7 @@
       "type": "text",
       "id": "subheading",
       "label": "Subheading",
-      "default": "Upload your design to any product"
+      "default": "Choose a product to upload a finished sheet or select a variant"
     }
   ],
   "blocks": [
@@ -589,8 +586,8 @@
           "label": "Upload Mode",
           "options": [
             { "value": "upload_studio", "label": "Upload Studio (Gang Sheet Uploader)" },
-            { "value": "dtf_by_size", "label": "DTF Transfer By Size" },
-            { "value": "auto_sheet", "label": "Auto Sheet Calculator" },
+            { "value": "dtf_by_size", "label": "Legacy DTF mode (opens product page)" },
+            { "value": "auto_sheet", "label": "Legacy auto-sheet mode (opens product page)" },
             { "value": "builder", "label": "Gang Sheet Builder (Redirect)" },
             { "value": "redirect", "label": "Product Page (Redirect)" }
           ],
@@ -600,7 +597,7 @@
           "type": "text",
           "id": "button_text",
           "label": "Button Text",
-          "default": "Upload Design"
+          "default": "Open Product"
         }
       ]
     }

@@ -176,7 +176,7 @@
         return 'Document size will be confirmed after upload measurement.';
       }
 
-      var sizeText = widthIn.toFixed(2) + '" × ' + heightIn.toFixed(2) + '"';
+      var sizeText = formatDisplaySheetDimensions(widthIn, heightIn);
 
       if (source === 'document_dpi' && embeddedDpi > 0) {
         return 'Document size: ' + sizeText + ' (file resolution: ' + embeddedDpi + ' DPI).';
@@ -589,10 +589,6 @@
 
     var customerFirstName = root.getAttribute('data-customer-first-name') || '';
     var customerLastName = root.getAttribute('data-customer-last-name') || '';
-    var effectiveRules = {
-      maxUploadWidth: parseOptionalPositiveNumber(root.getAttribute('data-max-upload-width'))
-    };
-
     var galleryPanel = root.querySelector('.ul-main-gallery-panel');
     var customerWorkspace = root.querySelector('.ul-main-customer-workspace');
     var customerWorkspaceStatus = root.querySelector('.ul-main-customer-workspace-status');
@@ -680,6 +676,15 @@
     var accordionTriggers = Array.prototype.slice.call(root.querySelectorAll('.js-accordion-trigger'));
     var variantRows = Array.prototype.slice.call(root.querySelectorAll('.ul-main-variant-row'));
     var uploadRequired = Boolean(uploadInput && uploadBox);
+    if (detectedHeight && detectedHeight.parentElement) {
+      var detectedHeightLabel = detectedHeight.parentElement.querySelector('label');
+      if (detectedHeightLabel) detectedHeightLabel.textContent = 'Length (Inches)';
+    }
+    if (quantityRow) {
+      var quantityLabel = quantityRow.querySelector('label');
+      if (quantityLabel) quantityLabel.textContent = 'Whole-sheet copies:';
+      if (quantitySelect) quantitySelect.setAttribute('aria-label', 'Whole-sheet copies');
+    }
     var addToCartLabel = addToCartBtn ? addToCartBtn.textContent : 'Add to Cart';
     var buyNowLabel = buyNowBtn ? buyNowBtn.textContent : 'Buy Now';
     var detectedDefaultTitle = detectedTitle ? detectedTitle.textContent : 'Detected Gang Sheet Size';
@@ -1399,15 +1404,14 @@
         if (item.widthPx && item.heightPx) metaParts.push(item.widthPx + ' x ' + item.heightPx + ' px');
         if (item.embeddedDpi) metaParts.push('File ' + item.embeddedDpi + ' DPI');
         if (item.widthIn && item.heightIn) {
-          metaParts.push(formatInches(Math.min(item.widthIn, item.heightIn)) + ' x ' + formatInches(Math.max(item.widthIn, item.heightIn)));
+          metaParts.push(formatDisplaySheetDimensions(item.widthIn, item.heightIn));
         }
         var sizingMethodText = getSizingMethodText(item);
         var summaryText = '';
         if (item.selectedVariantTitle) {
           summaryText = item.selectedVariantTitle;
-          if (item.sheetsNeeded) {
-            summaryText += ' • ' + item.sheetsNeeded + ' sheet' + (item.sheetsNeeded === 1 ? '' : 's');
-          }
+          var itemCopies = Math.max(1, Number(item.requestedQuantity) || 1);
+          summaryText += ' • ' + itemCopies + ' whole-sheet ' + (itemCopies === 1 ? 'copy' : 'copies');
         } else if (item.billableLengthIn) {
           summaryText = 'Billable length ' + formatInches(item.billableLengthIn);
         } else if (item.quoteStatus === 'processing' || item.quoteStatus === 'uploading' || item.quoteStatus === 'measuring') {
@@ -1454,9 +1458,9 @@
                 '</div>' +
                 '<div class="ul-main-custom-controls mt-3 flex flex-wrap items-center justify-between gap-3">' +
                   '<div class="ul-main-custom-qty inline-flex items-center rounded-full border border-slate-200 bg-slate-50 p-1">' +
-                    '<button type="button" class="ul-main-custom-qty-btn inline-flex h-8 w-8 items-center justify-center rounded-full text-base font-semibold text-slate-700 hover:bg-white" data-queue-qty="' + itemId + '" data-delta="-1">−</button>' +
-                    '<input type="number" min="1" step="1" value="' + (item.requestedQuantity || 1) + '" class="ul-main-custom-qty-input w-16 border-0 bg-transparent text-center text-sm font-semibold text-slate-900 focus:outline-none focus:ring-0" data-queue-qty-input="' + itemId + '">' +
-                    '<button type="button" class="ul-main-custom-qty-btn inline-flex h-8 w-8 items-center justify-center rounded-full text-base font-semibold text-slate-700 hover:bg-white" data-queue-qty="' + itemId + '" data-delta="1">+</button>' +
+                    '<button type="button" class="ul-main-custom-qty-btn inline-flex h-8 w-8 items-center justify-center rounded-full text-base font-semibold text-slate-700 hover:bg-white" data-queue-qty="' + itemId + '" data-delta="-1" aria-label="Fewer whole-sheet copies">−</button>' +
+                    '<input type="number" min="1" step="1" value="' + (item.requestedQuantity || 1) + '" class="ul-main-custom-qty-input w-16 border-0 bg-transparent text-center text-sm font-semibold text-slate-900 focus:outline-none focus:ring-0" data-queue-qty-input="' + itemId + '" aria-label="Whole-sheet copies">' +
+                    '<button type="button" class="ul-main-custom-qty-btn inline-flex h-8 w-8 items-center justify-center rounded-full text-base font-semibold text-slate-700 hover:bg-white" data-queue-qty="' + itemId + '" data-delta="1" aria-label="More whole-sheet copies">+</button>' +
                   '</div>' +
                   '<div class="flex flex-wrap items-center gap-2">' +
                     '<span class="ul-main-custom-status inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold ' + statusToneClass + '">' + statusLabel + '</span>' +
@@ -1477,11 +1481,11 @@
         '<div class="ul-main-custom-queue-header mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-950 px-4 py-3 text-white">' +
           '<div>' +
             '<div class="text-sm font-semibold">Custom pricing upload queue</div>' +
-            '<div class="mt-1 text-xs text-slate-300">Each uploaded design keeps its own quantity and quote.</div>' +
+            '<div class="mt-1 text-xs text-slate-300">Each uploaded gang sheet keeps its own whole-sheet quantity and quote.</div>' +
           '</div>' +
           '<div class="ul-main-custom-queue-header-pills flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-200">' +
             '<span class="ul-main-custom-queue-header-pill rounded-full bg-white/10 px-3 py-1">' + totalFiles + ' file' + (totalFiles === 1 ? '' : 's') + '</span>' +
-            '<span class="ul-main-custom-queue-header-pill rounded-full bg-white/10 px-3 py-1">' + totalCopies + ' total copies</span>' +
+            '<span class="ul-main-custom-queue-header-pill rounded-full bg-white/10 px-3 py-1">' + totalCopies + ' whole-sheet copies</span>' +
           '</div>' +
         '</div>' +
         '<div class="ul-main-custom-queue-list space-y-3">' + itemsHtml + '</div>';
@@ -1551,6 +1555,13 @@
       var amount = Number(value || 0);
       if (!isFinite(amount)) amount = 0;
       return amount.toFixed(2) + '"';
+    }
+
+    function formatDisplaySheetDimensions(widthIn, heightIn) {
+      var first = parsePositiveNumber(widthIn);
+      var second = parsePositiveNumber(heightIn);
+      if (!(first > 0) || !(second > 0)) return '-- x --';
+      return 'W ' + formatInches(Math.min(first, second)) + ' x L ' + formatInches(Math.max(first, second));
     }
 
     function formatRulerLabel(value) {
@@ -1645,13 +1656,19 @@
         measurementMode: measurement.measurementMode || 'full',
         widthIn: parsePositiveNumber(measurement.widthIn) || 0,
         heightIn: parsePositiveNumber(measurement.heightIn) || 0,
-        requestedQuantity: Math.max(1, parseInt(item.requestedQuantity || item.lastOrderedQuantity || 1, 10) || 1),
+        reorderable: item.reorderable === true,
+        quantitySemantics: item.quantitySemantics || 'unknown',
+        legacyAudit: item.legacyAudit || null,
+        requestedQuantity: item.reorderable === true
+          ? Math.max(1, parseInt(item.requestedQuantity || item.lastOrderedQuantity || 1, 10) || 1)
+          : 0,
         selectedVariantId: item.selectedVariantId || '',
         selectedVariantTitle: item.selectedVariantTitle || '',
         selectedSheetLabel: item.selectedSheetLabel || '',
         sheetsNeeded: 0,
         designsPerSheet: 0,
-        billableLengthIn: parsePositiveNumber(item.billableLengthIn) || 0,
+        measuredSheetLengthIn: parsePositiveNumber(item.measuredSheetLengthIn) || 0,
+        totalBillableLengthIn: parsePositiveNumber(item.totalBillableLengthIn) || 0,
         totalPrice: null,
         uploadToken: '',
         quoteStatus: 'processing',
@@ -1663,7 +1680,7 @@
     }
 
     function ensureWorkspaceItemInQueue(workspaceItem) {
-      if (!workspaceItem) return null;
+      if (!workspaceItem || workspaceItem.reorderable !== true) return null;
       var existing = getCustomQueueItemById(workspaceItem.uploadId);
       if (existing) {
         existing.requestedQuantity = Math.max(1, parseInt(workspaceItem.requestedQuantity || 1, 10) || 1);
@@ -1680,8 +1697,9 @@
     }
 
     function getWorkspaceActionLabel(item) {
+      if (!item || item.reorderable !== true) return 'Re-upload required';
       var quantity = Math.max(1, parseInt(item.requestedQuantity || item.lastOrderedQuantity || 1, 10) || 1);
-      return quantity + ' cop' + (quantity === 1 ? 'y' : 'ies');
+      return quantity + ' whole-sheet ' + (quantity === 1 ? 'copy' : 'copies');
     }
 
     function renderCustomerWorkspace() {
@@ -1763,13 +1781,33 @@
 
       var workspaceHtml = items.map(function(item) {
         var previewSrc = item.thumbnailUrl || '';
-        var quantity = Math.max(1, parseInt(item.requestedQuantity || item.lastOrderedQuantity || 1, 10) || 1);
+        var reorderable = item.reorderable === true;
+        var quantity = reorderable
+          ? Math.max(1, parseInt(item.requestedQuantity || item.lastOrderedQuantity || 1, 10) || 1)
+          : 0;
         var actionBusy = String(customerWorkspaceState.activeActionId) === String(item.uploadId);
         var sizeText = '';
         if (item.measurement && item.measurement.widthIn && item.measurement.heightIn) {
-          sizeText = formatInches(Math.min(item.measurement.widthIn, item.measurement.heightIn)) + ' x ' + formatInches(Math.max(item.measurement.widthIn, item.measurement.heightIn));
+          sizeText = formatDisplaySheetDimensions(item.measurement.widthIn, item.measurement.heightIn);
         }
-        var billableText = item.billableLengthIn ? 'Billable length ' + formatInches(item.billableLengthIn) : '';
+        var measuredLengthText = item.measuredSheetLengthIn
+          ? 'Measured sheet length ' + formatInches(item.measuredSheetLengthIn)
+          : '';
+        var totalBillableText = item.totalBillableLengthIn
+          ? 'Current length estimate for last quantity ' + formatInches(item.totalBillableLengthIn)
+          : '';
+        var quantityText = reorderable
+          ? 'Last whole-sheet qty ' + String(item.lastOrderedQuantity || quantity)
+          : 'Previous order record — re-upload required';
+        var purchaseControls = reorderable
+          ? '<div class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 p-1">' +
+              '<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-full text-base font-semibold text-slate-700 hover:bg-white" data-workspace-qty="' + escapeHtml(item.uploadId) + '" data-delta="-1" aria-label="Fewer whole-sheet copies">-</button>' +
+              '<input type="number" min="1" step="1" value="' + quantity + '" class="w-14 border-0 bg-transparent text-center text-sm font-semibold text-slate-900 focus:outline-none focus:ring-0" data-workspace-qty-input="' + escapeHtml(item.uploadId) + '" aria-label="Whole-sheet copies">' +
+              '<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-full text-base font-semibold text-slate-700 hover:bg-white" data-workspace-qty="' + escapeHtml(item.uploadId) + '" data-delta="1" aria-label="More whole-sheet copies">+</button>' +
+            '</div>' +
+            '<button type="button" class="inline-flex items-center rounded-full border border-slate-900 bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition-colors duration-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60" data-workspace-add="' + escapeHtml(item.uploadId) + '"' + (actionBusy ? ' disabled' : '') + '>' + (actionBusy ? 'Working...' : 'Add to Cart') + '</button>' +
+            '<button type="button" class="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900 transition-colors duration-200 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60" data-workspace-buy="' + escapeHtml(item.uploadId) + '"' + (actionBusy ? ' disabled' : '') + '>Buy Now</button>'
+          : '<span class="rounded-full border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">Upload this file again so the previous order record stays unchanged</span>';
         return '' +
           '<div class="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm transition-shadow duration-200 hover:shadow-md" data-workspace-item="' + escapeHtml(item.uploadId) + '">' +
             '<div class="flex items-start gap-4">' +
@@ -1785,9 +1823,10 @@
                     '<div class="mt-3 truncate text-sm font-semibold text-slate-900">' + escapeHtml(item.fileName || 'Print-ready upload') + '</div>' +
                     '<div class="mt-2 flex flex-wrap gap-2 text-[11px] font-medium text-slate-500">' +
                       '<span class="rounded-full border border-slate-200 bg-white px-3 py-1">Last order ' + escapeHtml(formatWorkspaceDate(item.orderedAt)) + '</span>' +
-                      '<span class="rounded-full border border-slate-200 bg-white px-3 py-1">Last qty ' + escapeHtml(String(item.lastOrderedQuantity || quantity)) + '</span>' +
+                      '<span class="rounded-full border border-slate-200 bg-white px-3 py-1">' + escapeHtml(quantityText) + '</span>' +
                       (sizeText ? '<span class="rounded-full border border-slate-200 bg-white px-3 py-1">' + escapeHtml(sizeText) + '</span>' : '') +
-                      (billableText ? '<span class="rounded-full border border-slate-200 bg-white px-3 py-1">' + escapeHtml(billableText) + '</span>' : '') +
+                      (measuredLengthText ? '<span class="rounded-full border border-slate-200 bg-white px-3 py-1">' + escapeHtml(measuredLengthText) + '</span>' : '') +
+                      (totalBillableText ? '<span class="rounded-full border border-slate-200 bg-white px-3 py-1">' + escapeHtml(totalBillableText) + '</span>' : '') +
                     '</div>' +
                   '</div>' +
                   '<div class="text-right">' +
@@ -1797,13 +1836,7 @@
                 '</div>' +
                 '<div class="mt-4 flex flex-wrap items-center gap-2">' +
                   '<a href="' + escapeHtml(item.uploadUrl || '#') + '" target="_blank" rel="noopener noreferrer" class="inline-flex items-center rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"' + (item.uploadUrl ? '' : ' aria-disabled="true" tabindex="-1"') + '>Print READY</a>' +
-                  '<div class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 p-1">' +
-                    '<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-full text-base font-semibold text-slate-700 hover:bg-white" data-workspace-qty="' + escapeHtml(item.uploadId) + '" data-delta="-1">-</button>' +
-                    '<input type="number" min="1" step="1" value="' + quantity + '" class="w-14 border-0 bg-transparent text-center text-sm font-semibold text-slate-900 focus:outline-none focus:ring-0" data-workspace-qty-input="' + escapeHtml(item.uploadId) + '">' +
-                    '<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-full text-base font-semibold text-slate-700 hover:bg-white" data-workspace-qty="' + escapeHtml(item.uploadId) + '" data-delta="1">+</button>' +
-                  '</div>' +
-                  '<button type="button" class="inline-flex items-center rounded-full border border-slate-900 bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition-colors duration-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60" data-workspace-add="' + escapeHtml(item.uploadId) + '"' + (actionBusy ? ' disabled' : '') + '>' + (actionBusy ? 'Working...' : 'Add to Cart') + '</button>' +
-                  '<button type="button" class="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900 transition-colors duration-200 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60" data-workspace-buy="' + escapeHtml(item.uploadId) + '"' + (actionBusy ? ' disabled' : '') + '>Buy Now</button>' +
+                  purchaseControls +
                 '</div>' +
               '</div>' +
             '</div>' +
@@ -1958,7 +1991,7 @@
         totalPrice: item.totalPrice,
         selectedVariantTitle: item.selectedVariantTitle || '',
         statusLabel: item.selectedVariantTitle
-          ? item.selectedVariantTitle + (item.sheetsNeeded ? ' • ' + item.sheetsNeeded + ' sheet' + (item.sheetsNeeded === 1 ? '' : 's') : '')
+          ? item.selectedVariantTitle + ' • ' + Math.max(1, Number(item.requestedQuantity) || 1) + ' whole-sheet ' + (Math.max(1, Number(item.requestedQuantity) || 1) === 1 ? 'copy' : 'copies')
           : 'Measured full page',
       };
     }
@@ -1975,8 +2008,8 @@
             '<div class="ul-main-vip-preview-board-meta mt-1 text-xs text-slate-500">' + item.statusLabel + '</div>' +
           '</div>' +
           '<div class="ul-main-vip-preview-board-pills flex flex-wrap items-center gap-2">' +
-            '<span class="ul-main-vip-preview-mini-chip">Qty ' + item.requestedQuantity + '</span>' +
-            '<span class="ul-main-vip-preview-mini-chip">' + formatInches(item.billableWidthIn) + ' × ' + formatInches(item.billableLengthIn) + '</span>' +
+            '<span class="ul-main-vip-preview-mini-chip">Sheet qty ' + item.requestedQuantity + '</span>' +
+            '<span class="ul-main-vip-preview-mini-chip">' + formatDisplaySheetDimensions(item.billableWidthIn, item.billableLengthIn) + '</span>' +
             '<span class="ul-main-vip-preview-mini-chip">' + (item.totalPrice != null ? formatMoneyValue(item.totalPrice, customerPricing.currency) : 'Pending') + '</span>' +
           '</div>' +
         '</div>' +
@@ -2073,7 +2106,7 @@
         var itemId = item.uploadId || item.id;
         var ready = item.quoteStatus === 'ready' && !item.error;
         var statusLabel = item.error ? 'Issue' : ready ? 'Ready' : 'Processing';
-        var optionLabel = (index + 1) + '. ' + (item.fileName || 'Uploaded file') + ' • Qty ' + (item.requestedQuantity || 1) + ' • ' + statusLabel;
+        var optionLabel = (index + 1) + '. ' + (item.fileName || 'Uploaded file') + ' • Sheet qty ' + (item.requestedQuantity || 1) + ' • ' + statusLabel;
         return '<option value="' + itemId + '"' + (String(activeItemId) === String(itemId) ? ' selected' : '') + '>' + optionLabel.replace(/"/g, '&quot;') + '</option>';
       }).join('');
     }
@@ -2099,7 +2132,7 @@
 
       var metaText = '';
       if (boardData) {
-        metaText = (boardData.statusLabel || 'Measured full page') + ' • ' + formatInches(boardData.billableWidthIn) + ' × ' + formatInches(boardData.billableLengthIn);
+        metaText = (boardData.statusLabel || 'Measured full page') + ' • ' + formatDisplaySheetDimensions(boardData.billableWidthIn, boardData.billableLengthIn);
       } else if (item.error) {
         metaText = item.error;
       } else if (item.uploadStatus === 'ready') {
@@ -2110,7 +2143,7 @@
         metaText = 'Upload is still being prepared.';
       }
       if (queueCount > 1) {
-        metaText += ' • ' + queueCount + ' designs in this queue';
+        metaText += ' • ' + queueCount + ' gang sheets in this queue';
       }
       if (vipPreviewActiveMeta) vipPreviewActiveMeta.textContent = metaText;
       if (vipPreviewActiveNote) {
@@ -2126,9 +2159,9 @@
 
       if (vipPreviewActivePills) {
         var pills = [];
-        pills.push('<span class="ul-main-vip-preview-mini-chip">Qty ' + (item.requestedQuantity || 1) + '</span>');
+        pills.push('<span class="ul-main-vip-preview-mini-chip">Sheet qty ' + (item.requestedQuantity || 1) + '</span>');
         if (boardData) {
-          pills.push('<span class="ul-main-vip-preview-mini-chip">' + formatInches(boardData.billableWidthIn) + ' × ' + formatInches(boardData.billableLengthIn) + '</span>');
+          pills.push('<span class="ul-main-vip-preview-mini-chip">' + formatDisplaySheetDimensions(boardData.billableWidthIn, boardData.billableLengthIn) + '</span>');
         }
         pills.push('<span class="ul-main-vip-preview-mini-chip">' + (item.totalPrice != null ? formatMoneyValue(item.totalPrice, customerPricing.currency) : 'Pending') + '</span>');
         vipPreviewActivePills.innerHTML = pills.join('');
@@ -2387,12 +2420,6 @@
       syncUploadInputMode();
     }
 
-    function syncEffectiveRules(config) {
-      if (!config) return;
-      effectiveRules.maxUploadWidth =
-        parseOptionalPositiveNumber(config.maxWidthIn) || effectiveRules.maxUploadWidth;
-    }
-
     function setVipPricingMessage(titleText, rateText, lengthText, totalText) {
       if (vipPricingTitle) vipPricingTitle.textContent = titleText || '';
       if (vipPricingRate) vipPricingRate.textContent = rateText || '';
@@ -2461,12 +2488,12 @@
             readyCount +
             ' of ' +
             actionableFiles +
-            ' ready design' +
+            ' ready sheet' +
             (actionableFiles === 1 ? '' : 's') +
             ', ' +
             totalCopies +
-            ' total cop' +
-            (totalCopies === 1 ? 'y' : 'ies') +
+            ' whole-sheet ' +
+            (totalCopies === 1 ? 'copy' : 'copies') +
             '. Current billable length: ' +
             (billableLengthIn ? billableLengthIn.toFixed(2) + '"' : 'pending');
           if (waitingFiles) {
@@ -2483,9 +2510,8 @@
       } else if (isBusiness) {
         if (customerPricing.quoteVariantTitle) {
           lengthLabel = 'Selected sheet: ' + customerPricing.quoteVariantTitle;
-          if (customerPricing.quoteSheetsNeeded) {
-            lengthLabel += ' (' + customerPricing.quoteSheetsNeeded + ' sheet' + (customerPricing.quoteSheetsNeeded === 1 ? '' : 's') + ')';
-          }
+          var selectedSheetCopies = Math.max(1, Number(state.quantity) || 1);
+          lengthLabel += ' (' + selectedSheetCopies + ' whole-sheet ' + (selectedSheetCopies === 1 ? 'copy' : 'copies') + ')';
         } else if (state.selectedResult && state.selectedResult.selectedVariantTitle) {
           lengthLabel = 'Selected sheet: ' + state.selectedResult.selectedVariantTitle;
         } else {
@@ -2496,7 +2522,7 @@
         }
       } else {
         lengthLabel = billableLengthIn
-          ? 'Uploaded page: ' + (billableWidthIn ? billableWidthIn.toFixed(2) + '" x ' : '') + billableLengthIn.toFixed(2) + '"'
+          ? 'Uploaded page: ' + formatDisplaySheetDimensions(billableWidthIn, billableLengthIn)
           : 'Waiting for server-confirmed measurement...';
       }
       var totalLabel = customerPricing.quoteTotal != null
@@ -2518,7 +2544,7 @@
         : 'Please upload your gang sheet';
       var inlineMetaText = customerPricing.quoteTotal != null
         ? (queueMode
-            ? readyCount + ' ready design' + (readyCount === 1 ? '' : 's') + ' • ' + totalCopies + ' total cop' + (totalCopies === 1 ? 'y' : 'ies')
+            ? readyCount + ' ready sheet' + (readyCount === 1 ? '' : 's') + ' • ' + totalCopies + ' whole-sheet ' + (totalCopies === 1 ? 'copy' : 'copies')
             : (billableLengthIn ? 'Billable length ' + billableLengthIn.toFixed(2) + '"' : 'Ready to create checkout'))
         : (queueMode
             ? 'Building your measured running total from each ready upload.'
@@ -2718,10 +2744,15 @@
                 orderedAt: item.orderedAt || '',
                 lastOrderedQuantity: Math.max(1, parseInt(item.lastOrderedQuantity || requestedQuantity, 10) || requestedQuantity),
                 requestedQuantity: requestedQuantity,
+                reorderable: item.reorderable === true,
+                quantitySemantics: String(item.quantitySemantics || 'unknown'),
+                legacyAudit: item.legacyAudit && typeof item.legacyAudit === 'object' ? item.legacyAudit : null,
                 selectedVariantId: String(item.selectedVariantId || ''),
                 selectedVariantTitle: String(item.selectedVariantTitle || ''),
                 selectedSheetLabel: String(item.selectedSheetLabel || ''),
                 billableLengthIn: parsePositiveNumber(item.billableLengthIn) || 0,
+                measuredSheetLengthIn: parsePositiveNumber(item.measuredSheetLengthIn) || 0,
+                totalBillableLengthIn: parsePositiveNumber(item.totalBillableLengthIn) || 0,
                 measurement: item.measurement && typeof item.measurement === 'object' ? item.measurement : null
               };
             }).filter(function(item) {
@@ -2745,6 +2776,10 @@
 
     async function checkoutWorkspaceItem(workspaceItem) {
       if (!workspaceItem) return;
+      if (workspaceItem.reorderable !== true) {
+        showError('Upload this file again so its previous order record stays unchanged.');
+        return;
+      }
       clearError();
       customerWorkspaceState.activeActionId = workspaceItem.uploadId;
       renderCustomerWorkspace();
@@ -2781,6 +2816,10 @@
 
     function addWorkspaceItemToQueue(workspaceItem) {
       if (!workspaceItem) return;
+      if (workspaceItem.reorderable !== true) {
+        showError('Upload this file again so its previous order record stays unchanged.');
+        return;
+      }
       clearError();
       var queueItem = ensureWorkspaceItemInQueue(workspaceItem);
       if (!queueItem) return;
@@ -2882,8 +2921,8 @@
             currentQueueItem.selectedVariantId = String(quoteItem.selectedVariantId || '');
             currentQueueItem.selectedVariantTitle = String(quoteItem.selectedVariantTitle || '');
             currentQueueItem.selectedSheetLabel = String(quoteItem.selectedSheetLabel || '');
-            currentQueueItem.sheetsNeeded = parsePositiveNumber(quoteItem.sheetsNeeded) || 0;
-            currentQueueItem.designsPerSheet = parsePositiveNumber(quoteItem.designsPerSheet) || 0;
+            currentQueueItem.sheetsNeeded = parsePositiveNumber(quoteItem.wholeSheetCopies) || 0;
+            currentQueueItem.designsPerSheet = 1;
             currentQueueItem.quoteStatus = 'ready';
             currentQueueItem.error = '';
             currentQueueItem.quoteRequestKey = '';
@@ -3013,19 +3052,13 @@
               : ''
         );
         customerPricing.quoteSheetsNeeded = parsePositiveNumber(
-          data.sheetsNeeded != null
-            ? data.sheetsNeeded
-            : data.quote && data.quote.sheetsNeeded != null
-              ? data.quote.sheetsNeeded
+          data.wholeSheetCopies != null
+            ? data.wholeSheetCopies
+            : data.quote && data.quote.wholeSheetCopies != null
+              ? data.quote.wholeSheetCopies
               : null
         );
-        customerPricing.quoteDesignsPerSheet = parsePositiveNumber(
-          data.designsPerSheet != null
-            ? data.designsPerSheet
-            : data.quote && data.quote.designsPerSheet != null
-              ? data.quote.designsPerSheet
-              : null
-        );
+        customerPricing.quoteDesignsPerSheet = 1;
         customerPricing.quoteItems = Array.isArray(data.items)
           ? data.items
           : data.quote && Array.isArray(data.quote.items)
@@ -3039,8 +3072,8 @@
             selectedVariantId: customerPricing.quoteVariantId,
             selectedVariantTitle: customerPricing.quoteVariantTitle || '',
             selectedSheetLabel: customerPricing.quoteSheetLabel || '',
-            designsPerSheet: customerPricing.quoteDesignsPerSheet || 0,
-            sheetsNeeded: customerPricing.quoteSheetsNeeded || 1
+            designsPerSheet: 1,
+            sheetsNeeded: Math.max(1, Number(state.quantity) || 1)
           };
           setSelectedVariant(customerPricing.quoteVariantId);
           updateDetectedUI();
@@ -3119,20 +3152,16 @@
         return;
       }
       detectedBox.classList.remove('hidden');
-      if (detectedWidth) detectedWidth.value = state.widthIn.toFixed(2) + '"';
-      if (detectedHeight) detectedHeight.value = state.heightIn.toFixed(2) + '"';
+      var displayWidthIn = Math.min(state.widthIn, state.heightIn);
+      var displayLengthIn = Math.max(state.widthIn, state.heightIn);
+      if (detectedWidth) detectedWidth.value = displayWidthIn.toFixed(2) + '"';
+      if (detectedHeight) detectedHeight.value = displayLengthIn.toFixed(2) + '"';
       if (detectedNote) {
         var notes = isVipPricingActive()
           ? ['Measured on the server. Pricing uses the full uploaded page size.']
           : isBusinessPricingActive()
             ? ['Resolved on the server using the matched sheet size. Checkout uses your assigned per-inch rate on the selected sheet length.']
             : ['Resolved on server using the saved product sheet rules.'];
-        if ((isBusinessPricingActive() || !hasCustomPricingActive()) && state.selectedResult && state.selectedResult.designsPerSheet && state.selectedResult.sheetsNeeded) {
-          notes.push(
-            state.selectedResult.designsPerSheet + ' design(s) per sheet, ' +
-            state.selectedResult.sheetsNeeded + ' sheet(s) needed.'
-          );
-        }
         if (hasSeparateArtworkBounds()) {
           notes.push('Artwork bounds were also detected for preview, but billing keeps the full uploaded page size.');
         }
@@ -3185,15 +3214,12 @@
               state.selectedVariantId ||
               (hiddenVariantInput ? hiddenVariantInput.value : '') ||
               null,
-            maxUploadWidth: effectiveRules.maxUploadWidth,
             measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
             rollWidthIn: MAIN_PRODUCT_ROLL_WIDTH_IN
           })
         });
         var data = await response.json().catch(function() { return {}; });
         if (requestToken !== resolveRequestToken) return;
-        syncEffectiveRules(data && data.config ? data.config : null);
-
       if (data && data.upload) {
           applyServerMeasurement(data.upload);
         }
@@ -3232,7 +3258,7 @@
       if (!state.selectedResult || !state.selectedResult.selectedVariantId) {
         state.selectedResult = null;
         setSelectedVariant(null);
-        showError('No product variant can fit this upload with the current quantity and available sheet sizes.');
+        showError('The server did not return a matching sheet for this upload.');
         if (uploadStatus) uploadStatus.textContent = '';
         syncPurchaseButtonsForCurrentState();
         return;
@@ -3283,8 +3309,7 @@
             customerId: root.getAttribute('data-customer-id') || null,
             customerEmail: root.getAttribute('data-customer-email') || null,
             measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
-            rollWidthIn: MAIN_PRODUCT_ROLL_WIDTH_IN,
-            maxUploadWidth: effectiveRules.maxUploadWidth
+            rollWidthIn: MAIN_PRODUCT_ROLL_WIDTH_IN
           })
         });
         var data = await response.json().catch(function() { return {}; });
@@ -3298,6 +3323,10 @@
           state.selectedResult = data.resolution;
           setSelectedVariant(data.resolution.selectedVariantId);
           if (uploadStatus) uploadStatus.textContent = 'Estimated sheet: ' + (data.resolution.selectedSheetLabel || data.resolution.selectedVariantTitle || '') + ' — confirming on the server...';
+          clearError();
+        } else if (!response.ok && data && data.error) {
+          // Preserve the server's exact roll-width explanation.
+          showError(String(data.error));
         }
         updateDetectedUI();
         syncPurchaseButtonsForCurrentState();
@@ -3395,6 +3424,12 @@
     }
 
     function getPreflightErrorMessage(statusPayload, item) {
+      if (item && item.errors && item.errors.length) {
+        return String(item.errors[0]);
+      }
+      if (statusPayload && statusPayload.errors && statusPayload.errors.length) {
+        return String(statusPayload.errors[0]);
+      }
       var lifecycleProblems =
         item && item.problems && item.problems.length
           ? item.problems
@@ -3423,7 +3458,7 @@
       }
 
       if (statusPayload && statusPayload.error) {
-        return statusPayload.error;
+        return String(statusPayload.error);
       }
 
       return 'Upload processing failed on the server. Please try another file or contact support.';
@@ -3975,7 +4010,9 @@
                 state.selectedVariantId ||
                 '',
               billableLengthIn: customerPricing.quoteLengthIn || getBillablePageLengthIn(),
-              quantity: isBusinessPricingActive() ? state.quantity : 1
+              // Quantity always means complete copies of this finished sheet,
+              // regardless of which custom-pricing status supplied the rate.
+              quantity: Math.max(1, Number(state.quantity) || 1)
             })
           });
           var vipData = await vipResponse.json().catch(function() { return {}; });
@@ -4006,12 +4043,11 @@
               dpi: state.effectiveDpi || state.embeddedDpi || 0,
               line: {
                 copies: quantityValue,
-                designsPerSheet: state.selectedResult ? state.selectedResult.designsPerSheet : null,
-                sheetsNeeded: state.selectedResult ? state.selectedResult.sheetsNeeded : null,
+                designsPerSheet: 1,
+                sheetsNeeded: quantityValue,
                 variantId: String(variantId || ''),
                 sheetLabel: state.selectedResult
-                  ? (state.selectedResult.selectedSheetLabel || state.selectedResult.selectedVariantTitle || '') +
-                    (state.selectedResult.productionNote ? ' · ' + state.selectedResult.productionNote : '')
+                  ? (state.selectedResult.selectedSheetLabel || state.selectedResult.selectedVariantTitle || '')
                   : ''
               }
             })
@@ -4019,15 +4055,16 @@
         var properties = preparedCartLine.properties || {};
         var canonicalInstruction = preparedCartLine.cartInstruction || {};
         var canonicalVariantId = parseInt(canonicalInstruction.variantId, 10);
-        var canonicalSheetsNeeded = parseInt(canonicalInstruction.sheetsNeeded, 10);
+        var canonicalCartQuantity = parseInt(canonicalInstruction.cartQuantity, 10);
+        if (uploadRequired && (!(canonicalVariantId > 0) || !(canonicalCartQuantity > 0))) {
+          throw new Error('The measured gang sheet could not be verified for cart.');
+        }
 
         // Verified, idempotent cart sync (exact-line replace) + cart-token
         // binding so the order webhook has a second carrier for this upload.
         var cartItem = {
-          id: canonicalVariantId > 0 ? canonicalVariantId : parseInt(variantId, 10),
-          quantity: canonicalSheetsNeeded > 0
-            ? canonicalSheetsNeeded
-            : Math.max(1, Number(state.selectedResult ? state.selectedResult.sheetsNeeded : quantityValue) || 1),
+          id: uploadRequired ? canonicalVariantId : parseInt(variantId, 10),
+          quantity: uploadRequired ? canonicalCartQuantity : Math.max(1, quantityValue),
           properties: properties
         };
         var syncedCart = uploadRequired && state.uploadId
