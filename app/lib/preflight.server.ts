@@ -754,6 +754,96 @@ export async function getImageDimensionsFast(
     : null
 }
 
+async function readFileSlice(filePath: string, position: number, length: number): Promise<Buffer> {
+  const buffer = Buffer.alloc(length)
+  const handle = await fs.open(filePath, 'r')
+  try {
+    const { bytesRead } = await handle.read(buffer, 0, length, position)
+    return buffer.subarray(0, bytesRead)
+  } finally {
+    await handle.close()
+  }
+}
+
+function pointsToPixelsAt300(widthPt: number, heightPt: number) {
+  if (!(widthPt > 0 && heightPt > 0)) return null
+  return { width: Math.round((widthPt * 300) / 72), height: Math.round((heightPt * 300) / 72) }
+}
+
+/** First-page box of a PDF as Ghostscript renders it (the MediaBox; the
+ * CropBox is taken too in case a producer made it larger). /UserUnit scales
+ * the page beyond the box pdfinfo reports, so its presence means "unknown". */
+export function parsePdfinfoBoxes(pdfinfoOutput: string, hasUserUnit: boolean) {
+  if (hasUserUnit) return null
+  const NUM = '(-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?)'
+  const box = (name: string) => {
+    const match = pdfinfoOutput.match(
+      new RegExp(`Page\\s+1\\s+${name}:\\s+${NUM}\\s+${NUM}\\s+${NUM}\\s+${NUM}`)
+    )
+    if (!match) return null
+    return {
+      width: Math.abs(parseFloat(match[3]) - parseFloat(match[1])),
+      height: Math.abs(parseFloat(match[4]) - parseFloat(match[2])),
+    }
+  }
+  const media = box('MediaBox')
+  if (!media) return null
+  const crop = box('CropBox')
+  return pointsToPixelsAt300(
+    Math.max(media.width, crop?.width || 0),
+    Math.max(media.height, crop?.height || 0)
+  )
+}
+
+/** Page box gs -dEPSCrop renders an EPS at: the DSC header of an EPSF file
+ * (never a %%BoundingBox of a document embedded further down). Non-EPSF
+ * PostScript, "(atend)" and missing boxes return null. */
+export function parseEpsHeaderBox(postScript: string) {
+  const lines = postScript.split(/\r\n|\r|\n/)
+  if (!/^%!PS-Adobe-\S+\s+EPSF/.test(lines[0] || '')) return null
+  let bbox: string | null = null
+  let hiRes: string | null = null
+  for (let i = 1; i < lines.length && i < 400; i += 1) {
+    const line = lines[i]
+    if (line.startsWith('%%EndComments') || !line.startsWith('%')) break
+    if (line.startsWith('%%HiResBoundingBox:')) hiRes = line
+    else if (line.startsWith('%%BoundingBox:')) bbox = line
+  }
+  const source = hiRes || bbox
+  const match = source?.match(/:\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)/)
+  if (!match) return null
+  return pointsToPixelsAt300(
+    parseFloat(match[3]) - parseFloat(match[1]),
+    parseFloat(match[4]) - parseFloat(match[2])
+  )
+}
+
+/** Pixel size a PDF/EPS page will have once rasterized at 300 DPI, read
+ * without rendering. Null whenever it is not certain, so the caller keeps
+ * the job serialized. */
+export async function getVectorRasterDimensionsFast(
+  filePath: string,
+  mimeType: string
+): Promise<{ width: number; height: number } | null> {
+  if (mimeType === 'application/pdf') {
+    const [{ stdout }, prefix] = await Promise.all([
+      execAsync(`pdfinfo -box -f 1 -l 1 "${filePath}"`, { timeout: IMAGE_COMMAND_TIMEOUT_MS }),
+      readFileSlice(filePath, 0, FAST_METADATA_PREFIX_BYTES),
+    ])
+    return parsePdfinfoBoxes(stdout, prefix.includes('/UserUnit'))
+  }
+  if (mimeType !== 'application/postscript') return null
+
+  let prefix = await readFileSlice(filePath, 0, FAST_METADATA_PREFIX_BYTES)
+  // DOS EPS: a binary header points at the embedded PostScript section.
+  if (prefix.length >= 12 && prefix.readUInt32BE(0) === 0xc5d0d3c6) {
+    const offset = prefix.readUInt32LE(4)
+    const length = prefix.readUInt32LE(8)
+    prefix = await readFileSlice(filePath, offset, Math.min(length, FAST_METADATA_PREFIX_BYTES))
+  }
+  return parseEpsHeaderBox(prefix.toString('latin1'))
+}
+
 async function getImageInfoWithoutImagemagick(filePath: string, mimeType: string) {
   if (mimeType === 'application/pdf') {
     const pdfInfo = await getPdfInfo(filePath)

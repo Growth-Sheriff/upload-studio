@@ -14,6 +14,7 @@ import {
   convertTiffToPng,
   detectFileType,
   getImageDimensionsFast,
+  getVectorRasterDimensionsFast,
   PLAN_CONFIGS,
   type PreflightConfig,
 } from '../app/lib/preflight.server'
@@ -29,6 +30,7 @@ import {
   PREVIEW_RENDER_QUEUE_NAME,
   shouldPrelockLargeUpload,
   shouldSerializeLargeImage,
+  shouldSerializeVectorRaster,
   type UploadPipelineJobData,
 } from '../app/lib/uploadQueues'
 
@@ -230,20 +232,43 @@ export async function acquireLargeImageLease(
     detectedType === 'application/postscript'
   if (!mayNeedRasterization) return null
 
-  const imageInfo = detectedType?.startsWith('image/')
-    ? await getImageDimensionsFast(filePath, detectedType).catch((error) => {
-        workerLog.warn('LARGE_IMAGE_PROBE_FAILED', {
-          itemId,
-          detectedType,
-          error: error instanceof Error ? error.message : String(error),
-        })
-        return null
-      })
-    : null
-  // Unknown raster dimensions are serialized conservatively. A malformed
-  // header must never turn memory protection off.
-  if (imageInfo && !shouldSerializeLargeImage(imageInfo.width, imageInfo.height)) return null
+  const isVector = !detectedType?.startsWith('image/')
+  const probeDimensions = isVector
+    ? getVectorRasterDimensionsFast(filePath, detectedType || '')
+    : getImageDimensionsFast(filePath, detectedType || '')
+  const imageInfo = await probeDimensions.catch((error) => {
+    workerLog.warn('LARGE_IMAGE_PROBE_FAILED', {
+      itemId,
+      detectedType,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return null
+  })
+  // Unknown dimensions are serialized conservatively. A malformed header must
+  // never turn memory protection off. A PDF/EPS page is sized from its page
+  // box at the 300 DPI it is rasterized at, so ordinary small pages no longer
+  // wait behind every other vector job for the single large-image slot.
+  if (isVector) {
+    if (imageInfo && !shouldSerializeVectorRaster(imageInfo.width, imageInfo.height)) return null
+  } else if (imageInfo && !shouldSerializeLargeImage(imageInfo.width, imageInfo.height)) {
+    return null
+  }
   return acquireLargeImageRedisLease(itemId, imageInfo)
+}
+
+/** Resolution for a PDF/EPS preview render. The preview is a 400 px
+ * thumbnail, so the page is rasterized with its long edge near 1200 px
+ * instead of at print resolution: small enough to never need the
+ * large-image slot, sharp enough for the thumbnail. */
+export async function getVectorPreviewDpi(filePath: string, detectedType: string | null): Promise<number> {
+  const at300 = await getVectorRasterDimensionsFast(filePath, detectedType || '').catch(() => null)
+  if (!at300) return 36
+  const longEdgeIn = Math.max(at300.width, at300.height) / 300
+  return Math.max(10, Math.min(150, Math.round(1200 / longEdgeIn)))
+}
+
+export function isVectorUpload(detectedType: string | null | undefined): boolean {
+  return detectedType === 'application/pdf' || detectedType === 'application/postscript'
 }
 
 function normalizeResultRecord(value: unknown): Record<string, unknown> {
@@ -425,13 +450,14 @@ export async function rasterizeFileForProcessing(
   originalPath: string,
   tempDir: string,
   detectedType: string | null,
-  storageKey: string
+  storageKey: string,
+  vectorDpi = 300
 ): Promise<RasterizedFileResult> {
   const fileTypeLabel = getFileTypeLabel(detectedType, storageKey)
 
   if (detectedType === 'application/pdf') {
     const result = await safeConvertFile(originalPath, tempDir, detectedType, storageKey, async () => {
-      await convertPdfToPng(originalPath, path.join(tempDir, 'converted.png'), 300)
+      await convertPdfToPng(originalPath, path.join(tempDir, 'converted.png'), vectorDpi)
     })
     return {
       processedPath: result.processedPath,
@@ -444,7 +470,7 @@ export async function rasterizeFileForProcessing(
 
   if (detectedType === 'application/postscript') {
     const result = await safeConvertFile(originalPath, tempDir, detectedType, storageKey, async () => {
-      await convertEpsToPng(originalPath, path.join(tempDir, 'converted.png'), 300)
+      await convertEpsToPng(originalPath, path.join(tempDir, 'converted.png'), vectorDpi)
     })
     return {
       processedPath: result.processedPath,

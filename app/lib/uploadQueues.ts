@@ -5,6 +5,10 @@ export const PREVIEW_RENDER_QUEUE_NAME = 'preview-render'
 export const EXPORT_QUEUE_NAME = 'export'
 export const LARGE_IMAGE_PIXEL_THRESHOLD = 300_000_000
 export const LARGE_UPLOAD_PRELOCK_BYTES = 50 * 1024 * 1024
+// Vector pages are small on disk however large they render, so the byte
+// prelock never catches them; only pages up to ~22x24in at 300 DPI skip the
+// large-image slot (gs + ImageMagick stay well under 1 GB each).
+export const VECTOR_UNSERIALIZED_MAX_PIXELS = 50_000_000
 
 // Upload jobs can spend minutes in ImageMagick. Keep the retry contract next
 // to the queue names so every producer and worker uses the same policy. The
@@ -110,6 +114,13 @@ export function shouldSerializeLargeImage(widthPx: unknown, heightPx: unknown): 
     height > 0 &&
     width * height > LARGE_IMAGE_PIXEL_THRESHOLD
   )
+}
+
+export function shouldSerializeVectorRaster(widthPx: unknown, heightPx: unknown): boolean {
+  const width = Number(widthPx)
+  const height = Number(heightPx)
+  const known = Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
+  return !known || width * height > VECTOR_UNSERIALIZED_MAX_PIXELS
 }
 
 export function shouldPrelockLargeUpload(fileSize: unknown): boolean {

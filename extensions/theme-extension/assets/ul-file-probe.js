@@ -359,6 +359,16 @@
     return format === 'PNG' || format === 'JPG' || format === 'JPEG';
   }
 
+  /** Non-PNG/JPEG files an <img> can show straight from the local blob.
+   * PDF, AI, EPS, TIFF and PSD cannot be decoded by Chrome/Firefox, so they
+   * wait for the server thumbnail instead of rendering an empty image. */
+  function isBrowserPreviewable(file) {
+    var type = String(file && file.type || '').toLowerCase();
+    if (type === 'image/webp' || type === 'image/svg+xml') return true;
+    if (type && type !== 'application/octet-stream') return false;
+    return /\.(webp|svg)$/i.test(String(file && file.name || ''));
+  }
+
   function isMobileDevice() {
     try {
       if (navigator.userAgentData && navigator.userAgentData.mobile) return true;
@@ -457,16 +467,24 @@
   }
 
   /** Keep preview rendering independent from orderability. Mobile/fallback
-   * uploads become ready immediately while this waits for the server asset. */
-  async function waitForThumbnail(apiBase, shopDomain, uploadId) {
+   * uploads become ready immediately while this waits for the server asset.
+   * The default ~90 s budget suits PNG/JPEG; server-rendered formats pass a
+   * larger maxAttempts because a big PDF can render minutes after it measured.
+   * shouldContinue lets the caller stop polling once the file was removed. */
+  async function waitForThumbnail(apiBase, shopDomain, uploadId, maxAttempts, shouldContinue) {
     if (!uploadId) return null;
-    for (var attempt = 0; attempt < 60; attempt++) {
-      await new Promise(function(resolve) { setTimeout(resolve, attempt === 0 ? 1000 : 1500); });
+    var attempts = Number(maxAttempts) > 0 ? Number(maxAttempts) : 60;
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      await new Promise(function(resolve) {
+        setTimeout(resolve, attempt === 0 ? 1000 : attempt < 60 ? 1500 : 4000);
+      });
+      if (typeof shouldContinue === 'function' && !shouldContinue()) return null;
       try {
         var response = await fetch(
           String(apiBase || '') + '/api/upload/status/' + encodeURIComponent(uploadId) +
           '?shopDomain=' + encodeURIComponent(shopDomain || '')
         );
+        if (response.status === 404) return null;
         if (!response.ok) continue;
         var data = await response.json();
         var item = data && data.items && data.items[0];
@@ -484,6 +502,7 @@
     parseBytes: parseBytes,
     isFastRasterFile: isFastRasterFile,
     isFastRasterProbe: isFastRasterProbe,
+    isBrowserPreviewable: isBrowserPreviewable,
     createPreview: createPreview,
     uploadPreview: uploadPreview,
     waitForThumbnail: waitForThumbnail

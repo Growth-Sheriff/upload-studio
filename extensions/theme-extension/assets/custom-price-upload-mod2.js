@@ -1150,7 +1150,8 @@
         ),
         localPreviewUrl:
           file && window.URL && window.URL.createObjectURL &&
-          !(window.ULFileProbe && window.ULFileProbe.isFastRasterFile && window.ULFileProbe.isFastRasterFile(file))
+          window.ULFileProbe && window.ULFileProbe.isBrowserPreviewable &&
+          window.ULFileProbe.isBrowserPreviewable(file)
             ? window.URL.createObjectURL(file)
             : '',
         originalUrl: '',
@@ -3521,7 +3522,11 @@
       return data;
     }
 
-    function refreshFastThumbnail(uploadId, target) {
+    // ~6 minutes for server-rendered formats: a large PDF can wait for the
+    // shared large-image slot long after it was measured.
+    var SERVER_THUMBNAIL_ATTEMPTS = 120;
+
+    function refreshThumbnail(uploadId, target, maxAttempts) {
       if (
         !target ||
         target.thumbnailUrl ||
@@ -3529,7 +3534,9 @@
         !window.ULFileProbe ||
         !window.ULFileProbe.waitForThumbnail
       ) return;
-      window.ULFileProbe.waitForThumbnail(apiBase, shopDomain, uploadId)
+      window.ULFileProbe.waitForThumbnail(apiBase, shopDomain, uploadId, maxAttempts, function() {
+        return String(target.uploadId || '') === String(uploadId);
+      })
         .then(function(thumbnailUrl) {
           if (!thumbnailUrl || String(target.uploadId || '') !== String(uploadId)) return;
           target.thumbnailUrl = thumbnailUrl;
@@ -3857,7 +3864,7 @@
 
         if (completeData.fastPath) {
           applyFastCompletion(completeData, queueItem);
-          refreshFastThumbnail(queueItem.uploadId, queueItem);
+          refreshThumbnail(queueItem.uploadId, queueItem);
           queueItem.uploadStatus = 'ready';
           queueItem.quoteStatus = 'processing';
           queueItem.error = '';
@@ -3881,6 +3888,10 @@
             'The server is now confirming the exact billed page dimensions.'
           );
           await pollCustomQueueItemStatus(queueItem, uploadToken, batchMeta);
+          // Server-measured formats finish measuring before their preview renders.
+          if (queueItem.uploadToken === uploadToken && queueItem.uploadStatus !== 'error') {
+            refreshThumbnail(queueItem.uploadId, queueItem, SERVER_THUMBNAIL_ATTEMPTS);
+          }
         }
       } catch (error) {
         queueItem.uploadStatus = 'error';
@@ -4097,7 +4108,7 @@
 
         if (completeData.fastPath) {
           applyFastCompletion(completeData, state);
-          refreshFastThumbnail(state.uploadId, state);
+          refreshThumbnail(state.uploadId, state);
           state.selectedResult = null;
           if (customerPricing.status === 'loading' && customerPricingPromise) {
             await customerPricingPromise.catch(function() { return null; });
@@ -4111,6 +4122,11 @@
           if (uploadLoadingText) uploadLoadingText.textContent = 'Detecting gang sheet size...';
           if (uploadProgress) uploadProgress.style.width = '85%';
           await pollUploadStatus(intent.uploadId, uploadToken);
+          // Server-measured formats finish measuring before their preview renders.
+          // The preview is fetched even if pricing failed: it is still the customer's file.
+          if (uploadToken === uploadFlowToken) {
+            refreshThumbnail(state.uploadId, state, SERVER_THUMBNAIL_ATTEMPTS);
+          }
         }
       } catch (error) {
         if (uploadToken !== uploadFlowToken) return;

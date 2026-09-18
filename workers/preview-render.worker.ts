@@ -16,6 +16,8 @@ import {
   connection,
   createPlaceholderThumbnail,
   getResultRecord,
+  getVectorPreviewDpi,
+  isVectorUpload,
   LargeImageSlotBusyError,
   LARGE_IMAGE_RETRY_DELAY_MS,
   PREVIEW_RENDER_QUEUE_NAME,
@@ -449,7 +451,10 @@ const previewRenderWorker = new Worker<UploadPipelineJobData>(
       const context = await prepareUploadJobContext(job.data, 'preview-render')
       tempDir = context.tempDir
       storageKey = context.storageKey
-      if (!largeImageLease) {
+      // PDF/EPS previews render at thumbnail resolution, never at print size,
+      // so they need no large-image slot and never wait behind measurement.
+      const vectorPreview = isVectorUpload(context.detectedType)
+      if (!largeImageLease && !vectorPreview) {
         try {
           largeImageLease = await acquireLargeImageLease(
             context.originalPath,
@@ -475,7 +480,8 @@ const previewRenderWorker = new Worker<UploadPipelineJobData>(
         context.originalPath,
         context.tempDir,
         context.detectedType,
-        context.storageKey
+        context.storageKey,
+        vectorPreview ? await getVectorPreviewDpi(context.originalPath, context.detectedType) : 300
       )
 
       await job.updateProgress(45)

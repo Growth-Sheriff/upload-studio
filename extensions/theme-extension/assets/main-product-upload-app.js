@@ -261,6 +261,10 @@
     return new Promise(function(resolve) { setTimeout(resolve, ms); });
   }
 
+  // ~6 minutes of thumbnail polling for server-rendered formats: a large PDF
+  // can wait for the shared large-image slot long after it was measured.
+  var SERVER_THUMBNAIL_ATTEMPTS = 120;
+
   function getStatusPollDelay(attempt) {
     if (attempt < 6) return 350;
     if (attempt < 14) return 700;
@@ -469,6 +473,10 @@
         if (current) self.loadUploadItem(current);
       }
       self.persistItems();
+      // A reload while a server preview was still rendering: keep waiting for it.
+      kept.forEach(function(item) {
+        if (!item.thumbnailUrl) self.refreshThumbnail(item.uploadId, SERVER_THUMBNAIL_ATTEMPTS);
+      });
       self.render();
     });
   };
@@ -1326,6 +1334,13 @@
     // Dropping anywhere else on the page must not open the file in the tab.
     window.addEventListener('dragover', function(event) { event.preventDefault(); });
     window.addEventListener('drop', function(event) { event.preventDefault(); });
+    // Back from /cart restores this page from the bfcache mid-redirect:
+    // release the cart lock so the buttons work again.
+    window.addEventListener('pageshow', function(event) {
+      if (!event.persisted || !self.cartBusy) return;
+      self.cartBusy = false;
+      self.render();
+    });
     this.addButton.addEventListener('click', function() {
       if (self.isExactMeasuredMode()) {
         self.addExactMeasuredToCart();
@@ -1569,8 +1584,8 @@
         window.ULFileProbe.isFastRasterFile(file)
       ),
       localPreviewUrl:
-        file && file.type && file.type.indexOf('image/') === 0 &&
-        !(window.ULFileProbe && window.ULFileProbe.isFastRasterFile && window.ULFileProbe.isFastRasterFile(file))
+        file && window.ULFileProbe && window.ULFileProbe.isBrowserPreviewable &&
+        window.ULFileProbe.isBrowserPreviewable(file)
           ? URL.createObjectURL(file)
           : '',
       originalUrl: '',
@@ -2350,6 +2365,7 @@
     }
 
     this.setError('');
+    this.cartBusy = true;
     if (this.addButton) this.addButton.disabled = true;
     if (this.checkoutButton) this.checkoutButton.disabled = true;
 
@@ -2377,6 +2393,7 @@
       window.location.href = redirect;
     } catch (error) {
       this.setError(error && error.message ? error.message : 'Failed to create exact checkout.');
+      this.cartBusy = false;
       this.render();
     }
   };
@@ -2483,7 +2500,7 @@
     this.badge.classList.remove('is-ready', 'is-uploading', 'is-measuring');
     if (badgeClass) this.badge.classList.add(badgeClass);
 
-    this.addButton.disabled = exactMode ? !addReady : !ready;
+    this.addButton.disabled = Boolean(this.cartBusy) || (exactMode ? !addReady : !ready);
     if (this.addButton) {
       var addLabel = this.addButton.getAttribute('data-default-label') || 'Add to cart';
       if (exactMode) {
@@ -2494,7 +2511,7 @@
         this.addButton.textContent = readyItems.length > 1 ? 'Add ' + readyItems.length + ' gang sheets to cart' : addLabel;
       }
     }
-    if (this.checkoutButton) this.checkoutButton.disabled = !ready;
+    if (this.checkoutButton) this.checkoutButton.disabled = Boolean(this.cartBusy) || !ready;
     if (this.checkoutButton) {
       var checkoutLabel = this.checkoutButton.getAttribute('data-default-label') || 'Checkout';
       if (exactMode) {
@@ -2818,6 +2835,7 @@
         await this.pollStatus(currentToken);
         if (currentToken !== this.token) return;
         this.rememberCurrentUpload();
+        this.refreshThumbnail(this.state.uploadId, SERVER_THUMBNAIL_ATTEMPTS);
         this.render();
         return;
       }
@@ -2877,6 +2895,9 @@
       }
       if (currentToken !== this.token) return;
       this.rememberCurrentUpload();
+      // Server-measured formats (PDF, AI, EPS, TIFF, PSD, SVG, WEBP) finish
+      // measuring before their preview is rendered; keep asking for it.
+      if (!complete.fastPath) this.refreshThumbnail(this.state.uploadId, SERVER_THUMBNAIL_ATTEMPTS);
       this.render();
     } catch (error) {
       if (currentToken !== this.token) return;
@@ -2924,7 +2945,7 @@
     this.state.uploadEndTime = Date.now();
     this.setProgress(100);
     this.setStage('ready');
-    this.refreshFastThumbnail(this.state.uploadId);
+    this.refreshThumbnail(this.state.uploadId);
     setTimeout(function() {
       if (currentToken !== this.token) return;
       this.setProgress(0);
@@ -2934,24 +2955,47 @@
     this.render();
   };
 
-  MainProductUpload.prototype.refreshFastThumbnail = function(uploadId) {
-    if (
-      this.state.thumbnailUrl ||
-      !uploadId ||
-      !window.ULFileProbe ||
-      !window.ULFileProbe.waitForThumbnail
-    ) return;
+  MainProductUpload.prototype.refreshThumbnail = function(uploadId, maxAttempts) {
+    if (!uploadId || !window.ULFileProbe || !window.ULFileProbe.waitForThumbnail) return;
+    var isCurrent = sameUploadId(this.state.uploadId, uploadId);
+    var queued = this.findItem(uploadId);
+    if (isCurrent ? this.state.thumbnailUrl : (queued && queued.thumbnailUrl)) return;
+    this.thumbnailWaits = this.thumbnailWaits || {};
+    if (this.thumbnailWaits[uploadId]) return;
+    this.thumbnailWaits[uploadId] = true;
     var self = this;
-    window.ULFileProbe.waitForThumbnail(this.apiBase, this.shopDomain, uploadId)
+    var stillListed = function() {
+      return Boolean(self.findItem(uploadId) || sameUploadId(self.state.uploadId, uploadId));
+    };
+    window.ULFileProbe.waitForThumbnail(this.apiBase, this.shopDomain, uploadId, maxAttempts, stillListed)
       .then(function(thumbnailUrl) {
         if (!thumbnailUrl) return;
-        var queued = self.findItem(uploadId);
-        if (queued) queued.thumbnailUrl = thumbnailUrl;
+        var target = self.findItem(uploadId);
+        if (target) target.thumbnailUrl = thumbnailUrl;
         if (sameUploadId(self.state.uploadId, uploadId)) self.state.thumbnailUrl = thumbnailUrl;
         self.persistItems();
-        self.render();
+        self.showArrivedThumbnail(uploadId, thumbnailUrl);
       })
-      .catch(function() {});
+      .catch(function() {})
+      .then(function() { delete self.thumbnailWaits[uploadId]; });
+  };
+
+  // A preview can land minutes after the file became ready. If the customer is
+  // typing a copies value right then, rebuilding the queue would drop it, so
+  // only the row thumbnail and the sheet preview are patched.
+  MainProductUpload.prototype.showArrivedThumbnail = function(uploadId, thumbnailUrl) {
+    var focused = document.activeElement;
+    if (!this.queue || !focused || !this.queue.contains(focused)) {
+      this.render();
+      return;
+    }
+    var thumbs = this.queue.querySelectorAll('.ump__queue-thumb[data-ump-select-item]');
+    for (var i = 0; i < thumbs.length; i += 1) {
+      if (sameUploadId(thumbs[i].getAttribute('data-ump-select-item'), uploadId)) {
+        thumbs[i].style.backgroundImage = 'url("' + thumbnailUrl.replace(/"/g, '%22') + '")';
+      }
+    }
+    if (sameUploadId(this.state.uploadId, uploadId)) this.updatePreviewGeometry();
   };
 
   MainProductUpload.prototype.pollStatus = async function(currentToken) {
@@ -3310,6 +3354,9 @@
       return;
     }
     this.setError('');
+    // Held until redirect or failure so no background render() (e.g. a late
+    // preview) re-enables the buttons and lets a second click add twice.
+    this.cartBusy = true;
     this.addButton.disabled = true;
     if (this.checkoutButton) this.checkoutButton.disabled = true;
 
@@ -3378,6 +3425,7 @@
       window.location.href = discountRedirect(redirectTo || '/cart', this.getDiscountCode());
     } catch (error) {
       this.setError(error && error.message ? error.message : 'Failed to add to cart.');
+      this.cartBusy = false;
       this.addButton.disabled = false;
       if (this.checkoutButton) this.checkoutButton.disabled = false;
       this.render();
