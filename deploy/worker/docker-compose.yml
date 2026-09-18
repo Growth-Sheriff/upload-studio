@@ -31,6 +31,11 @@ x-worker-common: &worker-common
       max-file: "5"
 
 services:
+  fastdtftransfer:
+    <<: *worker-common
+    container_name: usw-fastdtftransfer
+    env_file: envs/.env.fastdtftransfer
+
   alphaprint:
     <<: *worker-common
     container_name: usw-alphaprint

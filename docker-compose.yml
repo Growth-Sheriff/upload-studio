@@ -31,6 +31,8 @@ services:
     <<: *app-common
     container_name: us-fastdtftransfer
     env_file: envs/.env.fastdtftransfer
+    environment:
+      APP_ROLE: web
     ports:
       - "127.0.0.1:4101:3000"
     volumes:
