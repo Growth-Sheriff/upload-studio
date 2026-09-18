@@ -527,6 +527,8 @@
     this.rulerTop = this.root.querySelector('[data-ump-ruler-top]');
     this.rulerSide = this.root.querySelector('[data-ump-ruler-side]');
     this.total = this.root.querySelector('[data-ump-total]');
+    this.orderNoteWrap = this.root.querySelector('[data-ump-order-note-wrap]');
+    this.orderNoteInput = this.root.querySelector('[data-ump-order-note]');
     this.totalValue = this.root.querySelector('[data-ump-total-value]');
     this.totalMeta = this.root.querySelector('[data-ump-total-meta]');
     this.totalLines = this.root.querySelector('[data-ump-total-lines]');
@@ -2217,6 +2219,11 @@
   };
 
   MainProductUpload.prototype.renderPriceNow = function(readyItems) {
+    // Exact measured checkout has its own note field; everywhere else the
+    // order note appears once a sheet is ready to add.
+    if (this.orderNoteWrap) {
+      this.orderNoteWrap.hidden = this.isExactMeasuredMode() || !(readyItems && readyItems.length);
+    }
     if (!this.total || !this.totalValue) return;
     if (this.isExactMeasuredMode() || this.isLinearInchPricing()) { this.total.hidden = true; return; }
     var summary = this.computeCartTotal(readyItems);
@@ -3261,6 +3268,36 @@
     }
   };
 
+  // Shopify's native order note (cart.note → order "Notes"), so the three line
+  // properties stay untouched. Appends instead of overwriting whatever the
+  // customer or the theme's cart page already wrote, and gives up silently
+  // after 3 s.
+  MainProductUpload.prototype.saveOrderNote = async function() {
+    var text = this.orderNoteInput ? String(this.orderNoteInput.value || '').trim().slice(0, 500) : '';
+    if (!text) return;
+    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = controller ? setTimeout(function() { controller.abort(); }, 3000) : null;
+    try {
+      var signal = controller ? controller.signal : undefined;
+      var cartResponse = await fetch('/cart.js', { headers: { 'Accept': 'application/json' }, signal: signal });
+      var cart = cartResponse.ok ? await cartResponse.json() : {};
+      var current = String((cart && cart.note) || '');
+      var line = 'Gang sheet note: ' + text;
+      if (current.indexOf(line) >= 0) return;
+      var next = current ? current + '\n' + line : line;
+      await fetch('/cart/update.js', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ note: next.slice(0, 5000) }),
+        signal: signal
+      });
+    } catch (error) {
+      console.warn('[UMP] order note was not saved:', error && error.message ? error.message : error);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
   MainProductUpload.prototype.addToCart = async function(redirectTo) {
     var readyItems = this.getReadyItems();
     if (!readyItems.length) {
@@ -3329,6 +3366,10 @@
       }
 
       await this.bindCartToken(lastCart, uploadIds);
+
+      // Runs only after every line is in the cart and never throws: a note that
+      // cannot be saved must not stop the customer from reaching cart/checkout.
+      await this.saveOrderNote();
 
       // The cart owns these uploads now; do not show them again on return.
       this.forgetUploads(uploadIds);

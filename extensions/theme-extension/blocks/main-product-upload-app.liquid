@@ -158,6 +158,10 @@
         </div>
         <ul class="ump__total-lines" data-ump-total-lines></ul>
       </div>
+      <div class="ump__order-note" data-ump-order-note-wrap hidden>
+        <label class="ump__order-note-label" for="ump-order-note-{{ block.id }}">Order note <span>(optional)</span></label>
+        <textarea class="ump__order-note-input" id="ump-order-note-{{ block.id }}" data-ump-order-note rows="2" maxlength="500" placeholder="Special instructions for our production team"></textarea>
+      </div>
       <p class="ump__error" data-ump-error hidden></p>
     </aside>
   </div>
