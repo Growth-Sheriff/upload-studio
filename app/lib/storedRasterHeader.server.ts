@@ -10,12 +10,23 @@ import {
   type PreflightConfig,
 } from './preflight.server'
 import { selectProductConfigForIdentity } from './productConfigIdentity.server'
-import { metadataFromProbe } from './sheetResolution.server'
+import { metadataFromProbe } from './probeMetadata'
 import { shopifyProductIdCandidates } from './shopifyProductIdentity'
-import { readStoredObjectPrefix, type StorageConfig } from './storage.server'
+import { getStorageConfig, readStoredObjectPrefix, type StorageConfig } from './storage.server'
 import { updateUploadAggregateStatus } from './uploadAggregateStatus.server'
 import { deriveUploadItemLifecycle, type UploadLifecycleMetadata } from './uploadLifecycle.server'
-import { storageConfigForShop } from './uploadUrls.server'
+
+// Same mapping as uploadUrls.storageConfigForShop, inlined because that module
+// imports through the Remix `~` alias, which the tsx-run workers cannot resolve.
+function storageConfigForShop(shop: {
+  storageProvider: string
+  storageConfig: unknown
+}): StorageConfig {
+  return getStorageConfig({
+    storageProvider: shop.storageProvider,
+    storageConfig: shop.storageConfig as Record<string, string> | null,
+  })
+}
 
 export const STORED_RASTER_HEADER_BYTES = 64 * 1024
 
