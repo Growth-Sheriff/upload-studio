@@ -47,6 +47,7 @@ RUN apt-get update -y && apt-get install -y \
   ghostscript \
   poppler-utils \
   fonts-dejavu-core \
+  procps \
   && rm -rf /var/lib/apt/lists/*
 
 

@@ -1,0 +1,18 @@
+# Exposes the shared Redis (container "redis" on appnet) to the worker droplet
+# over the private VPC only. The DigitalOcean firewall cf-only-web allows
+# tcp/6379 solely from us-worker-do (10.124.0.10); nothing listens publicly.
+#
+#   docker compose -f docker-compose.redis-bridge.yml up -d
+services:
+  redis-bridge:
+    image: alpine/socat:latest
+    container_name: us-redis-bridge
+    restart: unless-stopped
+    command: TCP-LISTEN:6379,fork,reuseaddr TCP:redis:6379
+    ports:
+      - "10.124.0.4:6379:6379"
+    networks: [appnet]
+
+networks:
+  appnet:
+    external: true

@@ -470,7 +470,7 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
   },
   {
     connection,
-    concurrency: 3,
+    concurrency: Number(process.env.MEASURE_CONCURRENCY) || 3,
     // Huge gang sheets (100+ MB PNGs) take minutes in ImageMagick. With the
     // default 30 s lock the job was marked stalled mid-measurement, re-queued
     // and run twice (2026-09-04, dtfprinthouse). Hold the lock for the whole run.
@@ -478,7 +478,7 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
     stalledInterval: 5 * 60 * 1000,
     maxStalledCount: 2,
     limiter: {
-      max: 20,
+      max: Number(process.env.MEASURE_JOBS_PER_MINUTE) || 20,
       duration: 60000,
     },
   }
@@ -577,6 +577,14 @@ measurePreflightWorker.on('failed', async (job, err) => {
     })
   }
 })
+
+// A deploy restarts this process; let in-flight measurements finish instead of
+// leaving them stalled until the 5-minute stalled check re-queues them.
+const closeMeasureWorker = () => {
+  void measurePreflightWorker.close().finally(() => process.exit(0))
+}
+process.once('SIGTERM', closeMeasureWorker)
+process.once('SIGINT', closeMeasureWorker)
 
 console.log('[Measure Preflight Worker] Started and waiting for jobs...')
 startUploadPipelineReconciler()

@@ -701,9 +701,9 @@ const previewRenderWorker = new Worker<UploadPipelineJobData>(
   },
   {
     connection,
-    concurrency: 3,
+    concurrency: Number(process.env.PREVIEW_CONCURRENCY) || 3,
     limiter: {
-      max: 20,
+      max: Number(process.env.PREVIEW_JOBS_PER_MINUTE) || 20,
       duration: 60000,
     },
   }
@@ -734,6 +734,13 @@ previewRenderWorker.on('failed', async (job, err) => {
     })
   )
 })
+
+// A deploy restarts this process; let in-flight renders finish first.
+const closePreviewWorker = () => {
+  void previewRenderWorker.close().finally(() => process.exit(0))
+}
+process.once('SIGTERM', closePreviewWorker)
+process.once('SIGINT', closePreviewWorker)
 
 console.log('[Preview Render Worker] Started and waiting for jobs...')
 

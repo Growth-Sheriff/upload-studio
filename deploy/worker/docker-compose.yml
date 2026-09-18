@@ -1,0 +1,37 @@
+# Upload Studio - background workers on the dedicated worker droplet
+# (us-worker-do, 10.124.0.10). The web containers on us-app-do (10.124.0.4)
+# run with APP_ROLE=web and never start workers.
+#
+# One container per tenant: same image and env file as the tenant's web
+# container, so both sides always agree on DATABASE_URL, the Redis DB index
+# and storage credentials. "redis" resolves to the app droplet's private IP,
+# where docker-compose.redis-bridge.yml exposes the shared Redis to the VPC.
+#
+# deploy/depot.sh deploy copies this file and the tenant env files here and
+# runs `docker compose up -d` after the web containers are updated.
+
+x-worker-common: &worker-common
+  image: upload-studio:latest
+  restart: unless-stopped
+  environment:
+    APP_ROLE: worker
+    MEASURE_CONCURRENCY: "6"
+    PREVIEW_CONCURRENCY: "6"
+    MEASURE_JOBS_PER_MINUTE: "120"
+    PREVIEW_JOBS_PER_MINUTE: "120"
+  extra_hosts:
+    - "redis:10.124.0.4"
+  mem_limit: 4g
+  # Lets measure/preview finish in-flight jobs on deploy before SIGKILL.
+  stop_grace_period: 120s
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+services:
+  alphaprint:
+    <<: *worker-common
+    container_name: usw-alphaprint
+    env_file: envs/.env.alphaprint

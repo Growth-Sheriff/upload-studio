@@ -103,6 +103,8 @@ services:
     <<: *app-common
     container_name: us-alphaprint
     env_file: envs/.env.alphaprint
+    environment:
+      APP_ROLE: web
     ports:
       - "127.0.0.1:4107:3000"
     volumes:

@@ -34,8 +34,22 @@ if [ "${NODE_ENV}" = "production" ] && [ "${TENANT_SLUG}" = "default" ]; then
   echo "[Init] WARNING: running with TENANT_SLUG=default in production (ALLOW_DEFAULT_TENANT=true)."
 fi
 
+# APP_ROLE decides what this container runs:
+#   web    - Remix server only; background workers can never start here.
+#   worker - background workers only (dedicated worker droplet).
+#   all    - legacy: both, for tenants not yet moved to the worker droplet.
+APP_ROLE="${APP_ROLE:-all}"
+case "${APP_ROLE}" in
+  web|worker|all) ;;
+  *)
+    echo "[Init] FATAL: APP_ROLE must be web, worker or all (got '${APP_ROLE}')." >&2
+    exit 1
+    ;;
+esac
+export APP_ROLE
+
 echo "============================================"
-echo "Upload Studio - Starting tenant: ${TENANT_SLUG}"
+echo "Upload Studio - Starting tenant: ${TENANT_SLUG} (role: ${APP_ROLE})"
 echo "Port: ${PORT:-3000}"
 echo "============================================"
 
@@ -48,6 +62,17 @@ echo "[Init] Syncing database schema..."
 prisma db execute --schema ./prisma/schema.prisma --file ./prisma/migrations/add_commission_eligibility.sql
 prisma db execute --schema ./prisma/schema.prisma --file ./prisma/migrations/add_finished_sheet_quantity_semantics.sql
 prisma db push --skip-generate
+
+
+start_remix() {
+  echo "[App:${TENANT_SLUG}] Starting Remix server on port ${PORT:-3000}..."
+  exec node --import ./instrumentation.server.mjs node_modules/@remix-run/serve/dist/cli.js ./build/server/index.js
+}
+
+if [ "${APP_ROLE}" = "web" ]; then
+  echo "[App:${TENANT_SLUG}] Web role: background workers run on the worker droplet, not here."
+  start_remix
+fi
 
 
 start_worker() {
@@ -85,13 +110,22 @@ echo "[App:${TENANT_SLUG}] Workers started (PIDs: ${MEASURE_PREFLIGHT_PID}, ${PR
 
 cleanup() {
   echo "[App:${TENANT_SLUG}] Shutting down..."
+  trap - SIGTERM SIGINT
+  # Stop the restart loops, then signal each tsx launcher once (it relays to
+  # its node child) so measure/preview finish in-flight jobs before exiting.
   kill $MEASURE_PREFLIGHT_PID $PREVIEW_RENDER_PID $EXPORT_PID $FLOW_PID $COMMISSION_PID $TELEMETRY_PID 2>/dev/null || true
-  wait $MEASURE_PREFLIGHT_PID $PREVIEW_RENDER_PID $EXPORT_PID $FLOW_PID $COMMISSION_PID $TELEMETRY_PID 2>/dev/null || true
+  pkill -TERM -f "tsx workers/" 2>/dev/null || true
+  while pgrep -f "workers/[a-z-]*\.worker\.ts" >/dev/null 2>&1; do sleep 1; done
   echo "[App:${TENANT_SLUG}] All processes stopped."
   exit 0
 }
 trap cleanup SIGTERM SIGINT
 
 
-echo "[App:${TENANT_SLUG}] Starting Remix server on port ${PORT:-3000}..."
-exec node --import ./instrumentation.server.mjs node_modules/@remix-run/serve/dist/cli.js ./build/server/index.js
+if [ "${APP_ROLE}" = "worker" ]; then
+  echo "[App:${TENANT_SLUG}] Worker role: no web server in this container."
+  # Stay in the foreground (interruptible, so the trap runs) while the restart loops own the workers.
+  while true; do sleep 3600 & wait $!; done
+fi
+
+start_remix
