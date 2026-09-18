@@ -122,6 +122,35 @@ describe('resolveSheetVariant', () => {
     expect(result?.wholeSheetCopies).toBe(3)
   })
 
+  it('labels split options that already carry inch marks without doubling them', () => {
+    const optionDefs: ProductOptionDef[] = [
+      { name: 'Transfer Width', values: ['22"'] },
+      { name: 'Transfer Height', values: ['12"', '24"'] },
+    ]
+    const variants: ProductVariantDef[] = [
+      buildVariant('301', '22" / 12"', '6.00', [
+        { name: 'Transfer Width', value: '22"' },
+        { name: 'Transfer Height', value: '12"' },
+      ]),
+      buildVariant('302', '22" / 24"', '12.00', [
+        { name: 'Transfer Width', value: '22"' },
+        { name: 'Transfer Height', value: '24"' },
+      ]),
+    ]
+
+    const result = resolveSheetVariant({
+      widthIn: 10,
+      heightIn: 10,
+      quantity: 1,
+      variants,
+      optionDefs,
+      config: { widthOptionName: 'Transfer Width', heightOptionName: 'Transfer Height' },
+    })
+
+    expect(result?.selectedVariantId).toBe('301')
+    expect(result?.selectedSheetLabel).toBe('22" x 12"')
+  })
+
   it('preserves service options when Shopify sends the selected variant as a GID', () => {
     const optionDefs: ProductOptionDef[] = [
       { name: 'Size', values: ['22 x 12', '22 x 24'] },

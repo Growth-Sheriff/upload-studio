@@ -175,6 +175,12 @@ function parseSheetSize(value: unknown): Measurement | null {
   return null
 }
 
+/** Option values such as `22"` already carry the inch mark; add one only when missing. */
+function withInchMark(value: string | number): string {
+  const text = String(value).trim()
+  return /(["”″]|\bin(?:ch(?:es)?)?\.?)$/i.test(text) ? text : `${text}"`
+}
+
 function getOptionValue(variant: ProductVariantDef, optionIndex: number): string {
   const direct = variant[`option${optionIndex + 1}` as 'option1' | 'option2' | 'option3']
   if (typeof direct === 'string' && direct !== '') return direct
@@ -412,7 +418,7 @@ function buildVariantMatrix(
         dims = { widthInch, heightInch }
         optionValuesByIndex[dimensionConfig.widthIndex] = widthValue
         optionValuesByIndex[dimensionConfig.heightIndex] = heightValue
-        familyLabel = `${widthValue || widthInch}" x ${heightValue || heightInch}"`
+        familyLabel = `${withInchMark(widthValue || widthInch)} x ${withInchMark(heightValue || heightInch)}`
       }
     }
 
