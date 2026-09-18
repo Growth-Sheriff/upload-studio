@@ -21,7 +21,7 @@
 //   - fulfilled: only printed -> shipped     ... old orders-fulfilled
 
 import crypto from 'crypto'
-import type { Prisma } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 import { Decimal } from '@prisma/client/runtime/library'
 import prisma from '~/lib/prisma.server'
 import { COMMISSION_PERCENT, calculateCommissionAmount, isZeroPaymentOrder } from '~/lib/billing.server'
@@ -141,18 +141,27 @@ async function recordCommissionFactOnce(input: {
     .digest('hex')
     .slice(0, 32)
 
-  await prisma.auditLog.upsert({
-    where: { id: `commission_fact_${digest}` },
-    create: {
-      id: `commission_fact_${digest}`,
-      shopId: input.shopId,
-      action: input.action,
-      resourceType: 'commission',
-      resourceId: input.orderId,
-      metadata: input.metadata,
-    },
-    update: {},
-  })
+  try {
+    await prisma.auditLog.upsert({
+      where: { id: `commission_fact_${digest}` },
+      create: {
+        id: `commission_fact_${digest}`,
+        shopId: input.shopId,
+        action: input.action,
+        resourceType: 'commission',
+        resourceId: input.orderId,
+        metadata: input.metadata,
+      },
+      update: {},
+    })
+  } catch (error) {
+    // Shopify delivers orders/paid and orders/updated for the same order at the
+    // same moment, and upsert is read-then-insert. Losing that race means the
+    // identical fact was already recorded, which is exactly what "once" asks
+    // for; failing the webhook here only made Shopify retry a finished job.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return
+    throw error
+  }
 }
 
 type RefundSnapshotReviewStore = {
