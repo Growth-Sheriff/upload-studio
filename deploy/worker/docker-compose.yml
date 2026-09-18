@@ -36,7 +36,47 @@ services:
     container_name: usw-fastdtftransfer
     env_file: envs/.env.fastdtftransfer
 
+  everydaycustomprint:
+    <<: *worker-common
+    container_name: usw-everydaycustomprint
+    env_file: envs/.env.everydaycustomprint
+
+  dtftransferohio:
+    <<: *worker-common
+    container_name: usw-dtftransferohio
+    env_file: envs/.env.dtftransferohio
+
+  dtfprinthouse:
+    <<: *worker-common
+    container_name: usw-dtfprinthouse
+    env_file: envs/.env.dtfprinthouse
+
+  dtfprintdepot:
+    <<: *worker-common
+    container_name: usw-dtfprintdepot
+    env_file: envs/.env.dtfprintdepot
+
+  eagledtfprint:
+    <<: *worker-common
+    container_name: usw-eagledtfprint
+    env_file: envs/.env.eagledtfprint
+
   alphaprint:
     <<: *worker-common
     container_name: usw-alphaprint
     env_file: envs/.env.alphaprint
+
+  gangsheet:
+    <<: *worker-common
+    container_name: usw-gangsheet
+    env_file: envs/.env.gangsheet
+
+  legendtransfers:
+    <<: *worker-common
+    container_name: usw-legendtransfers
+    env_file: envs/.env.legendtransfers
+
+  customprintaz:
+    <<: *worker-common
+    container_name: usw-customprintaz
+    env_file: envs/.env.customprintaz

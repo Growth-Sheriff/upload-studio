@@ -19,6 +19,10 @@
 x-app-common: &app-common
   image: upload-studio:latest
   restart: unless-stopped
+  # Web only. Background workers run on the worker droplet
+  # (deploy/worker/docker-compose.yml); this image has no combined mode.
+  environment:
+    APP_ROLE: web
   networks:
     - appnet
 
@@ -31,8 +35,6 @@ services:
     <<: *app-common
     container_name: us-fastdtftransfer
     env_file: envs/.env.fastdtftransfer
-    environment:
-      APP_ROLE: web
     ports:
       - "127.0.0.1:4101:3000"
     volumes:
@@ -105,8 +107,6 @@ services:
     <<: *app-common
     container_name: us-alphaprint
     env_file: envs/.env.alphaprint
-    environment:
-      APP_ROLE: web
     ports:
       - "127.0.0.1:4107:3000"
     volumes:

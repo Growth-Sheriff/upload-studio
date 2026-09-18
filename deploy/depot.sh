@@ -21,8 +21,8 @@
 # running this script casually can never touch production.
 #
 # Server layout (verified 2026-09-19):
-#   us-app-do    /opt/apps/public/upload-studio      web containers (+ legacy
-#                in-container workers for tenants not yet moved), Redis, Caddy
+#   us-app-do    /opt/apps/public/upload-studio      web containers (APP_ROLE=web,
+#                never run workers), Redis, Caddy, Redis bridge
 #   us-worker-do /opt/apps/upload-studio-worker      background workers
 # Both run `image: upload-studio:latest`. The compose files come from git
 # (docker-compose.yml, deploy/worker/docker-compose.yml); tenant env files live

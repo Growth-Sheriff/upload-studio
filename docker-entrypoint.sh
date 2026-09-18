@@ -35,14 +35,14 @@ if [ "${NODE_ENV}" = "production" ] && [ "${TENANT_SLUG}" = "default" ]; then
 fi
 
 # APP_ROLE decides what this container runs:
-#   web    - Remix server only; background workers can never start here.
-#   worker - background workers only (dedicated worker droplet).
-#   all    - legacy: both, for tenants not yet moved to the worker droplet.
-APP_ROLE="${APP_ROLE:-all}"
+#   web    - Remix server only (the default); background workers never start here.
+#   worker - background workers only, on the dedicated worker droplet.
+# There is no combined mode: a web container can never run workers.
+APP_ROLE="${APP_ROLE:-web}"
 case "${APP_ROLE}" in
-  web|worker|all) ;;
+  web|worker) ;;
   *)
-    echo "[Init] FATAL: APP_ROLE must be web, worker or all (got '${APP_ROLE}')." >&2
+    echo "[Init] FATAL: APP_ROLE must be web or worker (got '${APP_ROLE}')." >&2
     exit 1
     ;;
 esac
@@ -64,17 +64,14 @@ prisma db execute --schema ./prisma/schema.prisma --file ./prisma/migrations/add
 prisma db push --skip-generate
 
 
-start_remix() {
-  echo "[App:${TENANT_SLUG}] Starting Remix server on port ${PORT:-3000}..."
-  exec node --import ./instrumentation.server.mjs node_modules/@remix-run/serve/dist/cli.js ./build/server/index.js
-}
-
 if [ "${APP_ROLE}" = "web" ]; then
   echo "[App:${TENANT_SLUG}] Web role: background workers run on the worker droplet, not here."
-  start_remix
+  echo "[App:${TENANT_SLUG}] Starting Remix server on port ${PORT:-3000}..."
+  exec node --import ./instrumentation.server.mjs node_modules/@remix-run/serve/dist/cli.js ./build/server/index.js
 fi
 
 
+# Everything below runs only in the worker role.
 start_worker() {
   local name="$1"
   shift
@@ -122,10 +119,6 @@ cleanup() {
 trap cleanup SIGTERM SIGINT
 
 
-if [ "${APP_ROLE}" = "worker" ]; then
-  echo "[App:${TENANT_SLUG}] Worker role: no web server in this container."
-  # Stay in the foreground (interruptible, so the trap runs) while the restart loops own the workers.
-  while true; do sleep 3600 & wait $!; done
-fi
-
-start_remix
+echo "[App:${TENANT_SLUG}] Worker role: no web server in this container."
+# Stay in the foreground (interruptible, so the trap runs) while the restart loops own the workers.
+while true; do sleep 3600 & wait $!; done
