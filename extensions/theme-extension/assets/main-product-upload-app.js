@@ -1992,6 +1992,9 @@
           var thumbUrl = item.thumbnailUrl || item.localPreviewUrl || '';
           var isBusy = !isReady && item.status !== 'error';
           var canEdit = isReady;
+          if (isBusy) this.markItemBusy(item);
+          var elapsed = isReady ? this.getItemReadySeconds(item) : null;
+          var statusText = statusLabel + (elapsed != null ? ' · ' + elapsed.toFixed(1) + 's' : '');
           return '' +
             '<div class="ump__queue-item' + (isActive ? ' is-active' : '') + (isBusy ? ' is-busy' : '') + (item.status === 'error' ? ' is-error' : '') + '">' +
               '<span class="ump__queue-thumb" data-ump-select-item="' + id + '"' + (thumbUrl ? ' style="background-image:url(&quot;' + escapeHtml(thumbUrl.replace(/"/g, '%22')) + '&quot;)"' : '') + '></span>' +
@@ -1999,7 +2002,7 @@
                 '<span class="ump__queue-name">' + escapeHtml(item.fileName || 'Gang sheet') + '</span>' +
                 '<span class="ump__queue-meta">' + (metaParts.join(' · ') || escapeHtml(statusLabel)) + '</span>' +
               '</span>' +
-              '<span class="ump__queue-status' + (isReady ? ' is-ready' : '') + '">' + escapeHtml(statusLabel) + '</span>' +
+              '<span class="ump__queue-status' + (isReady ? ' is-ready' : '') + '"' + (elapsed != null ? ' title="Time from file selection to ready"' : '') + '>' + escapeHtml(statusText) + '</span>' +
               '<span class="ump__queue-tools">' +
                 (canEdit
                   ? '<span class="ump__copies" role="group" aria-label="Whole-sheet copies">' +
@@ -2013,6 +2016,33 @@
             '</div>';
         }.bind(this)).join('') +
       '</div>';
+  };
+
+  // Seconds from file selection until the item became ready. The ready moment is
+  // stamped the first time a render sees the item ready after having seen it
+  // busy in this page session; an item restored already-ready falls back to the
+  // end of its upload transfer, so a reload never shows an inflated duration.
+  MainProductUpload.prototype.getItemReadySeconds = function(item) {
+    var start = toNumber(item && item.uploadStartTime);
+    var key = item && (item.uploadId || item.fileName);
+    if (!(start > 0) || !key) return null;
+    if (!this.itemReadyAt) this.itemReadyAt = {};
+    if (!this.itemReadyAt[key]) {
+      var end = toNumber(item.uploadEndTime);
+      var seen = this.itemSeenBusy || {};
+      // The upload id arrives mid-upload, so busy renders may be keyed by name.
+      var wasBusy = Boolean((item.uploadId && seen[item.uploadId]) || (item.fileName && seen[item.fileName]));
+      this.itemReadyAt[key] = wasBusy ? Date.now() : (end > start ? end : 0);
+    }
+    var readyAt = this.itemReadyAt[key];
+    return readyAt > start ? (readyAt - start) / 1000 : null;
+  };
+
+  MainProductUpload.prototype.markItemBusy = function(item) {
+    if (!item) return;
+    if (!this.itemSeenBusy) this.itemSeenBusy = {};
+    if (item.uploadId) this.itemSeenBusy[item.uploadId] = true;
+    if (item.fileName) this.itemSeenBusy[item.fileName] = true;
   };
 
   MainProductUpload.prototype.getMethodText = function() {
