@@ -50,11 +50,21 @@ export async function action({ request }: ActionFunctionArgs) {
         refundId: refund.id ? String(refund.id) : null,
         snapshotError: snapshotErrorMessage,
       })
+      // Retry only when a retry can change the outcome. With no fee row there is
+      // nothing to reconcile, and a 404 is permanent (e.g. an order older than
+      // the read_orders window) — the fee, if any, is already quarantined for
+      // review. Answering 500 there made Shopify redeliver the same refund
+      // indefinitely, and Shopify drops subscriptions that keep failing.
+      const permanent = !quarantine.commissionFound || /HTTP 404\b/.test(snapshotErrorMessage)
       console.error(
         `[Webhook] refunds/create order snapshot failed for ${shopDomain}/${orderId}; ` +
-          `commissionFound=${quarantine.commissionFound} reviewFlagAdded=${quarantine.reviewFlagAdded}:`,
+          `commissionFound=${quarantine.commissionFound} reviewFlagAdded=${quarantine.reviewFlagAdded} ` +
+          `retry=${!permanent}:`,
         snapshotError
       )
+      if (permanent) {
+        return json({ received: true, skipped: 'order_snapshot_unavailable' })
+      }
       return json({ error: 'Processing failed' }, { status: 500 })
     }
     // Do not depend on read-after-write timing in the order endpoint. Carry

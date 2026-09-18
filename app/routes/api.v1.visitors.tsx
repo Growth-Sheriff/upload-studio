@@ -1,5 +1,6 @@
 import type { ActionFunctionArgs } from '@remix-run/node'
 import { json } from '@remix-run/node'
+import { Prisma } from '@prisma/client'
 import { prisma } from '~/lib/prisma.server'
 import {
   upsertVisitorAndSession,
@@ -55,13 +56,15 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   try {
-    const result = await upsertVisitorAndSession(
-      shop.id,
-      identity,
-      device || {},
-      attribution || {},
-      request
-    )
+    const upsert = () =>
+      upsertVisitorAndSession(shop.id, identity, device || {}, attribution || {}, request)
+    // The tracker can fire twice at once for the same browser; both requests
+    // miss the lookup and race on (shop_id, fingerprint). The loser retries
+    // once and finds the row the winner just created.
+    const result = await upsert().catch((error) => {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return upsert()
+      throw error
+    })
     return json({
       success: true,
       visitorId: result.visitorId,
