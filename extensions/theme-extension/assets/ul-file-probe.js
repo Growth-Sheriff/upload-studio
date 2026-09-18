@@ -21,6 +21,9 @@
   var HEAD_BYTES = 256 * 1024;
   var TAIL_BYTES = 256 * 1024;
   var FINGERPRINT_SLICE = 1024 * 1024;
+  var MAX_CLIENT_PREVIEW_PIXELS = 100 * 1000 * 1000;
+  var MAX_CLIENT_PREVIEW_EDGE = 32768;
+  var CLIENT_PREVIEW_EDGE = 1024;
 
   function readSlice(file, start, end) {
     var blob = file.slice(start, end);
@@ -204,8 +207,10 @@
     if (!ifd) return 0;
     var unit = ifd[296] || 2;
     var xres = ifd[282] || 0;
-    if (!xres) return 0;
-    return unit === 3 ? Math.round(xres * 2.54) : Math.round(xres);
+    var yres = ifd[283] || xres;
+    if (!(xres > 0 && yres > 0) || Math.max(xres, yres) / Math.min(xres, yres) > 1.05) return 0;
+    var average = (xres + yres) / 2;
+    return unit === 3 ? Math.round(average * 2.54) : Math.round(average);
   }
 
   function parseTiff(bytes) {
@@ -342,5 +347,145 @@
     }
   }
 
-  return { probe: probe, fingerprint: fingerprint, parseBytes: parseBytes };
+  function isFastRasterFile(file) {
+    var type = String(file && file.type || '').toLowerCase();
+    if (type === 'image/png' || type === 'image/jpeg' || type === 'image/jpg') return true;
+    if (type && type !== 'application/octet-stream') return false;
+    return /\.(png|jpe?g)$/i.test(String(file && file.name || ''));
+  }
+
+  function isFastRasterProbe(value) {
+    var format = String(value && value.format || '').toUpperCase();
+    return format === 'PNG' || format === 'JPG' || format === 'JPEG';
+  }
+
+  function isMobileDevice() {
+    try {
+      if (navigator.userAgentData && navigator.userAgentData.mobile) return true;
+      if (/Macintosh/i.test(navigator.userAgent || '') && Number(navigator.maxTouchPoints) > 1) return true;
+      return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /** Generate a small preview off the main thread. Any unsupported browser,
+   * mobile device, unsafe raster or decode failure deliberately returns null
+   * so the existing server preview worker can take over. */
+  function createPreview(file, header) {
+    if (!isFastRasterFile(file) || !isFastRasterProbe(header)) return Promise.resolve(null);
+    var width = Number(header.widthPx) || 0;
+    var height = Number(header.heightPx) || 0;
+    if (
+      isMobileDevice() ||
+      !(width > 0 && height > 0) ||
+      width * height > MAX_CLIENT_PREVIEW_PIXELS ||
+      Math.max(width, height) > MAX_CLIENT_PREVIEW_EDGE ||
+      typeof Worker === 'undefined' ||
+      typeof URL === 'undefined' ||
+      typeof Blob === 'undefined'
+    ) {
+      return Promise.resolve(null);
+    }
+
+    var scale = Math.min(1, CLIENT_PREVIEW_EDGE / Math.max(width, height));
+    var resizeWidth = Math.max(1, Math.round(width * scale));
+    var resizeHeight = Math.max(1, Math.round(height * scale));
+    var workerSource = [
+      "self.onmessage=async function(event){",
+      "var bitmap=null;try{",
+      "if(typeof createImageBitmap!=='function'||typeof OffscreenCanvas==='undefined')throw new Error('unsupported');",
+      "bitmap=await createImageBitmap(event.data.file,{resizeWidth:event.data.width,resizeHeight:event.data.height,resizeQuality:'high'});",
+      "var canvas=new OffscreenCanvas(event.data.width,event.data.height);",
+      "var context=canvas.getContext('2d',{alpha:true});if(!context)throw new Error('canvas');",
+      "context.drawImage(bitmap,0,0,event.data.width,event.data.height);",
+      "var blob=await canvas.convertToBlob({type:'image/webp',quality:0.84});",
+      "var buffer=await blob.arrayBuffer();self.postMessage({ok:true,buffer:buffer},[buffer]);",
+      "}catch(error){self.postMessage({ok:false});}finally{if(bitmap&&bitmap.close)bitmap.close();self.close();}",
+      "};"
+    ].join('');
+
+    return new Promise(function(resolve) {
+      var worker = null;
+      var workerUrl = '';
+      var settled = false;
+      var finish = function(value) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        if (worker) worker.terminate();
+        if (workerUrl) URL.revokeObjectURL(workerUrl);
+        resolve(value);
+      };
+      var timeout = setTimeout(function() { finish(null); }, 15000);
+      try {
+        workerUrl = URL.createObjectURL(new Blob([workerSource], { type: 'text/javascript' }));
+        worker = new Worker(workerUrl);
+        worker.onmessage = function(event) {
+          if (!event.data || !event.data.ok || !event.data.buffer) return finish(null);
+          var blob = new Blob([event.data.buffer], { type: 'image/webp' });
+          finish({ blob: blob, objectUrl: URL.createObjectURL(blob) });
+        };
+        worker.onerror = function() { finish(null); };
+        worker.postMessage({ file: file, width: resizeWidth, height: resizeHeight });
+      } catch (_) {
+        finish(null);
+      }
+    });
+  }
+
+  async function uploadPreview(apiBase, uploadId, itemId, preview) {
+    if (!preview || !preview.blob || !uploadId || !itemId) return null;
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timeout = controller ? setTimeout(function() { controller.abort(); }, 10000) : null;
+    try {
+      var url = String(apiBase || '') + '/api/upload/client-preview?uploadId=' +
+        encodeURIComponent(uploadId) + '&itemId=' + encodeURIComponent(itemId);
+      var response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'image/webp' },
+        body: preview.blob,
+        signal: controller ? controller.signal : undefined
+      });
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (_) {
+      return null;
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  }
+
+  /** Keep preview rendering independent from orderability. Mobile/fallback
+   * uploads become ready immediately while this waits for the server asset. */
+  async function waitForThumbnail(apiBase, shopDomain, uploadId) {
+    if (!uploadId) return null;
+    for (var attempt = 0; attempt < 60; attempt++) {
+      await new Promise(function(resolve) { setTimeout(resolve, attempt === 0 ? 1000 : 1500); });
+      try {
+        var response = await fetch(
+          String(apiBase || '') + '/api/upload/status/' + encodeURIComponent(uploadId) +
+          '?shopDomain=' + encodeURIComponent(shopDomain || '')
+        );
+        if (!response.ok) continue;
+        var data = await response.json();
+        var item = data && data.items && data.items[0];
+        var thumbnailUrl = data.thumbnailUrl || (item && item.thumbnailUrl) || '';
+        if (thumbnailUrl) return thumbnailUrl;
+        if (item && (item.previewStatus === 'error' || item.previewStatus === 'warning')) return null;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  return {
+    probe: probe,
+    fingerprint: fingerprint,
+    parseBytes: parseBytes,
+    isFastRasterFile: isFastRasterFile,
+    isFastRasterProbe: isFastRasterProbe,
+    createPreview: createPreview,
+    uploadPreview: uploadPreview,
+    waitForThumbnail: waitForThumbnail
+  };
 });

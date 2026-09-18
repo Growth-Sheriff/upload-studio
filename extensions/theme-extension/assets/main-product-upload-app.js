@@ -1562,7 +1562,15 @@
       itemId: '',
       fileName: file ? file.name : '',
       lastFile: file || null,
-      localPreviewUrl: file && file.type && file.type.indexOf('image/') === 0 ? URL.createObjectURL(file) : '',
+      fastRaster: Boolean(
+        file && window.ULFileProbe && window.ULFileProbe.isFastRasterFile &&
+        window.ULFileProbe.isFastRasterFile(file)
+      ),
+      localPreviewUrl:
+        file && file.type && file.type.indexOf('image/') === 0 &&
+        !(window.ULFileProbe && window.ULFileProbe.isFastRasterFile && window.ULFileProbe.isFastRasterFile(file))
+          ? URL.createObjectURL(file)
+          : '',
       originalUrl: '',
       thumbnailUrl: '',
       widthIn: 0,
@@ -2375,7 +2383,9 @@
         ? 'Resuming upload — ' + this.state.resumedParts + ' chunks already on the server...'
         : this.state.isMultipart
         ? 'Uploading in parallel chunks...'
-        : 'Uploading and measuring...');
+        : this.state.fastRaster
+          ? 'Uploading and validating the stored header...'
+          : 'Uploading and measuring...');
     } else if (this.state.status === 'error') {
       fileMetaText = 'Upload failed. You can try again or pick a different file.';
     }
@@ -2425,8 +2435,8 @@
       badgeClass = '';
     }
     else if (this.state.status === 'uploading') {
-      badgeLabel = this.state.uploadId ? 'Measuring' : 'Uploading';
-      badgeClass = this.state.uploadId ? 'is-measuring' : 'is-uploading';
+      badgeLabel = this.state.fastRaster ? 'Uploading' : (this.state.uploadId ? 'Measuring' : 'Uploading');
+      badgeClass = this.state.fastRaster ? 'is-uploading' : (this.state.uploadId ? 'is-measuring' : 'is-uploading');
     } else if (this.state.status === 'error') {
       badgeLabel = 'Error'; badgeClass = '';
     } else {
@@ -2683,6 +2693,18 @@
       // the intent is negotiated; neither reads more than 2 MB of the file.
       var self = this;
       var probePromise = this.probeAndPreview(file, currentToken);
+      var previewPromise = probePromise.then(async function(probe) {
+        if (!window.ULFileProbe || !window.ULFileProbe.createPreview) return null;
+        var preview = await window.ULFileProbe.createPreview(file, probe).catch(function() { return null; });
+        if (preview && currentToken === self.token) {
+          if (self.state.localPreviewUrl) {
+            try { URL.revokeObjectURL(self.state.localPreviewUrl); } catch (_) {}
+          }
+          self.state.localPreviewUrl = preview.objectUrl || '';
+          self.render();
+        }
+        return preview;
+      });
       var fingerprintPromise = window.ULFileProbe && window.ULFileProbe.fingerprint
         ? window.ULFileProbe.fingerprint(file).catch(function() { return null; })
         : Promise.resolve(null);
@@ -2754,7 +2776,7 @@
         // Same file, same customer, already measured: nothing to send.
         console.log('[UMP] instant re-upload: reusing measured upload ' + intent.uploadId);
         this.state.isMultipart = false;
-        this.setStage('measure');
+        if (!this.state.fastRaster) this.setStage('measure');
         this.setProgress(86);
         await this.pollStatus(currentToken);
         if (currentToken !== this.token) return;
@@ -2766,15 +2788,28 @@
       this.state.isMultipart = Boolean(intent.multipart);
       this.setProgress(18);
       this.render();
+      var previewUploadPromise = previewPromise.then(function(preview) {
+        if (!preview || !window.ULFileProbe || !window.ULFileProbe.uploadPreview) return null;
+        return window.ULFileProbe.uploadPreview(self.apiBase, intent.uploadId, intent.itemId, preview)
+          .then(function(result) {
+            if (result && currentToken === self.token && result.thumbnailUrl) {
+              self.state.thumbnailUrl = result.thumbnailUrl;
+            }
+            return result;
+          });
+      }).catch(function() { return null; });
       await this.performUpload(file, intent, function(loaded, total) {
         var ratio = total > 0 ? loaded / total : 0;
         this.setProgress(18 + ratio * 52);
         this.setProgressText(loaded, total);
       }.bind(this), { fingerprint: fingerprint, session: session, resume: resume });
       if (currentToken !== this.token) return;
-      try { await probePromise; } catch (_) {}
+      var headerProbe = null;
+      try { headerProbe = await probePromise; } catch (_) {}
+      // Thumbnail work is best-effort and never holds server header validation.
+      void previewUploadPromise;
       this.setProgressText(0, 0);
-      this.setStage('measure');
+      if (!this.state.fastRaster) this.setStage('measure');
 
       this.setProgress(76);
       var completeResponse = await fetch(this.apiBase + '/api/upload/complete', {
@@ -2788,7 +2823,8 @@
             location: 'front',
             fileUrl: intent.publicUrl || null,
             storageProvider: intent.storageProvider || 'local',
-            fileSize: file.size
+            fileSize: file.size,
+            headerProbe: headerProbe
           }]
         })
       });
@@ -2797,7 +2833,11 @@
       if (currentToken !== this.token) return;
 
       this.setProgress(86);
-      await this.pollStatus(currentToken);
+      if (complete.fastPath) {
+        await this.finishFastCompletion(complete, currentToken);
+      } else {
+        await this.pollStatus(currentToken);
+      }
       if (currentToken !== this.token) return;
       this.rememberCurrentUpload();
       this.render();
@@ -2815,6 +2855,65 @@
       this.setError(msg);
       this.render();
     }
+  };
+
+  MainProductUpload.prototype.finishFastCompletion = async function(complete, currentToken) {
+    if (currentToken !== this.token) return;
+    var item = complete && (complete.item || (complete.items && complete.items[0]));
+    if (!item) throw new Error('The server did not return the stored header measurement.');
+    this.state.thumbnailUrl = item.thumbnailUrl || this.state.thumbnailUrl || '';
+    this.state.originalUrl = item.originalUrl || this.state.originalUrl || '';
+    var blocked =
+      item.orderabilityStatus === 'blocked' ||
+      item.measurementStatus === 'error' ||
+      complete.status === 'blocked';
+    if (blocked) {
+      throw new Error(
+        (item.errors && item.errors[0]) ||
+        (item.problems && item.problems[0] && item.problems[0].message) ||
+        'The stored PNG/JPEG header could not be validated.'
+      );
+    }
+    if (!this.applyMeasurement(item)) {
+      throw new Error('The stored PNG/JPEG header did not contain a usable print size.');
+    }
+    this.state.provisional = false;
+    this.state.selectedResult = null;
+    this.state.selectedVariantId = '';
+    await this.resolveProduct();
+    if (currentToken !== this.token) return;
+    this.state.status = 'ready';
+    this.state.uploadEndTime = Date.now();
+    this.setProgress(100);
+    this.setStage('ready');
+    this.refreshFastThumbnail(this.state.uploadId);
+    setTimeout(function() {
+      if (currentToken !== this.token) return;
+      this.setProgress(0);
+      this.setStage(null);
+      this.render();
+    }.bind(this), 1200);
+    this.render();
+  };
+
+  MainProductUpload.prototype.refreshFastThumbnail = function(uploadId) {
+    if (
+      this.state.thumbnailUrl ||
+      !uploadId ||
+      !window.ULFileProbe ||
+      !window.ULFileProbe.waitForThumbnail
+    ) return;
+    var self = this;
+    window.ULFileProbe.waitForThumbnail(this.apiBase, this.shopDomain, uploadId)
+      .then(function(thumbnailUrl) {
+        if (!thumbnailUrl) return;
+        var queued = self.findItem(uploadId);
+        if (queued) queued.thumbnailUrl = thumbnailUrl;
+        if (sameUploadId(self.state.uploadId, uploadId)) self.state.thumbnailUrl = thumbnailUrl;
+        self.persistItems();
+        self.render();
+      })
+      .catch(function() {});
   };
 
   MainProductUpload.prototype.pollStatus = async function(currentToken) {

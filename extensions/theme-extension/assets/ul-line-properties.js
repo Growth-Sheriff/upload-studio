@@ -120,6 +120,13 @@
     if (!file) throw new Error('Choose a file first.');
     var who = customer();
     var shop = shopDomain();
+    var probePromise = window.ULFileProbe && window.ULFileProbe.probe
+      ? window.ULFileProbe.probe(file).catch(function() { return null; })
+      : Promise.resolve(null);
+    var previewPromise = probePromise.then(function(probe) {
+      if (!window.ULFileProbe || !window.ULFileProbe.createPreview) return null;
+      return window.ULFileProbe.createPreview(file, probe).catch(function() { return null; });
+    });
     var intentRes = await fetch(API_BASE + '/api/upload/intent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -139,20 +146,33 @@
     var intent = await intentRes.json().catch(function() { return {}; });
     if (!intentRes.ok) throw new Error(intent.error || 'Could not start the upload.');
 
+    var complete = null;
     if (!intent.deduplicated) {
+      var previewUploadPromise = previewPromise.then(function(preview) {
+        if (!preview || !window.ULFileProbe || !window.ULFileProbe.uploadPreview) return null;
+        return window.ULFileProbe.uploadPreview(API_BASE, intent.uploadId, intent.itemId, preview)
+          .finally(function() {
+            if (preview.objectUrl) {
+              try { URL.revokeObjectURL(preview.objectUrl); } catch (_) {}
+            }
+          });
+      }).catch(function() { return null; });
       await putFile(intent, file);
+      // A thumbnail must never delay authoritative header validation.
+      void previewUploadPromise;
+      var headerProbe = await probePromise;
       var completeRes = await fetch(API_BASE + '/api/upload/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           shopDomain: shop,
           uploadId: intent.uploadId,
-          items: [{ itemId: intent.itemId, location: 'front', fileUrl: intent.publicUrl || null, storageProvider: intent.storageProvider || 'local', fileSize: file.size }]
+          items: [{ itemId: intent.itemId, location: 'front', fileUrl: intent.publicUrl || null, storageProvider: intent.storageProvider || 'local', fileSize: file.size, headerProbe: headerProbe }]
         })
       });
+      complete = await completeRes.json().catch(function() { return {}; });
       if (!completeRes.ok) {
-        var c = await completeRes.json().catch(function() { return {}; });
-        throw new Error(c.error || 'Could not finish the upload.');
+        throw new Error(complete.error || 'Could not finish the upload.');
       }
     }
 
@@ -161,7 +181,16 @@
     var fileUrl = intent.publicUrl || '';
     var dpi = 0;
     var measurementReady = false;
-    for (var attempt = 0; attempt < 240; attempt += 1) {
+    var completedItem = complete && (complete.item || (complete.items && complete.items[0]));
+    if (complete && complete.fastPath && completedItem) {
+      if (completedItem.orderabilityStatus === 'blocked' || completedItem.measurementStatus === 'error') {
+        throw new Error((completedItem.errors && completedItem.errors[0]) || 'This file cannot be printed. Please upload a different file.');
+      }
+      fileUrl = completedItem.originalUrl || fileUrl;
+      dpi = Number(completedItem.effectiveDpi || completedItem.documentDpi || 0);
+      measurementReady = true;
+    }
+    for (var attempt = 0; !measurementReady && attempt < 240; attempt += 1) {
       var st = await fetch(API_BASE + '/api/upload/status/' + encodeURIComponent(intent.uploadId) + '?shopDomain=' + encodeURIComponent(shop))
         .then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
       var item = st && st.items && st.items[0];

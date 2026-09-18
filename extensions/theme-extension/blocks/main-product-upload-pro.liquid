@@ -2,6 +2,7 @@
 {{ 'main-product-upload-pro.css' | asset_url | stylesheet_tag }}
 <script src="{{ 'ul-upload-telemetry.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-multipart-uploader.js' | asset_url }}" defer></script>
+<script src="{{ 'ul-file-probe.js' | asset_url }}" defer></script>
 <script src="{{ 'main-product-upload-pro.js' | asset_url }}" defer></script>
 <script src="{{ 'main-product-upload-app.js' | asset_url }}" defer></script>
 {%- assign accept = block.settings.accepted_files | default: ".png,.jpg,.jpeg,.webp,.tif,.tiff,.psd,.pdf,.ai,.eps,.svg" -%}

@@ -106,6 +106,7 @@
         pollCount: 0,
         activeXHR: null, // v4.2.0: Track active XHR for cancel support
         isCancelled: false, // v4.2.0: Track if upload was cancelled
+        clientPreviewUrl: '',
       }
 
       instance.elements = this.getElements(productId)
@@ -653,6 +654,21 @@
 
       try {
 
+        if (instance.clientPreviewUrl && instance.clientPreviewUrl.indexOf('blob:') === 0) {
+          try { URL.revokeObjectURL(instance.clientPreviewUrl) } catch (_) {}
+        }
+        instance.clientPreviewUrl = ''
+
+        const probePromise = window.ULFileProbe && window.ULFileProbe.probe
+          ? window.ULFileProbe.probe(file).catch(() => null)
+          : Promise.resolve(null)
+        const previewPromise = probePromise.then(async (probe) => {
+          if (!window.ULFileProbe || !window.ULFileProbe.createPreview) return null
+          const preview = await window.ULFileProbe.createPreview(file, probe).catch(() => null)
+          if (preview) instance.clientPreviewUrl = preview.objectUrl || ''
+          return preview
+        })
+
         const customerId = window.ULCustomer?.id || null
         const customerEmail = window.ULCustomer?.email || null
 
@@ -685,10 +701,31 @@
         const intentData = await intentResponse.json()
         state.upload.uploadId = intentData.uploadId
 
+        const previewUploadPromise = previewPromise.then((preview) => {
+          if (!preview || !window.ULFileProbe || !window.ULFileProbe.uploadPreview) return null
+          return window.ULFileProbe.uploadPreview(
+            apiBase,
+            intentData.uploadId,
+            intentData.itemId,
+            preview
+          )
+        }).catch(() => null)
+        previewUploadPromise.then((clientPreview) => {
+          if (!clientPreview || !clientPreview.thumbnailUrl) return
+          if (instance.clientPreviewUrl && instance.clientPreviewUrl.indexOf('blob:') === 0) {
+            try { URL.revokeObjectURL(instance.clientPreviewUrl) } catch (_) {}
+          }
+          instance.clientPreviewUrl = clientPreview.thumbnailUrl
+        })
+
         elements.progressFill.style.width = '15%'
         elements.progressText.textContent = 'Uploading...'
 
         const uploadResult = await this.uploadToStorage(productId, file, intentData)
+        const headerProbe = await probePromise
+        // Preview generation/upload continues in the background. Completion
+        // immediately validates the stored header and queues server fallback.
+        void previewUploadPromise
 
         elements.progressFill.style.width = '80%'
         elements.progressText.textContent = 'Finalizing...'
@@ -716,19 +753,28 @@
                 fileUrl: actualFileUrl,
                 storageProvider: actualStorageProvider,
                 uploadDurationMs: uploadDurationMs,
+                fileSize: file.size,
+                headerProbe: headerProbe,
               },
             ],
           }),
         })
 
+        const completeData = await completeResponse.json().catch(() => ({}))
         if (!completeResponse.ok) {
-          const errData = await completeResponse.json().catch(() => ({}))
+          const errData = completeData
           throw new Error(errData.error || 'Failed to finalize upload')
         }
 
-        state.upload.status = 'processing'
-        elements.progressText.textContent = 'Processing thumbnail...'
-        await this.pollUploadStatus(productId, intentData.uploadId)
+        if (completeData.fastPath) {
+          elements.progressFill.style.width = '100%'
+          elements.progressText.textContent = 'Ready'
+          this.finishReadyUpload(productId, intentData.uploadId, completeData)
+        } else {
+          state.upload.status = 'processing'
+          elements.progressText.textContent = 'Processing thumbnail...'
+          await this.pollUploadStatus(productId, intentData.uploadId)
+        }
       } catch (error) {
         console.error('[UL] Upload error:', error)
         state.upload.status = 'error'
@@ -1253,6 +1299,124 @@
       })
     },
 
+    finishReadyUpload(productId, uploadId, data) {
+      const instance = this.instances[productId]
+      const { elements, state } = instance
+      const item = (data && (data.item || (data.items && data.items[0]))) || {}
+      const metadata = item.metadata || data.metadata || {}
+      const lifecycleProblems = Array.isArray(item.problems)
+        ? item.problems
+        : Array.isArray(data.problems)
+          ? data.problems
+          : []
+      const blockingProblems = lifecycleProblems.filter(
+        (problem) => problem && problem.severity === 'error' && problem.scope !== 'preview'
+      )
+      if (
+        item.measurementStatus === 'error' ||
+        item.orderabilityStatus === 'blocked' ||
+        data.orderabilityStatus === 'blocked' ||
+        blockingProblems.length
+      ) {
+        throw new Error(
+          (item.errors && item.errors[0]) ||
+          (blockingProblems[0] && blockingProblems[0].message) ||
+          data.error ||
+          'Upload processing failed'
+        )
+      }
+      const originalUrl =
+        item.originalUrl || data.downloadUrl || data.url || ''
+      if (!originalUrl) throw new Error('The uploaded file is not available from storage.')
+      const displayWarnings = lifecycleProblems
+        .filter((problem) => problem && problem.severity === 'warning' && problem.scope !== 'measurement')
+        .map((problem) => problem.message)
+
+      state.upload.status = 'ready'
+      state.upload.uploadId = uploadId
+      state.upload.result = {
+        thumbnailUrl: item.thumbnailUrl || data.thumbnailUrl || instance.clientPreviewUrl || '',
+        originalUrl,
+        width: metadata.measurementWidthPx || metadata.widthPx || metadata.width || item.widthPx || 0,
+        height: metadata.measurementHeightPx || metadata.heightPx || metadata.height || item.heightPx || 0,
+        dpi: metadata.effectiveDpi || metadata.dpi || item.effectiveDpi || 0,
+        colorMode: metadata.colorMode || '',
+        qualityScore: data.qualityScore || 100,
+        warnings: displayWarnings.length ? displayWarnings : data.warnings || [],
+      }
+
+      elements.uploadIdField.value = uploadId
+      elements.uploadUrlField.value = state.upload.result.originalUrl
+      elements.thumbnailUrlField.value = state.upload.result.thumbnailUrl
+      if (window.ULState) {
+        window.ULState.setUploadComplete({
+          id: uploadId,
+          thumbnailUrl: state.upload.result.thumbnailUrl,
+          url: state.upload.result.originalUrl,
+          name: state.upload.file.name,
+          size: state.upload.file.size,
+          mimeType: state.upload.file.type,
+          dimensions: {
+            width: state.upload.result.width,
+            height: state.upload.result.height,
+            dpi: state.upload.result.dpi,
+          },
+        })
+        window.ULState.set('dtf.productId', productId)
+      }
+      if (window.ULEvents) {
+        window.ULEvents.emit('uploadComplete', {
+          uploadId,
+          productId,
+          thumbnailUrl: state.upload.result.thumbnailUrl,
+          originalUrl: state.upload.result.originalUrl,
+        })
+      }
+      window.dispatchEvent(new CustomEvent('ul:upload:complete', {
+        detail: {
+          uploadId,
+          productId,
+          thumbnailUrl: state.upload.result.thumbnailUrl,
+          originalUrl: state.upload.result.originalUrl,
+          fileName: state.upload.file.name,
+          fileSize: state.upload.file.size,
+        },
+      }))
+      try {
+        sessionStorage.setItem(`ul_upload_${productId}`, JSON.stringify({
+          tabSessionId: TAB_SESSION_ID,
+          uploadId,
+          thumbnailUrl: state.upload.result.thumbnailUrl,
+          originalUrl: state.upload.result.originalUrl,
+          fileName: state.upload.file.name,
+          timestamp: Date.now(),
+        }))
+      } catch (error) {
+        console.warn('[UL] Failed to save upload to sessionStorage:', error)
+      }
+      if (window.ULAnalytics) {
+        const uploadDuration = window.ULAnalytics.endTiming('dtf_upload')
+        window.ULAnalytics.trackDTFUploadCompleted({
+          uploadId,
+          fileName: state.upload.file.name,
+          fileSize: state.upload.file.size,
+          width: state.upload.result.width,
+          height: state.upload.result.height,
+          dpi: state.upload.result.dpi,
+          duration: uploadDuration,
+          productId,
+        })
+      }
+      this.showPreview(productId)
+      elements.progress.classList.remove('active')
+      elements.step1.classList.add('completed')
+      setTimeout(() => {
+        if (instance.lastFile) instance.lastFile = null
+      }, 5000)
+      this.validateForm(productId)
+      return data
+    },
+
     async pollUploadStatus(productId, uploadId) {
       const instance = this.instances[productId]
       const { elements, apiBase, shopDomain, state } = instance
@@ -1314,108 +1478,7 @@
             }
 
             if (canProceed) {
-
-              state.upload.status = 'ready'
-              state.upload.uploadId = uploadId
-              state.upload.result = {
-                thumbnailUrl: data.thumbnailUrl || '',
-                originalUrl: originalUrl,
-                width: metadata.measurementWidthPx || metadata.width || 0,
-                height: metadata.measurementHeightPx || metadata.height || 0,
-                dpi: metadata.effectiveDpi || metadata.dpi || 0,
-                colorMode: metadata.colorMode || '',
-                qualityScore: data.qualityScore || 100,
-                warnings: displayWarnings.length ? displayWarnings : data.warnings || [],
-              }
-
-              elements.uploadIdField.value = uploadId
-              elements.uploadUrlField.value = state.upload.result.originalUrl
-              elements.thumbnailUrlField.value = state.upload.result.thumbnailUrl
-
-              if (window.ULState) {
-                window.ULState.setUploadComplete({
-                  id: uploadId,
-                  thumbnailUrl: state.upload.result.thumbnailUrl,
-                  url: state.upload.result.originalUrl,
-                  name: state.upload.file.name,
-                  size: state.upload.file.size,
-                  mimeType: state.upload.file.type,
-                  dimensions: {
-                    width: state.upload.result.width,
-                    height: state.upload.result.height,
-                    dpi: state.upload.result.dpi,
-                  },
-                })
-
-                window.ULState.set('dtf.productId', productId)
-              }
-
-              if (window.ULEvents) {
-                window.ULEvents.emit('uploadComplete', {
-                  uploadId,
-                  productId,
-                  thumbnailUrl: state.upload.result.thumbnailUrl,
-                  originalUrl: state.upload.result.originalUrl,
-                })
-              }
-
-              window.dispatchEvent(
-                new CustomEvent('ul:upload:complete', {
-                  detail: {
-                    uploadId,
-                    productId,
-                    thumbnailUrl: state.upload.result.thumbnailUrl,
-                    originalUrl: state.upload.result.originalUrl,
-                    fileName: state.upload.file.name,
-                    fileSize: state.upload.file.size,
-                  },
-                })
-              )
-
-              try {
-                sessionStorage.setItem(
-                  `ul_upload_${productId}`,
-                  JSON.stringify({
-                    tabSessionId: TAB_SESSION_ID,
-                    uploadId: uploadId,
-                    thumbnailUrl: state.upload.result.thumbnailUrl,
-                    originalUrl: state.upload.result.originalUrl,
-                    fileName: state.upload.file.name,
-                    timestamp: Date.now(),
-                  })
-                )
-              } catch (e) {
-                console.warn('[UL] Failed to save upload to sessionStorage:', e)
-              }
-
-              if (window.ULAnalytics) {
-                const uploadDuration = window.ULAnalytics.endTiming('dtf_upload')
-                window.ULAnalytics.trackDTFUploadCompleted({
-                  uploadId,
-                  fileName: state.upload.file.name,
-                  fileSize: state.upload.file.size,
-                  width: state.upload.result.width,
-                  height: state.upload.result.height,
-                  dpi: state.upload.result.dpi,
-                  duration: uploadDuration,
-                  productId,
-                })
-              }
-
-              this.showPreview(productId)
-              elements.progress.classList.remove('active')
-              elements.step1.classList.add('completed')
-
-              setTimeout(() => {
-                if (instance.lastFile) {
-                  console.log('[UL] Releasing file reference for memory cleanup')
-                  instance.lastFile = null
-                }
-              }, 5000)
-
-              this.validateForm(productId)
-
-              resolveAll(data)
+              resolveAll(this.finishReadyUpload(productId, uploadId, data))
               return
             } else if (
               (data.status === 'failed' || data.status === 'error') &&
@@ -1517,12 +1580,17 @@
       const NON_BROWSER_EXTENSIONS = ['psd', 'pdf', 'ai', 'eps', 'tiff', 'tif']
       const fileExt = file.name.split('.').pop()?.toLowerCase() || ''
       const isNonBrowserFormat = NON_BROWSER_EXTENSIONS.includes(fileExt)
+      const isFastRasterFormat = Boolean(
+        window.ULFileProbe &&
+        window.ULFileProbe.isFastRasterFile &&
+        window.ULFileProbe.isFastRasterFile(file)
+      )
 
       if (result.thumbnailUrl) {
 
         elements.thumb.src = result.thumbnailUrl
         elements.thumb.classList.remove('loading-spinner')
-      } else if (isNonBrowserFormat) {
+      } else if (isNonBrowserFormat || isFastRasterFormat) {
 
         console.log('[UL] Non-browser format detected, showing processing state:', fileExt)
 
@@ -1779,6 +1847,11 @@
         instance.activeXHR.abort()
         instance.activeXHR = null
       }
+
+      if (instance.clientPreviewUrl && instance.clientPreviewUrl.indexOf('blob:') === 0) {
+        try { URL.revokeObjectURL(instance.clientPreviewUrl) } catch (_) {}
+      }
+      instance.clientPreviewUrl = ''
 
       state.upload.status = 'idle'
       state.upload.progress = 0

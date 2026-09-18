@@ -724,6 +724,8 @@
       selectedVariantId: productData.selectedVariantId || null,
       selectedResult: null,
       lastFile: null,
+      clientPreviewUrl: '',
+      fastRaster: false,
       customItems: [],
       activeCustomItemId: ''
     };
@@ -1142,7 +1144,15 @@
         uploadId: '',
         fileName: file && file.name ? file.name : '',
         fileSize: file && file.size ? file.size : 0,
-        localPreviewUrl: file && window.URL && window.URL.createObjectURL ? window.URL.createObjectURL(file) : '',
+        fastRaster: Boolean(
+          file && window.ULFileProbe && window.ULFileProbe.isFastRasterFile &&
+          window.ULFileProbe.isFastRasterFile(file)
+        ),
+        localPreviewUrl:
+          file && window.URL && window.URL.createObjectURL &&
+          !(window.ULFileProbe && window.ULFileProbe.isFastRasterFile && window.ULFileProbe.isFastRasterFile(file))
+            ? window.URL.createObjectURL(file)
+            : '',
         originalUrl: '',
         thumbnailUrl: '',
         widthPx: 0,
@@ -1400,7 +1410,7 @@
       customQueueEl.classList.remove('hidden');
 
       var itemsHtml = getCustomQueueItems().map(function(item) {
-        var previewSrc = item.thumbnailUrl || item.originalUrl || item.localPreviewUrl || '';
+        var previewSrc = item.thumbnailUrl || item.localPreviewUrl || (item.fastRaster ? '' : item.originalUrl) || '';
         var metaParts = [];
         if (item.widthPx && item.heightPx) metaParts.push(item.widthPx + ' x ' + item.heightPx + ' px');
         if (item.embeddedDpi) metaParts.push('File ' + item.embeddedDpi + ' DPI');
@@ -1958,7 +1968,7 @@
 
       var billableWidthIn = Math.min(item.widthIn, item.heightIn);
       var billableLengthIn = Math.max(item.widthIn, item.heightIn);
-      var imageSrc = item.thumbnailUrl || item.originalUrl || item.localPreviewUrl || '';
+      var imageSrc = item.thumbnailUrl || item.localPreviewUrl || (item.fastRaster ? '' : item.originalUrl) || '';
       var hasArtwork =
         item.trimmedWidthPx > 0 &&
         item.trimmedHeightPx > 0 &&
@@ -3188,7 +3198,12 @@
       if (state.provisional) {
         // Only the header estimate is known so far; the server has not measured
         // the file yet. Asking it to resolve now only yields "not ready".
-        if (uploadStatus) uploadStatus.textContent = 'Measuring your file on the server...';
+        if (uploadStatus) {
+          uploadStatus.textContent =
+            state.lastFile && window.ULFileProbe && window.ULFileProbe.isFastRasterFile && window.ULFileProbe.isFastRasterFile(state.lastFile)
+              ? 'Uploading and validating the stored file header...'
+              : 'Measuring your file on the server...';
+        }
         syncPurchaseButtonsForCurrentState();
         return;
       }
@@ -3274,11 +3289,11 @@
     // sent; the server resolves the same policy for a provisional sheet.
     // Everything set here is provisional and replaced by the measurement.
     async function applyProvisionalProbe(file, uploadToken) {
-      if (!window.ULFileProbe || !window.ULFileProbe.probe) return;
+      if (!window.ULFileProbe || !window.ULFileProbe.probe) return null;
       var probe = null;
-      try { probe = await window.ULFileProbe.probe(file); } catch (_) { return; }
-      if (uploadToken !== uploadFlowToken || !probe || !(probe.widthPx > 0) || !(probe.heightPx > 0)) return;
-      if (state.widthIn && !state.provisional) return; // server already answered
+      try { probe = await window.ULFileProbe.probe(file); } catch (_) { return null; }
+      if (uploadToken !== uploadFlowToken || !probe || !(probe.widthPx > 0) || !(probe.heightPx > 0)) return probe;
+      if (state.widthIn && !state.provisional) return probe; // server already answered
       state.provisional = true;
       state.widthPx = probe.widthPx;
       state.heightPx = probe.heightPx;
@@ -3309,7 +3324,7 @@
           })
         });
         var data = await response.json().catch(function() { return {}; });
-        if (uploadToken !== uploadFlowToken || !state.provisional) return;
+        if (uploadToken !== uploadFlowToken || !state.provisional) return probe;
         if (data && data.dimensions && data.dimensions.widthIn > 0 && data.dimensions.heightIn > 0) {
           state.widthIn = data.dimensions.widthIn;
           state.heightIn = data.dimensions.heightIn;
@@ -3327,6 +3342,7 @@
         updateDetectedUI();
         syncPurchaseButtonsForCurrentState();
       } catch (_) {}
+      return probe;
     }
 
     function resetUploadState() {
@@ -3336,6 +3352,11 @@
       state.uploadId = '';
       state.originalUrl = '';
       state.thumbnailUrl = '';
+      if (state.clientPreviewUrl && window.URL && window.URL.revokeObjectURL) {
+        try { window.URL.revokeObjectURL(state.clientPreviewUrl); } catch (_) {}
+      }
+      state.clientPreviewUrl = '';
+      state.fastRaster = false;
       state.fileName = '';
       state.widthPx = 0;
       state.heightPx = 0;
@@ -3383,6 +3404,17 @@
       var isNonBrowser = ['psd', 'pdf', 'ai', 'eps', 'tiff', 'tif'].indexOf(ext) >= 0;
       if (state.thumbnailUrl) {
         uploadThumb.src = state.thumbnailUrl;
+        uploadThumb.classList.remove('hidden');
+      } else if (state.clientPreviewUrl) {
+        uploadThumb.src = state.clientPreviewUrl;
+        uploadThumb.classList.remove('hidden');
+      } else if (
+        state.lastFile &&
+        window.ULFileProbe &&
+        window.ULFileProbe.isFastRasterFile &&
+        window.ULFileProbe.isFastRasterFile(state.lastFile)
+      ) {
+        uploadThumb.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80"><rect width="80" height="80" rx="10" fill="#f3f4f6"/><path d="M24 16h22l10 10v38H24z" fill="#e5e7eb" stroke="#9ca3af" stroke-width="2"/><text x="40" y="48" text-anchor="middle" font-size="11" font-family="Arial" fill="#374151">PREVIEW</text></svg>');
         uploadThumb.classList.remove('hidden');
       } else if (!isNonBrowser && state.lastFile && state.lastFile.type && state.lastFile.type.indexOf('image/') === 0) {
         var reader = new FileReader();
@@ -3458,6 +3490,56 @@
       }
 
       return 'Upload processing failed on the server. Please try another file or contact support.';
+    }
+
+    function applyFastCompletion(complete, target) {
+      var item = complete && (complete.item || (complete.items && complete.items[0]));
+      if (!item) throw new Error('The server did not return the stored header measurement.');
+      if (
+        item.measurementStatus === 'error' ||
+        item.orderabilityStatus === 'blocked' ||
+        complete.status === 'blocked'
+      ) {
+        throw new Error(getPreflightErrorMessage(complete, item));
+      }
+      target.thumbnailUrl = item.thumbnailUrl || target.thumbnailUrl || '';
+      target.originalUrl = item.originalUrl || target.originalUrl || '';
+      if (!applyServerMeasurement(item, target)) {
+        throw new Error('The stored PNG/JPEG header did not contain a usable print size.');
+      }
+      target.provisional = false;
+      return item;
+    }
+
+    async function readUploadStatusOnce(uploadId) {
+      var response = await fetch(
+        apiBase + '/api/upload/status/' + encodeURIComponent(uploadId) +
+        '?shopDomain=' + encodeURIComponent(shopDomain)
+      );
+      var data = await response.json().catch(function() { return {}; });
+      if (!response.ok) throw new Error(data.error || 'Could not read the stored upload.');
+      return data;
+    }
+
+    function refreshFastThumbnail(uploadId, target) {
+      if (
+        !target ||
+        target.thumbnailUrl ||
+        !uploadId ||
+        !window.ULFileProbe ||
+        !window.ULFileProbe.waitForThumbnail
+      ) return;
+      window.ULFileProbe.waitForThumbnail(apiBase, shopDomain, uploadId)
+        .then(function(thumbnailUrl) {
+          if (!thumbnailUrl || String(target.uploadId || '') !== String(uploadId)) return;
+          target.thumbnailUrl = thumbnailUrl;
+          if (target === state) updatePreview();
+          else {
+            renderCustomQueue();
+            updateVipPreviewUI();
+          }
+        })
+        .catch(function() {});
     }
 
     // Large gang sheets (100+ MB) take the server a few minutes to measure:
@@ -3656,6 +3738,21 @@
       resolveRequestToken += 1;
       clearError();
 
+      var probePromise = window.ULFileProbe && window.ULFileProbe.probe
+        ? window.ULFileProbe.probe(file).catch(function() { return null; })
+        : Promise.resolve(null);
+      var previewPromise = probePromise.then(function(probe) {
+        if (!window.ULFileProbe || !window.ULFileProbe.createPreview) return null;
+        return window.ULFileProbe.createPreview(file, probe).then(function(preview) {
+          if (preview && queueItem.uploadToken === uploadToken) {
+            revokeCustomItemPreviewUrl(queueItem);
+            queueItem.localPreviewUrl = preview.objectUrl || '';
+            renderCustomQueue();
+          }
+          return preview;
+        }).catch(function() { return null; });
+      });
+
       try {
         updateCustomBatchProgressForFile(
           batchMeta,
@@ -3684,6 +3781,20 @@
         );
         renderCustomQueue();
 
+        var previewUploadPromise = intent.deduplicated
+          ? Promise.resolve(null)
+          : previewPromise.then(function(preview) {
+              if (!preview || !window.ULFileProbe || !window.ULFileProbe.uploadPreview) return null;
+              return window.ULFileProbe.uploadPreview(apiBase, intent.uploadId, intent.itemId, preview);
+            }).catch(function() { return null; });
+        previewUploadPromise.then(function(uploadedPreview) {
+          if (!uploadedPreview || !uploadedPreview.thumbnailUrl || queueItem.uploadToken !== uploadToken) return;
+          revokeCustomItemPreviewUrl(queueItem);
+          queueItem.thumbnailUrl = uploadedPreview.thumbnailUrl;
+          renderCustomQueue();
+          updateVipPreviewUI();
+        });
+
         var uploadStartedAt = Date.now();
 
         await performUploadWithRetry(file, intent, function(loaded, total) {
@@ -3697,6 +3808,8 @@
         });
 
         if (queueItem.uploadToken !== uploadToken) return;
+        var headerProbe = await probePromise.catch(function() { return null; });
+        void previewUploadPromise;
 
         queueItem.uploadStatus = 'processing';
         queueItem.quoteStatus = 'processing';
@@ -3704,43 +3817,71 @@
           batchMeta,
           'Finalizing ' + (file.name || 'uploaded file'),
           0.76,
-          'Upload completed. Registering the file and preparing measurement.'
+          window.ULFileProbe && window.ULFileProbe.isFastRasterProbe && window.ULFileProbe.isFastRasterProbe(headerProbe)
+            ? 'Upload completed. Validating the stored file header.'
+            : 'Upload completed. Registering the file and preparing measurement.'
         );
         renderCustomQueue();
 
-        // Deduplicated intents reuse an already-measured upload: nothing to
-        // transfer or finalize, the status poll below picks up the result.
-        var completeRes = intent.deduplicated
-          ? { ok: true, json: function() { return Promise.resolve({}); } }
-          : await fetch(apiBase + '/api/upload/complete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            shopDomain: shopDomain,
-            uploadId: intent.uploadId,
-            items: [{
-              itemId: intent.itemId,
-              location: 'front',
-              fileUrl: intent.publicUrl || null,
-              storageProvider: intent.storageProvider || 'local',
-              fileSize: file.size,
-              uploadDurationMs: Date.now() - uploadStartedAt
-            }]
-          })
-        });
-        if (!completeRes.ok) {
-          var completeErr = await completeRes.json().catch(function() { return {}; });
-          throw new Error(completeErr.error || 'Failed to finalize upload.');
+        var completeData;
+        if (intent.deduplicated && queueItem.fastRaster) {
+          completeData = await readUploadStatusOnce(intent.uploadId);
+          completeData.fastPath = true;
+        } else {
+          // Non-raster dedupe keeps the existing server-status polling flow.
+          var completeRes = intent.deduplicated
+            ? { ok: true, json: function() { return Promise.resolve({}); } }
+            : await fetch(apiBase + '/api/upload/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  shopDomain: shopDomain,
+                  uploadId: intent.uploadId,
+                  items: [{
+                    itemId: intent.itemId,
+                    location: 'front',
+                    fileUrl: intent.publicUrl || null,
+                    storageProvider: intent.storageProvider || 'local',
+                    fileSize: file.size,
+                    uploadDurationMs: Date.now() - uploadStartedAt,
+                    headerProbe: headerProbe
+                  }]
+                })
+              });
+          completeData = await completeRes.json().catch(function() { return {}; });
+          if (!completeRes.ok) {
+            throw new Error(completeData.error || 'Failed to finalize upload.');
+          }
         }
         if (queueItem.uploadToken !== uploadToken) return;
 
-        updateCustomBatchProgressForFile(
-          batchMeta,
-          'Measuring ' + (file.name || 'uploaded file'),
-          0.84,
-          'The server is now confirming the exact billed page dimensions.'
-        );
-        await pollCustomQueueItemStatus(queueItem, uploadToken, batchMeta);
+        if (completeData.fastPath) {
+          applyFastCompletion(completeData, queueItem);
+          refreshFastThumbnail(queueItem.uploadId, queueItem);
+          queueItem.uploadStatus = 'ready';
+          queueItem.quoteStatus = 'processing';
+          queueItem.error = '';
+          renderCustomQueue();
+          updateVipPreviewUI();
+          await loadVipQuote();
+          if (queueItem.error) {
+            throw new Error(queueItem.error);
+          }
+          updateCustomBatchProgressForFile(
+            batchMeta,
+            (queueItem.fileName || 'Uploaded file') + ' is ready',
+            1,
+            'Stored header measurement is ready and included in the combined quote.'
+          );
+        } else {
+          updateCustomBatchProgressForFile(
+            batchMeta,
+            'Measuring ' + (file.name || 'uploaded file'),
+            0.84,
+            'The server is now confirming the exact billed page dimensions.'
+          );
+          await pollCustomQueueItemStatus(queueItem, uploadToken, batchMeta);
+        }
       } catch (error) {
         queueItem.uploadStatus = 'error';
         queueItem.quoteStatus = 'error';
@@ -3828,7 +3969,15 @@
       state.uploadId = '';
       state.originalUrl = '';
       state.thumbnailUrl = '';
+      if (state.clientPreviewUrl && window.URL && window.URL.revokeObjectURL) {
+        try { window.URL.revokeObjectURL(state.clientPreviewUrl); } catch (_) {}
+      }
+      state.clientPreviewUrl = '';
       state.lastFile = file;
+      state.fastRaster = Boolean(
+        window.ULFileProbe && window.ULFileProbe.isFastRasterFile &&
+        window.ULFileProbe.isFastRasterFile(file)
+      );
       state.fileName = file.name;
       state.widthPx = 0;
       state.heightPx = 0;
@@ -3859,8 +4008,19 @@
       updateVipPreviewUI();
       state.provisional = false;
       syncPurchaseButtonsForCurrentState();
-      // Instant preview runs alongside the transfer; never blocks it.
-      applyProvisionalProbe(file, uploadToken);
+      // Header inspection and the bounded desktop preview run alongside the
+      // original transfer; neither can block mobile or fallback uploads.
+      var probePromise = applyProvisionalProbe(file, uploadToken);
+      var previewPromise = probePromise.then(function(probe) {
+        if (!window.ULFileProbe || !window.ULFileProbe.createPreview) return null;
+        return window.ULFileProbe.createPreview(file, probe).then(function(preview) {
+          if (preview && uploadToken === uploadFlowToken) {
+            state.clientPreviewUrl = preview.objectUrl || '';
+            updatePreview();
+          }
+          return preview;
+        }).catch(function() { return null; });
+      });
       try {
         // Upgrade: dedupe (same customer + same file → reuse) and resume of an
         // interrupted multipart upload happen inside createOrResumeIntent.
@@ -3872,6 +4032,21 @@
         var intent = await intentRes.json();
         if (uploadToken !== uploadFlowToken) return;
         state.uploadId = intent.uploadId;
+        var previewUploadPromise = intent.deduplicated
+          ? Promise.resolve(null)
+          : previewPromise.then(function(preview) {
+              if (!preview || !window.ULFileProbe || !window.ULFileProbe.uploadPreview) return null;
+              return window.ULFileProbe.uploadPreview(apiBase, intent.uploadId, intent.itemId, preview);
+            }).catch(function() { return null; });
+        previewUploadPromise.then(function(uploadedPreview) {
+          if (!uploadedPreview || !uploadedPreview.thumbnailUrl || uploadToken !== uploadFlowToken) return;
+          if (state.clientPreviewUrl && window.URL && window.URL.revokeObjectURL) {
+            try { window.URL.revokeObjectURL(state.clientPreviewUrl); } catch (_) {}
+          }
+          state.clientPreviewUrl = '';
+          state.thumbnailUrl = uploadedPreview.thumbnailUrl;
+          updatePreview();
+        });
         if (uploadLoadingText) uploadLoadingText.textContent = 'Uploading file...';
         if (uploadProgress) uploadProgress.style.width = '28%';
         var uploadStartedAt = Date.now();
@@ -3883,38 +4058,60 @@
           uploadLoadingText.textContent = 'Uploading ' + (loaded / (1024 * 1024)).toFixed(1) + ' / ' + (total / (1024 * 1024)).toFixed(1) + ' MB';
         });
         if (uploadToken !== uploadFlowToken) return;
+        var headerProbe = await probePromise.catch(function() { return null; });
+        void previewUploadPromise;
 
         if (uploadLoadingText) uploadLoadingText.textContent = 'Finalizing upload...';
         if (uploadProgress) uploadProgress.style.width = '75%';
-        // Deduplicated intents reuse an already-measured upload: nothing to
-        // transfer or finalize, the status poll below picks up the result.
-        var completeRes = intent.deduplicated
-          ? { ok: true, json: function() { return Promise.resolve({}); } }
-          : await fetch(apiBase + '/api/upload/complete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            shopDomain: shopDomain,
-            uploadId: intent.uploadId,
-            items: [{
-              itemId: intent.itemId,
-              location: 'front',
-              fileUrl: intent.publicUrl || null,
-              storageProvider: intent.storageProvider || 'local',
-              fileSize: file.size,
-              uploadDurationMs: Date.now() - uploadStartedAt
-            }]
-          })
-        });
-        if (!completeRes.ok) {
-          var completeErr = await completeRes.json().catch(function() { return {}; });
-          throw new Error(completeErr.error || 'Failed to finalize upload.');
+        var completeData;
+        if (intent.deduplicated && state.fastRaster) {
+          completeData = await readUploadStatusOnce(intent.uploadId);
+          completeData.fastPath = true;
+        } else {
+          // Non-raster dedupe keeps the existing server-status polling flow.
+          var completeRes = intent.deduplicated
+            ? { ok: true, json: function() { return Promise.resolve({}); } }
+            : await fetch(apiBase + '/api/upload/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  shopDomain: shopDomain,
+                  uploadId: intent.uploadId,
+                  items: [{
+                    itemId: intent.itemId,
+                    location: 'front',
+                    fileUrl: intent.publicUrl || null,
+                    storageProvider: intent.storageProvider || 'local',
+                    fileSize: file.size,
+                    uploadDurationMs: Date.now() - uploadStartedAt,
+                    headerProbe: headerProbe
+                  }]
+                })
+              });
+          completeData = await completeRes.json().catch(function() { return {}; });
+          if (!completeRes.ok) {
+            throw new Error(completeData.error || 'Failed to finalize upload.');
+          }
         }
         if (uploadToken !== uploadFlowToken) return;
 
-        if (uploadLoadingText) uploadLoadingText.textContent = 'Detecting gang sheet size...';
-        if (uploadProgress) uploadProgress.style.width = '85%';
-        await pollUploadStatus(intent.uploadId, uploadToken);
+        if (completeData.fastPath) {
+          applyFastCompletion(completeData, state);
+          refreshFastThumbnail(state.uploadId, state);
+          state.selectedResult = null;
+          if (customerPricing.status === 'loading' && customerPricingPromise) {
+            await customerPricingPromise.catch(function() { return null; });
+          }
+          await updateVariantResolution();
+          if (uploadLoading) uploadLoading.classList.add('hidden');
+          if (uploadProgress) uploadProgress.style.width = '100%';
+          updatePreview();
+          syncPurchaseButtonsForCurrentState();
+        } else {
+          if (uploadLoadingText) uploadLoadingText.textContent = 'Detecting gang sheet size...';
+          if (uploadProgress) uploadProgress.style.width = '85%';
+          await pollUploadStatus(intent.uploadId, uploadToken);
+        }
       } catch (error) {
         if (uploadToken !== uploadFlowToken) return;
         state.uploadId = '';
