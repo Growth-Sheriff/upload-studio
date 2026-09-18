@@ -11,7 +11,7 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import crypto from 'crypto'
 import { createWriteStream, existsSync } from 'fs'
-import { mkdir, readFile, rename, unlink, writeFile } from 'fs/promises'
+import { mkdir, open, readFile, rename, unlink, writeFile } from 'fs/promises'
 import { dirname, join, resolve, sep } from 'path'
 import { Readable, Transform } from 'stream'
 import { pipeline } from 'stream/promises'
@@ -74,9 +74,25 @@ const RETRY_DELAY_MS = 2000
 
 let r2Client: S3Client | null = null
 
-function getR2Client(): S3Client | null {
-  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) {
+function getR2Client(config?: StorageConfig): S3Client | null {
+  const accountId = config?.r2AccountId || R2_ACCOUNT_ID
+  const accessKeyId = config?.r2AccessKeyId || R2_ACCESS_KEY_ID
+  const secretAccessKey = config?.r2SecretAccessKey || R2_SECRET_ACCESS_KEY
+  if (!accountId || !accessKeyId || !secretAccessKey) {
     return null
+  }
+
+  const usesEnvironmentCredentials =
+    accountId === R2_ACCOUNT_ID &&
+    accessKeyId === R2_ACCESS_KEY_ID &&
+    secretAccessKey === R2_SECRET_ACCESS_KEY
+
+  if (!usesEnvironmentCredentials) {
+    return new S3Client({
+      region: 'auto',
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      credentials: { accessKeyId, secretAccessKey },
+    })
   }
 
   if (!r2Client) {
@@ -768,6 +784,159 @@ export async function proxyUploadToBunny(
 export async function readLocalFile(key: string): Promise<Buffer> {
   const filePath = safePath(key)
   return readFile(filePath)
+}
+
+async function readResponsePrefix(response: Response, maxBytes: number): Promise<Buffer> {
+  if (!response.ok) {
+    throw new Error(`Stored object read failed (${response.status})`)
+  }
+  if (!response.body) throw new Error('Stored object response was empty')
+
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    while (total < maxBytes) {
+      const next = await reader.read()
+      if (next.done) break
+      const remaining = maxBytes - total
+      const chunk = next.value.byteLength > remaining
+        ? next.value.subarray(0, remaining)
+        : next.value
+      chunks.push(chunk)
+      total += chunk.byteLength
+      if (next.value.byteLength > remaining) break
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined)
+  }
+
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)), total)
+}
+
+function storedObjectProvider(
+  config: StorageConfig,
+  storageKey: string
+): { provider: StorageProvider; key: string } {
+  if (storageKey.startsWith('bunny:')) {
+    return { provider: 'bunny', key: storageKey.slice('bunny:'.length) }
+  }
+  if (storageKey.startsWith('r2:')) {
+    return { provider: 'r2', key: storageKey.slice('r2:'.length) }
+  }
+  if (storageKey.startsWith('local:')) {
+    return { provider: 'local', key: storageKey.slice('local:'.length) }
+  }
+  if (storageKey.startsWith('shopify:')) {
+    throw new Error('Shopify-hosted objects do not support bounded header reads')
+  }
+  return { provider: getEffectiveStorageProvider(config), key: storageKey }
+}
+
+/** Read no more than maxBytes, even when an HTTP origin ignores Range. */
+export async function readStoredObjectPrefix(
+  config: StorageConfig,
+  storageKey: string,
+  maxBytes: number
+): Promise<Buffer> {
+  const limit = Math.max(1, Math.min(Math.floor(maxBytes), 1024 * 1024))
+  if (storageKey.startsWith('http://') || storageKey.startsWith('https://')) {
+    return readResponsePrefix(
+      await fetch(storageKey, { headers: { Range: `bytes=0-${limit - 1}` } }),
+      limit
+    )
+  }
+
+  const target = storedObjectProvider(config, storageKey)
+  if (target.provider === 'local') {
+    const handle = await open(safePath(target.key), 'r')
+    try {
+      const buffer = Buffer.alloc(limit)
+      const { bytesRead } = await handle.read(buffer, 0, limit, 0)
+      return buffer.subarray(0, bytesRead)
+    } finally {
+      await handle.close()
+    }
+  }
+
+  if (target.provider === 'bunny') {
+    const encodedPath = target.key.split('/').map(encodeURIComponent).join('/')
+    const canReadOrigin = Boolean(config.bunnyZone && config.bunnyApiKey)
+    const base = canReadOrigin
+      ? `https://${BUNNY_STORAGE_HOST}/${encodeURIComponent(config.bunnyZone || '')}`
+      : String(config.bunnyCdnUrl || BUNNY_CDN_URL).replace(/\/$/, '')
+    return readResponsePrefix(
+      await fetch(`${base}/${encodedPath}`, {
+        headers: {
+          Range: `bytes=0-${limit - 1}`,
+          ...(canReadOrigin ? { AccessKey: config.bunnyApiKey || '' } : {}),
+        },
+      }),
+      limit
+    )
+  }
+
+  const client = getR2Client(config)
+  const bucket = config.r2BucketName || R2_BUCKET_NAME
+  if (!client || !bucket) throw new Error('R2 storage is not configured')
+  const response = await client.send(
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: target.key,
+      Range: `bytes=0-${limit - 1}`,
+    })
+  )
+  if (!response.Body) throw new Error('Stored object response was empty')
+  const bytes = await response.Body.transformToByteArray()
+  return Buffer.from(bytes).subarray(0, limit)
+}
+
+/** Store a small derived asset at a server-owned key. */
+export async function writeStoredObject(
+  config: StorageConfig,
+  storageKey: string,
+  data: Buffer,
+  contentType: string
+): Promise<void> {
+  const target = storedObjectProvider(config, storageKey)
+  if (target.provider === 'local') {
+    await saveLocalFile(target.key, data)
+    return
+  }
+
+  if (target.provider === 'bunny') {
+    if (!config.bunnyZone || !config.bunnyApiKey) {
+      throw new Error('Bunny storage is not configured')
+    }
+    const encodedPath = target.key.split('/').map(encodeURIComponent).join('/')
+    const response = await fetch(
+      `https://${BUNNY_STORAGE_HOST}/${encodeURIComponent(config.bunnyZone)}/${encodedPath}`,
+      {
+        method: 'PUT',
+        headers: {
+          AccessKey: config.bunnyApiKey,
+          'Content-Type': contentType,
+          'Content-Length': String(data.length),
+        },
+        body: new Uint8Array(data),
+      }
+    )
+    if (!response.ok) throw new Error(`Bunny derived-asset upload failed (${response.status})`)
+    return
+  }
+
+  const client = getR2Client(config)
+  const bucket = config.r2BucketName || R2_BUCKET_NAME
+  if (!client || !bucket) throw new Error('R2 storage is not configured')
+  await client.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: target.key,
+      Body: data,
+      ContentType: contentType,
+      ContentLength: data.length,
+    })
+  )
 }
 
 export async function deleteLocalFile(key: string): Promise<void> {

@@ -305,7 +305,7 @@ describe('getUploadQueueRecoveryPlan', () => {
         preflightResult: null,
         thumbnailKey: null,
       })
-    ).toEqual({ measure: true, preview: true })
+    ).toEqual({ headerValidate: false, measure: true, preview: true })
   })
 
   it('repairs only preview after measurement committed', () => {
@@ -321,7 +321,7 @@ describe('getUploadQueueRecoveryPlan', () => {
         },
         thumbnailKey: null,
       })
-    ).toEqual({ measure: false, preview: true })
+    ).toEqual({ headerValidate: false, measure: false, preview: true })
   })
 
   it('does not re-render a durable thumbnail while measurement is pending', () => {
@@ -331,7 +331,7 @@ describe('getUploadQueueRecoveryPlan', () => {
         preflightResult: null,
         thumbnailKey: 'uploads/example_thumb.webp',
       })
-    ).toEqual({ measure: true, preview: false })
+    ).toEqual({ headerValidate: false, measure: true, preview: false })
   })
 
   it('does not bypass BullMQ limits for terminal failures', () => {
@@ -346,6 +346,47 @@ describe('getUploadQueueRecoveryPlan', () => {
         },
         thumbnailKey: null,
       })
-    ).toEqual({ measure: false, preview: false })
+    ).toEqual({ headerValidate: false, measure: false, preview: false })
+  })
+
+  it('uses header validation only for PNG/JPEG and keeps other formats on the worker path', () => {
+    const cases = [
+      {
+        mimeType: 'image/png',
+        originalName: 'sheet.png',
+        thumbnailKey: 'uploads/sheet_thumb.webp',
+        expected: { headerValidate: true, measure: false, preview: false },
+      },
+      {
+        mimeType: 'image/jpeg',
+        originalName: 'sheet.jpg',
+        thumbnailKey: null,
+        expected: { headerValidate: true, measure: false, preview: true },
+      },
+      {
+        mimeType: 'application/pdf',
+        originalName: 'sheet.pdf',
+        thumbnailKey: null,
+        expected: { headerValidate: false, measure: true, preview: true },
+      },
+      {
+        mimeType: 'image/webp',
+        originalName: 'sheet.webp',
+        thumbnailKey: null,
+        expected: { headerValidate: false, measure: true, preview: true },
+      },
+    ]
+
+    for (const testCase of cases) {
+      expect(
+        getUploadQueueRecoveryPlan({
+          preflightStatus: 'pending',
+          preflightResult: null,
+          mimeType: testCase.mimeType,
+          originalName: testCase.originalName,
+          thumbnailKey: testCase.thumbnailKey,
+        })
+      ).toEqual(testCase.expected)
+    }
   })
 })

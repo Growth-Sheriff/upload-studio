@@ -3,6 +3,7 @@ import { Queue } from 'bullmq'
 import Redis from 'ioredis'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import { triggerUploadReceived } from '~/lib/flow.server'
+import { isFastRasterUpload } from '~/lib/fastRaster'
 import prisma from '~/lib/prisma.server'
 import {
   getMeasurePreflightJobOptions,
@@ -12,6 +13,14 @@ import {
   PREVIEW_RENDER_JOB_OPTIONS,
   PREVIEW_RENDER_QUEUE_NAME,
 } from '~/lib/uploadQueues'
+import { getUploadQueueRecoveryPlan } from '~/lib/uploadQueueRecovery'
+import { ensureStoredRasterHeaderMeasurement } from '~/lib/storedRasterHeader.server'
+import { deriveUploadItemLifecycle } from '~/lib/uploadLifecycle.server'
+import {
+  buildFileUrl,
+  buildThumbnailUrl,
+  storageConfigForShop,
+} from '~/lib/uploadUrls.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
 import { uploadLogger } from '~/lib/uploadLogger.server'
 import { authenticate } from '~/shopify.server'
@@ -68,6 +77,54 @@ async function addMeasureJob(
   payload: { uploadId: string; shopId: string; itemId: string; storageKey: string }
 ) {
   return queue.add('measure-preflight', payload, getMeasurePreflightJobOptions(payload.itemId))
+}
+
+function completionItemPayload(
+  item: {
+    id: string
+    storageKey: string
+    originalName: string | null
+    mimeType: string | null
+    fileSize: number | null
+    preflightStatus: string
+    preflightResult: unknown
+    thumbnailKey: string | null
+    previewKey: string | null
+  },
+  storageConfig: ReturnType<typeof storageConfigForShop>
+) {
+  const lifecycle = deriveUploadItemLifecycle(item)
+  const metadata = lifecycle.metadata
+  return {
+    itemId: item.id,
+    originalName: item.originalName,
+    mimeType: item.mimeType,
+    fileSize: item.fileSize,
+    preflightStatus: item.preflightStatus,
+    preflightResult: item.preflightResult,
+    measurementStatus: lifecycle.measurementStatus,
+    previewStatus: lifecycle.previewStatus,
+    orderabilityStatus: lifecycle.orderabilityStatus,
+    widthPx: metadata?.widthPx || 0,
+    heightPx: metadata?.heightPx || 0,
+    documentDpi: metadata?.documentDpi || 0,
+    effectiveDpi: metadata?.effectiveDpi || 0,
+    sizingSource: metadata?.sizingSource || null,
+    widthIn: metadata?.widthIn || 0,
+    heightIn: metadata?.heightIn || 0,
+    measurementMode: metadata?.measurementMode || null,
+    metadata,
+    problems: lifecycle.problems,
+    warnings: lifecycle.warnings,
+    errors: lifecycle.errors,
+    capabilities: {
+      canAddToCart: lifecycle.canAddToCart,
+      canResolveProduct: lifecycle.canResolveProduct,
+      hasPreview: lifecycle.hasPreview,
+    },
+    thumbnailUrl: buildThumbnailUrl(storageConfig, item.thumbnailKey),
+    originalUrl: buildFileUrl(storageConfig, item.storageKey),
+  }
 }
 
 
@@ -312,45 +369,70 @@ export async function action({ request }: ActionFunctionArgs) {
 
 
 
+    let updatedItems = await prisma.uploadItem.findMany({
+      where: { uploadId, upload: { shopId: shop.id } },
+      select: {
+        id: true,
+        storageKey: true,
+        originalName: true,
+        mimeType: true,
+        fileSize: true,
+        thumbnailKey: true,
+        previewKey: true,
+        preflightStatus: true,
+        preflightResult: true,
+      },
+    })
+
+    const reportedItems = Array.isArray(items) ? items : []
+    for (let index = 0; index < updatedItems.length; index += 1) {
+      const uploadItem = updatedItems[index]
+      if (!getUploadQueueRecoveryPlan(uploadItem).headerValidate) continue
+      const reported = reportedItems.find((candidate: any) => candidate?.itemId === uploadItem.id)
+      const validated = await ensureStoredRasterHeaderMeasurement({
+        uploadId,
+        shopId: shop.id,
+        itemId: uploadItem.id,
+        clientProbe:
+          reported?.headerProbe && typeof reported.headerProbe === 'object'
+            ? reported.headerProbe
+            : null,
+        force: firstCompletion,
+      })
+      if (validated.item) updatedItems[index] = validated.item as typeof uploadItem
+    }
+
     let dispatchDeferred = false
     let measureQueue: Queue | null = null
     let previewQueue: Queue | null = null
     try {
-      const connection = getRedisConnection()
-      measureQueue = new Queue(MEASURE_PREFLIGHT_QUEUE_NAME, {
-        connection,
-        defaultJobOptions: MEASURE_PREFLIGHT_JOB_OPTIONS,
-      })
-      previewQueue = new Queue(PREVIEW_RENDER_QUEUE_NAME, {
-        connection,
-        defaultJobOptions: PREVIEW_RENDER_JOB_OPTIONS,
-      })
-      const updatedItems = await prisma.uploadItem.findMany({
-        where: { uploadId },
-        select: { id: true, storageKey: true, thumbnailKey: true, preflightStatus: true },
-      })
-
-      console.log(
-        `[Upload Complete] Queueing ${updatedItems.length} items for measurement + preview`
-      )
-
-      for (const uploadItem of updatedItems) {
-        console.log(
-          `[Upload Complete] Measure queue: itemId=${uploadItem.id}, storageKey=${uploadItem.storageKey?.substring(0, 60)}`
-        )
-
-        const payload = {
-          uploadId,
-          shopId: shop.id,
-          itemId: uploadItem.id,
-          storageKey: uploadItem.storageKey,
+      const plans = updatedItems.map((item) => ({ item, plan: getUploadQueueRecoveryPlan(item) }))
+      if (plans.some(({ plan }) => plan.measure || plan.preview)) {
+        const connection = getRedisConnection()
+        if (plans.some(({ plan }) => plan.measure)) {
+          measureQueue = new Queue(MEASURE_PREFLIGHT_QUEUE_NAME, {
+            connection,
+            defaultJobOptions: MEASURE_PREFLIGHT_JOB_OPTIONS,
+          })
+        }
+        if (plans.some(({ plan }) => plan.preview)) {
+          previewQueue = new Queue(PREVIEW_RENDER_QUEUE_NAME, {
+            connection,
+            defaultJobOptions: PREVIEW_RENDER_JOB_OPTIONS,
+          })
         }
 
-        // Deterministic job ids make this replay-safe. Never remove a failed
-        // job here: doing so would reset BullMQ's bounded retry budget every
-        // time the browser repeats the completion request.
-        await addPreviewJob(previewQueue, payload)
-        await addMeasureJob(measureQueue, payload)
+        for (const { item: uploadItem, plan } of plans) {
+          const payload = {
+            uploadId,
+            shopId: shop.id,
+            itemId: uploadItem.id,
+            storageKey: uploadItem.storageKey,
+          }
+          // Deterministic ids preserve the bounded retry budget on replay.
+          if (plan.preview && previewQueue) await addPreviewJob(previewQueue, payload)
+          if (plan.measure && measureQueue) await addMeasureJob(measureQueue, payload)
+        }
       }
     } catch (dispatchError) {
       dispatchDeferred = true
@@ -365,15 +447,45 @@ export async function action({ request }: ActionFunctionArgs) {
         )
       )
     }
+
+    updatedItems = await prisma.uploadItem.findMany({
+      where: { uploadId, upload: { shopId: shop.id } },
+      select: {
+        id: true,
+        storageKey: true,
+        originalName: true,
+        mimeType: true,
+        fileSize: true,
+        thumbnailKey: true,
+        previewKey: true,
+        preflightStatus: true,
+        preflightResult: true,
+      },
+    })
+    const currentUpload = await prisma.upload.findFirst({
+      where: { id: uploadId, shopId: shop.id },
+      select: { status: true },
+    })
+    const fastPath =
+      updatedItems.length > 0 && updatedItems.every((uploadItem) => isFastRasterUpload(uploadItem))
+    const storageConfig = storageConfigForShop(shop)
+    const responseItems = updatedItems.map((uploadItem) =>
+      completionItemPayload(uploadItem, storageConfig)
+    )
     return corsJson(
       {
         success: true,
         uploadId,
-        status: 'processing',
+        status: currentUpload?.status || 'processing',
+        fastPath,
+        items: responseItems,
+        item: responseItems[0] || null,
         recoveryPending: dispatchDeferred,
         message: dispatchDeferred
           ? 'Upload complete. Processing will start automatically when the queue reconnects.'
-          : 'Upload complete. Measurement and preview jobs started.',
+          : fastPath
+            ? 'Upload complete. Stored header measurement is ready.'
+            : 'Upload complete. Measurement and preview jobs started.',
       },
       request,
       dispatchDeferred ? { status: 202 } : undefined

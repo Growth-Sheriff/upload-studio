@@ -1,8 +1,15 @@
 import { deriveUploadItemLifecycle, type UploadItemLike } from './uploadLifecycle.server'
+import { isFastRasterUpload } from './fastRaster'
 
 export interface UploadQueueRecoveryPlan {
+  headerValidate: boolean
   measure: boolean
   preview: boolean
+}
+
+export interface RecoverableUploadItem extends UploadItemLike {
+  mimeType?: string | null
+  originalName?: string | null
 }
 
 export type UploadStageStatus = 'pending' | 'ready' | 'warning' | 'error'
@@ -241,10 +248,13 @@ export function clearStoredMeasurementStage(
  * genuinely pending stage is replayed; warning/error are terminal outcomes and
  * must not become an unbounded retry loop outside BullMQ's attempt policy.
  */
-export function getUploadQueueRecoveryPlan(item: UploadItemLike): UploadQueueRecoveryPlan {
+export function getUploadQueueRecoveryPlan(item: RecoverableUploadItem): UploadQueueRecoveryPlan {
   const lifecycle = deriveUploadItemLifecycle(item)
+  const measurementPending = lifecycle.measurementStatus === 'pending'
+  const headerValidate = measurementPending && isFastRasterUpload(item)
   return {
-    measure: lifecycle.measurementStatus === 'pending',
+    headerValidate,
+    measure: measurementPending && !headerValidate,
     // A stored thumbnail is already durable. The measurement worker will
     // merge it when measurement resolves; re-rendering would duplicate the
     // largest decode in the pipeline.

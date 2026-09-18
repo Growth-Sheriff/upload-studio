@@ -17,7 +17,6 @@ import {
   PLAN_CONFIGS,
   type PreflightConfig,
 } from '../app/lib/preflight.server'
-import { deriveUploadItemLifecycle } from '../app/lib/uploadLifecycle.server'
 import {
   getRuntimeMeasurementBasis,
 } from '../app/lib/customerPricingModel.server'
@@ -25,11 +24,6 @@ import { resolveFinishedSheetSettings } from '../app/lib/finishedSheetMeasuremen
 import { selectProductConfigForIdentity } from '../app/lib/productConfigIdentity.server'
 import { shopifyProductIdCandidates } from '../app/lib/shopifyProductIdentity'
 import { redactUploadLogLocation } from '../app/lib/uploadLogger.server'
-import {
-  canPipelineUpdateUploadStatus,
-  PIPELINE_MUTABLE_UPLOAD_STATUSES,
-  resolvePipelineAutoApprove,
-} from '../app/lib/uploadQueueRecovery'
 import {
   MEASURE_PREFLIGHT_QUEUE_NAME,
   PREVIEW_RENDER_QUEUE_NAME,
@@ -87,7 +81,7 @@ export interface LargeImageLease {
   release: () => Promise<void>
 }
 
-type UploadStatusValue = string
+export { updateUploadAggregateStatus } from '../app/lib/uploadAggregateStatus.server'
 
 type ActualStorageProvider = 'local' | 'bunny' | 'r2'
 
@@ -954,105 +948,4 @@ export async function readMeasurementResolution(itemId: string): Promise<{
       previewKey: true,
     },
   })
-}
-
-export async function updateUploadAggregateStatus(
-  uploadId: string,
-  shopId: string,
-  shopSettings: unknown
-): Promise<UploadStatusValue> {
-  let effectiveShopSettings = shopSettings
-  if (effectiveShopSettings == null) {
-    const shop = await prisma.shop.findUnique({
-      where: { id: shopId },
-      select: { settings: true },
-    })
-    effectiveShopSettings = shop?.settings || null
-  }
-  const items = await prisma.uploadItem.findMany({
-    where: { uploadId },
-    select: {
-      preflightStatus: true,
-      preflightResult: true,
-      thumbnailKey: true,
-    },
-  })
-
-  const itemStates = items.map((item) =>
-    deriveUploadItemLifecycle({
-      preflightStatus: item.preflightStatus,
-      preflightResult: item.preflightResult,
-      thumbnailKey: item.thumbnailKey,
-    })
-  )
-
-  const autoApprove = resolvePipelineAutoApprove(effectiveShopSettings)
-  const hasError = items.some((item) => item.preflightStatus === 'error')
-  const hasWarning = items.some((item) => item.preflightStatus === 'warning')
-  const hasBlockedMeasurement =
-    itemStates.some((itemState) => itemState.orderabilityStatus === 'blocked') &&
-    itemStates.every((itemState) => itemState.measurementStatus !== 'pending')
-  const allMeasurementsResolved = itemStates.every(
-    (itemState) => itemState.measurementStatus !== 'pending'
-  )
-
-  let uploadStatus: UploadStatusValue
-  let summaryOverall: 'processing' | 'ok' | 'warning' | 'error'
-
-  if (!items.length || !allMeasurementsResolved) {
-    uploadStatus = 'processing'
-    summaryOverall = 'processing'
-  } else if (hasBlockedMeasurement || hasError) {
-    uploadStatus = 'blocked'
-    summaryOverall = 'error'
-  } else if (!hasWarning && autoApprove) {
-    uploadStatus = 'ready'
-    summaryOverall = 'ok'
-  } else if (!hasWarning && !autoApprove) {
-    uploadStatus = 'pending_approval'
-    summaryOverall = 'ok'
-  } else {
-    // File-check warnings keep the upload in the pre-order "look at this"
-    // state. `needs_review` is reserved for the order webhook (= ordered,
-    // not yet paid) so the merchant never sees "Ordered" for a file that was
-    // only uploaded. The warning itself is carried by preflightSummary.
-    uploadStatus = 'pending_approval'
-    summaryOverall = 'warning'
-  }
-
-  const update = await prisma.upload.updateMany({
-    where: {
-      id: uploadId,
-      shopId,
-      status: { in: [...PIPELINE_MUTABLE_UPLOAD_STATUSES] },
-    },
-    data: {
-      status: uploadStatus,
-      preflightSummary: {
-        overall: summaryOverall,
-        completedAt:
-          uploadStatus === 'processing' ? null : new Date().toISOString(),
-        itemCount: items.length,
-        autoApproved: uploadStatus === 'ready',
-      },
-    },
-  })
-
-  if (update.count === 0) {
-    const current = await prisma.upload.findFirst({
-      where: { id: uploadId, shopId },
-      select: { status: true },
-    })
-    if (current && !canPipelineUpdateUploadStatus(current.status)) {
-      workerLog.info('UPLOAD_STATUS_PRESERVED_AFTER_PIPELINE', {
-        uploadId,
-        shopId,
-        preservedStatus: current.status,
-        computedPipelineStatus: uploadStatus,
-      })
-      return current.status
-    }
-  }
-
-  return uploadStatus
 }

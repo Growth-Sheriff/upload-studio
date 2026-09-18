@@ -1,6 +1,8 @@
 import { DelayedError, Job, Queue, Worker } from 'bullmq'
 import { runPreflightChecks } from '../app/lib/preflight.server'
 import { deriveUploadItemLifecycle } from '../app/lib/uploadLifecycle.server'
+import { isFastRasterUpload } from '../app/lib/fastRaster'
+import { ensureStoredRasterHeaderMeasurement } from '../app/lib/storedRasterHeader.server'
 import {
   isFinalUploadJobAttempt,
   MEASURE_PREFLIGHT_JOB_OPTIONS,
@@ -79,6 +81,8 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
           thumbnailKey: true,
           fileSize: true,
           storageKey: true,
+          originalName: true,
+          mimeType: true,
         },
       })
       if (alreadyMeasured?.storageKey) storageKey = alreadyMeasured.storageKey
@@ -97,6 +101,23 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
         // prevents a measured upload from remaining "processing" forever.
         await repairUploadAggregateStatus(uploadId, shopId)
         return { skipped: true }
+      }
+
+      // Drain jobs queued by an older app process without downloading or
+      // decoding PNG/JPEG. The bounded stored-header validator owns this path.
+      if (alreadyMeasured && isFastRasterUpload(alreadyMeasured)) {
+        const validated = await ensureStoredRasterHeaderMeasurement({
+          uploadId,
+          shopId,
+          itemId,
+        })
+        workerLog.info('MEASURE_JOB_REPLACED_BY_HEADER_VALIDATION', {
+          jobId: job.id,
+          uploadId,
+          itemId,
+          status: validated.item?.preflightStatus || 'missing',
+        })
+        return { skipped: true, headerValidated: true }
       }
 
       try {

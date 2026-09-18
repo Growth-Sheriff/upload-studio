@@ -7,6 +7,7 @@ import {
   type UploadQueueJobState,
 } from '../app/lib/uploadQueueRecovery'
 import { deriveUploadItemLifecycle } from '../app/lib/uploadLifecycle.server'
+import { ensureStoredRasterHeaderMeasurement } from '../app/lib/storedRasterHeader.server'
 import {
   getMeasurePreflightJobOptions,
   getPreviewRenderJobOptions,
@@ -324,6 +325,9 @@ export async function reconcileUploadPipelineQueues(): Promise<{
         select: {
           id: true,
           storageKey: true,
+          originalName: true,
+          mimeType: true,
+          fileSize: true,
           preflightStatus: true,
           preflightResult: true,
           thumbnailKey: true,
@@ -371,7 +375,16 @@ export async function reconcileUploadPipelineQueues(): Promise<{
     for (const upload of uploads) {
       for (const item of upload.items) {
         inspected += 1
-        const plan = getUploadQueueRecoveryPlan(item)
+        let plan = getUploadQueueRecoveryPlan(item)
+        if (plan.headerValidate) {
+          const validated = await ensureStoredRasterHeaderMeasurement({
+            uploadId: upload.id,
+            shopId: upload.shopId,
+            itemId: item.id,
+          })
+          if (!validated.item) continue
+          plan = getUploadQueueRecoveryPlan(validated.item)
+        }
         if (!plan.measure && !plan.preview) continue
 
         const payload: UploadPipelineJobData = {

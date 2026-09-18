@@ -243,7 +243,7 @@ export function parsePngInfo(buffer: Buffer) {
   }
 }
 
-function parseJpegInfo(buffer: Buffer) {
+export function parseJpegInfo(buffer: Buffer) {
   if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) return null
 
   const dpiCandidates: Array<DpiCandidate | null> = []
@@ -255,7 +255,8 @@ function parseJpegInfo(buffer: Buffer) {
     }
 
     const marker = buffer[offset + 1]
-    if (marker === 0xd8 || marker === 0xd9) {
+    if (marker === 0xd9 || marker === 0xda) break
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
       offset += 2
       continue
     }
@@ -265,7 +266,11 @@ function parseJpegInfo(buffer: Buffer) {
     const segmentDataOffset = offset + 4
     const segmentData = buffer.subarray(segmentDataOffset, offset + 2 + segmentLength)
 
-    if (marker === 0xe0 && buffer.toString('ascii', offset + 4, offset + 9) === 'JFIF\0') {
+    if (
+      marker === 0xe0 &&
+      segmentData.length >= 12 &&
+      segmentData.subarray(0, 5).equals(Buffer.from('JFIF\0', 'ascii'))
+    ) {
       const units = buffer[offset + 11]
       const xDensity = buffer.readUInt16BE(offset + 12)
       const yDensity = buffer.readUInt16BE(offset + 14)
@@ -290,7 +295,13 @@ function parseJpegInfo(buffer: Buffer) {
       }
     }
 
-    if ((marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) || (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf)) {
+    if (
+      ((marker >= 0xc0 && marker <= 0xc3) ||
+        (marker >= 0xc5 && marker <= 0xc7) ||
+        (marker >= 0xc9 && marker <= 0xcb) ||
+        (marker >= 0xcd && marker <= 0xcf)) &&
+      segmentData.length >= 5
+    ) {
       const height = buffer.readUInt16BE(offset + 5)
       const width = buffer.readUInt16BE(offset + 7)
       const dpiCandidate = chooseBestDpiCandidate(dpiCandidates)
@@ -311,7 +322,7 @@ function parseJpegInfo(buffer: Buffer) {
   return null
 }
 
-function parseWebpInfo(buffer: Buffer) {
+export function parseWebpInfo(buffer: Buffer) {
   if (buffer.length < 30) return null
   if (buffer.toString('ascii', 0, 4) !== 'RIFF' || buffer.toString('ascii', 8, 12) !== 'WEBP') {
     return null
@@ -371,6 +382,15 @@ function parseWebpInfo(buffer: Buffer) {
   }
 
   return null
+}
+
+export type PngJpegHeaderInfo = NonNullable<ReturnType<typeof parsePngInfo>>
+
+/** Parse only formats whose physical header facts are safe to use without an
+ * ImageMagick decode. Magic bytes, rather than the browser MIME declaration,
+ * decide which parser wins. */
+export function parsePngJpegHeader(buffer: Buffer): PngJpegHeaderInfo | null {
+  return parsePngInfo(buffer) || parseJpegInfo(buffer)
 }
 
 function readPsdFixed16_16(buffer: Buffer, offset: number): number {

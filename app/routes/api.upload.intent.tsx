@@ -5,7 +5,9 @@ import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import { getRuntimeMeasurementBasis } from '~/lib/customerPricingModel.server'
 import { normalizeCustomerId } from '~/lib/customerPricing.server'
 import { variantIdsEqual } from '~/lib/dtfSheetResolver.server'
+import { isFastRasterUpload } from '~/lib/fastRaster'
 import { resolveUploadIntentMeasurementBasis } from '~/lib/mainProductMeasurement.server'
+import { ensureStoredRasterHeaderMeasurement } from '~/lib/storedRasterHeader.server'
 import prisma from '~/lib/prisma.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
 import {
@@ -319,6 +321,13 @@ export async function action({ request }: ActionFunctionArgs) {
 
     if (compatible) {
       const { upload: existing, item } = compatible
+      if (isFastRasterUpload({ mimeType: contentType, originalName: fileName })) {
+        await ensureStoredRasterHeaderMeasurement({
+          uploadId: existing.id,
+          shopId: shop.id,
+          itemId: item.id,
+        })
+      }
       console.log(`[Upload Intent] Dedupe hit: fingerprint reuse -> upload ${existing.id} (shop ${shopDomain})`)
       return corsJson(
         {
@@ -424,7 +433,12 @@ export async function action({ request }: ActionFunctionArgs) {
         fileSize: fileSize || null,
         fingerprint,
         preflightStatus: 'pending',
-        preflightResult: { measurementBasis },
+        preflightResult: {
+          measurementBasis,
+          processingMode: isFastRasterUpload({ mimeType: contentType, originalName: fileName })
+            ? 'header_fast_path'
+            : 'server_pipeline',
+        },
       },
     })
 

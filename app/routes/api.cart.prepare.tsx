@@ -19,6 +19,8 @@ import prisma from '~/lib/prisma.server'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import { getIdentifier, rateLimitGuard } from '~/lib/rateLimit.server'
 import { deriveUploadItemLifecycle } from '~/lib/uploadLifecycle.server'
+import { isFastRasterUpload } from '~/lib/fastRaster'
+import { ensureStoredRasterHeaderMeasurement } from '~/lib/storedRasterHeader.server'
 import { persistMainProductMeasurementProjection } from '~/lib/mainProductMeasurementPersistence.server'
 import { resolveFinishedSheetSettings } from '~/lib/finishedSheetMeasurement'
 import { normalizeCustomerId } from '~/lib/customerPricing.server'
@@ -120,8 +122,11 @@ export async function action({ request }: ActionFunctionArgs) {
         select: {
           id: true,
           originalName: true,
+          mimeType: true,
+          fileSize: true,
           storageKey: true,
           thumbnailKey: true,
+          previewKey: true,
           preflightStatus: true,
           preflightResult: true,
         },
@@ -132,6 +137,24 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     },
   })
+
+  await Promise.all(
+    uploads.flatMap((upload) =>
+      upload.items.map(async (item) => {
+        if (!isFastRasterUpload(item)) return
+        const validated = await ensureStoredRasterHeaderMeasurement({
+          uploadId: upload.id,
+          shopId: shop.id,
+          itemId: item.id,
+        })
+        if (!validated.item) return
+        item.preflightStatus = validated.item.preflightStatus
+        item.preflightResult = validated.item.preflightResult as typeof item.preflightResult
+        item.thumbnailKey = validated.item.thumbnailKey
+        item.previewKey = validated.item.previewKey
+      })
+    )
+  )
   const byId = new Map(uploads.map((u) => [u.id, u]))
   const storageConfig = storageConfigForShop(shop)
   const lifecycleByUploadId = new Map(
