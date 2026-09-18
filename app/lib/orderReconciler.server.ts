@@ -365,6 +365,12 @@ async function reconcileCommission(input: {
       reviewReason: initialReview,
     },
     update: {},
+  }).catch((error) => {
+    // Create-if-absent: orders/create and orders/paid arrive together and both
+    // try to insert. Losing that race means the row now exists, which is the
+    // intended state; the code below re-reads it.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return null
+    throw error
   })
 
   // Re-read the durable refund guard after the insert. Together with the

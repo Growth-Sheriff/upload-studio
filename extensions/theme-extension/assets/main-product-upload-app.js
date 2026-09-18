@@ -2886,7 +2886,8 @@
       this.setProgressText(0, 0);
       this.setStage(null);
       var msg = error && error.message ? error.message : 'Upload failed.';
-      if (/file too large/i.test(msg)) msg = 'File too large for this storage tier. Try a smaller file or compress.';
+      // The server message carries the real limit ("Maximum size is 1024 MB").
+      if (/file too large/i.test(msg) && !/maximum size is \d+/i.test(msg)) msg = 'File too large for this storage tier. Try a smaller file or compress.';
       else if (/unsupported file type/i.test(msg)) msg = 'Unsupported file type. PNG, JPG, WEBP, TIFF, PSD, PDF, AI, EPS and SVG are accepted.';
       else if (/network/i.test(msg)) msg = 'Network issue while uploading. Check your connection and try again.';
       this.setError(msg);

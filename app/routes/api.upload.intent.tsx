@@ -1,6 +1,9 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from '@remix-run/node'
 import { nanoid } from 'nanoid'
 import { checkUploadAllowed, MAX_FILE_SIZE_MB } from '~/lib/billing.server'
+
+// upload_items.file_size is a Postgres INT4.
+const MAX_STORABLE_FILE_BYTES = 2_147_483_647
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import { getRuntimeMeasurementBasis } from '~/lib/customerPricingModel.server'
 import { normalizeCustomerId } from '~/lib/customerPricing.server'
@@ -144,6 +147,30 @@ export async function action({ request }: ActionFunctionArgs) {
       { error: 'fileSize must be a positive integer number of bytes', code: 'INVALID_FILE_SIZE' },
       request,
       { status: 400 }
+    )
+  }
+
+  // Enforce the limit the storefront advertises before anything is written.
+  // It was only checked after the upload finished, and the global ceiling
+  // (10 GB) exceeds what upload_items.file_size (INT4) can hold, so a 2.58 GB
+  // file crashed the intent with a generic "upload failed".
+  const shopSettings = (shop.settings as Record<string, unknown> | null) || {}
+  const shopMaxFileSizeMB = Number(shopSettings.maxFileSizeMB) > 0 ? Number(shopSettings.maxFileSizeMB) : 1024
+  const maxFileBytes = Math.min(
+    shopMaxFileSizeMB * 1024 * 1024,
+    MAX_FILE_SIZE_MB * 1024 * 1024,
+    MAX_STORABLE_FILE_BYTES
+  )
+  if (fileSize > maxFileBytes) {
+    const maxSizeMB = Math.floor(maxFileBytes / (1024 * 1024))
+    return corsJson(
+      {
+        error: `File too large. Maximum size is ${maxSizeMB} MB; this file is ${Math.ceil(fileSize / (1024 * 1024))} MB.`,
+        code: 'FILE_TOO_LARGE',
+        maxSizeMB,
+      },
+      request,
+      { status: 413 }
     )
   }
   const measurementBasis = resolveUploadIntentMeasurementBasis(
