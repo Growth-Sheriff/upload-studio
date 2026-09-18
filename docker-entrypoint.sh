@@ -80,7 +80,7 @@ start_worker() {
   shift
   while true; do
     echo "[Worker:${TENANT_SLUG}] Starting ${name}..."
-    "$@" 2>&1 | sed "s/^/[${name}:${TENANT_SLUG}] /" || true
+    "$@" 2>&1 | sed -u "s/^/[${name}:${TENANT_SLUG}] /" || true
     echo "[Worker:${TENANT_SLUG}] ${name} exited, restarting in 5s..."
     sleep 5
   done
