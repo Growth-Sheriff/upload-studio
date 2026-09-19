@@ -172,7 +172,8 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const body = await parseBody(request)
-  const customerNote = String(body.customerNote || body.note || '').trim().slice(0, 500)
+  // Room for one note line per upload from the DTF + UV block.
+  const customerNote = String(body.customerNote || body.note || '').trim().slice(0, 2000)
   const checkoutIntent = String(body.checkoutIntent || '').trim()
   const discountCodes = normalizeDiscountCodes(body)
   const loggedInCustomerId = normalizeCustomerId(
@@ -216,8 +217,9 @@ export async function action({ request }: ActionFunctionArgs) {
   const noteUploadIds = preparedItems.map((item) => item.upload.id).join(', ')
   const customerGid = toCustomerGid(loggedInCustomerId || firstItem.pricingContext.customerId)
 
+  const acceptAutomaticDiscounts = body.acceptAutomaticDiscounts !== false
   const draftOrderInput: Record<string, unknown> = {
-    acceptAutomaticDiscounts: body.acceptAutomaticDiscounts !== false,
+    acceptAutomaticDiscounts,
     allowDiscountCodesInCheckout: true,
     ...(discountCodes.length ? { discountCodes } : {}),
     ...(customerGid
@@ -226,11 +228,17 @@ export async function action({ request }: ActionFunctionArgs) {
           useCustomerDefaultAddress: true,
         }
       : {}),
+    // The customer's own words come first: this note becomes the order note
+    // staff read. Our technical reference follows.
     note:
+      (customerNote ? `${customerNote}\n\n` : '') +
       `Custom pricing checkout for upload ${noteUploadIds}` +
       (checkoutIntent ? `\nIntent: ${checkoutIntent}` : '') +
-      (discountCodes.length ? `\nDiscount code(s): ${discountCodes.join(', ')}` : '\nDiscounts: eligible automatic Shopify discounts accepted') +
-      (customerNote ? `\nCustomer note: ${customerNote}` : ''),
+      (discountCodes.length
+        ? `\nDiscount code(s): ${discountCodes.join(', ')}`
+        : acceptAutomaticDiscounts
+          ? '\nDiscounts: eligible automatic Shopify discounts accepted'
+          : '\nDiscounts: automatic discounts off (net rate); codes allowed at checkout'),
     lineItems: preparedItems.map((item) => {
       const linkedVariantId = toVariantGid(item.checkoutVariantId)
       const lineTitle =

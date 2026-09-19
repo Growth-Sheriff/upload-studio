@@ -2403,9 +2403,14 @@
         body: JSON.stringify({
           customerId: this.customerId || null,
           customerEmail: this.customerEmail || null,
-          customerNote: this.buildExactCheckoutNote(checkoutEntries),
+          // A host block (e.g. the DTF + UV block) may supply the whole note.
+          customerNote: this.checkoutNoteOverride != null
+            ? String(this.checkoutNoteOverride)
+            : this.buildExactCheckoutNote(checkoutEntries),
           discountCode: this.getDiscountCode() || null,
-          acceptAutomaticDiscounts: true,
+          // Blocks whose special rate is already net turn automatic discounts
+          // off with data-accept-automatic-discounts="false"; codes still work.
+          acceptAutomaticDiscounts: this.root.getAttribute('data-accept-automatic-discounts') !== 'false',
           checkoutIntent: redirectTo === '/cart' ? 'add_to_cart' : 'checkout',
           measurementPolicy: POLICY,
           items: this.buildCustomItems(checkoutEntries)
@@ -3417,7 +3422,8 @@
   // customer or the theme's cart page already wrote, and gives up silently
   // after 3 s. Each note names its files: several tabs can add notes to one cart.
   MainProductUpload.prototype.saveOrderNote = async function(fileNames) {
-    var text = this.orderNoteInput ? String(this.orderNoteInput.value || '').trim().slice(0, 500) : '';
+    // The textarea caps typing at 500; a host block may compose a longer note.
+    var text = this.orderNoteInput ? String(this.orderNoteInput.value || '').trim().slice(0, 2000) : '';
     if (!text) return;
     var files = (fileNames || []).filter(Boolean).join(', ').slice(0, 300);
     var controller = typeof AbortController === 'function' ? new AbortController() : null;
@@ -3443,15 +3449,19 @@
     }
   };
 
-  MainProductUpload.prototype.addToCart = async function(redirectTo) {
+  // Resolves true once this block's sheets are in the cart. options.noRedirect
+  // lets a host block (the DTF + UV block) add several engines' sheets and
+  // redirect once at the end.
+  MainProductUpload.prototype.addToCart = async function(redirectTo, options) {
+    var noRedirect = Boolean(options && options.noRedirect);
     var readyItems = this.getReadyItems();
     if (!readyItems.length) {
       this.setError('Please upload your design first.');
-      return;
+      return false;
     }
     if (this.state.status === 'uploading') {
       this.setError('Please wait until every gang sheet is measured.');
-      return;
+      return false;
     }
     this.setError('');
     // Held until redirect or failure so no background render() (e.g. a late
@@ -3481,8 +3491,13 @@
           await withCartLock(function() {
             return self.saveOrderNote(addedElsewhere.map(function(item) { return item.fileName; }));
           });
+          if (noRedirect) {
+            this.cartBusy = false;
+            this.render();
+            return true;
+          }
           window.location.href = discountRedirect(redirectTo || '/cart', this.getDiscountCode());
-          return;
+          return true;
         }
       }
       var uploadIds = readyItems.map(function(item) { return item.uploadId; });
@@ -3579,15 +3594,26 @@
       // The cart owns these uploads now; do not show them again on return.
       this.forgetUploads(uploadIds);
 
+      if (noRedirect) {
+        this.cartBusy = false;
+        this.render();
+        return true;
+      }
       window.location.href = discountRedirect(redirectTo || '/cart', this.getDiscountCode());
+      return true;
     } catch (error) {
       this.setError(error && error.message ? error.message : 'Failed to add to cart.');
       this.cartBusy = false;
       this.addButton.disabled = false;
       if (this.checkoutButton) this.checkoutButton.disabled = false;
       this.render();
+      return false;
     }
   };
+
+  // The DTF + UV block runs one engine per product on its own sub-roots
+  // (without ROOT_SELECTOR, so init() never touches them).
+  window.ULMainProductUpload = MainProductUpload;
 
   function init() {
     var roots = document.querySelectorAll(ROOT_SELECTOR);

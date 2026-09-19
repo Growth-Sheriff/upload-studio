@@ -515,19 +515,32 @@ export async function prepareCustomPricingJobQuote({
       if (!measuredFit.ok) {
         throw new Error(measuredFit.reason || 'The file is outside this product’s printable limits')
       }
+      // The price is the measured length; the draft line is linked to the
+      // smallest sheet the file fits (an 80.3 in file shows as 22"x84"), so the
+      // order never reads as the first/cheapest variant. The requested variant
+      // stays the fallback when no sheet size fits.
+      const fittingSheet = resolveSheetVariant({
+        widthIn: measurement.widthIn,
+        heightIn: measurement.heightIn,
+        quantity: itemInput.quantity,
+        variants: cachedProduct.variants,
+        optionDefs: cachedProduct.optionDefs,
+        selectedVariantId: itemInput.selectedVariantId || null,
+        config: buildEffectiveResolveConfig(cachedProduct.builderConfig),
+      })
       const requestedVariantId = String(
         itemInput.selectedVariantId || upload.variantId || ''
       )
         .trim()
         .match(/(\d+)$/)?.[1]
-      checkoutVariantId = requestedVariantId
+      checkoutVariantId = fittingSheet?.selectedVariantId || (requestedVariantId
         ? cachedProduct.variants.find(
             (variant) =>
               String(variant.id).match(/(\d+)$/)?.[1] === requestedVariantId &&
               variant.availableForSale !== false &&
               variant.available !== false
           )?.id || null
-        : null
+        : null)
     } else if (pricingContext.pricingMode === 'variant_length') {
       const resolveConfig = buildEffectiveResolveConfig(cachedProduct.builderConfig)
       const resolution = resolveSheetVariant({

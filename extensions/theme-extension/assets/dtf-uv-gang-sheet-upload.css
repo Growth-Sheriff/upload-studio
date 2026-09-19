@@ -1,0 +1,365 @@
+/* Upload Studio — DTF + UV gang sheet upload block.
+   Same design system as main-product-upload-app.css (8/12/16/24 spacing,
+   16/10 radii, one shadow). Two product colours: DTF uses the accent,
+   UV a violet, so a file's product is readable at a glance everywhere. */
+
+.ulx {
+  --ump-accent: #4f7cff;
+  --ulx-dtf: var(--ump-accent);
+  --ulx-dtf-soft: color-mix(in srgb, var(--ulx-dtf) 10%, #ffffff);
+  --ulx-uv: #7c3aed;
+  --ulx-uv-soft: #f3edff;
+  --ulx-ink: #111827;
+  --ulx-muted: #6b7280;
+  --ulx-line: #e3e8ef;
+  --ulx-panel: #ffffff;
+  --ulx-soft: #f6f8fb;
+  --ulx-danger: #b42318;
+  --ulx-danger-soft: #fdf1f0;
+  --ulx-warn: #b45309;
+  --ulx-radius: 16px;
+  --ulx-radius-sm: 10px;
+  --ulx-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 8px 24px rgba(16, 24, 40, 0.06);
+  color: var(--ulx-ink);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 24px 0;
+  display: grid;
+  gap: 16px;
+}
+
+.ulx * { box-sizing: border-box; }
+.ulx [hidden] { display: none !important; }
+.ulx button, .ulx input, .ulx textarea { font: inherit; }
+.ulx button:focus-visible, .ulx input:focus-visible, .ulx textarea:focus-visible, .ulx a:focus-visible {
+  outline: 2px solid var(--ump-accent);
+  outline-offset: 2px;
+}
+
+.ulx__setup {
+  padding: 16px;
+  border: 1px dashed var(--ulx-line);
+  border-radius: var(--ulx-radius-sm);
+  color: var(--ulx-muted);
+}
+
+.ulx__card {
+  background: var(--ulx-panel);
+  border: 1px solid var(--ulx-line);
+  border-radius: var(--ulx-radius);
+  box-shadow: var(--ulx-shadow);
+  padding: 24px;
+}
+
+/* ── Head: title and the DTF | UV switch ─────────────────────────────── */
+.ulx__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 24px;
+  align-items: center;
+}
+
+.ulx__title {
+  margin: 0;
+  font-size: clamp(22px, 2.4vw, 30px);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.ulx__lead { margin: 8px 0 0; color: var(--ulx-muted); }
+.ulx__login { margin: 12px 0 0; font-size: 13px; color: var(--ulx-muted); }
+.ulx__login a { color: var(--ump-accent); font-weight: 600; text-underline-offset: 3px; }
+
+.ulx__switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 6px;
+  background: var(--ulx-soft);
+  border: 1px solid var(--ulx-line);
+  border-radius: calc(var(--ulx-radius-sm) + 6px);
+}
+.ulx__switch--single { grid-template-columns: 1fr; }
+
+.ulx__side {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 10px 12px;
+  text-align: left;
+  color: var(--ulx-ink);
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: var(--ulx-radius-sm);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.ulx__side:hover { background: var(--ulx-panel); }
+.ulx__side.is-active {
+  background: var(--ulx-panel);
+  box-shadow: var(--ulx-shadow);
+}
+.ulx__side--dtf.is-active { border-color: var(--ulx-dtf); }
+.ulx__side--uv.is-active { border-color: var(--ulx-uv); }
+
+.ulx__side-mark {
+  flex: 0 0 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.ulx__side--dtf .ulx__side-mark { color: var(--ulx-dtf); background: var(--ulx-dtf-soft); }
+.ulx__side--uv .ulx__side-mark { color: var(--ulx-uv); background: var(--ulx-uv-soft); }
+.ulx__side--dtf.is-active .ulx__side-mark { color: #fff; background: var(--ulx-dtf); }
+.ulx__side--uv.is-active .ulx__side-mark { color: #fff; background: var(--ulx-uv); }
+
+.ulx__side-text { display: grid; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.ulx__side-text strong { font-size: 15px; line-height: 1.2; }
+.ulx__side-text small { color: var(--ulx-muted); font-size: 12px; line-height: 1.3; }
+
+.ulx__side-count {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--ulx-soft);
+  border: 1px solid var(--ulx-line);
+}
+
+/* ── Order summary ──────────────────────────────────────────────────── */
+.ulx__order { display: grid; gap: 16px; }
+
+.ulx__order-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.ulx__order-title { margin: 0; font-size: 18px; }
+.ulx__order-meta { color: var(--ulx-muted); font-size: 13px; }
+
+.ulx__rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+
+.ulx__row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--ulx-line);
+  border-radius: var(--ulx-radius-sm);
+  background: var(--ulx-panel);
+}
+.ulx__row[data-side="dtf"] { box-shadow: inset 3px 0 0 var(--ulx-dtf); }
+.ulx__row[data-side="uv"] { box-shadow: inset 3px 0 0 var(--ulx-uv); }
+.ulx__row.is-busy { background: var(--ulx-soft); }
+.ulx__row.is-failed { background: var(--ulx-danger-soft); border-color: #f4c7c3; }
+
+.ulx__thumb {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 1px solid var(--ulx-line);
+  border-radius: 8px;
+  cursor: pointer;
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #eef1f5 25%, transparent 25%),
+    linear-gradient(-45deg, #eef1f5 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #eef1f5 75%),
+    linear-gradient(-45deg, transparent 75%, #eef1f5 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+}
+.ulx__thumb[style] { background-size: contain; background-repeat: no-repeat; background-position: center; }
+
+.ulx__row-main { display: grid; gap: 6px; min-width: 0; }
+.ulx__row-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+.ulx__badge {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+.ulx__badge--dtf { color: var(--ulx-dtf); background: var(--ulx-dtf-soft); }
+.ulx__badge--uv { color: var(--ulx-uv); background: var(--ulx-uv-soft); }
+
+.ulx__file {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ulx-ink);
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.ulx__file:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+.ulx__row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  color: var(--ulx-muted);
+  font-size: 13px;
+}
+.ulx__row.is-failed .ulx__row-meta { color: var(--ulx-danger); }
+
+.ulx__note {
+  width: 100%;
+  max-width: 520px;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--ulx-line);
+  border-radius: 8px;
+  background: var(--ulx-soft);
+  color: var(--ulx-ink);
+  font-size: 13px;
+}
+.ulx__note:focus { background: var(--ulx-panel); border-color: var(--ump-accent); }
+
+.ulx__row-side { display: flex; align-items: center; gap: 12px; }
+
+.ulx__qty {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--ulx-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.ulx__qty button {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: var(--ulx-panel);
+  color: var(--ulx-ink);
+  font-size: 16px;
+  cursor: pointer;
+}
+.ulx__qty button:disabled { color: #c5ccd6; cursor: default; }
+.ulx__qty span { min-width: 28px; text-align: center; font-weight: 700; }
+
+.ulx__price { min-width: 72px; text-align: right; font-size: 15px; }
+
+.ulx__remove {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--ulx-line);
+  border-radius: 8px;
+  background: var(--ulx-panel);
+  color: var(--ulx-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ulx__remove:hover { color: var(--ulx-danger); border-color: #f4c7c3; }
+
+.ulx__subtotals {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: var(--ulx-radius-sm);
+  background: var(--ulx-soft);
+}
+.ulx__subtotal { display: flex; align-items: center; gap: 10px; }
+.ulx__subtotal span:nth-child(2) { color: var(--ulx-muted); flex: 1 1 auto; }
+
+.ulx__general-note { display: grid; gap: 6px; font-weight: 600; }
+.ulx__general-note em { font-style: normal; font-weight: 400; color: var(--ulx-muted); }
+.ulx__general-note textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--ulx-line);
+  border-radius: var(--ulx-radius-sm);
+  background: var(--ulx-panel);
+  color: var(--ulx-ink);
+  font-weight: 400;
+  resize: vertical;
+}
+
+.ulx__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ulx-line);
+}
+.ulx__grand { display: grid; }
+.ulx__grand-label { color: var(--ulx-muted); font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.ulx__grand-value { font-size: 26px; line-height: 1.2; }
+.ulx__grand-meta { color: var(--ulx-muted); font-size: 12px; }
+
+.ulx__actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+.ulx__btn {
+  min-height: 48px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: var(--ulx-radius-sm);
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s ease, opacity 0.15s ease;
+}
+.ulx__btn--primary { background: var(--ump-accent); color: #fff; }
+.ulx__btn--dark { background: #111827; color: #fff; }
+.ulx__btn:hover:not(:disabled) { filter: brightness(1.06); }
+.ulx__btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.ulx__status { margin: 0; color: var(--ulx-warn); font-size: 13px; }
+.ulx__error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--ulx-radius-sm);
+  background: var(--ulx-danger-soft);
+  color: var(--ulx-danger);
+  font-size: 13px;
+}
+
+/* ── Engine panes: the upload area of the active product ────────────── */
+.ulx .ulx__engine { margin: 0; }
+
+/* The summary above replaces the engine's own list, buttons, totals and
+   notes; they stay in the DOM because the engine binds to them. */
+.ulx .ulx__engine .ump__files,
+.ulx .ulx__engine .ump__actions,
+.ulx .ulx__engine .ump__total,
+.ulx .ulx__engine .ump__order-note,
+.ulx .ulx__engine .ump__price-strip,
+.ulx .ulx__engine .ump__customer-card,
+.ulx .ulx__engine .ump__exact-note,
+.ulx .ulx__engine .ump__discount-panel,
+.ulx .ulx__engine .ump__exact-cart {
+  display: none !important;
+}
+
+.ulx .ulx__engine--uv { --ump-accent: var(--ulx-uv); }
+
+/* ── Mobile ─────────────────────────────────────────────────────────── */
+@media (max-width: 749px) {
+  .ulx__card { padding: 16px; }
+  .ulx__head { grid-template-columns: 1fr; gap: 16px; }
+  .ulx__side { min-height: 56px; gap: 8px; padding: 8px; }
+  .ulx__side-mark { flex-basis: 32px; height: 32px; font-size: 11px; }
+  .ulx__side-count { display: none; }
+  .ulx__row { grid-template-columns: 48px minmax(0, 1fr); }
+  .ulx__thumb { width: 48px; height: 48px; }
+  .ulx__row-side { grid-column: 1 / -1; justify-content: space-between; }
+  .ulx__price { flex: 1 1 auto; }
+  .ulx__footer { flex-direction: column; align-items: stretch; }
+  .ulx__actions { display: grid; grid-template-columns: 1fr; }
+  .ulx__btn { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ulx *, .ulx *::before, .ulx *::after { transition: none !important; animation: none !important; }
+}
