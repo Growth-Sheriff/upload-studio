@@ -4,6 +4,32 @@ console.log('[ULTShirtModal] Script loading...')
 ;(function () {
   'use strict'
 
+  // Shopify applies cart writes from different tabs without ordering; every
+  // Upload Studio block writes under one cross-tab Web Lock ('ul-shopify-cart').
+  // Any failure to get it, or 20 s of waiting, writes unlocked as before.
+  function withCartLock(task) {
+    if (typeof navigator === 'undefined' || !navigator.locks || typeof navigator.locks.request !== 'function') {
+      return task()
+    }
+    let acquired = false
+    try {
+      const controller = typeof AbortController === 'function' ? new AbortController() : null
+      const timer = controller ? setTimeout(() => controller.abort(), 20000) : null
+      return navigator.locks
+        .request('ul-shopify-cart', controller ? { signal: controller.signal } : {}, () => {
+          acquired = true
+          if (timer) clearTimeout(timer)
+          return task()
+        })
+        .catch((error) => {
+          if (!acquired) return task()
+          throw error
+        })
+    } catch (_) {
+      return task()
+    }
+  }
+
   console.log('[ULTShirtModal] IIFE started')
 
   const ULTShirtModal = {
@@ -3279,11 +3305,13 @@ console.log('[ULTShirtModal] Script loading...')
       }
 
       try {
-        const response = await fetch('/cart/add.js', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(cartData),
-        })
+        const response = await withCartLock(() =>
+          fetch('/cart/add.js', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cartData),
+          })
+        )
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}))
@@ -3419,7 +3447,13 @@ console.log('[ULTShirtModal] Script loading...')
       return note
     },
 
-    async updateCartNote(note) {
+    // The note is read, extended and written back: all of it under the cart lock
+    // so another tab's note written in between is not lost.
+    updateCartNote(note) {
+      return withCartLock(() => this.updateCartNoteUnlocked(note))
+    },
+
+    async updateCartNoteUnlocked(note) {
       const MAX_NOTE_LENGTH = 4800
 
       try {

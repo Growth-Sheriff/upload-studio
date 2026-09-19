@@ -1,5 +1,29 @@
 (function(){
 
+  // Shopify applies cart writes from different tabs without ordering; every
+  // Upload Studio block adds under one cross-tab Web Lock ('ul-shopify-cart').
+  // Any failure to get it, or 20 s of waiting, writes unlocked as before.
+  function withCartLock(task) {
+    if (typeof navigator === 'undefined' || !navigator.locks || typeof navigator.locks.request !== 'function') {
+      return task();
+    }
+    var acquired = false;
+    try {
+      var controller = typeof AbortController === 'function' ? new AbortController() : null;
+      var timer = controller ? setTimeout(function() { controller.abort(); }, 20000) : null;
+      return navigator.locks.request('ul-shopify-cart', controller ? { signal: controller.signal } : {}, function() {
+        acquired = true;
+        if (timer) clearTimeout(timer);
+        return task();
+      }).catch(function(error) {
+        if (!acquired) return task();
+        throw error;
+      });
+    } catch (_) {
+      return task();
+    }
+  }
+
   if (window.Shopify && window.Shopify.designMode) {
     console.log('[UL Showcase] Disabled in theme editor');
     return;
@@ -142,16 +166,18 @@
         throw new Error('The measured gang sheet could not be verified for cart.');
       }
       btn.textContent = 'Adding...';
-      return fetch('/cart/add.js', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          items: [{
-            id: verifiedVariantId,
-            quantity: verifiedQuantity,
-            properties: result.properties
-          }]
-        })
+      return withCartLock(function() {
+        return fetch('/cart/add.js', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            items: [{
+              id: verifiedVariantId,
+              quantity: verifiedQuantity,
+              properties: result.properties
+            }]
+          })
+        });
       });
     })
     .then(function(r) {

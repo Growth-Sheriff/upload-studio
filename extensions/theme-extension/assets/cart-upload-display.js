@@ -311,13 +311,37 @@
     };
   }
 
+  // Shopify applies cart writes from different tabs without ordering; every
+  // Upload Studio block writes under one cross-tab Web Lock ('ul-shopify-cart').
+  // Any failure to get it, or 20 s of waiting, writes unlocked as before.
+  function withCartLock(task) {
+    if (typeof navigator === 'undefined' || !navigator.locks || typeof navigator.locks.request !== 'function') {
+      return task();
+    }
+    let acquired = false;
+    try {
+      const controller = typeof AbortController === 'function' ? new AbortController() : null;
+      const timer = controller ? setTimeout(() => controller.abort(), 20000) : null;
+      return navigator.locks.request('ul-shopify-cart', controller ? { signal: controller.signal } : {}, () => {
+        acquired = true;
+        if (timer) clearTimeout(timer);
+        return task();
+      }).catch((error) => {
+        if (!acquired) return task();
+        throw error;
+      });
+    } catch (_) {
+      return task();
+    }
+  }
+
   async function attachDesignToLine(item, design) {
     const prepared = await prepareReorderDesign(item, design);
-    const res = await fetch('/cart/change.js', {
+    const res = await withCartLock(() => fetch('/cart/change.js', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: item.key, quantity: prepared.quantity, properties: prepared.properties }),
-    });
+    }));
     if (!res.ok) throw new Error('Cart update failed');
     try {
       sessionStorage.setItem('ul_reorder_attached', JSON.stringify({ key: item.key, fileName: design.fileName, orderName: design.orderName || '' }));
