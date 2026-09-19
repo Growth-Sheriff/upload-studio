@@ -1146,6 +1146,32 @@ export async function extractDosEpsPostScript(inputPath: string): Promise<string
   }
 }
 
+/** ImageMagick 6's own SVG renderer (MSVG) rejects common real-world exports
+ * (CorelDRAW class styles, deeply nested groups) even when the file is fine.
+ * SVGs are therefore drawn with librsvg for every pixel operation, at 96 DPI
+ * so the PNG's pixel grid is the one parseSvgDocumentInfo measures. The
+ * document size still comes from the SVG itself. Rendered once per file; any
+ * other format, or a librsvg failure, keeps the original path. */
+export async function getRasterAnalysisPath(filePath: string): Promise<string> {
+  const detectedType = await detectFileType(filePath).catch(() => null)
+  if (detectedType !== 'image/svg+xml') return filePath
+
+  const pngPath = `${filePath}.rsvg.png`
+  const rendered = await fs.stat(pngPath).catch(() => null)
+  if (rendered && rendered.size > 0) return pngPath
+  try {
+    await execAsync(
+      `rsvg-convert --dpi-x 96 --dpi-y 96 --format png --output "${pngPath}" "${filePath}"`,
+      { timeout: IMAGE_COMMAND_TIMEOUT_MS }
+    )
+    const stats = await fs.stat(pngPath)
+    if (stats.size > 0) return pngPath
+  } catch (error) {
+    console.warn('[Preflight] librsvg could not render the SVG; using ImageMagick directly:', error)
+  }
+  return filePath
+}
+
 
 export async function getImageInfo(filePath: string): Promise<{
   width: number
@@ -1162,9 +1188,9 @@ export async function getImageInfo(filePath: string): Promise<{
     : null
 
   try {
-
+    const analysisPath = await getRasterAnalysisPath(filePath)
     const { stdout } = await execAsync(
-      `identify -format "%w|%h|%x|%y|%U|%[colorspace]|%[channels]|%m" "${filePath}[0]"`,
+      `identify -format "%w|%h|%x|%y|%U|%[colorspace]|%[channels]|%m" "${analysisPath}[0]"`,
       { timeout: IMAGE_COMMAND_TIMEOUT_MS }
     )
 
@@ -1210,7 +1236,8 @@ export async function getImageInfo(filePath: string): Promise<{
       dpiSource,
       colorspace,
       hasAlpha: nativeInfo?.hasAlpha != null ? nativeInfo.hasAlpha : hasAlpha,
-      format,
+      // An SVG is identified through its librsvg render; keep reporting SVG.
+      format: analysisPath !== filePath ? nativeInfo?.format || 'SVG' : format,
     }
   } catch (error) {
     console.error('[Preflight] ImageMagick identify failed:', error)
@@ -1257,8 +1284,9 @@ export async function getTrimmedImageBounds(
   }
 
   try {
+    const analysisPath = await getRasterAnalysisPath(filePath)
     const { stdout } = await executeCommand(
-      `convert -limit memory 1GiB -limit map 2GiB "${filePath}[0]" -alpha extract -auto-level -threshold 0 -trim -format "%@" info:`,
+      `convert -limit memory 1GiB -limit map 2GiB "${analysisPath}[0]" -alpha extract -auto-level -threshold 0 -trim -format "%@" info:`,
       { maxBuffer: 1024 * 1024, timeout: IMAGE_COMMAND_TIMEOUT_MS }
     )
     const bounds = stdout.trim().match(/^(\d+)x(\d+)\+(-?\d+)\+(-?\d+)$/)
@@ -1458,9 +1486,9 @@ export async function generateThumbnail(
   outputPath: string,
   maxSize: number = 400
 ): Promise<void> {
-  const cmd = `convert "${inputPath}[0]" -thumbnail ${maxSize}x${maxSize}\\> -quality 85 "${outputPath}"`
-
   try {
+    const analysisPath = await getRasterAnalysisPath(inputPath)
+    const cmd = `convert "${analysisPath}[0]" -thumbnail ${maxSize}x${maxSize}\\> -quality 85 "${outputPath}"`
 
     await execAsync(cmd, { timeout: IMAGE_COMMAND_TIMEOUT_MS })
 
