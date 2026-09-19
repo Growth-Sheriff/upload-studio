@@ -296,6 +296,12 @@ export async function action({ request }: ActionFunctionArgs) {
         orderId: null,
         orderPaidAt: null,
         ordersLink: { none: {} },
+        // A row already prepared for or bound to a cart is that cart line's
+        // identity. Handing it to a second tab would make that tab's Add to
+        // cart replace the first line (same Sheet Identity), so it uploads
+        // fresh instead.
+        cartVariantId: null,
+        cartToken: null,
         createdAt: { gte: new Date(Date.now() - 30 * 24 * 3600 * 1000) },
         ...(customerId ? { customerId: String(customerId) } : { visitorId: String(visitorId) }),
         items: {

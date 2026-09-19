@@ -375,6 +375,19 @@
   MainProductUpload.prototype.persistItems = function() {
     if (!this.exactCartStorageEnabled) return;
     try {
+      // Every tab of this product shares the key. Keep the other tabs' saved
+      // uploads and replace only the ones this tab has held (so a remove,
+      // clear or add-to-cart here still drops them from the saved list).
+      var own = this.ownUploadIds = this.ownUploadIds || {};
+      (this.state.items || []).forEach(function(item) {
+        if (item && item.uploadId) own[String(item.uploadId)] = true;
+      });
+      var stored = parseJson(window.localStorage.getItem(this.getPersistKey()), null);
+      var storedFresh = stored && Array.isArray(stored.items) && stored.savedAt > 0 &&
+        Date.now() - stored.savedAt <= PERSIST_TTL_MS;
+      var otherTabs = storedFresh
+        ? stored.items.filter(function(item) { return item && item.uploadId && !own[String(item.uploadId)]; })
+        : [];
       var items = (this.state.items || []).filter(this.isCartReadyItem.bind(this)).map(function(item) {
         return {
           uploadId: item.uploadId,
@@ -398,6 +411,7 @@
           uploadEndTime: item.uploadEndTime
         };
       });
+      items = otherTabs.concat(items);
       if (!items.length) {
         window.localStorage.removeItem(this.getPersistKey());
         return;
@@ -421,6 +435,9 @@
       item.status = 'ready';
       item.localPreviewUrl = '';
       item.copies = Math.max(1, Number(item.copies) || 1);
+      // Saved by this or another tab of the same product; another tab may add
+      // it to the cart before this one does (see addToCart).
+      item.restored = true;
       return item;
     });
     if (!items.length) return;
@@ -2389,7 +2406,12 @@
       if (!response.ok) throw new Error(data.error || 'Failed to create exact checkout.');
       var redirect = data.checkoutUrl || data.redirectUrl || data.url || data.invoiceUrl;
       if (!redirect) throw new Error('Exact checkout URL was not returned.');
-      this.writeExactCart([]);
+      // The saved list is shared by every product tab: drop only what this
+      // checkout sent, keeping anything another tab saved in the meantime.
+      var sentIds = checkoutEntries.map(function(entry) { return String(entry.uploadId); });
+      this.writeExactCart(this.readExactCart().filter(function(entry) {
+        return sentIds.indexOf(String(entry.uploadId)) === -1;
+      }));
       window.location.href = redirect;
     } catch (error) {
       this.setError(error && error.message ? error.message : 'Failed to create exact checkout.');
@@ -3236,6 +3258,17 @@
     return String(props['Sheet Identity'] || '') === String(want['Sheet Identity'] || '');
   }
 
+  // Shopify applies /cart/*.js writes from different tabs without ordering, so
+  // two tabs adding at once can drop each other's line. Every cart write of
+  // our blocks in this browser runs under one Web Lock (same name in the Mod2
+  // block); browsers without Web Locks run unlocked, as before.
+  function withCartLock(task) {
+    if (typeof navigator !== 'undefined' && navigator.locks && typeof navigator.locks.request === 'function') {
+      return navigator.locks.request('ul-shopify-cart', task);
+    }
+    return task();
+  }
+
   async function cartRequest(url, body) {
     var response = await fetch(url, {
       method: 'POST',
@@ -3287,11 +3320,33 @@
         throw new Error('Cart line not verified after add.');
       } catch (error) {
         var status = Number(error && error.status);
-        var terminal = status >= 400 && status < 500 && status !== 408 && status !== 429;
+        // 409: Shopify rejected a concurrent write to this cart; retry it.
+        var terminal = status >= 400 && status < 500 && status !== 408 && status !== 409 && status !== 429;
         if (terminal || attempts >= maxAttempts) throw error;
         await new Promise(function(resolve) { setTimeout(resolve, 400 * Math.pow(2, attempts - 1)); });
       }
     }
+  };
+
+  // Last check before leaving the page: the theme (or a browser without Web
+  // Locks) may have rewritten the cart meanwhile. Put back any of this tab's
+  // lines that are gone, and fail loudly rather than redirect without them.
+  MainProductUpload.prototype.verifyCartLines = async function(cartItems) {
+    var hasLine = function(cart, cartItem) {
+      return cartLinesForUpload(cart, cartItem.uploadId).some(function(line) {
+        return cartLineIsExact(line, cartItem);
+      });
+    };
+    for (var round = 0; round < 3; round += 1) {
+      var cart = await this.readCart();
+      var missing = cartItems.filter(function(cartItem) { return !hasLine(cart, cartItem); });
+      if (!missing.length) return cart;
+      if (round === 2) break;
+      for (var i = 0; i < missing.length; i += 1) {
+        await this.ensureCartLine(missing[i], missing[i].uploadId);
+      }
+    }
+    throw new Error('Some gang sheets could not be added to the cart. Please try again.');
   };
 
   MainProductUpload.prototype.bindCartToken = async function(cart, uploadIds) {
@@ -3316,10 +3371,11 @@
   // Shopify's native order note (cart.note → order "Notes"), so the three line
   // properties stay untouched. Appends instead of overwriting whatever the
   // customer or the theme's cart page already wrote, and gives up silently
-  // after 3 s.
-  MainProductUpload.prototype.saveOrderNote = async function() {
+  // after 3 s. Each note names its files: several tabs can add notes to one cart.
+  MainProductUpload.prototype.saveOrderNote = async function(fileNames) {
     var text = this.orderNoteInput ? String(this.orderNoteInput.value || '').trim().slice(0, 500) : '';
     if (!text) return;
+    var files = (fileNames || []).filter(Boolean).join(', ').slice(0, 300);
     var controller = typeof AbortController === 'function' ? new AbortController() : null;
     var timer = controller ? setTimeout(function() { controller.abort(); }, 3000) : null;
     try {
@@ -3327,7 +3383,7 @@
       var cartResponse = await fetch('/cart.js', { headers: { 'Accept': 'application/json' }, signal: signal });
       var cart = cartResponse.ok ? await cartResponse.json() : {};
       var current = String((cart && cart.note) || '');
-      var line = 'Gang sheet note: ' + text;
+      var line = 'Gang sheet note' + (files ? ' (' + files + ')' : '') + ': ' + text;
       if (current.indexOf(line) >= 0) return;
       var next = current ? current + '\n' + line : line;
       await fetch('/cart/update.js', {
@@ -3362,7 +3418,23 @@
 
     try {
       var self = this;
+      // An upload restored from this product's saved list that another tab
+      // already put in the cart is that tab's line; adding it here would
+      // replace the line with this tab's copies. Leave it where it is.
+      var cartBefore = await this.readCart();
+      var addedElsewhere = readyItems.filter(function(item) {
+        return item.restored && cartLinesForUpload(cartBefore, item.uploadId).length > 0;
+      });
+      if (addedElsewhere.length) {
+        this.forgetUploads(addedElsewhere.map(function(item) { return item.uploadId; }));
+        readyItems = readyItems.filter(function(item) { return addedElsewhere.indexOf(item) === -1; });
+        if (!readyItems.length) {
+          window.location.href = discountRedirect(redirectTo || '/cart', this.getDiscountCode());
+          return;
+        }
+      }
       var uploadIds = readyItems.map(function(item) { return item.uploadId; });
+      var fileNames = readyItems.map(function(item) { return item.fileName; });
       var lineRequests = readyItems.map(buildCartLineRequest);
       var serverProperties = await this.prepareCartProperties(uploadIds, lineRequests);
 
@@ -3408,16 +3480,20 @@
         });
       }
 
-      var lastCart = null;
-      for (var i = 0; i < cartItems.length; i++) {
-        lastCart = await this.ensureCartLine(cartItems[i], cartItems[i].uploadId);
-      }
+      // One tab at a time writes the cart (see withCartLock), so tabs adding
+      // DTF and UV sheets at the same moment cannot drop each other's lines.
+      await withCartLock(async function() {
+        for (var i = 0; i < cartItems.length; i++) {
+          await self.ensureCartLine(cartItems[i], cartItems[i].uploadId);
+        }
+        var syncedCart = await self.verifyCartLines(cartItems);
 
-      await this.bindCartToken(lastCart, uploadIds);
+        await self.bindCartToken(syncedCart, uploadIds);
 
-      // Runs only after every line is in the cart and never throws: a note that
-      // cannot be saved must not stop the customer from reaching cart/checkout.
-      await this.saveOrderNote();
+        // Runs only after every line is in the cart and never throws: a note that
+        // cannot be saved must not stop the customer from reaching cart/checkout.
+        await self.saveOrderNote(fileNames);
+      });
 
       // The cart owns these uploads now; do not show them again on return.
       this.forgetUploads(uploadIds);

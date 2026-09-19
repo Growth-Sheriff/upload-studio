@@ -391,6 +391,15 @@
       var want = cartItem.properties || {};
       return String(props['Sheet Identity'] || '') === String(want['Sheet Identity'] || '');
     }
+    // Shopify applies /cart/*.js writes from different tabs without ordering, so
+    // two tabs adding at once can drop each other's line. Cart writes of both
+    // upload blocks share one Web Lock; without Web Locks they run as before.
+    function withCartLock(task) {
+      if (typeof navigator !== 'undefined' && navigator.locks && typeof navigator.locks.request === 'function') {
+        return navigator.locks.request('ul-shopify-cart', task);
+      }
+      return task();
+    }
     async function readCart() {
       var response = await fetch('/cart.js', { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
       if (!response.ok) throw new Error('Cart read failed with status ' + response.status);
@@ -430,7 +439,8 @@
           throw new Error('Cart line not verified after add.');
         } catch (error) {
           var status = Number(error && error.status);
-          var terminal = status >= 400 && status < 500 && status !== 408 && status !== 429;
+          // 409: Shopify rejected a concurrent write to this cart; retry it.
+          var terminal = status >= 400 && status < 500 && status !== 408 && status !== 409 && status !== 429;
           if (terminal || attempts >= 3) throw error;
           await sleepMs(400 * Math.pow(2, attempts - 1));
         }
@@ -4275,10 +4285,20 @@
           quantity: uploadRequired ? canonicalCartQuantity : Math.max(1, quantityValue),
           properties: properties
         };
-        var syncedCart = uploadRequired && state.uploadId
-          ? await ensureCartLine(cartItem, state.uploadId)
-          : await cartRequest('/cart/add.js', { items: [cartItem] });
-        if (uploadRequired && state.uploadId) await bindCartToken(syncedCart, [state.uploadId]);
+        var cartUploadId = state.uploadId;
+        await withCartLock(async function() {
+          var syncedCart = uploadRequired && cartUploadId
+            ? await ensureCartLine(cartItem, cartUploadId)
+            : await cartRequest('/cart/add.js', { items: [cartItem] });
+          if (!(uploadRequired && cartUploadId)) return;
+          // Last check before leaving: the theme may have rewritten the cart.
+          var finalCart = await readCart();
+          var kept = cartLinesForUpload(finalCart, cartUploadId).some(function(line) {
+            return cartLineIsExact(line, cartItem);
+          });
+          if (!kept) syncedCart = await ensureCartLine(cartItem, cartUploadId);
+          await bindCartToken(syncedCart, [cartUploadId]);
+        });
         window.location.href = redirectPath;
       } catch (error) {
         showError(error && error.message ? error.message : 'Failed to add to cart.');

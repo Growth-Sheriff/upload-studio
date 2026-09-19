@@ -34,6 +34,8 @@ import {
   normalizeCartToken,
 } from '~/lib/orderMatching.server'
 import { buildIdentityUrl } from '~/lib/uploadUrls.server'
+import { variantIdsEqual } from '~/lib/dtfSheetResolver.server'
+import { shopifyProductIdsEqual } from '~/lib/shopifyProductIdentity'
 import {
   COMMISSION_AWAITING_PAYMENT_STATUS,
   extractShopifyCommissionFacts,
@@ -722,7 +724,7 @@ export async function reconcileOrder(
   const tokenUploads = cartToken
     ? await prisma.upload.findMany({
         where: { shopId: shop.id, cartToken },
-        select: { id: true, productId: true, variantId: true },
+        select: { id: true, productId: true, variantId: true, cartVariantId: true },
       })
     : []
   const unconsumedTokenUploads = new Set(tokenUploads.map((u) => u.id))
@@ -896,13 +898,16 @@ export async function reconcileOrder(
       continue
     }
 
-    // Stripped properties: cart-token carrier before declaring missing.
-    const lineProductGid = `gid://shopify/Product/${lineItem.product_id}`
-    const lineVariantGid = `gid://shopify/ProductVariant/${lineItem.variant_id}`
+    // Stripped properties: cart-token carrier before declaring missing. The
+    // storefront stores numeric ids and Admin sends numeric ids, while older
+    // rows hold GIDs, so ids are compared as ids, cart variant first — in a
+    // mixed UV/DTF cart that keeps each line on its own upload.
+    const unconsumed = tokenUploads.filter((u) => unconsumedTokenUploads.has(u.id))
     const tokenCandidate =
-      tokenUploads.find((u) => unconsumedTokenUploads.has(u.id) && u.variantId === lineVariantGid) ||
-      tokenUploads.find((u) => unconsumedTokenUploads.has(u.id) && u.productId === lineProductGid) ||
-      tokenUploads.find((u) => unconsumedTokenUploads.has(u.id))
+      unconsumed.find((u) => variantIdsEqual(u.cartVariantId, lineItem.variant_id)) ||
+      unconsumed.find((u) => variantIdsEqual(u.variantId, lineItem.variant_id)) ||
+      unconsumed.find((u) => shopifyProductIdsEqual(u.productId, lineItem.product_id)) ||
+      unconsumed[0]
 
     if (tokenCandidate) {
       console.log(
@@ -924,8 +929,8 @@ export async function reconcileOrder(
     const ghostUpload = await prisma.upload.create({
       data: {
         shopId: shop.id,
-        productId: lineProductGid,
-        variantId: lineVariantGid,
+        productId: `gid://shopify/Product/${lineItem.product_id}`,
+        variantId: `gid://shopify/ProductVariant/${lineItem.variant_id}`,
         customerId: order.customer?.id ? String(order.customer.id) : null,
         customerEmail: order.email,
         orderId,
