@@ -6,8 +6,17 @@
 <script src="{{ 'main-product-upload-app.js' | asset_url }}" defer></script>
 <script src="{{ 'dtf-uv-gang-sheet-upload.js' | asset_url }}" defer></script>
 {%- liquid
-  assign dtf = block.settings.dtf_product
-  assign uv = block.settings.uv_product
+  comment
+    App blocks allow one product picker, so the two products are set by handle.
+  endcomment
+  assign dtf = blank
+  assign uv = blank
+  if block.settings.dtf_handle != blank
+    assign dtf = all_products[block.settings.dtf_handle]
+  endif
+  if block.settings.uv_handle != blank
+    assign uv = all_products[block.settings.uv_handle]
+  endif
   assign accept = block.settings.accepted_files | default: ".png,.jpg,.jpeg,.webp,.tif,.tiff,.psd,.pdf,.ai,.eps,.svg,image/png,image/jpeg,image/webp,image/tiff,image/vnd.adobe.photoshop,application/pdf,application/postscript,image/svg+xml"
 -%}
 {%- comment -%} One engine per product runs below the DTF | UV switch; the markup is built by dtf-uv-gang-sheet-upload.js. {%- endcomment -%}
@@ -29,23 +38,23 @@
   style="--ump-accent: {{ block.settings.accent_color | default: '#4f7cff' }};"
 >
   <script type="application/json" data-ulx-products>
-    {"dtf": {%- if dtf -%}{"label": {{ block.settings.dtf_label | default: 'DTF Gang Sheet' | json }}, "id": {{ dtf.id | json }}, "title": {{ dtf.title | json }}, "firstVariantId": {{ dtf.selected_or_first_available_variant.id | json }}, "variants": {{ dtf.variants | json }}, "options": {{ dtf.options_with_values | json }}}{%- else -%}null{%- endif -%},
-     "uv": {%- if uv -%}{"label": {{ block.settings.uv_label | default: 'UV DTF Gang Sheet' | json }}, "id": {{ uv.id | json }}, "title": {{ uv.title | json }}, "firstVariantId": {{ uv.selected_or_first_available_variant.id | json }}, "variants": {{ uv.variants | json }}, "options": {{ uv.options_with_values | json }}}{%- else -%}null{%- endif -%}}
+    {"dtf": {%- if dtf.id -%}{"label": {{ block.settings.dtf_label | default: 'DTF Gang Sheet' | json }}, "id": {{ dtf.id | json }}, "title": {{ dtf.title | json }}, "firstVariantId": {{ dtf.selected_or_first_available_variant.id | json }}, "variants": {{ dtf.variants | json }}, "options": {{ dtf.options_with_values | json }}}{%- else -%}null{%- endif -%},
+     "uv": {%- if uv.id -%}{"label": {{ block.settings.uv_label | default: 'UV DTF Gang Sheet' | json }}, "id": {{ uv.id | json }}, "title": {{ uv.title | json }}, "firstVariantId": {{ uv.selected_or_first_available_variant.id | json }}, "variants": {{ uv.variants | json }}, "options": {{ uv.options_with_values | json }}}{%- else -%}null{%- endif -%}}
   </script>
-  {%- if dtf == blank and uv == blank -%}
-    <p class="ulx__setup">Choose the DTF and UV products in this block's settings.</p>
-  {%- endif -%}
+  {%- unless dtf.id or uv.id -%}
+    <p class="ulx__setup">Enter the DTF and UV product handles in this block's settings.</p>
+  {%- endunless -%}
 </section>
 {% schema %}
 {
-  "name": "DTF + UV Gang Sheet Upload",
+  "name": "DTF + UV Gang Sheets",
   "target": "section",
   "templates": ["product"],
   "settings": [
     { "type": "paragraph", "content": "One page, two products: the customer picks DTF or UV at the top and every file is priced and added for that product. One cart or checkout for all of them." },
-    { "type": "product", "id": "dtf_product", "label": "DTF upload product" },
+    { "type": "text", "id": "dtf_handle", "label": "DTF upload product handle", "info": "e.g. dtf-gang-sheet-upload-express" },
     { "type": "text", "id": "dtf_label", "label": "DTF label", "default": "DTF Gang Sheet" },
-    { "type": "product", "id": "uv_product", "label": "UV DTF upload product" },
+    { "type": "text", "id": "uv_handle", "label": "UV DTF upload product handle", "info": "e.g. uv-dtf-gang-sheet-upload-express" },
     { "type": "text", "id": "uv_label", "label": "UV label", "default": "UV DTF Gang Sheet" },
     { "type": "text", "id": "heading", "label": "Heading", "default": "Upload your gang sheets" },
     { "type": "color", "id": "accent_color", "label": "Accent color", "default": "#4f7cff" },
