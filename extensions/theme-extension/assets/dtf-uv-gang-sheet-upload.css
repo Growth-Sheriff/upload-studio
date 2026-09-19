@@ -567,7 +567,19 @@
 /* ── Narrow: preview on demand, footer pinned to the screen bottom ──── */
 @media (max-width: 879px) {
   .ulx:not(.is-preview) .ump__preview-card { display: none; }
-  .ulx .ump__preview-card { margin-top: 12px; }
+  /* Sheet beside its facts, so the opened preview stays short. */
+  .ulx .ump__preview-card {
+    display: grid;
+    grid-template-columns: 132px minmax(0, 1fr);
+    grid-template-areas: "head head" "sheet facts" "note note";
+    gap: 10px 12px;
+    align-items: start;
+    margin-top: 12px;
+  }
+  .ulx .ump__preview-head { grid-area: head; }
+  .ulx .ump__sheet { grid-area: sheet; margin-top: 0; }
+  .ulx .ump__facts { grid-area: facts; margin-top: 0; }
+  .ulx .ump__preview-card .ump__note { grid-area: note; margin-top: 0; }
   .ulx .ulx__preview-close { display: inline-grid; }
 
   /* --ulx-bottom: height of a theme menu pinned to the screen bottom (JS). */
