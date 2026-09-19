@@ -34,9 +34,10 @@
     return isFinite(n) ? n : 0;
   }
 
+  // en-US like the engine's price table, whatever the shopper's browser locale.
   function formatMoney(amount, currency) {
     try {
-      return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency || 'USD' }).format(amount);
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD' }).format(amount);
     } catch (_) {
       return '$' + (Math.round(amount * 100) / 100).toFixed(2);
     }
@@ -298,11 +299,14 @@
       'data-enable-checkout': 'true',
       // The special per-inch rate is already net: automatic discounts must not
       // stack on it. Discount codes stay allowed at checkout.
-      'data-accept-automatic-discounts': 'false'
+      'data-accept-automatic-discounts': 'false',
+      // This block writes one combined note; no per-engine file-name prefix.
+      'data-order-note-files': 'false'
     };
     Object.keys(attrs).forEach(function(name) { pane.setAttribute(name, attrs[name]); });
     pane.setAttribute('role', 'tabpanel');
-    pane.style.cssText = root.getAttribute('style') || '';
+    // DTF keeps the block accent; UV uses its own colour throughout its pane.
+    pane.style.cssText = side === 'uv' ? '--ump-accent: var(--ulx-uv);' : (root.getAttribute('style') || '');
     pane.innerHTML = engineMarkup({
       accept: attrs['data-accepted-files'],
       label: product.label || product.title,

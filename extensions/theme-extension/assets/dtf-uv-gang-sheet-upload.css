@@ -24,7 +24,10 @@
   font-family: inherit;
   font-size: 14px;
   line-height: 1.45;
-  margin: 24px 0;
+  /* Same measure as the engine's .ump__shell below, so every card lines up. */
+  width: 100%;
+  max-width: 1120px;
+  margin: 24px auto;
   display: grid;
   gap: 16px;
 }
@@ -342,7 +345,6 @@
   display: none !important;
 }
 
-.ulx .ulx__engine--uv { --ump-accent: var(--ulx-uv); }
 
 /* ── Mobile ─────────────────────────────────────────────────────────── */
 @media (max-width: 749px) {

@@ -3425,7 +3425,10 @@
     // The textarea caps typing at 500; a host block may compose a longer note.
     var text = this.orderNoteInput ? String(this.orderNoteInput.value || '').trim().slice(0, 2000) : '';
     if (!text) return;
-    var files = (fileNames || []).filter(Boolean).join(', ').slice(0, 300);
+    // A host block that composes its own per-file lines turns the prefix off.
+    var files = this.root.getAttribute('data-order-note-files') === 'false'
+      ? ''
+      : (fileNames || []).filter(Boolean).join(', ').slice(0, 300);
     var controller = typeof AbortController === 'function' ? new AbortController() : null;
     var timer = controller ? setTimeout(function() { controller.abort(); }, 3000) : null;
     try {
