@@ -420,6 +420,10 @@
     this.checkoutBtn.addEventListener('click', function() { self.submit('/checkout'); });
     window.addEventListener('pageshow', function(event) {
       if (!event.persisted) return;
+      // Back from the cart: notes may have been forgotten on the way out.
+      self.notes = readStore(self.notesKey, {});
+      self.generalNote.value = String(self.notes.__general || '');
+      self.generalOpen = Boolean(String(self.notes.__general || '').trim());
       self.busy = false;
       self.render();
     });
@@ -870,7 +874,10 @@
     this.showError('');
     this.busy = true;
     this.render();
-    var note = this.composeNote(this.collectRows());
+    var rows = this.collectRows();
+    var note = this.composeNote(rows);
+    var submittedIds = rows.filter(function(row) { return row.ready && row.uploadId; })
+      .map(function(row) { return String(row.uploadId); });
     var navigating = false;
     try {
       navigating = exact
@@ -880,10 +887,27 @@
       this.showError(error && error.message ? error.message : 'Something went wrong. Please try again.');
     }
     // On success the page is already leaving: keep the buttons locked.
-    if (!navigating) {
-      this.busy = false;
-      this.render();
+    if (navigating) {
+      this.forgetSubmittedNotes(submittedIds);
+      return;
     }
+    this.busy = false;
+    this.render();
+  };
+
+  // Mirrors the engine, which forgets uploads once the cart owns them: their
+  // notes and the order note go too, so the next order starts clean. Uploads
+  // the engine still lists keep their notes.
+  DualUpload.prototype.forgetSubmittedNotes = function(submittedIds) {
+    var listed = {};
+    this.collectRows().forEach(function(row) {
+      if (row.uploadId) listed[String(row.uploadId)] = true;
+    });
+    var forgotten = submittedIds.filter(function(id) { return !listed[id]; });
+    if (!forgotten.length) return;
+    forgotten.forEach(function(id) { delete this.notes[id]; }, this);
+    delete this.notes.__general;
+    this.saveNotes();
   };
 
   // Standard customers: each engine adds its own verified lines under the
