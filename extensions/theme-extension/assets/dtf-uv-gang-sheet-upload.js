@@ -6,8 +6,10 @@
    (main-product-upload-app.js, window.ULMainProductUpload) on a sub-root, so
    measuring, previews, special per-inch pricing, the cross-tab cart lock and
    cart verification are the same tested code as the single-product block.
-   This file adds the product switch, one order summary with per-file notes,
-   and one Add to cart / Checkout for both products. */
+   This file adds the product switch, one compact file list with per-file
+   notes, and one Add to cart / Checkout for both products. Wholesale
+   customers upload 20+ files at once, so a file is one dense row and the
+   list scrolls inside itself instead of stretching the page. */
 (function() {
   'use strict';
 
@@ -15,6 +17,18 @@
   var SIDES = ['dtf', 'uv'];
   var SHORT_LABELS = { dtf: 'DTF', uv: 'UV' };
   var NOTE_MAX = 200;
+  // Below this width the preview only opens on demand (matches the CSS).
+  var NARROW_QUERY = '(max-width: 879px)';
+  var PENCIL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>';
+
+  function isNarrow() {
+    return Boolean(window.matchMedia && window.matchMedia(NARROW_QUERY).matches);
+  }
+
+  function hasFiles(event) {
+    var types = event.dataTransfer && event.dataTransfer.types;
+    return Boolean(types && Array.prototype.indexOf.call(types, 'Files') !== -1);
+  }
 
   function parseJson(value, fallback) {
     try { return JSON.parse(value); } catch (_) { return fallback; }
@@ -128,6 +142,7 @@
             '<div class="ump__preview-head">' +
               '<div><p class="ump__eyebrow">Measured size</p><h3 class="ump__size" data-ump-size>-- x --</h3></div>' +
               '<span class="ump__badge" data-ump-badge>Waiting</span>' +
+              '<button class="ulx__preview-close" type="button" data-ulx-preview-close aria-label="Close preview">×</button>' +
             '</div>' +
             '<div class="ump__sheet" data-ump-sheet>' +
               '<div class="ump__ruler ump__ruler--top" data-ump-ruler-top></div>' +
@@ -197,6 +212,9 @@
 
     this.notesKey = ['ulxNotes', this.shopDomain || 'shop', this.customerId || 'guest'].join(':');
     this.notes = readStore(this.notesKey, {});
+    this.openNotes = {};
+    this.generalOpen = Boolean(String(this.notes.__general || '').trim());
+    this.previewOpen = false;
     this.busy = false;
     this.engines = {};
     this.panes = {};
@@ -213,64 +231,57 @@
     var sides = this.sides.map(function(side) {
       return '' +
         '<button class="ulx__side ulx__side--' + side + '" type="button" role="tab" data-ulx-side="' + side + '">' +
-          '<span class="ulx__side-mark" aria-hidden="true">' + SHORT_LABELS[side] + '</span>' +
-          '<span class="ulx__side-text">' +
-            '<strong>' + escapeHtml(this.products[side].label || this.products[side].title) + '</strong>' +
-            '<small data-ulx-rate="' + side + '"></small>' +
-          '</span>' +
+          '<span class="ulx__side-long">' + escapeHtml(this.products[side].label || this.products[side].title) + '</span>' +
+          '<span class="ulx__side-short" aria-hidden="true">' + SHORT_LABELS[side] + '</span>' +
+          '<span class="ulx__side-rate" data-ulx-rate="' + side + '"></span>' +
           '<span class="ulx__side-count" data-ulx-count="' + side + '" hidden></span>' +
         '</button>';
     }, this).join('');
     var loginHref = this.loginUrl + (this.loginUrl.indexOf('?') === -1 ? '?' : '&') +
       'return_url=' + encodeURIComponent(window.location.pathname + window.location.search);
 
+    // Layout: head, then the active product's drop bar (and, on wide
+    // screens, its preview in a side column), then the file list and footer.
     this.root.innerHTML = '' +
-      '<div class="ulx__card ulx__head">' +
-        '<div class="ulx__head-text">' +
-          '<h2 class="ulx__title">' + escapeHtml(heading) + '</h2>' +
-          '<p class="ulx__lead">Choose the print type first. Every file you upload is added to that product.</p>' +
-          (this.customerId ? '' :
-            '<p class="ulx__login">Wholesale account? <a href="' + escapeHtml(loginHref) + '">Log in to see your rate.</a></p>') +
-        '</div>' +
+      '<div class="ulx__head">' +
+        '<h2 class="ulx__title">' + escapeHtml(heading) + '</h2>' +
         '<div class="ulx__switch' + (this.sides.length < 2 ? ' ulx__switch--single' : '') + '" role="tablist" aria-label="Print type">' + sides + '</div>' +
+        (this.customerId ? '' :
+          '<p class="ulx__login">Wholesale account? <a href="' + escapeHtml(loginHref) + '">Log in for your rate</a></p>') +
       '</div>' +
-      '<div class="ulx__card ulx__order" data-ulx-order hidden>' +
-        '<div class="ulx__order-head">' +
-          '<h3 class="ulx__order-title">Your order</h3>' +
-          '<span class="ulx__order-meta" data-ulx-order-meta></span>' +
+      '<div class="ulx__panes" data-ulx-panes></div>' +
+      '<div class="ulx__order" data-ulx-order hidden>' +
+        '<ul class="ulx__rows" data-ulx-rows aria-label="Your files"></ul>' +
+        '<div class="ulx__general">' +
+          '<button class="ulx__link" type="button" data-ulx-general-toggle aria-expanded="false"></button>' +
+          '<textarea class="ulx__general-input" data-ulx-general-note rows="2" maxlength="500" aria-label="Order note" placeholder="Anything our production team should know about this order" hidden></textarea>' +
         '</div>' +
-        '<ul class="ulx__rows" data-ulx-rows></ul>' +
-        '<div class="ulx__subtotals" data-ulx-subtotals aria-live="polite"></div>' +
-        '<label class="ulx__general-note">' +
-          '<span>Order note <em>(optional)</em></span>' +
-          '<textarea data-ulx-general-note rows="2" maxlength="500" placeholder="Anything our production team should know about this order"></textarea>' +
-        '</label>' +
         '<div class="ulx__footer">' +
+          '<div class="ulx__sums" data-ulx-subtotals aria-live="polite"></div>' +
           '<div class="ulx__grand" aria-live="polite">' +
             '<span class="ulx__grand-label">Total</span>' +
             '<strong class="ulx__grand-value" data-ulx-grand></strong>' +
-            '<small class="ulx__grand-meta" data-ulx-grand-meta></small>' +
           '</div>' +
+          '<small class="ulx__grand-meta" data-ulx-grand-meta></small>' +
           '<div class="ulx__actions">' +
             '<button class="ulx__btn ulx__btn--primary" type="button" data-ulx-add data-gs-event="click" disabled>Add to cart</button>' +
             '<button class="ulx__btn ulx__btn--dark" type="button" data-ulx-checkout data-gs-event="click" disabled>Checkout</button>' +
           '</div>' +
+          '<p class="ulx__status" data-ulx-status aria-live="polite" hidden></p>' +
+          '<p class="ulx__error" data-ulx-error role="alert" hidden></p>' +
         '</div>' +
-        '<p class="ulx__status" data-ulx-status aria-live="polite" hidden></p>' +
-        '<p class="ulx__error" data-ulx-error role="alert" hidden></p>' +
-      '</div>' +
-      '<div class="ulx__panes" data-ulx-panes></div>';
+      '</div>';
 
     this.orderCard = this.root.querySelector('[data-ulx-order]');
     this.rowsEl = this.root.querySelector('[data-ulx-rows]');
     this.subtotalsEl = this.root.querySelector('[data-ulx-subtotals]');
-    this.orderMetaEl = this.root.querySelector('[data-ulx-order-meta]');
     this.grandEl = this.root.querySelector('[data-ulx-grand]');
     this.grandMetaEl = this.root.querySelector('[data-ulx-grand-meta]');
     this.addBtn = this.root.querySelector('[data-ulx-add]');
     this.checkoutBtn = this.root.querySelector('[data-ulx-checkout]');
     this.statusEl = this.root.querySelector('[data-ulx-status]');
     this.errorEl = this.root.querySelector('[data-ulx-error]');
+    this.generalToggle = this.root.querySelector('[data-ulx-general-toggle]');
     this.generalNote = this.root.querySelector('[data-ulx-general-note]');
     this.panesEl = this.root.querySelector('[data-ulx-panes]');
     this.generalNote.value = String(this.notes.__general || '');
@@ -321,6 +332,11 @@
 
   DualUpload.prototype.bindEvents = function() {
     var self = this;
+    // Row buttons never take focus on press: a note being typed keeps it until
+    // the click handler releases it, so a re-render cannot swallow the click.
+    this.rowsEl.addEventListener('mousedown', function(event) {
+      if (event.target.closest('button')) event.preventDefault();
+    });
     this.root.addEventListener('click', function(event) {
       var target = event.target;
       var sideBtn = target.closest('[data-ulx-side]');
@@ -328,31 +344,41 @@
         self.setActive(sideBtn.getAttribute('data-ulx-side'));
         return;
       }
-      var row = target.closest('[data-ulx-row]');
-      if (row) {
-        var side = row.getAttribute('data-side');
-        var uploadId = row.getAttribute('data-ulx-row');
-        var engine = self.engines[side];
-        if (!engine) return;
-        if (target.closest('[data-ulx-remove]')) {
-          engine.removeUploadItem(uploadId);
-          delete self.notes[uploadId];
-          self.saveNotes();
-          return;
-        }
-        var step = target.closest('[data-ulx-step]');
-        if (step) {
-          var item = engine.findItem(uploadId);
-          var next = Math.max(1, (Number(item && item.copies) || 1) + Number(step.getAttribute('data-ulx-step')));
-          engine.setItemCopies(uploadId, next);
-          return;
-        }
-        if (target.closest('[data-ulx-open]')) {
-          self.setActive(side);
-          engine.selectUploadItem(uploadId);
-          self.panes[side].scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
+      if (target.closest('[data-ulx-preview-close]')) {
+        self.previewOpen = false;
+        self.render();
+        return;
       }
+      if (target.closest('[data-ulx-general-toggle]')) {
+        self.toggleGeneralNote();
+        return;
+      }
+      var row = target.closest('[data-ulx-row]');
+      if (!row || !target.closest('button')) return;
+      var side = row.getAttribute('data-side');
+      var uploadId = row.getAttribute('data-ulx-row');
+      var engine = self.engines[side];
+      if (!engine) return;
+      if (target.closest('[data-ulx-note-toggle]')) {
+        self.toggleNote(uploadId);
+        return;
+      }
+      self.releaseNoteFocus();
+      if (target.closest('[data-ulx-remove]')) {
+        delete self.openNotes[uploadId];
+        delete self.notes[uploadId];
+        self.saveNotes();
+        engine.removeUploadItem(uploadId);
+        return;
+      }
+      var step = target.closest('[data-ulx-step]');
+      if (step) {
+        var item = engine.findItem(uploadId);
+        var next = Math.max(1, (Number(item && item.copies) || 1) + Number(step.getAttribute('data-ulx-step')));
+        engine.setItemCopies(uploadId, next);
+        return;
+      }
+      if (target.closest('[data-ulx-open]')) self.openPreview(side, uploadId);
     });
     this.root.addEventListener('input', function(event) {
       var note = event.target.closest('[data-ulx-note]');
@@ -366,7 +392,20 @@
         self.saveNotes();
       }
     });
+    // Leaving a note: an empty one closes, and the rows skipped while typing
+    // catch up.
+    this.rowsEl.addEventListener('focusout', function(event) {
+      var note = event.target.closest && event.target.closest('[data-ulx-note]');
+      if (!note) return;
+      if (!String(note.value || '').trim()) delete self.openNotes[note.getAttribute('data-ulx-note')];
+      self.scheduleRender();
+    });
     this.root.addEventListener('keydown', function(event) {
+      if (event.key === 'Enter' && event.target.matches && event.target.matches('[data-ulx-note]')) {
+        event.preventDefault();
+        event.target.blur();
+        return;
+      }
       var tab = event.target.closest('[data-ulx-side]');
       if (!tab || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
       var index = self.sides.indexOf(tab.getAttribute('data-ulx-side'));
@@ -375,6 +414,7 @@
       var nextTab = self.root.querySelector('[data-ulx-side="' + next + '"]');
       if (nextTab) nextTab.focus();
     });
+    this.bindDrop();
     this.addBtn.addEventListener('click', function() { self.submit('/cart'); });
     this.checkoutBtn.addEventListener('click', function() { self.submit('/checkout'); });
     window.addEventListener('pageshow', function(event) {
@@ -384,8 +424,81 @@
     });
   };
 
+  // Files dropped anywhere on the block go to the selected product, so the
+  // slim upload bar is never a small target. Drops on the bar itself are
+  // handled (and stopped) by the engine.
+  DualUpload.prototype.bindDrop = function() {
+    var self = this;
+    var root = this.root;
+    var clear = function() { root.classList.remove('is-dragging'); };
+    root.addEventListener('dragover', function(event) {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      root.classList.add('is-dragging');
+    });
+    root.addEventListener('dragleave', function(event) {
+      if (!event.relatedTarget || !root.contains(event.relatedTarget)) clear();
+    });
+    root.addEventListener('drop', clear, true);
+    window.addEventListener('dragend', clear);
+    window.addEventListener('drop', clear);
+    root.addEventListener('drop', function(event) {
+      if (!hasFiles(event) || self.busy) return;
+      event.preventDefault();
+      var files = Array.prototype.slice.call((event.dataTransfer && event.dataTransfer.files) || []);
+      var engine = self.engines[self.active];
+      if (files.length && engine) Promise.resolve(engine.startUploads(files)).catch(function() {});
+    });
+  };
+
   DualUpload.prototype.saveNotes = function() {
     writeStore(this.notesKey, this.notes);
+  };
+
+  DualUpload.prototype.focusedNote = function() {
+    var focused = document.activeElement;
+    return focused && focused.matches && focused.matches('[data-ulx-note]') && this.rowsEl.contains(focused)
+      ? focused
+      : null;
+  };
+
+  DualUpload.prototype.releaseNoteFocus = function() {
+    var note = this.focusedNote();
+    if (note) note.blur();
+  };
+
+  DualUpload.prototype.toggleNote = function(uploadId) {
+    var open = !this.openNotes[uploadId];
+    this.releaseNoteFocus();
+    if (open) this.openNotes[uploadId] = true;
+    else delete this.openNotes[uploadId];
+    this.renderRows(this.collectRows());
+    if (!open) return;
+    var inputs = this.rowsEl.querySelectorAll('[data-ulx-note]');
+    for (var i = 0; i < inputs.length; i += 1) {
+      if (inputs[i].getAttribute('data-ulx-note') === String(uploadId)) {
+        inputs[i].focus();
+        break;
+      }
+    }
+  };
+
+  DualUpload.prototype.toggleGeneralNote = function() {
+    this.generalOpen = !this.generalOpen;
+    this.renderGeneral();
+    if (this.generalOpen) this.generalNote.focus();
+  };
+
+  // Wide screens always show the preview beside the list; narrow ones open
+  // it on demand above the list.
+  DualUpload.prototype.openPreview = function(side, uploadId) {
+    this.previewOpen = true;
+    if (side !== this.active) this.setActive(side);
+    this.engines[side].selectUploadItem(uploadId);
+    this.render();
+    if (!isNarrow()) return;
+    var card = this.panes[side].querySelector('.ump__preview-card');
+    if (card && card.scrollIntoView) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
   DualUpload.prototype.setActive = function(side) {
@@ -412,15 +525,18 @@
     return Boolean(engine && engine.isExactMeasuredMode());
   };
 
+  // Short text for the tab, long text for its tooltip.
   DualUpload.prototype.rateHint = function(side) {
     var engine = this.engines[side];
     var pricing = engine && engine.customerPricing;
-    if (pricing && pricing.status === 'loading') return 'Checking your price…';
+    if (pricing && pricing.status === 'loading') return { short: '…', long: 'Checking your price' };
     if (this.isExact(side) && pricing && pricing.pricePerInch > 0) {
-      return 'Your rate ' + formatMoney(pricing.pricePerInch, this.currency) + '/in · billed by measured length';
+      var rate = formatMoney(pricing.pricePerInch, this.currency);
+      return { short: rate + '/in', long: 'Your rate: ' + rate + ' per inch, billed by measured length' };
     }
     var first = engine ? engine.getVariantPrice(this.products[side].firstVariantId) : 0;
-    return first > 0 ? 'From ' + formatMoney(first, this.currency) : '';
+    var from = first > 0 ? 'from ' + formatMoney(first, this.currency) : '';
+    return { short: from, long: from ? 'Sheets ' + from : '' };
   };
 
   DualUpload.prototype.exactQuoteItem = function(engine, uploadId) {
@@ -521,69 +637,103 @@
     this.sides.forEach(function(side) {
       var tab = self.root.querySelector('[data-ulx-side="' + side + '"]');
       var isActive = side === self.active;
+      var hint = self.rateHint(side);
       if (tab) {
         tab.classList.toggle('is-active', isActive);
         tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
         tab.setAttribute('tabindex', isActive ? '0' : '-1');
+        tab.title = hint.long;
       }
       var rate = self.root.querySelector('[data-ulx-rate="' + side + '"]');
-      if (rate) rate.textContent = self.rateHint(side);
+      if (rate) rate.textContent = hint.short;
       var count = self.root.querySelector('[data-ulx-count="' + side + '"]');
       if (count) {
         count.hidden = !counts[side];
-        count.textContent = counts[side] ? counts[side] + (counts[side] === 1 ? ' file' : ' files') : '';
+        count.textContent = counts[side] ? String(counts[side]) : '';
+        count.setAttribute('aria-label', counts[side] ? counts[side] + (counts[side] === 1 ? ' file' : ' files') : '');
       }
       self.panes[side].hidden = !isActive;
     });
 
-    this.orderCard.hidden = rows.length === 0;
+    var hasRows = rows.length > 0;
+    this.root.classList.toggle('has-rows', hasRows);
+    this.root.classList.toggle('is-preview', hasRows && this.previewOpen);
+    this.root.setAttribute('data-active', this.active);
+    this.root.setAttribute('data-drop-label', 'Drop to upload as ' + SHORT_LABELS[this.active]);
+    this.orderCard.hidden = !hasRows;
     // Never rebuild the rows under a customer who is typing a note.
-    var focused = document.activeElement;
-    var typing = Boolean(focused && focused.matches && focused.matches('[data-ulx-note]') && this.rowsEl.contains(focused));
-    if (!typing) this.renderRows(rows);
+    if (!this.focusedNote()) this.renderRows(rows);
+    this.renderGeneral();
     this.renderTotals(rows);
     this.renderActions(rows);
   };
 
+  // One dense row per file: thumb, name, size and billing on a second line,
+  // copies, price, note and remove. The note field opens on demand.
   DualUpload.prototype.renderRows = function(rows) {
     var self = this;
+    var activeState = this.engines[this.active] && this.engines[this.active].state;
+    var selectedId = activeState ? String(activeState.uploadId || '') : '';
     this.rowsEl.innerHTML = rows.map(function(row) {
       var id = escapeHtml(row.uploadId);
+      var name = escapeHtml(row.fileName);
       var size = row.widthIn && row.heightIn
         ? formatInches(row.widthIn) + ' × ' + formatInches(row.heightIn)
         : '';
-      var state = row.failed ? 'Failed — remove it and upload again' : (row.ready ? row.detail : (row.uploadId ? 'Measuring…' : 'Uploading…'));
+      var state = row.failed
+        ? 'Upload failed. Remove it and upload again.'
+        : (row.ready ? row.detail : (row.uploadId ? 'Measuring…' : 'Uploading…'));
+      var note = String(self.notes[row.uploadId] || '').trim();
+      var canNote = row.ready && Boolean(row.uploadId);
+      var noteOpen = canNote && Boolean(self.openNotes[row.uploadId]);
+      var classes = 'ulx__row' +
+        (row.failed ? ' is-failed' : (row.ready ? '' : ' is-busy')) +
+        (row.side === self.active && row.uploadId && String(row.uploadId) === selectedId ? ' is-selected' : '') +
+        (noteOpen ? ' is-noting' : '');
       var thumbStyle = row.thumb
         ? ' style="background-image:url(&quot;' + escapeHtml(row.thumb.replace(/"/g, '%22')) + '&quot;)"'
         : '';
-      var controls = row.ready
-        ? '<div class="ulx__qty" aria-label="Copies">' +
+      var open = row.ready ? '' : ' disabled';
+      var meta = '<b class="ulx__badge ulx__badge--' + row.side + '">' + SHORT_LABELS[row.side] + '</b>' +
+        (size ? '<span>' + escapeHtml(size) + '</span>' : '') +
+        (state ? '<span>' + escapeHtml(state) + '</span>' : '') +
+        (note && !noteOpen ? '<span class="ulx__row-note">“' + escapeHtml(note) + '”</span>' : '');
+      var tools = row.ready
+        ? '<span class="ulx__qty" role="group" aria-label="Copies of ' + name + '">' +
             '<button type="button" data-ulx-step="-1" aria-label="One copy less"' + (row.copies <= 1 ? ' disabled' : '') + '>−</button>' +
             '<span>' + row.copies + '</span>' +
             '<button type="button" data-ulx-step="1" aria-label="One copy more">+</button>' +
-          '</div>' +
+          '</span>' +
           '<strong class="ulx__price">' + (row.price != null ? escapeHtml(formatMoney(row.price, self.currency)) : '…') + '</strong>'
         : '';
-      var note = row.ready && row.uploadId
+      var noteBtn = canNote
+        ? '<button class="ulx__icon ulx__note-btn' + (note ? ' has-note' : '') + '" type="button" data-ulx-note-toggle aria-expanded="' + noteOpen +
+            '" aria-label="Note for ' + name + '" title="' + (note ? 'Edit note' : 'Add a note') + '">' + PENCIL_ICON + '</button>'
+        : '';
+      var noteInput = noteOpen
         ? '<input class="ulx__note" type="text" maxlength="' + NOTE_MAX + '" data-ulx-note="' + id + '" value="' +
-            escapeHtml(self.notes[row.uploadId] || '') + '" placeholder="Note for this file (optional)" aria-label="Note for ' + escapeHtml(row.fileName) + '">'
+            escapeHtml(self.notes[row.uploadId] || '') + '" placeholder="Note for this file" aria-label="Note for ' + name + '">'
         : '';
       return '' +
-        '<li class="ulx__row' + (row.failed ? ' is-failed' : '') + (row.ready ? '' : ' is-busy') + '" data-ulx-row="' + id + '" data-side="' + row.side + '">' +
-          '<button class="ulx__thumb" type="button" data-ulx-open' + thumbStyle + ' aria-label="Show ' + escapeHtml(row.fileName) + '"></button>' +
-          '<div class="ulx__row-main">' +
-            '<div class="ulx__row-top">' +
-              '<span class="ulx__badge ulx__badge--' + row.side + '">' + SHORT_LABELS[row.side] + '</span>' +
-              '<button class="ulx__file" type="button" data-ulx-open>' + escapeHtml(row.fileName) + '</button>' +
-            '</div>' +
-            '<p class="ulx__row-meta">' + (size ? '<span>' + escapeHtml(size) + '</span>' : '') + '<span>' + escapeHtml(state) + '</span></p>' +
-            note +
-          '</div>' +
-          '<div class="ulx__row-side">' + controls +
-            (row.uploadId ? '<button class="ulx__remove" type="button" data-ulx-remove aria-label="Remove ' + escapeHtml(row.fileName) + '">×</button>' : '') +
-          '</div>' +
+        '<li class="' + classes + '" data-ulx-row="' + id + '" data-side="' + row.side + '">' +
+          '<button class="ulx__thumb" type="button" data-ulx-open' + open + thumbStyle + ' aria-label="Preview ' + name + '"></button>' +
+          '<button class="ulx__file" type="button" data-ulx-open' + open + ' title="' + name + '">' + name + '</button>' +
+          '<p class="ulx__meta">' + meta + '</p>' +
+          tools + noteBtn +
+          (row.uploadId ? '<button class="ulx__icon ulx__remove" type="button" data-ulx-remove aria-label="Remove ' + name + '">×</button>' : '') +
+          noteInput +
         '</li>';
     }).join('');
+  };
+
+  DualUpload.prototype.renderGeneral = function() {
+    var note = String(this.notes.__general || '').trim();
+    this.generalNote.hidden = !this.generalOpen;
+    this.generalToggle.setAttribute('aria-expanded', this.generalOpen ? 'true' : 'false');
+    this.generalToggle.classList.toggle('has-note', Boolean(note) && !this.generalOpen);
+    this.generalToggle.textContent = this.generalOpen
+      ? 'Hide order note'
+      : note ? 'Order note: ' + note : '+ Add an order note';
   };
 
   DualUpload.prototype.renderTotals = function(rows) {
@@ -604,23 +754,21 @@
       grand += sum;
       files += sideRows.length;
       return '' +
-        '<div class="ulx__subtotal">' +
-          '<span class="ulx__badge ulx__badge--' + side + '">' + SHORT_LABELS[side] + '</span>' +
+        '<span class="ulx__sum">' +
+          '<b class="ulx__badge ulx__badge--' + side + '">' + SHORT_LABELS[side] + '</b>' +
           '<span>' + sideRows.length + (sideRows.length === 1 ? ' file' : ' files') +
             (inches > 0 ? ' · ' + escapeHtml(formatInches(inches)) : '') + '</span>' +
           '<strong>' + escapeHtml(formatMoney(sum, self.currency)) + '</strong>' +
-        '</div>';
+        '</span>';
     }).join('');
     this.subtotalsEl.innerHTML = parts;
-    this.subtotalsEl.hidden = !parts;
     this.grandEl.textContent = files ? (pending ? 'Calculating…' : formatMoney(grand, this.currency)) : '—';
     var exact = this.readySides().some(this.isExact, this);
     this.grandMetaEl.textContent = !files
       ? ''
       : exact
-        ? 'Measured length at your rate · taxes and shipping at checkout'
-        : 'Taxes and shipping at checkout';
-    this.orderMetaEl.textContent = rows.length + (rows.length === 1 ? ' file' : ' files');
+        ? 'Billed by measured length at your rate. Taxes and shipping at checkout.'
+        : 'Taxes and shipping at checkout.';
     this.totalPending = pending;
   };
 
@@ -645,9 +793,7 @@
 
     this.addBtn.hidden = exact;
     this.addBtn.disabled = blocked;
-    this.addBtn.textContent = this.busy && !exact
-      ? 'Adding…'
-      : readyCount > 1 ? 'Add ' + readyCount + ' gang sheets to cart' : 'Add to cart';
+    this.addBtn.textContent = this.busy && !exact ? 'Adding…' : 'Add to cart';
     this.checkoutBtn.hidden = !exact && !this.enableCheckout;
     this.checkoutBtn.disabled = blocked;
     this.checkoutBtn.textContent = this.busy
