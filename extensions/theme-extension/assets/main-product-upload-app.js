@@ -441,6 +441,13 @@
       return item;
     });
     if (!items.length) return;
+    // Everything restored is this tab's to keep or drop: uploads the
+    // verification below rejects (bought, in the cart, gone) must leave the
+    // saved list instead of being kept as another tab's.
+    var own = this.ownUploadIds = this.ownUploadIds || {};
+    stored.items.forEach(function(item) {
+      if (item && item.uploadId) own[String(item.uploadId)] = true;
+    });
 
     // Optimistic restore, then server verification (drop purchased/expired).
     this.state.items = items;
@@ -1776,6 +1783,8 @@
     if (n === (Number(item.copies) || 1)) { this.render(); return; }
     var previous = item.copies || 1;
     item.copies = n;
+    // Editing copies here makes it this tab's line to add (see addToCart).
+    item.restored = false;
     var isActive = sameUploadId(this.state.uploadId, uploadId);
     if (isActive) this.state.copies = n;
     if (this.isExactMeasuredMode()) {
@@ -3262,11 +3271,23 @@
   // two tabs adding at once can drop each other's line. Every cart write of
   // our blocks in this browser runs under one Web Lock (same name in the Mod2
   // block); browsers without Web Locks run unlocked, as before.
+  // A tab never waits more than 20 s for another tab's lock; after that it
+  // writes unlocked, exactly as before the lock existed.
   function withCartLock(task) {
-    if (typeof navigator !== 'undefined' && navigator.locks && typeof navigator.locks.request === 'function') {
-      return navigator.locks.request('ul-shopify-cart', task);
+    if (typeof navigator === 'undefined' || !navigator.locks || typeof navigator.locks.request !== 'function') {
+      return task();
     }
-    return task();
+    var acquired = false;
+    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = controller ? setTimeout(function() { controller.abort(); }, 20000) : null;
+    return navigator.locks.request('ul-shopify-cart', controller ? { signal: controller.signal } : {}, function() {
+      acquired = true;
+      if (timer) clearTimeout(timer);
+      return task();
+    }).catch(function(error) {
+      if (!acquired && error && error.name === 'AbortError') return task();
+      throw error;
+    });
   }
 
   async function cartRequest(url, body) {
@@ -3328,22 +3349,40 @@
     }
   };
 
+  // Cart reads outside ensureCartLine get the same retry/backoff it uses.
+  MainProductUpload.prototype.readCartRetrying = async function() {
+    for (var attempt = 1; ; attempt += 1) {
+      try {
+        return await this.readCart();
+      } catch (error) {
+        if (attempt >= 3) throw error;
+        await sleep(400 * Math.pow(2, attempt - 1));
+      }
+    }
+  };
+
   // Last check before leaving the page: the theme (or a browser without Web
   // Locks) may have rewritten the cart meanwhile. Put back any of this tab's
   // lines that are gone, and fail loudly rather than redirect without them.
-  MainProductUpload.prototype.verifyCartLines = async function(cartItems) {
+  // If the cart cannot be read at all, ensureCartLine's verified cart stands.
+  MainProductUpload.prototype.verifyCartLines = async function(cartItems, verifiedCart) {
     var hasLine = function(cart, cartItem) {
       return cartLinesForUpload(cart, cartItem.uploadId).some(function(line) {
         return cartLineIsExact(line, cartItem);
       });
     };
     for (var round = 0; round < 3; round += 1) {
-      var cart = await this.readCart();
+      var cart;
+      try {
+        cart = await this.readCartRetrying();
+      } catch (_) {
+        return verifiedCart;
+      }
       var missing = cartItems.filter(function(cartItem) { return !hasLine(cart, cartItem); });
       if (!missing.length) return cart;
       if (round === 2) break;
       for (var i = 0; i < missing.length; i += 1) {
-        await this.ensureCartLine(missing[i], missing[i].uploadId);
+        verifiedCart = await this.ensureCartLine(missing[i], missing[i].uploadId);
       }
     }
     throw new Error('Some gang sheets could not be added to the cart. Please try again.');
@@ -3420,15 +3459,23 @@
       var self = this;
       // An upload restored from this product's saved list that another tab
       // already put in the cart is that tab's line; adding it here would
-      // replace the line with this tab's copies. Leave it where it is.
-      var cartBefore = await this.readCart();
-      var addedElsewhere = readyItems.filter(function(item) {
-        return item.restored && cartLinesForUpload(cartBefore, item.uploadId).length > 0;
-      });
+      // replace the line with this tab's copies. Leave it where it is. Checked
+      // before prepare (so its row keeps that tab's copies) and again under
+      // the cart lock. A failed read here just means "none found".
+      var addedElsewhere = [];
+      if (readyItems.some(function(item) { return item.restored; })) {
+        var cartBefore = await this.readCart().catch(function() { return null; });
+        addedElsewhere = readyItems.filter(function(item) {
+          return item.restored && cartLinesForUpload(cartBefore, item.uploadId).length > 0;
+        });
+      }
       if (addedElsewhere.length) {
         this.forgetUploads(addedElsewhere.map(function(item) { return item.uploadId; }));
         readyItems = readyItems.filter(function(item) { return addedElsewhere.indexOf(item) === -1; });
         if (!readyItems.length) {
+          await withCartLock(function() {
+            return self.saveOrderNote(addedElsewhere.map(function(item) { return item.fileName; }));
+          });
           window.location.href = discountRedirect(redirectTo || '/cart', this.getDiscountCode());
           return;
         }
@@ -3463,9 +3510,13 @@
           quantity: quantity,
           properties: properties,
           uploadId: item.uploadId,
+          fileName: item.fileName,
+          restored: Boolean(item.restored),
           variantTitle: String(preparedLine.cartInstruction.variantTitle || result.selectedVariantTitle || (pageVariant && pageVariant.title) || '')
         };
       });
+      // From here on these are this tab's own cart lines, also on a retry.
+      readyItems.forEach(function(item) { item.restored = false; });
 
       var twin = await this.resolveCartProductVariants();
       if (twin) {
@@ -3482,18 +3533,30 @@
 
       // One tab at a time writes the cart (see withCartLock), so tabs adding
       // DTF and UV sheets at the same moment cannot drop each other's lines.
-      await withCartLock(async function() {
-        for (var i = 0; i < cartItems.length; i++) {
-          await self.ensureCartLine(cartItems[i], cartItems[i].uploadId);
+      var syncedCart = await withCartLock(async function() {
+        if (cartItems.some(function(cartItem) { return cartItem.restored; })) {
+          // Another tab may have added a restored upload while this one waited.
+          var current = await self.readCart().catch(function() { return null; });
+          cartItems = cartItems.filter(function(cartItem) {
+            return !(cartItem.restored && cartLinesForUpload(current, cartItem.uploadId).length > 0);
+          });
         }
-        var syncedCart = await self.verifyCartLines(cartItems);
-
-        await self.bindCartToken(syncedCart, uploadIds);
+        var cart = null;
+        for (var i = 0; i < cartItems.length; i++) {
+          cart = await self.ensureCartLine(cartItems[i], cartItems[i].uploadId);
+        }
+        if (cartItems.length) cart = await self.verifyCartLines(cartItems, cart);
 
         // Runs only after every line is in the cart and never throws: a note that
         // cannot be saved must not stop the customer from reaching cart/checkout.
         await self.saveOrderNote(fileNames);
+        return cart;
       });
+
+      // An app-server call, not a cart write: kept out of the lock.
+      if (cartItems.length) {
+        await this.bindCartToken(syncedCart, cartItems.map(function(cartItem) { return cartItem.uploadId; }));
+      }
 
       // The cart owns these uploads now; do not show them again on return.
       this.forgetUploads(uploadIds);

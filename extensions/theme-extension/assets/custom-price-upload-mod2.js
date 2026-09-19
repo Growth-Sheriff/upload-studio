@@ -394,11 +394,23 @@
     // Shopify applies /cart/*.js writes from different tabs without ordering, so
     // two tabs adding at once can drop each other's line. Cart writes of both
     // upload blocks share one Web Lock; without Web Locks they run as before.
+    // A tab never waits more than 20 s for another tab's lock; after that it
+    // writes unlocked, exactly as before the lock existed.
     function withCartLock(task) {
-      if (typeof navigator !== 'undefined' && navigator.locks && typeof navigator.locks.request === 'function') {
-        return navigator.locks.request('ul-shopify-cart', task);
+      if (typeof navigator === 'undefined' || !navigator.locks || typeof navigator.locks.request !== 'function') {
+        return task();
       }
-      return task();
+      var acquired = false;
+      var controller = typeof AbortController === 'function' ? new AbortController() : null;
+      var timer = controller ? setTimeout(function() { controller.abort(); }, 20000) : null;
+      return navigator.locks.request('ul-shopify-cart', controller ? { signal: controller.signal } : {}, function() {
+        acquired = true;
+        if (timer) clearTimeout(timer);
+        return task();
+      }).catch(function(error) {
+        if (!acquired && error && error.name === 'AbortError') return task();
+        throw error;
+      });
     }
     async function readCart() {
       var response = await fetch('/cart.js', { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
@@ -4286,19 +4298,21 @@
           properties: properties
         };
         var cartUploadId = state.uploadId;
-        await withCartLock(async function() {
-          var syncedCart = uploadRequired && cartUploadId
+        var syncedCart = await withCartLock(async function() {
+          var cart = uploadRequired && cartUploadId
             ? await ensureCartLine(cartItem, cartUploadId)
             : await cartRequest('/cart/add.js', { items: [cartItem] });
-          if (!(uploadRequired && cartUploadId)) return;
+          if (!(uploadRequired && cartUploadId)) return cart;
           // Last check before leaving: the theme may have rewritten the cart.
-          var finalCart = await readCart();
-          var kept = cartLinesForUpload(finalCart, cartUploadId).some(function(line) {
+          // If the cart cannot be read, ensureCartLine's verified cart stands.
+          var finalCart = await readCart().catch(function() { return null; });
+          var kept = !finalCart || cartLinesForUpload(finalCart, cartUploadId).some(function(line) {
             return cartLineIsExact(line, cartItem);
           });
-          if (!kept) syncedCart = await ensureCartLine(cartItem, cartUploadId);
-          await bindCartToken(syncedCart, [cartUploadId]);
+          return kept ? cart : ensureCartLine(cartItem, cartUploadId);
         });
+        // An app-server call, not a cart write: kept out of the lock.
+        if (uploadRequired && cartUploadId) await bindCartToken(syncedCart, [cartUploadId]);
         window.location.href = redirectPath;
       } catch (error) {
         showError(error && error.message ? error.message : 'Failed to add to cart.');
