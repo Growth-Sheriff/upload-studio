@@ -559,9 +559,15 @@
     if (this.renderQueued) return;
     this.renderQueued = true;
     var self = this;
-    var run = function() { self.renderQueued = false; self.render(); };
+    var run = function() {
+      if (!self.renderQueued) return;
+      self.renderQueued = false;
+      self.render();
+    };
+    // A frame while the page is visible; the timer covers background tabs,
+    // which get no frames while a long batch keeps uploading.
     if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(run);
-    else setTimeout(run, 16);
+    setTimeout(run, 120);
   };
 
   // ── Per-product state read from the engines ──────────────────────────────
