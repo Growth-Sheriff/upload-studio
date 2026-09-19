@@ -394,23 +394,28 @@
     // Shopify applies /cart/*.js writes from different tabs without ordering, so
     // two tabs adding at once can drop each other's line. Cart writes of both
     // upload blocks share one Web Lock; without Web Locks they run as before.
-    // A tab never waits more than 20 s for another tab's lock; after that it
-    // writes unlocked, exactly as before the lock existed.
+    // A tab never waits more than 20 s for another tab's lock, and any failure
+    // to get the lock (timeout, a polyfilled AbortController, a blocked storage
+    // context) falls back to writing unlocked, exactly as before the lock.
     function withCartLock(task) {
       if (typeof navigator === 'undefined' || !navigator.locks || typeof navigator.locks.request !== 'function') {
         return task();
       }
       var acquired = false;
-      var controller = typeof AbortController === 'function' ? new AbortController() : null;
-      var timer = controller ? setTimeout(function() { controller.abort(); }, 20000) : null;
-      return navigator.locks.request('ul-shopify-cart', controller ? { signal: controller.signal } : {}, function() {
-        acquired = true;
-        if (timer) clearTimeout(timer);
+      try {
+        var controller = typeof AbortController === 'function' ? new AbortController() : null;
+        var timer = controller ? setTimeout(function() { controller.abort(); }, 20000) : null;
+        return navigator.locks.request('ul-shopify-cart', controller ? { signal: controller.signal } : {}, function() {
+          acquired = true;
+          if (timer) clearTimeout(timer);
+          return task();
+        }).catch(function(error) {
+          if (!acquired) return task();
+          throw error;
+        });
+      } catch (_) {
         return task();
-      }).catch(function(error) {
-        if (!acquired && error && error.name === 'AbortError') return task();
-        throw error;
-      });
+      }
     }
     async function readCart() {
       var response = await fetch('/cart.js', { headers: { 'Accept': 'application/json' }, cache: 'no-store' });

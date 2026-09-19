@@ -3271,23 +3271,28 @@
   // two tabs adding at once can drop each other's line. Every cart write of
   // our blocks in this browser runs under one Web Lock (same name in the Mod2
   // block); browsers without Web Locks run unlocked, as before.
-  // A tab never waits more than 20 s for another tab's lock; after that it
-  // writes unlocked, exactly as before the lock existed.
+  // A tab never waits more than 20 s for another tab's lock, and any failure
+  // to get the lock (timeout, a polyfilled AbortController, a blocked storage
+  // context) falls back to writing unlocked, exactly as before the lock.
   function withCartLock(task) {
     if (typeof navigator === 'undefined' || !navigator.locks || typeof navigator.locks.request !== 'function') {
       return task();
     }
     var acquired = false;
-    var controller = typeof AbortController === 'function' ? new AbortController() : null;
-    var timer = controller ? setTimeout(function() { controller.abort(); }, 20000) : null;
-    return navigator.locks.request('ul-shopify-cart', controller ? { signal: controller.signal } : {}, function() {
-      acquired = true;
-      if (timer) clearTimeout(timer);
+    try {
+      var controller = typeof AbortController === 'function' ? new AbortController() : null;
+      var timer = controller ? setTimeout(function() { controller.abort(); }, 20000) : null;
+      return navigator.locks.request('ul-shopify-cart', controller ? { signal: controller.signal } : {}, function() {
+        acquired = true;
+        if (timer) clearTimeout(timer);
+        return task();
+      }).catch(function(error) {
+        if (!acquired) return task();
+        throw error;
+      });
+    } catch (_) {
       return task();
-    }).catch(function(error) {
-      if (!acquired && error && error.name === 'AbortError') return task();
-      throw error;
-    });
+    }
   }
 
   async function cartRequest(url, body) {
@@ -3482,64 +3487,77 @@
       }
       var uploadIds = readyItems.map(function(item) { return item.uploadId; });
       var fileNames = readyItems.map(function(item) { return item.fileName; });
-      var lineRequests = readyItems.map(buildCartLineRequest);
-      var serverProperties = await this.prepareCartProperties(uploadIds, lineRequests);
 
-      var cartItems = readyItems.map(function(item) {
-        var result = item.selectedResult || {};
-        var preparedLine = serverProperties[item.uploadId];
-        if (!preparedLine) throw new Error('A measured gang sheet could not be verified for cart.');
-        var variantId = parseInt(preparedLine.cartInstruction.variantId || item.selectedVariantId, 10);
-        if (!(variantId > 0)) throw new Error('A measured gang sheet has no matching variant.');
-        var requestedLine = buildCartLineRequest(item);
-        // A linear-inch variant uses Shopify quantity as the integer-inch
-        // billing carrier. Physical production quantity remains `copies` and
-        // is what /api/cart/prepare validates. Sheet-priced variants continue
-        // to use one Shopify unit per whole-sheet copy.
-        var quantity = self.isLinearInchPricing()
-          ? Math.max(1, Math.ceil(Number(
-              preparedLine.cartInstruction.cartQuantity || result.cartQuantity || 0
-            ) || 1))
-          : requestedLine.sheetsNeeded;
-        var properties = preparedLine.properties;
-        var pageVariant = (self.variants || []).find(function(v) {
-          return Number(v && v.id) === variantId;
+      // Ready items -> cart lines: server-verified properties and variant
+      // (prepare), then the twin cart product's variant where one is mapped.
+      var buildCartItems = async function(items) {
+        var serverProperties = await self.prepareCartProperties(
+          items.map(function(item) { return item.uploadId; }),
+          items.map(buildCartLineRequest)
+        );
+        var built = items.map(function(item) {
+          var result = item.selectedResult || {};
+          var preparedLine = serverProperties[item.uploadId];
+          if (!preparedLine) throw new Error('A measured gang sheet could not be verified for cart.');
+          var variantId = parseInt(preparedLine.cartInstruction.variantId || item.selectedVariantId, 10);
+          if (!(variantId > 0)) throw new Error('A measured gang sheet has no matching variant.');
+          var requestedLine = buildCartLineRequest(item);
+          // A linear-inch variant uses Shopify quantity as the integer-inch
+          // billing carrier. Physical production quantity remains `copies` and
+          // is what /api/cart/prepare validates. Sheet-priced variants continue
+          // to use one Shopify unit per whole-sheet copy.
+          var quantity = self.isLinearInchPricing()
+            ? Math.max(1, Math.ceil(Number(
+                preparedLine.cartInstruction.cartQuantity || result.cartQuantity || 0
+              ) || 1))
+            : requestedLine.sheetsNeeded;
+          var properties = preparedLine.properties;
+          var pageVariant = (self.variants || []).find(function(v) {
+            return Number(v && v.id) === variantId;
+          });
+          return {
+            id: variantId,
+            quantity: quantity,
+            properties: properties,
+            uploadId: item.uploadId,
+            variantTitle: String(preparedLine.cartInstruction.variantTitle || result.selectedVariantTitle || (pageVariant && pageVariant.title) || '')
+          };
         });
-        return {
-          id: variantId,
-          quantity: quantity,
-          properties: properties,
-          uploadId: item.uploadId,
-          fileName: item.fileName,
-          restored: Boolean(item.restored),
-          variantTitle: String(preparedLine.cartInstruction.variantTitle || result.selectedVariantTitle || (pageVariant && pageVariant.title) || '')
-        };
-      });
+
+        var twin = await self.resolveCartProductVariants();
+        if (twin) {
+          built.forEach(function(cartItem) {
+            var key = cartItem.variantTitle.trim().toLowerCase();
+            var mapped = key && twin.byTitle[key];
+            if (mapped) {
+              cartItem.id = Number(mapped);
+            } else {
+              console.warn('[UMP] twin variant not found for "' + cartItem.variantTitle + '"; keeping page product variant');
+            }
+          });
+        }
+        return built;
+      };
+
+      // Restored uploads are prepared only under the lock, after re-checking
+      // the cart, so one that another tab adds meanwhile keeps its row as that
+      // tab wrote it. Every other click prepares before taking the lock.
+      var restoredIds = readyItems
+        .filter(function(item) { return item.restored; })
+        .map(function(item) { return item.uploadId; });
       // From here on these are this tab's own cart lines, also on a retry.
       readyItems.forEach(function(item) { item.restored = false; });
-
-      var twin = await this.resolveCartProductVariants();
-      if (twin) {
-        cartItems.forEach(function(cartItem) {
-          var key = cartItem.variantTitle.trim().toLowerCase();
-          var mapped = key && twin.byTitle[key];
-          if (mapped) {
-            cartItem.id = Number(mapped);
-          } else {
-            console.warn('[UMP] twin variant not found for "' + cartItem.variantTitle + '"; keeping page product variant');
-          }
-        });
-      }
+      var cartItems = restoredIds.length ? null : await buildCartItems(readyItems);
 
       // One tab at a time writes the cart (see withCartLock), so tabs adding
       // DTF and UV sheets at the same moment cannot drop each other's lines.
       var syncedCart = await withCartLock(async function() {
-        if (cartItems.some(function(cartItem) { return cartItem.restored; })) {
-          // Another tab may have added a restored upload while this one waited.
+        if (!cartItems) {
           var current = await self.readCart().catch(function() { return null; });
-          cartItems = cartItems.filter(function(cartItem) {
-            return !(cartItem.restored && cartLinesForUpload(current, cartItem.uploadId).length > 0);
+          var stillOurs = readyItems.filter(function(item) {
+            return !(restoredIds.indexOf(item.uploadId) !== -1 && cartLinesForUpload(current, item.uploadId).length > 0);
           });
+          cartItems = stillOurs.length ? await buildCartItems(stillOurs) : [];
         }
         var cart = null;
         for (var i = 0; i < cartItems.length; i++) {

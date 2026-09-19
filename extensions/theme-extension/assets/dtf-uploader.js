@@ -2160,11 +2160,35 @@
         }
         const cartAddBody = JSON.stringify(cartAddPayload)
 
-        const response = await fetch('/cart/add.js', {
+        // Shopify applies cart writes from different tabs without ordering, so
+        // this add shares the upload blocks' cross-tab lock ('ul-shopify-cart');
+        // any failure to get the lock, or 20 s of waiting, adds unlocked as before.
+        const addToCart = () => fetch('/cart/add.js', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: cartAddBody,
         })
+        const withCartLock = (task) => {
+          if (!navigator.locks || typeof navigator.locks.request !== 'function') return task()
+          let acquired = false
+          try {
+            const controller = typeof AbortController === 'function' ? new AbortController() : null
+            const timer = controller ? setTimeout(() => controller.abort(), 20000) : null
+            return navigator.locks
+              .request('ul-shopify-cart', controller ? { signal: controller.signal } : {}, () => {
+                acquired = true
+                if (timer) clearTimeout(timer)
+                return task()
+              })
+              .catch((error) => {
+                if (!acquired) return task()
+                throw error
+              })
+          } catch (_) {
+            return task()
+          }
+        }
+        const response = await withCartLock(addToCart)
 
         if (!response.ok) {
           const err = await response.json().catch(() => ({}))
