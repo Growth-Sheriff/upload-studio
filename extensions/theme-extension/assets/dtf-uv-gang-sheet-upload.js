@@ -224,6 +224,7 @@
     this.sides.forEach(this.mountEngine, this);
     this.bindEvents();
     this.render();
+    this.watchBottomBar();
   }
 
   DualUpload.prototype.buildLayout = function() {
@@ -392,12 +393,12 @@
         self.saveNotes();
       }
     });
-    // Leaving a note: an empty one closes, and the rows skipped while typing
-    // catch up.
+    // Leaving a note folds it back into the row (its text shows in the row's
+    // second line), and the rows skipped while typing catch up.
     this.rowsEl.addEventListener('focusout', function(event) {
       var note = event.target.closest && event.target.closest('[data-ulx-note]');
       if (!note) return;
-      if (!String(note.value || '').trim()) delete self.openNotes[note.getAttribute('data-ulx-note')];
+      delete self.openNotes[note.getAttribute('data-ulx-note')];
       self.scheduleRender();
     });
     this.root.addEventListener('keydown', function(event) {
@@ -449,6 +450,47 @@
       var engine = self.engines[self.active];
       if (files.length && engine) Promise.resolve(engine.startUploads(files)).catch(function() {});
     });
+  };
+
+  // Many themes pin their own menu bar to the bottom of phone screens. The
+  // block's pinned footer sits above that bar instead of under it.
+  DualUpload.prototype.watchBottomBar = function() {
+    var self = this;
+    var pending = false;
+    var fixedBarTop = function(el) {
+      for (; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+        if (self.root.contains(el)) return null;
+        var position = window.getComputedStyle(el).position;
+        if (position !== 'fixed' && position !== 'sticky') continue;
+        var rect = el.getBoundingClientRect();
+        var fullWidth = rect.width >= window.innerWidth * 0.6;
+        return fullWidth && rect.bottom >= window.innerHeight - 4 ? rect.top : null;
+      }
+      return null;
+    };
+    var measure = function() {
+      pending = false;
+      var offset = 0;
+      if (isNarrow() && typeof document.elementsFromPoint === 'function') {
+        var stack = document.elementsFromPoint(window.innerWidth / 2, window.innerHeight - 2).slice(0, 6);
+        for (var i = 0; i < stack.length; i += 1) {
+          var top = fixedBarTop(stack[i]);
+          if (top != null) {
+            offset = Math.max(0, Math.round(window.innerHeight - top));
+            break;
+          }
+        }
+      }
+      self.root.style.setProperty('--ulx-bottom', offset + 'px');
+    };
+    var schedule = function() {
+      if (pending) return;
+      pending = true;
+      setTimeout(measure, 200);
+    };
+    measure();
+    window.addEventListener('resize', schedule);
+    window.addEventListener('scroll', schedule, { passive: true });
   };
 
   DualUpload.prototype.saveNotes = function() {

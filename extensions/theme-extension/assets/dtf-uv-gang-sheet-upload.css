@@ -382,6 +382,8 @@
   white-space: nowrap;
 }
 .ulx .ulx__meta > span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The measured size always shows; billing detail and note give way first. */
+.ulx .ulx__meta > b + span { flex-shrink: 0; }
 .ulx .ulx__meta > span + span::before { content: "·"; margin-right: 6px; color: var(--ulx-faint); }
 .ulx .ulx__row-note { color: var(--ulx-ink); font-style: italic; }
 .ulx .ulx__row.is-failed .ulx__meta { color: var(--ulx-danger); }
@@ -568,9 +570,10 @@
   .ulx .ump__preview-card { margin-top: 12px; }
   .ulx .ulx__preview-close { display: inline-grid; }
 
+  /* --ulx-bottom: height of a theme menu pinned to the screen bottom (JS). */
   .ulx .ulx__footer {
     position: sticky;
-    bottom: 0;
+    bottom: var(--ulx-bottom, 0px);
     z-index: 3;
     grid-template-areas: "sums grand" "actions actions";
     padding: 10px 0 calc(10px + env(safe-area-inset-bottom, 0px));
@@ -614,6 +617,8 @@
     row-gap: 4px;
     padding: 8px 6px 8px 10px;
   }
+  .ulx .ulx__icon { width: 28px; height: 28px; }
+  .ulx .ulx__qty button { width: 26px; height: 26px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
