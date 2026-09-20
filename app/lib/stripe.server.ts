@@ -268,26 +268,59 @@ export function verifyWebhookEvent(
 
 
 
+// A shop's saved card lives on whichever Stripe customer it was attached to.
+// Missing that customer here creates a second, empty one and strands the card
+// where no charge can reach it, so every way of finding it is tried: the
+// current metadata key, the older `shop_domain` one, and the email — and the
+// customer that already holds a card wins.
 export async function getOrCreateCustomer(
   shopDomain: string,
   email?: string | null
 ): Promise<string> {
   const stripe = getStripeClient();
 
+  const belongsToShop = (customer: Stripe.Customer) =>
+    customer.metadata?.shopDomain === shopDomain ||
+    customer.metadata?.shop_domain === shopDomain;
 
-  const existing = await stripe.customers.list({
-    limit: 1,
-    email: email || undefined,
-  });
+  const candidates = new Map<string, Stripe.Customer>();
+  // Neither list nor search returns deleted customers.
+  const collect = (customer: Stripe.Customer) => {
+    if (!candidates.has(customer.id)) candidates.set(customer.id, customer);
+  };
 
-  if (existing.data.length > 0) {
-
-    const customer = existing.data.find(
-      (c) => c.metadata?.shopDomain === shopDomain
-    );
-    if (customer) return customer.id;
+  for (const key of ['shopDomain', 'shop_domain']) {
+    try {
+      const found = await stripe.customers.search({
+        query: `metadata['${key}']:'${shopDomain}'`,
+        limit: 20,
+      });
+      found.data.forEach(collect);
+    } catch (error) {
+      // Search is not enabled on every account; the email lookup still covers it.
+      console.warn(`[Stripe] customer search by ${key} failed: ${(error as Error).message}`);
+    }
   }
 
+  if (email) {
+    // One shop can own several customers under the same email, so the whole
+    // page is read instead of the first row.
+    const listed = await stripe.customers.list({ email, limit: 100 });
+    listed.data.filter(belongsToShop).forEach(collect);
+  }
+
+  const found = [...candidates.values()];
+  const withDefault = found.find(
+    (customer) => typeof customer.invoice_settings?.default_payment_method === 'string'
+  );
+  if (withDefault) return withDefault.id;
+
+  for (const customer of found) {
+    const methods = await stripe.paymentMethods.list({ customer: customer.id, limit: 1 });
+    if (methods.data.length > 0) return customer.id;
+  }
+
+  if (found.length > 0) return found[0].id;
 
   const customer = await stripe.customers.create({
     email: email || undefined,
