@@ -577,18 +577,14 @@
     return Boolean(engine && engine.isExactMeasuredMode());
   };
 
-  // Short text for the tab, long text for its tooltip.
+  // The tab carries a price only for a customer who has their own per-inch
+  // rate. Sheet prices are not advertised here: every file is priced by its
+  // measured size in the list below.
   DualUpload.prototype.rateHint = function(side) {
-    var engine = this.engines[side];
-    var pricing = engine && engine.customerPricing;
-    if (pricing && pricing.status === 'loading') return { short: '…', long: 'Checking your price' };
-    if (this.isExact(side) && pricing && pricing.pricePerInch > 0) {
-      var rate = formatMoney(pricing.pricePerInch, this.currency);
-      return { short: rate + '/in', long: 'Your rate: ' + rate + ' per inch, billed by measured length' };
-    }
-    var first = engine ? engine.getVariantPrice(this.products[side].firstVariantId) : 0;
-    var from = first > 0 ? 'from ' + formatMoney(first, this.currency) : '';
-    return { short: from, long: from ? 'Sheets ' + from : '' };
+    var pricing = this.engines[side] && this.engines[side].customerPricing;
+    if (!this.isExact(side) || !pricing || !(pricing.pricePerInch > 0)) return { short: '', long: '' };
+    var rate = formatMoney(pricing.pricePerInch, this.currency);
+    return { short: rate + '/in', long: 'Your rate: ' + rate + ' per inch, billed by measured length' };
   };
 
   DualUpload.prototype.exactQuoteItem = function(engine, uploadId) {
