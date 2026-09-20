@@ -4,7 +4,23 @@ import {
   getTrimmedImageBounds,
   parsePngInfo,
   parseSvgDocumentInfo,
+  readableDpi,
 } from './preflight.server'
+
+describe('readableDpi', () => {
+  it('reads a true 300 DPI file as 300, so it never warns as too low', () => {
+    // Measuring 300 DPI artwork returns 299.9994; the raw float used to fail
+    // `effectiveDpi < 300` and warned customers their file was pixelated.
+    expect(readableDpi(299.9994)).toBe(300)
+    expect(readableDpi(299.9994) < 300).toBe(false)
+  })
+
+  it('still reports artwork that is genuinely below the requirement', () => {
+    expect(readableDpi(299.4) < 300).toBe(true)
+    expect(readableDpi(72.009)).toBe(72)
+    expect(readableDpi(57)).toBe(57)
+  })
+})
 
 describe('SVG physical sizing', () => {
   it('uses the CSS 96 px/in convention for unitless dimensions and viewBox', () => {

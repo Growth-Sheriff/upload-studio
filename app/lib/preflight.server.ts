@@ -964,6 +964,13 @@ interface MeasuredImageInfo {
 }
 
 
+/** Measured DPI carries float noise: a true 300 DPI file reads back as
+ *  299.9994 and used to be reported as too low. Both the comparison and the
+ *  message use the whole number a person would read off the file. */
+export function readableDpi(effectiveDpi: number): number {
+  return Math.round(effectiveDpi)
+}
+
 export interface PreflightConfig {
   maxFileSizeMB: number
   minDPI: number
@@ -1656,12 +1663,12 @@ export async function runPreflightChecks(
         message: 'Could not determine artwork resolution.',
         details: { source: sizingSourceDetail, sheetWidthIn: maxPrintableWidthIn },
       })
-    } else if (effectiveDpi < config.requiredDPI) {
+    } else if (readableDpi(effectiveDpi) < config.requiredDPI) {
       checks.push({
         name: 'dpi',
         status: 'warning',
         value: effectiveDpi,
-        message: `Effective print DPI is ${effectiveDpi} (recommended ${config.requiredDPI}). Print may appear pixelated at full size.`,
+        message: `Effective print DPI is ${readableDpi(effectiveDpi)} (recommended ${config.requiredDPI}). Print may appear pixelated at full size.`,
         details: { source: sizingSourceDetail, sheetWidthIn: maxPrintableWidthIn },
       })
       if (overall === 'ok') overall = 'warning'
@@ -1670,7 +1677,7 @@ export async function runPreflightChecks(
         name: 'dpi',
         status: 'ok',
         value: effectiveDpi,
-        message: `Effective print DPI: ${effectiveDpi}`,
+        message: `Effective print DPI: ${readableDpi(effectiveDpi)}`,
         details: { source: sizingSourceDetail, sheetWidthIn: maxPrintableWidthIn },
       })
     }

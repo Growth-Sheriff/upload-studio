@@ -6,6 +6,7 @@ import { applyFinishedSheetMeasurementPolicy } from './mainProductMeasurement.se
 import {
   parsePngJpegHeader,
   PLAN_CONFIGS,
+  readableDpi,
   type PreflightCheck,
   type PreflightConfig,
 } from './preflight.server'
@@ -209,13 +210,13 @@ export async function validateStoredRasterHeader(
   checks.push({ name: 'format', status: 'ok', value: detectedMime, message: `Format: ${detectedMime}` })
 
   const effectiveDpi = numberOrZero(metadata.effectiveDpi)
-  if (effectiveDpi < input.config.requiredDPI) {
+  if (readableDpi(effectiveDpi) < input.config.requiredDPI) {
     if (overall === 'ok') overall = 'warning'
     checks.push({
       name: 'dpi',
       status: 'warning',
       value: effectiveDpi,
-      message: `Effective print DPI is ${effectiveDpi} (recommended ${input.config.requiredDPI}). Print may appear pixelated at full size.`,
+      message: `Effective print DPI is ${readableDpi(effectiveDpi)} (recommended ${input.config.requiredDPI}). Print may appear pixelated at full size.`,
       details: { source: metadata.sizingSource, sheetWidthIn: maxPrintableWidthIn },
     })
   } else {
@@ -223,7 +224,7 @@ export async function validateStoredRasterHeader(
       name: 'dpi',
       status: 'ok',
       value: effectiveDpi,
-      message: `Effective print DPI: ${effectiveDpi}`,
+      message: `Effective print DPI: ${readableDpi(effectiveDpi)}`,
       details: { source: metadata.sizingSource, sheetWidthIn: maxPrintableWidthIn },
     })
   }
