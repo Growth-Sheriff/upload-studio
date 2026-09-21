@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   STORED_RASTER_HEADER_BYTES,
+  STORED_RASTER_HEADER_RETRY_BYTES,
   validateStoredRasterHeader,
 } from './storedRasterHeader.server'
 
@@ -81,6 +82,44 @@ describe('stored PNG/JPEG header validation', () => {
             .pixelDimensionsMatched
         ).toBe(false)
       }
+    }
+  })
+
+  it('reads a camera JPEG whose size marker sits past the first window', async () => {
+    // Same layout as a real Sony upload: 50 KB EXIF + 56 KB XMP before SOF.
+    const appSegment = (length: number) => {
+      const segment = Buffer.alloc(2 + length)
+      segment[0] = 0xff
+      segment[1] = 0xe1
+      segment.writeUInt16BE(length, 2)
+      return segment
+    }
+    const base = jpeg(5504, 4128, 350)
+    const bytes = Buffer.concat([
+      base.subarray(0, 2),
+      appSegment(50 * 1024),
+      appSegment(56 * 1024),
+      base.subarray(2),
+      Buffer.alloc(200 * 1024),
+    ])
+    const readPrefix = vi.fn(async (_storage, _key, maxBytes: number) => bytes.subarray(0, maxBytes))
+
+    const result = await validateStoredRasterHeader({
+      storageConfig: { provider: 'local' },
+      storageKey: 'local:tenant/DSC00947.jpeg',
+      fileSize: bytes.length,
+      config,
+      readPrefix,
+    })
+
+    expect(result.kind).toBe('ready')
+    expect(readPrefix.mock.calls.map((call) => call[2])).toEqual([
+      STORED_RASTER_HEADER_BYTES,
+      STORED_RASTER_HEADER_RETRY_BYTES,
+    ])
+    if (result.kind === 'ready') {
+      expect(result.metadata.widthPx).toBe(5504)
+      expect(result.metadata.heightPx).toBe(4128)
     }
   })
 

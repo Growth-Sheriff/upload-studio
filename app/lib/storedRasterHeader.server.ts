@@ -30,6 +30,10 @@ function storageConfigForShop(shop: {
 }
 
 export const STORED_RASTER_HEADER_BYTES = 64 * 1024
+/** Camera JPEGs put EXIF, XMP and ICC blocks ahead of the size marker: a Sony
+ *  file carried 108 KB before SOF and was blocked as "unreadable". When the
+ *  first window is full but holds no header, one wider read covers them. */
+export const STORED_RASTER_HEADER_RETRY_BYTES = 1024 * 1024
 
 export interface ClientRasterHeaderProbe {
   format?: unknown
@@ -157,13 +161,31 @@ export async function validateStoredRasterHeader(
     )
   }
 
-  let header: ReturnType<typeof parsePngJpegHeader>
-  try {
-    header = parsePngJpegHeader(prefix)
-  } catch {
-    header = null
+  const parseHeader = (bytes: Buffer) => {
+    try {
+      const parsed = parsePngJpegHeader(bytes)
+      return parsed && parsed.width > 0 && parsed.height > 0 ? parsed : null
+    } catch {
+      return null
+    }
   }
-  if (!header || !(header.width > 0) || !(header.height > 0)) {
+
+  let header = parseHeader(prefix)
+  // A short read already holds the whole object, so only a full first window
+  // can be hiding the header further in.
+  if (!header && prefix.length >= STORED_RASTER_HEADER_BYTES) {
+    try {
+      prefix = await (input.readPrefix || readStoredObjectPrefix)(
+        input.storageConfig,
+        input.storageKey,
+        STORED_RASTER_HEADER_RETRY_BYTES
+      )
+      header = parseHeader(prefix)
+    } catch {
+      header = null
+    }
+  }
+  if (!header) {
     return failedProjection(
       'The uploaded PNG/JPEG header is unreadable. Please upload the file again.',
       'raster_header_unreadable'
