@@ -114,3 +114,45 @@ describe('shouldSerializeVectorRaster', () => {
     expect(shouldSerializeVectorRaster(null, null)).toBe(true)
   })
 })
+
+describe('parsePdfinfoBoxes rotation', () => {
+  // Measured on the worker image: a page with MediaBox 17280x1584 and
+  // "rot: 90" is rasterised by Ghostscript as 6600x72000 — the swap. Recording
+  // it unswapped bills a 22"-wide roll as a 240"-wide one.
+  const rotated = [
+    'Pages:           1',
+    'Page    1 size:  17280 x 1584 pts',
+    'Page    1 rot:   90',
+    'Page    1 MediaBox:     0.00     0.00 17280.00  1584.00',
+  ].join('\n')
+
+  it('swaps width and height for a /Rotate 90 page', () => {
+    expect(parsePdfinfoBoxes(rotated, false)).toEqual({ width: 6600, height: 72000 })
+  })
+
+  it('swaps for 270 and leaves 0 and 180 alone', () => {
+    expect(parsePdfinfoBoxes(rotated.replace('rot:   90', 'rot:   270'), false)).toEqual({
+      width: 6600,
+      height: 72000,
+    })
+    expect(parsePdfinfoBoxes(rotated.replace('rot:   90', 'rot:   180'), false)).toEqual({
+      width: 72000,
+      height: 6600,
+    })
+    expect(parsePdfinfoBoxes(rotated.replace('rot:   90', 'rot:   0'), false)).toEqual({
+      width: 72000,
+      height: 6600,
+    })
+  })
+
+  it('normalises a negative or over-turned rotation', () => {
+    expect(parsePdfinfoBoxes(rotated.replace('rot:   90', 'rot:   -90'), false)).toEqual({
+      width: 6600,
+      height: 72000,
+    })
+    expect(parsePdfinfoBoxes(rotated.replace('rot:   90', 'rot:   450'), false)).toEqual({
+      width: 6600,
+      height: 72000,
+    })
+  })
+})

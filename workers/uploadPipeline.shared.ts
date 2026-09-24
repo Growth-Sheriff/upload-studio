@@ -91,6 +91,13 @@ const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 const LARGE_IMAGE_LOCK_KEY = 'upload-pipeline:large-image'
 const LARGE_IMAGE_LOCK_TTL_MS = 2 * 60 * 1000
 export const LARGE_IMAGE_RETRY_DELAY_MS = 15_000
+/** Longest one job may hold the single large-image slot. Generous next to the
+ * ~16 s a 22"x240" sheet took at print resolution before the measure stage
+ * stopped rendering at 300 DPI, but finite — an unkillable wait must not be
+ * able to park the slot indefinitely again. */
+const MAX_LARGE_IMAGE_LEASE_HOLD_MS = Number(
+  process.env.MAX_LARGE_IMAGE_LEASE_HOLD_MS || 15 * 60 * 1000
+)
 
 export class LargeImageSlotBusyError extends Error {
   constructor(itemId: string) {
@@ -164,7 +171,26 @@ async function acquireLargeImageRedisLease(
     throw new LargeImageSlotBusyError(itemId)
   }
 
+  // Renewal is capped. Forcing SIGKILL on external tools closed the hang we
+  // saw, but it only covers child processes: an await that never settles —
+  // an object download with no timeout, a Prisma call against a database that
+  // went away — leaves this interval renewing a two-minute TTL forever, and
+  // that is exactly the shape that froze every PDF upload on fast for ~20
+  // hours (2026-09-24). Past the cap we stop renewing and let the TTL lapse so
+  // the slot returns to the other jobs even though this one is still wedged.
+  const acquiredAt = Date.now()
   const renewal = setInterval(() => {
+    const heldMs = Date.now() - acquiredAt
+    if (heldMs > MAX_LARGE_IMAGE_LEASE_HOLD_MS) {
+      clearInterval(renewal)
+      workerLog.error('LARGE_IMAGE_LOCK_HELD_TOO_LONG', {
+        itemId,
+        heldMs,
+        capMs: MAX_LARGE_IMAGE_LEASE_HOLD_MS,
+        note: 'renewal stopped; slot will free when the TTL lapses',
+      })
+      return
+    }
     void connection
       .eval(
         RENEW_LARGE_IMAGE_LOCK_SCRIPT,
@@ -224,7 +250,14 @@ export async function acquireLargeUploadPrelock(
 export async function acquireLargeImageLease(
   filePath: string,
   itemId: string,
-  detectedType?: string | null
+  detectedType?: string | null,
+  /** DPI the caller will actually rasterise a vector page at. The slot exists
+   * to cap peak memory, so a page that will be rendered at 36 DPI must not
+   * queue behind it just because its print size is large. */
+  plannedVectorDpi = 300,
+  /** Page box the caller already probed, so a vector file is not put through
+   * pdfinfo and a 2 MB header read twice for the same job. */
+  knownVectorDimensions?: { width: number; height: number } | null
 ): Promise<LargeImageLease | null> {
   const mayNeedRasterization =
     Boolean(detectedType?.startsWith('image/')) ||
@@ -233,9 +266,12 @@ export async function acquireLargeImageLease(
   if (!mayNeedRasterization) return null
 
   const isVector = !detectedType?.startsWith('image/')
-  const probeDimensions = isVector
-    ? getVectorRasterDimensionsFast(filePath, detectedType || '')
-    : getImageDimensionsFast(filePath, detectedType || '')
+  const probeDimensions =
+    isVector && knownVectorDimensions
+      ? Promise.resolve(knownVectorDimensions)
+      : isVector
+        ? getVectorRasterDimensionsFast(filePath, detectedType || '')
+        : getImageDimensionsFast(filePath, detectedType || '')
   const imageInfo = await probeDimensions.catch((error) => {
     workerLog.warn('LARGE_IMAGE_PROBE_FAILED', {
       itemId,
@@ -249,11 +285,97 @@ export async function acquireLargeImageLease(
   // box at the 300 DPI it is rasterized at, so ordinary small pages no longer
   // wait behind every other vector job for the single large-image slot.
   if (isVector) {
-    if (imageInfo && !shouldSerializeVectorRaster(imageInfo.width, imageInfo.height)) return null
+    // Judge the raster that will actually be produced, not the 300 DPI one.
+    const scale = Math.min(1, Math.max(0, plannedVectorDpi) / 300)
+    const plannedWidth = imageInfo ? Math.round(imageInfo.width * scale) : 0
+    const plannedHeight = imageInfo ? Math.round(imageInfo.height * scale) : 0
+    if (imageInfo && !shouldSerializeVectorRaster(plannedWidth, plannedHeight)) return null
   } else if (imageInfo && !shouldSerializeLargeImage(imageInfo.width, imageInfo.height)) {
     return null
   }
   return acquireLargeImageRedisLease(itemId, imageInfo)
+}
+
+/** Megapixel ceiling for the raster the measure stage analyses. The page size
+ * itself comes from the page box, so this raster only has to be good enough
+ * for the content checks (alpha, colour space). 24 MP keeps a worst-case
+ * sheet near 70 MB of RGB instead of the 1.4 GB a 300 DPI render needs. */
+const MEASURE_RASTER_MEGAPIXEL_BUDGET = 24
+
+/**
+ * Resolution to rasterise a PDF/AI/EPS at for the measure stage, plus the
+ * page size read from its box. Rendering a 22"x240" sheet at its native
+ * 300 DPI produces 475 megapixels purely so the checks can read a width and
+ * height that `pdfinfo -box` already knows — that render is what OOM-killed
+ * ImageMagick and froze fast's queue for ~20 hours on 2026-09-24.
+ *
+ * Returns `dpi: 300` and a null override when the box cannot be read, so an
+ * unreadable file still goes down the original full-resolution path.
+ */
+export async function getVectorMeasurePlan(
+  filePath: string,
+  detectedType: string | null
+): Promise<{ dpi: number; override: { width: number; height: number; dpiSource: string } | null }> {
+  const at300 = await getVectorRasterDimensionsFast(filePath, detectedType || '').catch(() => null)
+  if (!at300 || at300.width <= 0 || at300.height <= 0) return { dpi: 300, override: null }
+
+  const megapixelsAt300 = (at300.width * at300.height) / 1_000_000
+  const dpi =
+    megapixelsAt300 <= MEASURE_RASTER_MEGAPIXEL_BUDGET
+      ? 300
+      : Math.max(36, Math.floor(300 * Math.sqrt(MEASURE_RASTER_MEGAPIXEL_BUDGET / megapixelsAt300)))
+
+  return {
+    dpi,
+    override: {
+      width: at300.width,
+      height: at300.height,
+      dpiSource: detectedType === 'application/pdf' ? 'pdf_page_box' : 'postscript_bbox',
+    },
+  }
+}
+
+/** How far the page box may disagree with what the renderer actually produced
+ * before the box is treated as untrustworthy. Rounding at low DPI costs a
+ * pixel or two, so a few percent is slack; a real mismatch (/UserUnit, an
+ * unhandled rotation, a CropBox quirk) is off by tens of percent or a whole
+ * multiple. */
+const OVERRIDE_AGREEMENT_TOLERANCE = 0.04
+
+/**
+ * Last line of defence for the billed size.
+ *
+ * The override comes from page metadata, the raster comes from the renderer.
+ * When they disagree the metadata is the one that is wrong — Ghostscript is
+ * what actually prints. /UserUnit is the known case (the page box understates
+ * the size by the unit factor, and the guard that looks for the token only
+ * reads the first 2 MB of the file, so a 670 MB PDF can hide it), but this
+ * check does not need to know why: any disagreement drops the override and
+ * lets the raster decide, which is exactly the pre-change behaviour.
+ *
+ * Returns the override when it agrees with the raster, otherwise null.
+ */
+export function validateOverrideAgainstRaster(
+  override: { width: number; height: number; dpiSource: string } | null,
+  rasterWidth: number,
+  rasterHeight: number,
+  rasterDpi: number
+): { width: number; height: number; dpiSource: string } | null {
+  if (!override) return null
+  if (!(rasterWidth > 0 && rasterHeight > 0 && rasterDpi > 0)) return null
+
+  const scale = 300 / rasterDpi
+  const impliedWidth = rasterWidth * scale
+  const impliedHeight = rasterHeight * scale
+  const off = (a: number, b: number) => Math.abs(a - b) / Math.max(a, b)
+
+  if (
+    off(impliedWidth, override.width) > OVERRIDE_AGREEMENT_TOLERANCE ||
+    off(impliedHeight, override.height) > OVERRIDE_AGREEMENT_TOLERANCE
+  ) {
+    return null
+  }
+  return override
 }
 
 /** Resolution for a PDF/EPS preview render. The preview is a 400 px

@@ -13,10 +13,62 @@ import {
   DEFAULT_MAX_PRINTABLE_WIDTH_IN,
 } from './finishedSheetMeasurement'
 
-const execAsync = promisify(exec)
 const IMAGE_COMMAND_TIMEOUT_MS = 10 * 60 * 1000
 const FAST_METADATA_PREFIX_BYTES = 2 * 1024 * 1024
 const MAX_EMBEDDED_TEXT_BYTES = 4 * 1024 * 1024
+/** Ghostscript renders one band per thread. Four keeps a single large sheet
+ * off one core without starving the other jobs on an 8-core worker. */
+const GS_RENDERING_THREADS = Number(process.env.GS_RENDERING_THREADS || 4)
+
+const execRaw = promisify(exec)
+
+/** Shortest a tool is ever given, so a nearly-spent budget still lets a cheap
+ * metadata read finish instead of failing on arrival. */
+const MIN_IMAGE_COMMAND_TIMEOUT_MS = 30 * 1000
+
+/**
+ * Wall-clock budget for one pipeline job, scoped to the async context that
+ * sets it. Per-command timeouts alone are not enough: a single measure job
+ * chains pdfinfo, up to three Ghostscript/ImageMagick fallbacks, another
+ * pdfinfo and an identify, so at ten minutes each one wedged file could hold
+ * the single large-image slot for roughly an hour.
+ */
+let currentJobDeadlineMs: number | null = null
+
+export async function withImageCommandBudget<T>(budgetMs: number, run: () => Promise<T>): Promise<T> {
+  const previous = currentJobDeadlineMs
+  currentJobDeadlineMs = Date.now() + budgetMs
+  try {
+    return await run()
+  } finally {
+    currentJobDeadlineMs = previous
+  }
+}
+
+/**
+ * Every external tool call gets a hard wall-clock limit *and* a kill signal
+ * that cannot be ignored. Node's default is SIGTERM, which Ghostscript and
+ * ImageMagick can sit on indefinitely — on 2026-09-24 a `convert` that the
+ * kernel OOM-killed left its promise pending, the job kept the single
+ * large-image slot, and every PDF/AI upload on fast froze for ~20 hours.
+ * SIGKILL guarantees the promise settles so the slot is always released.
+ */
+async function execAsync(
+  command: string,
+  options: { timeout?: number; maxBuffer?: number } = {}
+): Promise<{ stdout: string; stderr: string }> {
+  const requested = options.timeout ?? IMAGE_COMMAND_TIMEOUT_MS
+  const timeout = currentJobDeadlineMs
+    ? Math.max(MIN_IMAGE_COMMAND_TIMEOUT_MS, Math.min(requested, currentJobDeadlineMs - Date.now()))
+    : requested
+  const { stdout, stderr } = await execRaw(command, {
+    maxBuffer: 16 * 1024 * 1024,
+    ...options,
+    timeout,
+    killSignal: 'SIGKILL',
+  })
+  return { stdout: String(stdout), stderr: String(stderr) }
+}
 
 
 interface DpiCandidate {
@@ -789,10 +841,25 @@ export function parsePdfinfoBoxes(pdfinfoOutput: string, hasUserUnit: boolean) {
   const media = box('MediaBox')
   if (!media) return null
   const crop = box('CropBox')
-  return pointsToPixelsAt300(
-    Math.max(media.width, crop?.width || 0),
-    Math.max(media.height, crop?.height || 0)
-  )
+  let width = Math.max(media.width, crop?.width || 0)
+  let height = Math.max(media.height, crop?.height || 0)
+
+  // /Rotate is applied by the renderer but NOT by the reported boxes — pdfinfo
+  // prints the raw array. Measured on the worker image: a page with MediaBox
+  // 17280x1584 and "Page 1 rot: 90" is rasterised by Ghostscript as 6600x72000,
+  // i.e. the swap. Recording it unswapped would bill a 22"-wide roll as a
+  // 240"-wide one and price the sheet completely wrong.
+  const rotMatch = pdfinfoOutput.match(/Page\s+1\s+rot:\s+(-?\d+)/)
+  if (rotMatch) {
+    const rot = ((parseInt(rotMatch[1], 10) % 360) + 360) % 360
+    if (rot === 90 || rot === 270) {
+      const swap = width
+      width = height
+      height = swap
+    }
+  }
+
+  return pointsToPixelsAt300(width, height)
 }
 
 /** Page box gs -dEPSCrop renders an EPS at: the DSC header of an EPSF file
@@ -1359,7 +1426,10 @@ export async function convertPdfToPng(
 
   const commands = [
 
-    `gs -dSAFER -dBATCH -dNOPAUSE -dNOCACHE -dNOPLATFONTS -dPARANOIDSAFER -sDEVICE=png16m -r${dpi} -dFirstPage=1 -dLastPage=1 -dMaxBitmap=500000000 -dBufferSpace=1000000 -sOutputFile="${outputPath}" "${inputPath}"`,
+    // -dNOCACHE was disabling the glyph/pattern cache, which makes text-heavy
+    // sheets several times slower for no safety gain (-dSAFER already
+    // sandboxes the job). Rendering threads let one page use several cores.
+    `gs -dSAFER -dBATCH -dNOPAUSE -dNOPLATFONTS -dPARANOIDSAFER -sDEVICE=png16m -r${dpi} -dFirstPage=1 -dLastPage=1 -dNumRenderingThreads=${GS_RENDERING_THREADS} -dMaxBitmap=500000000 -dBufferSpace=1000000 -sOutputFile="${outputPath}" "${inputPath}"`,
 
     `gs -dSAFER -dBATCH -dNOPAUSE -sDEVICE=png16m -r150 -dFirstPage=1 -dLastPage=1 -sOutputFile="${outputPath}" "${inputPath}"`,
 
@@ -1427,7 +1497,7 @@ export async function convertEpsToPng(
 
   const commands = [
 
-    `gs -dSAFER -dBATCH -dNOPAUSE -dNOCACHE -dNOPLATFONTS -dPARANOIDSAFER -sDEVICE=png16m -r${dpi} -dEPSCrop -dMaxBitmap=500000000 -dBufferSpace=1000000 -sOutputFile="${outputPath}" "${inputPath}"`,
+    `gs -dSAFER -dBATCH -dNOPAUSE -dNOPLATFONTS -dPARANOIDSAFER -sDEVICE=png16m -r${dpi} -dEPSCrop -dNumRenderingThreads=${GS_RENDERING_THREADS} -dMaxBitmap=500000000 -dBufferSpace=1000000 -sOutputFile="${outputPath}" "${inputPath}"`,
 
     `gs -dSAFER -dBATCH -dNOPAUSE -sDEVICE=png16m -r150 -dFirstPage=1 -dLastPage=1 -sOutputFile="${outputPath}" "${inputPath}"`,
 
@@ -1512,11 +1582,28 @@ export async function generateThumbnail(
 }
 
 
+/**
+ * Print size a vector page will occupy, read from its page box rather than
+ * from the rasterised pixels. Supplying this lets the caller rasterise a
+ * PDF/AI/EPS at a low DPI for the content checks without changing the size
+ * the customer is charged for: a 22"x240" sheet is 475 megapixels at 300 DPI,
+ * which is minutes of work and gigabytes of memory purely to learn a number
+ * that `pdfinfo -box` returns in milliseconds.
+ */
+export interface VectorMeasurementOverride {
+  /** Pixel width the page would have at 300 DPI. */
+  width: number
+  /** Pixel height the page would have at 300 DPI. */
+  height: number
+  dpiSource: string
+}
+
 export async function runPreflightChecks(
   filePath: string,
   mimeType: string,
   fileSize: number,
-  config: PreflightConfig
+  config: PreflightConfig,
+  measurementOverride?: VectorMeasurementOverride | null
 ): Promise<PreflightResult> {
   const checks: PreflightCheck[] = []
   let overall: 'ok' | 'warning' | 'error' = 'ok'
@@ -1601,7 +1688,24 @@ export async function runPreflightChecks(
 
 
   try {
-    const imageInfo = await getImageInfo(filePath)
+    const rasterInfo = await getImageInfo(filePath)
+    // artwork_bounds trims against real pixels, so a page measured from its
+    // box cannot be combined with a downscaled raster. No tenant uses that
+    // mode today; if one turns it on, the raster stays authoritative.
+    const canUseOverride =
+      Boolean(measurementOverride) &&
+      measurementOverride!.width > 0 &&
+      measurementOverride!.height > 0 &&
+      config.measurementBasis !== 'artwork_bounds'
+    const imageInfo = canUseOverride
+      ? {
+          ...rasterInfo,
+          width: measurementOverride!.width,
+          height: measurementOverride!.height,
+          dpi: 300,
+          dpiSource: measurementOverride!.dpiSource,
+        }
+      : rasterInfo
     const trimmedBounds =
       config.measurementBasis === 'artwork_bounds'
         ? await getTrimmedImageBounds(filePath, imageInfo)

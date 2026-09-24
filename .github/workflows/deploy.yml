@@ -85,7 +85,20 @@ jobs:
 
             echo "=== [2/3] Restart Containers ==="
             cd /opt/apps/public/upload-studio
-            docker compose up -d --remove-orphans
+            # NEVER --remove-orphans here. docker-compose.yml declares only the
+            # ten tenants, while Caddy (docker-compose.caddy.yml) and the Redis
+            # bridge (docker-compose.redis-bridge.yml) join the SAME
+            # `upload-studio` project from separate files. Compose would treat
+            # them as orphans and delete them, taking every storefront offline.
+            docker compose up -d
+
+            echo "=== [2b/3] Worker droplet ==="
+            # This job only ever updated the web droplet, so the workers kept
+            # running the previous image while the web side moved forward.
+            # deploy/depot.sh is the supported path and updates both; use it
+            # instead of this job for anything that changes worker code.
+            echo "WARNING: workers on us-worker-do are NOT updated by this job."
+            echo "         Run: CONFIRM_DEPLOY=yes ./deploy/depot.sh deploy <sha>"
 
             echo "=== [3/3] Health Check (retry 3x) ==="
             for attempt in 1 2 3; do

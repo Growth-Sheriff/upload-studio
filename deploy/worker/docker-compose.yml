@@ -19,9 +19,23 @@ x-worker-common: &worker-common
     PREVIEW_CONCURRENCY: "6"
     MEASURE_JOBS_PER_MINUTE: "120"
     PREVIEW_JOBS_PER_MINUTE: "120"
+    # The Dockerfile tries to cap this in policy.xml, but Debian ships that
+    # line inside an XML comment so the sed is a no-op — `identify -list
+    # resource` reported Thread: 8 in production. Without a cap one tenant's
+    # `convert` opens eight OpenMP threads and takes every core on the host.
+    MAGICK_THREAD_LIMIT: "2"
   extra_hosts:
     - "redis:10.124.0.4"
-  mem_limit: 4g
+  # A ceiling, not a reservation: an idle tenant holds ~400 MB, so the ten
+  # ceilings deliberately oversubscribe the 32 GB host. Whichever tenant is
+  # actually working can take the whole free pool, which is the behaviour a
+  # single shared worker would give without also letting one bad file take
+  # every tenant down with it.
+  #
+  # At the old 4 GB the kernel OOM-killed `convert` mid-job (2026-09-24): the
+  # dead process stranded the large-image lock and froze every PDF/AI upload
+  # on fast for ~20 hours while 11 GB sat unused.
+  mem_limit: 8g
   # Lets measure/preview finish in-flight jobs on deploy before SIGKILL.
   stop_grace_period: 120s
   logging:
@@ -35,6 +49,8 @@ services:
     <<: *worker-common
     container_name: usw-fastdtftransfer
     env_file: envs/.env.fastdtftransfer
+    # Busiest tenant by far: customers routinely upload 200-700 MB gang sheets.
+    mem_limit: 16g
 
   everydaycustomprint:
     <<: *worker-common

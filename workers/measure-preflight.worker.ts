@@ -20,6 +20,8 @@ import {
   compareAndSwapUploadItemResult,
   connection,
   getResultRecord,
+  getVectorMeasurePlan,
+  isVectorUpload,
   LargeImageSlotBusyError,
   LARGE_IMAGE_RETRY_DELAY_MS,
   MEASURE_PREFLIGHT_QUEUE_NAME,
@@ -29,8 +31,10 @@ import {
   safeLocationForLog,
   type UploadPipelineJobData,
   updateUploadAggregateStatus,
+  validateOverrideAgainstRaster,
   workerLog,
 } from './uploadPipeline.shared'
+import { getImageDimensionsFast, withImageCommandBudget } from '../app/lib/preflight.server'
 import { startUploadPipelineReconciler } from './upload-pipeline-reconciler'
 
 function normalizeStageStatus(value: unknown): 'pending' | 'ready' | 'warning' | 'error' | null {
@@ -53,9 +57,16 @@ export const measurePreflightQueue = new Queue<UploadPipelineJobData>(MEASURE_PR
   defaultJobOptions: MEASURE_PREFLIGHT_JOB_OPTIONS,
 })
 
+/** Wall-clock a single measure job may spend in external tools. Ten minutes
+ * per command across a pdfinfo + three rasterise fallbacks + identify chain
+ * added up to roughly an hour for one wedged file, all of it holding the
+ * large-image slot. */
+const MEASURE_JOB_BUDGET_MS = Number(process.env.MEASURE_JOB_BUDGET_MS || 8 * 60 * 1000)
+
 const measurePreflightWorker = new Worker<UploadPipelineJobData>(
   MEASURE_PREFLIGHT_QUEUE_NAME,
-  async (job: Job<UploadPipelineJobData>) => {
+  (job: Job<UploadPipelineJobData>) =>
+    withImageCommandBudget(MEASURE_JOB_BUDGET_MS, async () => {
     const { uploadId, shopId, itemId, storageKey: queuedStorageKey } = job.data
     let storageKey = queuedStorageKey
     const jobStartedAt = Date.now()
@@ -137,12 +148,28 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
       const context = await prepareUploadJobContext(job.data, 'measure-preflight')
       tempDir = context.tempDir
       storageKey = context.storageKey
+
+      // A vector page is sized from its page box, so the raster below only has
+      // to carry the content checks. Rendering it at print resolution instead
+      // is what exhausted memory and stalled the queue (2026-09-24). The plan
+      // is settled before the slot decision so a page that will be rendered
+      // small does not queue behind the large-image lock.
+      const measurePlan = isVectorUpload(context.detectedType)
+        ? await getVectorMeasurePlan(context.originalPath, context.detectedType)
+        : { dpi: 300, override: null }
+
       if (!largeImageLease) {
         try {
           largeImageLease = await acquireLargeImageLease(
             context.originalPath,
             itemId,
-            context.detectedType
+            context.detectedType,
+            measurePlan.dpi,
+            // Already probed by getVectorMeasurePlan above; reuse it rather
+            // than running pdfinfo and the 2 MB header read a second time.
+            measurePlan.override
+              ? { width: measurePlan.override.width, height: measurePlan.override.height }
+              : null
           )
         } catch (error) {
           if (!(error instanceof LargeImageSlotBusyError)) throw error
@@ -174,12 +201,62 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
 
       await job.updateProgress(20)
 
+      if (measurePlan.override && measurePlan.dpi < 300) {
+        workerLog.info('VECTOR_MEASURE_DOWNSCALED', {
+          jobId: job.id,
+          itemId,
+          dpi: measurePlan.dpi,
+          widthAt300: measurePlan.override.width,
+          heightAt300: measurePlan.override.height,
+        })
+      }
+
       const rasterized = await rasterizeFileForProcessing(
         context.originalPath,
         context.tempDir,
         context.detectedType,
-        context.storageKey
+        context.storageKey,
+        measurePlan.dpi
       )
+
+      // The page box drives the price, so it is only trusted once the renderer
+      // agrees with it. A conversion that fell back to the original file has no
+      // raster to compare against, so the override is dropped there too.
+      let measurementOverride = measurePlan.override
+      if (measurementOverride && !rasterized.conversionFailed) {
+        const probe = await getImageDimensionsFast(
+          rasterized.processedPath,
+          'image/png'
+        ).catch(() => null)
+        const agreed = probe
+          ? validateOverrideAgainstRaster(
+              measurementOverride,
+              probe.width,
+              probe.height,
+              measurePlan.dpi
+            )
+          : null
+        if (!agreed) {
+          workerLog.warn('VECTOR_OVERRIDE_REJECTED', {
+            jobId: job.id,
+            itemId,
+            reason: probe ? 'raster_disagrees_with_page_box' : 'raster_probe_failed',
+            boxWidth: measurementOverride.width,
+            boxHeight: measurementOverride.height,
+            rasterWidth: probe?.width ?? null,
+            rasterHeight: probe?.height ?? null,
+            rasterDpi: measurePlan.dpi,
+          })
+        }
+        measurementOverride = agreed
+      } else if (measurementOverride && rasterized.conversionFailed) {
+        workerLog.warn('VECTOR_OVERRIDE_REJECTED', {
+          jobId: job.id,
+          itemId,
+          reason: 'conversion_failed_no_raster_to_verify',
+        })
+        measurementOverride = null
+      }
 
       await job.updateProgress(45)
 
@@ -187,7 +264,9 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
         rasterized.processedPath,
         context.detectedType || '',
         context.fileSize,
-        context.config
+        context.config,
+        // Null unless the renderer confirmed the page box above.
+        measurementOverride
       )
 
       if (rasterized.conversionFailed) {
@@ -467,7 +546,7 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
         await cleanupTempDir(tempDir)
       }
     }
-  },
+    }),
   {
     connection,
     concurrency: Number(process.env.MEASURE_CONCURRENCY) || 3,
