@@ -33,6 +33,9 @@ ALL_SLUGS=(
   gangsheet
   legendtransfers
   customprintaz
+  chillitransfers
+  dtfnash
+  localdtf
   dtfprintarizona
 )
 
