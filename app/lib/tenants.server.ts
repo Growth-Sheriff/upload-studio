@@ -9,6 +9,10 @@ export const TENANT_SLUGS = [
   'gangsheet',
   'legendtransfers',
   'customprintaz',
+  'chillitransfers',
+  'dtfnash',
+  'localdtf',
+  'dtfprintarizona',
 ] as const;
 
 export type TenantSlug = (typeof TENANT_SLUGS)[number];

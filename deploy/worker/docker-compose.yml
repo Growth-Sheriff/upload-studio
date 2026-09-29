@@ -96,3 +96,23 @@ services:
     <<: *worker-common
     container_name: usw-customprintaz
     env_file: envs/.env.customprintaz
+
+  chillitransfers:
+    <<: *worker-common
+    container_name: usw-chillitransfers
+    env_file: envs/.env.chillitransfers
+
+  dtfnash:
+    <<: *worker-common
+    container_name: usw-dtfnash
+    env_file: envs/.env.dtfnash
+
+  localdtf:
+    <<: *worker-common
+    container_name: usw-localdtf
+    env_file: envs/.env.localdtf
+
+  dtfprintarizona:
+    <<: *worker-common
+    container_name: usw-dtfprintarizona
+    env_file: envs/.env.dtfprintarizona

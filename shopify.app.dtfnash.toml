@@ -1,12 +1,12 @@
-client_id = "0237a035d0fdcf7b5c828aa39373c2bb"
-name = "UStudio DTF Print Arizona"
-application_url = "https://dtfprintarizona.uploadstudio.app.techifyboost.com"
+client_id = "99d9d72321a97e486186c68af5cd05bf"
+name = "UStudio DTF Nash"
+application_url = "https://dtfnash.uploadstudio.app.techifyboost.com"
 embedded = true
-handle = "dtfprintarizona"
+handle = "dtfnash"
 
 [build]
 automatically_update_urls_on_dev = false
-dev_store_url = "1mjxyn-an.myshopify.com"
+dev_store_url = "sid60t-9a.myshopify.com"
 
 [webhooks]
 api_version = "2025-10"
@@ -54,12 +54,12 @@ use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
-  "https://dtfprintarizona.uploadstudio.app.techifyboost.com/auth/callback",
-  "https://dtfprintarizona.uploadstudio.app.techifyboost.com/api/auth/callback"
+  "https://dtfnash.uploadstudio.app.techifyboost.com/auth/callback",
+  "https://dtfnash.uploadstudio.app.techifyboost.com/api/auth/callback"
 ]
 
 [app_proxy]
-url = "https://dtfprintarizona.uploadstudio.app.techifyboost.com"
+url = "https://dtfnash.uploadstudio.app.techifyboost.com"
 subpath = "customizer"
 prefix = "apps"
 

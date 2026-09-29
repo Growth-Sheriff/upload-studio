@@ -151,6 +151,54 @@ services:
 
 
 
+  chillitransfers:
+    <<: *app-common
+    container_name: us-chillitransfers
+    env_file: envs/.env.chillitransfers
+    ports:
+      - "127.0.0.1:4111:3000"
+    volumes:
+      - uploads-chillitransfers:/app/uploads
+
+
+
+
+  dtfnash:
+    <<: *app-common
+    container_name: us-dtfnash
+    env_file: envs/.env.dtfnash
+    ports:
+      - "127.0.0.1:4112:3000"
+    volumes:
+      - uploads-dtfnash:/app/uploads
+
+
+
+
+  localdtf:
+    <<: *app-common
+    container_name: us-localdtf
+    env_file: envs/.env.localdtf
+    ports:
+      - "127.0.0.1:4113:3000"
+    volumes:
+      - uploads-localdtf:/app/uploads
+
+
+
+
+  dtfprintarizona:
+    <<: *app-common
+    container_name: us-dtfprintarizona
+    env_file: envs/.env.dtfprintarizona
+    ports:
+      - "127.0.0.1:4114:3000"
+    volumes:
+      - uploads-dtfprintarizona:/app/uploads
+
+
+
+
 
 
 
@@ -184,6 +232,12 @@ volumes:
     name: us-uploads-legendtransfers
   uploads-customprintaz:
     name: us-uploads-customprintaz
+  uploads-chillitransfers:
+    name: us-uploads-chillitransfers
+  uploads-dtfnash:
+    name: us-uploads-dtfnash
+  uploads-localdtf:
+    name: us-uploads-localdtf
   uploads-dtfprintarizona:
     name: us-uploads-dtfprintarizona
 
