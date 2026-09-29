@@ -63,9 +63,41 @@ export const measurePreflightQueue = new Queue<UploadPipelineJobData>(MEASURE_PR
  * large-image slot. */
 const MEASURE_JOB_BUDGET_MS = Number(process.env.MEASURE_JOB_BUDGET_MS || 8 * 60 * 1000)
 
+/** Outer limit on the whole job, tool time or not. The command budget above
+ * only bounds child processes; an await that never settles — an object
+ * download with no timeout of its own, a database call to a server that went
+ * away — is untouched by it. A 1.5 MB .ai on legendtransfers sat "active" for
+ * 62 hours that way (2026-09-28) while the lease cap had already returned its
+ * slot. Failing the job hands the slot back to BullMQ too. */
+const MEASURE_JOB_HARD_TIMEOUT_MS = Number(
+  process.env.MEASURE_JOB_HARD_TIMEOUT_MS || 12 * 60 * 1000
+)
+
+class MeasureJobTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`Measure job exceeded its ${Math.round(ms / 1000)}s wall-clock limit`)
+    this.name = 'MeasureJobTimeoutError'
+  }
+}
+
+function withHardTimeout<T>(ms: number, run: () => Promise<T>): Promise<T> {
+  let timer: NodeJS.Timeout | undefined
+  const expiry = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new MeasureJobTimeoutError(ms)), ms)
+    timer.unref()
+  })
+  // The wedged work is not cancellable, but it no longer decides when the job
+  // ends: BullMQ marks this attempt failed and frees the concurrency slot,
+  // and the lease renewal cap releases the shared lock on its own schedule.
+  return Promise.race([run(), expiry]).finally(() => {
+    if (timer) clearTimeout(timer)
+  })
+}
+
 const measurePreflightWorker = new Worker<UploadPipelineJobData>(
   MEASURE_PREFLIGHT_QUEUE_NAME,
   (job: Job<UploadPipelineJobData>) =>
+    withHardTimeout(MEASURE_JOB_HARD_TIMEOUT_MS, () =>
     withImageCommandBudget(MEASURE_JOB_BUDGET_MS, async () => {
     const { uploadId, shopId, itemId, storageKey: queuedStorageKey } = job.data
     let storageKey = queuedStorageKey
@@ -546,7 +578,7 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
         await cleanupTempDir(tempDir)
       }
     }
-    }),
+    })),
   {
     connection,
     concurrency: Number(process.env.MEASURE_CONCURRENCY) || 3,

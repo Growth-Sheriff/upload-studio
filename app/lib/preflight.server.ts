@@ -1,4 +1,5 @@
 
+import { AsyncLocalStorage } from 'async_hooks'
 import { exec } from 'child_process'
 import fs from 'fs/promises'
 import path from 'path'
@@ -27,22 +28,22 @@ const execRaw = promisify(exec)
 const MIN_IMAGE_COMMAND_TIMEOUT_MS = 30 * 1000
 
 /**
- * Wall-clock budget for one pipeline job, scoped to the async context that
- * sets it. Per-command timeouts alone are not enough: a single measure job
- * chains pdfinfo, up to three Ghostscript/ImageMagick fallbacks, another
- * pdfinfo and an identify, so at ten minutes each one wedged file could hold
- * the single large-image slot for roughly an hour.
+ * Wall-clock budget for one pipeline job. Per-command timeouts alone are not
+ * enough: a single measure job chains pdfinfo, up to three
+ * Ghostscript/ImageMagick fallbacks, another pdfinfo and an identify, so at
+ * ten minutes each one wedged file could hold the single large-image slot for
+ * roughly an hour.
+ *
+ * AsyncLocalStorage, not a module variable: workers run six jobs at a time, so
+ * a plain variable is overwritten by whichever job started last. Every job
+ * would then read a deadline belonging to another one — and a long-running job
+ * would keep having its budget refreshed by newer arrivals, which is the
+ * opposite of a budget.
  */
-let currentJobDeadlineMs: number | null = null
+const jobDeadlineStore = new AsyncLocalStorage<number>()
 
 export async function withImageCommandBudget<T>(budgetMs: number, run: () => Promise<T>): Promise<T> {
-  const previous = currentJobDeadlineMs
-  currentJobDeadlineMs = Date.now() + budgetMs
-  try {
-    return await run()
-  } finally {
-    currentJobDeadlineMs = previous
-  }
+  return jobDeadlineStore.run(Date.now() + budgetMs, run)
 }
 
 /**
@@ -58,8 +59,9 @@ async function execAsync(
   options: { timeout?: number; maxBuffer?: number } = {}
 ): Promise<{ stdout: string; stderr: string }> {
   const requested = options.timeout ?? IMAGE_COMMAND_TIMEOUT_MS
-  const timeout = currentJobDeadlineMs
-    ? Math.max(MIN_IMAGE_COMMAND_TIMEOUT_MS, Math.min(requested, currentJobDeadlineMs - Date.now()))
+  const deadline = jobDeadlineStore.getStore()
+  const timeout = deadline
+    ? Math.max(MIN_IMAGE_COMMAND_TIMEOUT_MS, Math.min(requested, deadline - Date.now()))
     : requested
   const { stdout, stderr } = await execRaw(command, {
     maxBuffer: 16 * 1024 * 1024,
