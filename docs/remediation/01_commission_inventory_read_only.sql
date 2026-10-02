@@ -54,6 +54,15 @@ SELECT
   c.order_currency,
   c.payment_ref,
   c.payment_provider,
+  c.collectible_at,
+  c.eligibility_source,
+  c.attributable_captured_amount,
+  c.shopify_financial_status,
+  c.shopify_refund_status,
+  c.shopify_cancelled_at,
+  c.shopify_observed_at,
+  c.review_required_at,
+  c.review_reason,
   c.created_at,
   c.updated_at,
   coalesce(uf.linked_upload_count, 0) AS linked_upload_count,
@@ -72,12 +81,20 @@ SELECT
       THEN 'PROVIDER_RECONCILIATION_REQUIRED'
     WHEN c.status = 'paid'
       THEN 'IMMUTABLE_PAID_REVIEW_ONLY'
+    WHEN c.review_required_at IS NOT NULL
+      THEN 'REVIEW_REQUIRED'
+    WHEN c.shopify_cancelled_at IS NOT NULL
+      THEN 'VOID_CANCELLED'
+    WHEN c.shopify_refund_status = 'full'
+      THEN 'VOID_FULL_REFUND'
     WHEN upper(c.order_currency) <> 'USD'
       THEN 'CURRENCY_POLICY_REQUIRED'
     WHEN cf.cancellation_audit_at IS NOT NULL
       THEN 'CANCELLATION_POLICY_REQUIRED'
-    WHEN c.status = 'pending'
-      THEN 'SHOPIFY_STATE_REQUIRED'
+    WHEN c.status = 'pending' AND c.collectible_at IS NULL
+      THEN 'SHOPIFY_CAPTURE_EVIDENCE_REQUIRED'
+    WHEN c.status = 'pending' AND c.collectible_at IS NOT NULL
+      THEN 'COLLECTIBLE_CAPTURE_VERIFIED'
     ELSE 'REVIEW'
   END AS review_bucket
 FROM commissions c

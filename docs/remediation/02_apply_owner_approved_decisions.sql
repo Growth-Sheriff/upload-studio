@@ -7,7 +7,9 @@
 --
 -- Required CSV columns:
 -- batch_id,commission_id,expected_status,expected_updated_at,
--- expected_payment_ref,expected_amount,action,target_amount,reason,shopify_evidence
+-- expected_payment_ref,expected_amount,expected_collectible_at,
+-- expected_review_required_at,action,target_amount,captured_at,captured_amount,
+-- financial_status,refund_status,cancelled_at,reason,shopify_evidence
 
 BEGIN;
 
@@ -18,10 +20,23 @@ CREATE TEMP TABLE remediation_decisions (
   expected_updated_at timestamptz NOT NULL,
   expected_payment_ref text,
   expected_amount numeric(10,2) NOT NULL,
+  expected_collectible_at timestamptz,
+  expected_review_required_at timestamptz,
   action text NOT NULL CHECK (
-    action IN ('leave', 'void_pending', 'waive_pending', 'correct_pending_amount')
+    action IN (
+      'leave',
+      'void_pending',
+      'waive_pending',
+      'correct_pending_amount',
+      'confirm_captured_pending'
+    )
   ),
   target_amount numeric(10,2),
+  captured_at timestamptz,
+  captured_amount numeric(10,2),
+  financial_status text,
+  refund_status text,
+  cancelled_at timestamptz,
   reason text NOT NULL,
   shopify_evidence text NOT NULL
 );
@@ -44,6 +59,20 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'Corrected fee must be above 0.00 and at or below the 6.00 cap; use void/waive for zero';
   END IF;
+  IF EXISTS (
+    SELECT 1 FROM remediation_decisions
+    WHERE action = 'confirm_captured_pending'
+      AND (
+        captured_at IS NULL
+        OR captured_amount IS NULL
+        OR captured_amount <= 0
+        OR coalesce(lower(nullif(trim(financial_status), '')), '') <> 'paid'
+        OR cancelled_at IS NOT NULL
+        OR coalesce(lower(nullif(trim(refund_status), '')), '') <> 'none'
+      )
+  ) THEN
+    RAISE EXCEPTION 'A collectible decision requires positive attributable capture evidence and no cancellation/refund';
+  END IF;
 END $$;
 
 -- Lock every reviewed row and retain the exact before-image for audit/output.
@@ -55,6 +84,15 @@ SELECT
   c.updated_at,
   c.payment_ref,
   c.commission_amount,
+  c.collectible_at,
+  c.eligibility_source,
+  c.attributable_captured_amount,
+  c.shopify_financial_status,
+  c.shopify_refund_status,
+  c.shopify_cancelled_at,
+  c.shopify_observed_at,
+  c.review_required_at,
+  c.review_reason,
   d.batch_id,
   d.action,
   d.target_amount,
@@ -83,6 +121,8 @@ BEGIN
        OR b.updated_at IS DISTINCT FROM d.expected_updated_at
        OR b.payment_ref IS DISTINCT FROM d.expected_payment_ref
        OR b.commission_amount IS DISTINCT FROM d.expected_amount
+       OR b.collectible_at IS DISTINCT FROM d.expected_collectible_at
+       OR b.review_required_at IS DISTINCT FROM d.expected_review_required_at
   ) THEN
     RAISE EXCEPTION 'One or more rows changed after review; refusing the entire batch';
   END IF;
@@ -92,6 +132,18 @@ BEGIN
     WHERE action <> 'leave' AND (status <> 'pending' OR payment_ref IS NOT NULL)
   ) THEN
     RAISE EXCEPTION 'Only unclaimed pending rows may be changed in bulk';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM remediation_before
+    WHERE action = 'confirm_captured_pending'
+      AND (
+        shopify_cancelled_at IS NOT NULL
+        OR coalesce(lower(nullif(trim(shopify_refund_status), '')), 'none') <> 'none'
+      )
+  ) THEN
+    RAISE EXCEPTION 'A collectible decision cannot override a stored cancellation/refund fact';
   END IF;
 END $$;
 
@@ -105,6 +157,41 @@ SET
   commission_amount = CASE d.action
     WHEN 'correct_pending_amount' THEN d.target_amount
     ELSE c.commission_amount
+  END,
+  collectible_at = CASE
+    WHEN d.action = 'confirm_captured_pending' THEN d.captured_at
+    WHEN d.action IN ('void_pending', 'waive_pending') THEN NULL
+    ELSE c.collectible_at
+  END,
+  eligibility_source = CASE
+    WHEN d.action = 'confirm_captured_pending' THEN 'owner_reviewed_shopify_capture'
+    WHEN d.action IN ('void_pending', 'waive_pending') THEN 'owner_reviewed_not_collectible'
+    ELSE c.eligibility_source
+  END,
+  attributable_captured_amount = CASE
+    WHEN d.action = 'confirm_captured_pending' THEN d.captured_amount
+    ELSE c.attributable_captured_amount
+  END,
+  shopify_financial_status = coalesce(nullif(trim(d.financial_status), ''), c.shopify_financial_status),
+  shopify_refund_status = CASE
+    -- Runtime uses NULL (not the literal string "none") for no refund.
+    WHEN d.action = 'confirm_captured_pending' THEN NULL
+    WHEN nullif(trim(d.refund_status), '') IS NOT NULL
+      AND lower(trim(d.refund_status)) <> 'none' THEN lower(trim(d.refund_status))
+    ELSE c.shopify_refund_status
+  END,
+  shopify_cancelled_at = coalesce(d.cancelled_at, c.shopify_cancelled_at),
+  shopify_observed_at = CASE
+    WHEN d.action <> 'leave' THEN now()
+    ELSE c.shopify_observed_at
+  END,
+  review_required_at = CASE
+    WHEN d.action IN ('void_pending', 'waive_pending', 'confirm_captured_pending') THEN NULL
+    ELSE c.review_required_at
+  END,
+  review_reason = CASE
+    WHEN d.action IN ('void_pending', 'waive_pending', 'confirm_captured_pending') THEN NULL
+    ELSE c.review_reason
   END,
   updated_at = now()
 FROM remediation_decisions d
@@ -149,7 +236,13 @@ SELECT
     'beforeStatus', b.status,
     'afterStatus', c.status,
     'beforeAmount', b.commission_amount,
-    'afterAmount', c.commission_amount
+    'afterAmount', c.commission_amount,
+    'beforeCollectibleAt', b.collectible_at,
+    'afterCollectibleAt', c.collectible_at,
+    'capturedAmount', c.attributable_captured_amount,
+    'financialStatus', c.shopify_financial_status,
+    'refundStatus', c.shopify_refund_status,
+    'cancelledAt', c.shopify_cancelled_at
   ),
   now()
 FROM remediation_before b
@@ -167,6 +260,12 @@ SELECT
   b.commission_amount AS before_amount,
   c.commission_amount AS after_amount,
   b.payment_ref,
+  b.collectible_at AS before_collectible_at,
+  c.collectible_at AS after_collectible_at,
+  c.attributable_captured_amount,
+  c.shopify_financial_status,
+  c.shopify_refund_status,
+  c.shopify_cancelled_at,
   c.updated_at AS proposed_updated_at,
   b.reason
 FROM remediation_before b

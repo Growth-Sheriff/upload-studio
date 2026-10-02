@@ -1,5 +1,9 @@
 # Upload Studio measurement and billing correctness
 
+> Historical review snapshot. The owner subsequently finalized the finished-sheet and
+> fee-eligibility rules. See `finished-sheet-implementation-report-2026-09-17.md` for the
+> implemented local result, updated production evidence, remaining blockers, and canary plan.
+
 Date: 2026-09-17
 
 Branch: `custom-container-upload-studio-app`
