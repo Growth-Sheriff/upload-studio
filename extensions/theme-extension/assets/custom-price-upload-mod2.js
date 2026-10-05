@@ -1580,14 +1580,29 @@
       return customerLoggedIn && customerPricing.status === 'loading';
     }
 
+    // Mirrors chooseFinishedSheetOrientation on the server: when both sides fit
+    // across the roll the sheet is turned so the shorter side is the billed
+    // length. Taking the long side unconditionally showed twice the real price.
+    function billableSides(widthIn, heightIn) {
+      var a = Number(widthIn);
+      var b = Number(heightIn);
+      if (!(a > 0) || !(b > 0)) return null;
+      var shortSide = Math.min(a, b);
+      var longSide = Math.max(a, b);
+      var limit = Number(MAX_PRINTABLE_WIDTH_IN) || 22.5;
+      return longSide <= limit + 0.02
+        ? { widthIn: longSide, lengthIn: shortSide }
+        : { widthIn: shortSide, lengthIn: longSide };
+    }
+
     function getBillablePageLengthIn() {
-      if (!(state.widthIn > 0) || !(state.heightIn > 0)) return null;
-      return Math.max(state.widthIn, state.heightIn);
+      var sides = billableSides(state.widthIn, state.heightIn);
+      return sides ? sides.lengthIn : null;
     }
 
     function getBillablePageWidthIn() {
-      if (!(state.widthIn > 0) || !(state.heightIn > 0)) return null;
-      return Math.min(state.widthIn, state.heightIn);
+      var sides = billableSides(state.widthIn, state.heightIn);
+      return sides ? sides.widthIn : null;
     }
 
     function formatInches(value) {
@@ -1994,8 +2009,12 @@
     function buildPreviewBoardDataFromItem(item) {
       if (!item || !(item.widthIn > 0) || !(item.heightIn > 0)) return null;
 
-      var billableWidthIn = Math.min(item.widthIn, item.heightIn);
-      var billableLengthIn = Math.max(item.widthIn, item.heightIn);
+      var billableSidesForItem = billableSides(item.widthIn, item.heightIn) || {
+        widthIn: item.widthIn,
+        lengthIn: item.heightIn,
+      };
+      var billableWidthIn = billableSidesForItem.widthIn;
+      var billableLengthIn = billableSidesForItem.lengthIn;
       var imageSrc = item.thumbnailUrl || item.localPreviewUrl || (item.fastRaster ? '' : item.originalUrl) || '';
       var hasArtwork =
         item.trimmedWidthPx > 0 &&
@@ -3188,8 +3207,15 @@
         return;
       }
       detectedBox.classList.remove('hidden');
-      var displayWidthIn = Math.min(state.widthIn, state.heightIn);
-      var displayLengthIn = Math.max(state.widthIn, state.heightIn);
+      // Show the orientation the customer is actually charged for, so the
+      // detected box and the price agree. A 22x6 sheet reads 22 wide by 6 long,
+      // not 6 by 22.
+      var displaySides = billableSides(state.widthIn, state.heightIn) || {
+        widthIn: state.widthIn,
+        lengthIn: state.heightIn,
+      };
+      var displayWidthIn = displaySides.widthIn;
+      var displayLengthIn = displaySides.lengthIn;
       if (detectedWidth) detectedWidth.value = displayWidthIn.toFixed(2) + '"';
       if (detectedHeight) detectedHeight.value = displayLengthIn.toFixed(2) + '"';
       if (detectedNote) {

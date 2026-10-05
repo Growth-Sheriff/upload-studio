@@ -16,6 +16,21 @@
     return isFinite(parsed) && parsed > 0 ? parsed : 0;
   }
 
+  // Mirrors chooseFinishedSheetOrientation on the server. When both sides fit
+  // across the roll the sheet can be turned, and the cheaper turn puts the
+  // longer side across it so only the shorter side is billed. Taking the long
+  // side unconditionally is what showed customers twice the real price for a
+  // 22x6 sheet while the server already billed 6.
+  function billableLengthIn(widthIn, heightIn, maxPrintableWidthIn) {
+    var a = toNumber(widthIn);
+    var b = toNumber(heightIn);
+    if (!a || !b) return 0;
+    var shortSide = Math.min(a, b);
+    var longSide = Math.max(a, b);
+    var limit = toNumber(maxPrintableWidthIn) || 22.5;
+    return longSide <= limit + 0.02 ? shortSide : longSide;
+  }
+
   function formatInches(value) {
     var n = toNumber(value);
     if (!n) return '--';
@@ -895,13 +910,14 @@
   };
 
   MainProductUpload.prototype.getLinearSummary = function(items) {
+    var self = this;
     var billable = 0;
     var cartQuantity = 0;
     var sampleResult = null;
     items.forEach(function(item) {
       var result = item && item.selectedResult ? item.selectedResult : {};
       sampleResult = sampleResult || result;
-      var length = toNumber(result.billableLengthIn) || Math.max(toNumber(item && item.widthIn), toNumber(item && item.heightIn));
+      var length = toNumber(result.billableLengthIn) || billableLengthIn(item && item.widthIn, item && item.heightIn, self.maxPrintableWidthIn);
       billable += length;
       cartQuantity += Math.max(1, Number(result.cartQuantity || result.wholeSheetCopies) || Math.ceil(length || 1));
     });
@@ -1694,7 +1710,7 @@
       selectedSheetLabel: 'Exact measured',
       selectedVariantTitle: '',
       selectedVariantId: this.getFallbackVariantId(),
-      billableLengthIn: Math.max(toNumber(this.state.widthIn), toNumber(this.state.heightIn)),
+      billableLengthIn: billableLengthIn(this.state.widthIn, this.state.heightIn, this.maxPrintableWidthIn),
       cartQuantity: 1,
       sheetsNeeded: 1
     };
