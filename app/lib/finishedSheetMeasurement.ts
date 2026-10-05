@@ -111,6 +111,50 @@ export function formatFinishedSheetInches(value: number): string {
   return Number(Number(value).toFixed(4)).toString()
 }
 
+/**
+ * Pick which measured side runs across the roll.
+ *
+ * `normalizeFinishedSheet` cannot answer this: it never sees the roll, so it
+ * always calls the short side the width and the long side the length. That is
+ * right for a sheet taller than the roll is wide — there is only one way to
+ * feed it — but when BOTH sides fit across the roll the sheet can be turned,
+ * and turning it changes the bill. Billing is `ceil(lengthIn * copies)`, so the
+ * cheaper orientation is the one that puts the LONGER side across the roll and
+ * leaves the shorter side as the length.
+ *
+ * A 22in x 11in sheet on a 22.5in roll is the case customers reported
+ * (legendtransfers, 2026-10-05): fed as 11 wide it bills 22 inches, fed as 22
+ * wide it bills 11 — the same print for double the money. Long sheets never
+ * showed it because only one orientation fits, which is why it read as "large
+ * orders are fine".
+ *
+ * Returns null when neither side fits across the roll; the caller reports that
+ * as WIDTH_TOO_LARGE using the narrower side, the sheet's best case.
+ */
+export function chooseFinishedSheetOrientation(
+  firstDimensionIn: number,
+  secondDimensionIn: number,
+  maxPrintableWidthIn: number,
+  fitToleranceIn: number
+): NormalizedFinishedSheet | null {
+  const bounds = normalizeFinishedSheet(firstDimensionIn, secondDimensionIn)
+  if (!bounds) return null
+
+  const longSideFits = isWithinFinishedSheetLimit(
+    bounds.lengthIn,
+    maxPrintableWidthIn,
+    fitToleranceIn
+  )
+  if (longSideFits) {
+    // Both sides fit across the roll. Turn the sheet so the long side runs
+    // across it and only the short side is billed.
+    return { widthIn: bounds.lengthIn, lengthIn: bounds.widthIn }
+  }
+
+  // Only the short side can run across the roll, if either can.
+  return bounds
+}
+
 export function validateFinishedSheetFit(input: {
   widthIn: number
   heightIn: number
@@ -118,7 +162,12 @@ export function validateFinishedSheetFit(input: {
   maxPrintableLengthIn?: number | null
   fitToleranceIn: number
 }): FinishedSheetFitResult {
-  const normalized = normalizeFinishedSheet(input.widthIn, input.heightIn)
+  const normalized = chooseFinishedSheetOrientation(
+    input.widthIn,
+    input.heightIn,
+    input.maxPrintableWidthIn,
+    input.fitToleranceIn
+  )
   if (!normalized) {
     return {
       ok: false,

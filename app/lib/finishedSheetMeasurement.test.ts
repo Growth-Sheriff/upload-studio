@@ -93,4 +93,44 @@ describe('finished-sheet physical limits', () => {
       maxPrintableLengthIn: 240,
     })
   })
+
+  // Billing is ceil(lengthIn * copies), so the orientation decides the price.
+  // Reported by a legendtransfers customer on 2026-10-05: a 22x11 sheet billed
+  // 22 inches instead of 11 — the same print for double the money.
+  it('turns a sheet that fits both ways so the shorter side is billed', () => {
+    const result = validateFinishedSheetFit({ widthIn: 22, heightIn: 11, ...limits })
+
+    expect(result).toEqual({ ok: true, widthIn: 22, lengthIn: 11 })
+  })
+
+  it('bills the same whichever way the measurement arrives', () => {
+    const asMeasured = validateFinishedSheetFit({ widthIn: 22, heightIn: 11, ...limits })
+    const rotated = validateFinishedSheetFit({ widthIn: 11, heightIn: 22, ...limits })
+
+    expect(rotated).toEqual(asMeasured)
+  })
+
+  it('keeps the only feasible orientation when the long side cannot cross the roll', () => {
+    const result = validateFinishedSheetFit({ widthIn: 22, heightIn: 240, ...limits })
+
+    expect(result).toEqual({ ok: true, widthIn: 22, lengthIn: 240 })
+  })
+
+  it('leaves a square sheet alone', () => {
+    const result = validateFinishedSheetFit({ widthIn: 18, heightIn: 18, ...limits })
+
+    expect(result).toEqual({ ok: true, widthIn: 18, lengthIn: 18 })
+  })
+
+  it('still reports the narrower side when neither side crosses the roll', () => {
+    const result = validateFinishedSheetFit({ widthIn: 30, heightIn: 40, ...limits })
+
+    expect(result).toMatchObject({ ok: false, code: 'WIDTH_TOO_LARGE', widthIn: 30, lengthIn: 40 })
+  })
+
+  it('turns a sheet right up to the fit tolerance', () => {
+    const result = validateFinishedSheetFit({ widthIn: 22.52, heightIn: 9, ...limits })
+
+    expect(result).toEqual({ ok: true, widthIn: 22.52, lengthIn: 9 })
+  })
 })
