@@ -1,0 +1,57 @@
+# Shopify usage billing — public app only
+
+Checked against the official 2026-10 Admin GraphQL API on 2026-10-09. This branch has no Stripe/PayPal merchant-card collection, hosted checkout reservation, manual mark-paid action or external payment webhook. Custom-app production billing is untouched.
+
+## Commercial contract
+
+`BILLING_POLICY` in `app/lib/billing.server.ts` is the only rate/cap authority: 3.5% of captured, app-served line items after line discounts, excluding shipping/tax, capped at US$6 for the entire order. Exact upload/order-line attribution is reused; an unlinked/missing-file line is never treated as served. A free/100%-discounted order incurs no fee. Several uploaded lines on one order produce one aggregate fee, not one US$6 cap per upload. There is no fixed monthly charge, free monetary tier or expiring trial. Development stores receive provider-marked test subscriptions automatically; a real merchant cannot turn real billing into test billing with a form field.
+
+The capped effective rate is intentional. US$100 app-served revenue produces US$3.50 (3.5%); US$1,000 produces US$6 (0.6%). Tests assert both. We do not reinterpret the rate as 3.5% of unrelated products or of tax/shipping.
+
+## Consent and billing-interval cap
+
+The merchant chooses a visible US$50 / 200 / 500 / 1,000 usage limit per Shopify billing interval. These are spending permissions, not subscription prices. The initial recommendation is the smallest tier covering 125% of estimated usage; without app order history it is US$50. The recommendation is calculated from at most the last 100 recorded order rows and is deliberately advisory; the merchant remains the decision maker.
+
+`appSubscriptionCreate` creates a usage-only subscription with a US-dollar `cappedAmount`. Its confirmation URL is shown/opened in the Shopify top frame. Pending consent never sets `billingStatus=active`. Only `currentAppInstallation.activeSubscriptions` confirming exactly one ACTIVE USD usage line enables uploads and recording. Subscription IDs/line IDs are persisted per shop; names are not identity.
+
+At 80% consumption the admin shell and billing page show a notice. The merchant requests the next visible tier using `appSubscriptionLineItemUpdate` and explicitly confirms it on Shopify. The effective local cap remains the provider's old cap until a fresh provider query proves approval. Pending approval URLs can be reopened. Above the largest offered tier the merchant contacts support; no unapproved automatic increase exists.
+
+When the approved balance cannot cover a whole fee, it waits pending; there is no partial usage charge. Shopify remains the hard ceiling even if another worker consumes the balance concurrently. A GraphQL `userErrors` response is never recorded as paid. Files, existing production orders and already-approved upload service remain accessible at the cap; the app absorbs the cash-flow delay. Pending liabilities are disclosed and can be recorded after an approved increase or a later billing interval. This avoids breaking customers' production work because a merchant has not yet approved a higher app limit. It is not permission to exceed the cap.
+
+## Exactly-once logical usage and unknown outcomes
+
+The database business uniqueness remains `(shopId, orderId)`. The provider key is `agsu-order-<SHA256(shopId|orderId)>`, persisted once and reused for every attempt/delivery. A delivery event ID, a scheduler run or a changed order set can never produce another key for the same order. Both the per-order amount and the original Shopify usage line freeze before requesting the provider.
+
+Pending rows are atomically leased for five minutes and immediately rechecked for captured/terminal/review facts. The provider call is one `appUsageRecordCreate` per order, in USD, with order identity in its description. A provider record ID settles that exact claim to `paid` transactionally with the audit. Usage recording is not proof the merchant has already paid their Shopify invoice; `paid` here preserves the inherited immutable provider-settled state meaning, displayed as recorded app usage.
+
+If a response is lost, a network/API error is ambiguous, or local settlement fails, the row stays `charging`. While it remains eligible, the next attempt replays the same key, amount and original line. After cancellation/refund/review or inactive billing, reconciliation becomes a **read-only lookup** of the original subscription's usage records and exact idempotency key/amount. It never creates a new usage record for that terminal order. Missing/ambiguous results remain quarantined for support; absence in one query cannot prove an in-flight request will never finish. A 30-second response deadline prevents one hung request from blocking a billing worker indefinitely; the underlying SDK request can finish later. A confirmed first-call GraphQL rejection may return to pending; an uncertain prior attempt may not. An expired pre-request lease without a durable request-start marker is safely recovered because no provider request was sent.
+
+Shared Redis contains one five-minute fanout scheduler and a shop-work queue with four concurrent slots. Every job carries shopId; each shop records at most twenty rows per turn and database leases prevent concurrent duplicate requests. Request/worker tenant context is mandatory. A busy shop therefore does not monopolize all billing turns. The authenticated internal cron entry uses the same collector; it cannot create a different charge identity.
+
+## Cancellation/refund policy
+
+Only financial status `paid` proves the attributed lines were captured. Authorized/pending/partially-paid orders wait. Cancellation, voided payment or full refund before any provider request makes the fee void. Partial refund blocks collection and adds a review record; the app does not guess which app lines were refunded. Facts are sticky against replay/out-of-order paid events.
+
+Recorded usage is immutable. A subsequent cancellation/full refund creates one durable `BillingCredit` review row for that fee; partial refunds remain manual review. A cancellation racing an unknown provider request cannot release that request: look up the original provider usage record, settle only a proven outcome, then queue credit review if it was recorded. The merchant can request review from the billing page. This action is not itself a provider refund or credit.
+
+Shopify usage records cannot be edited/deleted. **`appCreditCreate` belongs to the Partner API, not the Admin GraphQL API.** Credits must be executed by the owner through Shopify/Partner support or a separately credentialed Partner API workflow, with the provider reference recorded on `BillingCredit`; never by reopening a paid commission. Partner credentials, credit issuing/reconciliation and the support operational procedure must be verified before publication. No fake Admin credit mutation or unattended double-credit retry exists in this implementation.
+
+## Currency and USD cap
+
+The order and attributable captured amount retain the shop currency. Fees and subscription limits are USD. For non-USD captures, the app takes the first successful current published ECB daily reference snapshot; USD/local is the USD-per-EUR rate divided by local-per-EUR. EUR uses 1. The conversion source, publication date, rate, converted served amount and original amount/currency are persisted and displayed. USD has an explicit identity rate of 1. A retry keeps the snapshot; it does not pick a more profitable new FX rate.
+
+ECB is a disclosed reference-rate convention, not a promise of the merchant's bank settlement rate. It publishes working-day rates and cautions against treating them as transactional quotes. A feed older than seven days, absent/unsupported currency, missing USD rate or failed request produces `billing_fx_unavailable` review with no collectible fee. Unsupported-currency onboarding needs an owner decision/alternative trusted FX source before launch to those merchants. We never call CAD, TRY or another currency USD. Shopify's conversion of its USD app invoice into merchant billing currency is separate from our order-fee calculation.
+
+## Shopify net revenue
+
+For an eligible standard Partner account, Shopify's currently documented first-US$1m cumulative app revenue exemption since 2025-01-01 and 15% above-threshold share apply across the qualifying account's apps; 2.9% processing is separate. Eligibility and large-company thresholds must be checked in the actual account.
+
+Before revenue share, a US$3.50 fee leaves US$3.3985 after 2.9% processing, equivalent to 3.3985% of a US$100 served order. Under a 15% share plus 2.9% processing assumption it leaves US$2.8735, or 2.8735% of that order. A capped US$6 fee leaves US$5.826 / US$4.926 respectively. Hosting, storage, FX differences, credits and taxes are not included. Actual provider statements supersede estimates.
+
+## Verification and external gaps
+
+- `npx vitest run app/lib/billing.server.test.ts app/lib/billingRunner.server.test.ts app/lib/shopifyBilling.server.test.ts app/lib/commissionEligibility.server.test.ts app/lib/orderReconciler.server.test.ts`: focused tests passed, 2026-10-09. Covers rate/cap, lower effective rate, CAD conversion, stale FX, pending consent, inactive currency/subscription, concurrent duplicate delivery, unpaid/cancelled/refunded non-collection, exhausted cap, confirmed rejection, crashed pre-request recovery, lost response replay, and terminal read-only reconciliation with/without an existing provider record. Root records the final aggregate count.
+- `npx tsc --noEmit --pretty false`: no diagnostics in billing workstream files on the first complete check; unrelated repository diagnostics were returned to their owners. Root records the final aggregate result.
+- These are local/mocked provider tests. A real new public-app installation, Shopify consent, duplicate HMAC order delivery, provider usage record, billing cap rejection and next interval are **not** proven by these tests. Root's demo-store verification must provide that evidence. No production merchant billing was mutated.
+
+Sources: [subscription creation](https://shopify.dev/docs/api/admin-graphql/2026-10/mutations/appSubscriptionCreate), [usage idempotency and cap](https://shopify.dev/docs/api/admin-graphql/2026-10/mutations/appUsageRecordCreate), [merchant-approved cap update](https://shopify.dev/docs/api/admin-graphql/2026-10/mutations/appSubscriptionLineItemUpdate), [Partner app credits](https://shopify.dev/docs/api/partner/latest/objects/appcredit), [Shopify revenue share](https://shopify.dev/docs/apps/launch/distribution/revenue-share), [ECB reference rates](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html).

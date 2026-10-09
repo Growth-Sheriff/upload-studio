@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs } from '@remix-run/node';
 import { json } from '@remix-run/node';
-import { runTenantAutoCharge } from '~/lib/billingRunner.server';
+import { runAllShopUsageBilling } from '~/lib/billingRunner.server';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 
@@ -16,9 +16,10 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const summary = await runTenantAutoCharge();
+  const summary = await runAllShopUsageBilling();
   const counts = summary.results.reduce<Record<string, number>>((acc, r) => {
-    acc[r.outcome.status] = (acc[r.outcome.status] || 0) + 1;
+    const status = 'error' in r ? 'error' : r.recorded > 0 ? 'recorded' : 'waiting';
+    acc[status] = (acc[status] || 0) + 1;
     return acc;
   }, {});
   console.log(

@@ -10,6 +10,7 @@ import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import adminStyles from "~/styles/admin.css?url";
 import prisma from "~/lib/prisma.server";
 import { useAppBridgeNavigation } from "~/hooks/useAppBridgeNavigation";
+import { billingCapState } from "~/lib/billing.server";
 
 export const links = () => [
   { rel: "stylesheet", href: polarisStyles },
@@ -29,10 +30,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   let pendingUploads = 0;
   let pendingQueue = 0;
   let billingBanner: {
-    pendingAmount: string;
-    pendingOrderCount: number;
-    hasOverdueRetry: boolean;
-    retryNextAt: string | null;
+    status: string;
+    capUsd: number;
+    usedUsd: number;
   } | null = null;
 
   if (shop) {
@@ -54,38 +54,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
       },
     });
 
-    const hasVault = Boolean(
-      (shop.stripePaymentMethodId && shop.stripeAutoCharge) ||
-      (shop.paypalVaultId && shop.paypalAutoCharge)
-    );
-    const billingState = ((shop.settings as Record<string, any>)?.billing ?? {}) as {
-      retryNextAt?: string;
-      retryCount?: number;
-    };
-    const hasOverdueRetry =
-      Boolean(billingState.retryNextAt) && (billingState.retryCount || 0) > 0;
-
-    if (!hasVault || hasOverdueRetry) {
-      const pendingAgg = await prisma.commission.aggregate({
-        where: {
-          shopId: shop.id,
-          status: 'pending',
-          paymentRef: null,
-          collectibleAt: { not: null },
-          reviewRequiredAt: null,
-        },
-        _sum: { commissionAmount: true },
-        _count: true,
-      });
-      const amount = Number(pendingAgg._sum.commissionAmount ?? 0);
-      if (amount > 0 || hasOverdueRetry) {
-        billingBanner = {
-          pendingAmount: amount.toFixed(2),
-          pendingOrderCount: pendingAgg._count || 0,
-          hasOverdueRetry,
-          retryNextAt: billingState.retryNextAt ?? null,
-        };
-      }
+    const state = await prisma.shopBilling.findUnique({ where: { shopId: shop.id } });
+    const capUsd = Number(state?.cappedAmountUsd || 0);
+    const usedUsd = Number(state?.balanceUsedUsd || 0);
+    if (state?.status !== 'active' || billingCapState(capUsd, usedUsd) !== 'available') {
+      billingBanner = { status: state?.status || 'inactive', capUsd, usedUsd };
     }
   }
 
@@ -114,10 +87,9 @@ export default function AppLayout() {
         notice={
           billingBanner ? (
             <PaymentSetupBanner
-              pendingAmount={billingBanner.pendingAmount}
-              pendingOrderCount={billingBanner.pendingOrderCount}
-              hasOverdueRetry={billingBanner.hasOverdueRetry}
-              retryNextAt={billingBanner.retryNextAt}
+              status={billingBanner.status}
+              capUsd={billingBanner.capUsd}
+              usedUsd={billingBanner.usedUsd}
             />
           ) : null
         }

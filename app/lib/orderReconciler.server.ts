@@ -24,8 +24,8 @@ import crypto from 'crypto'
 import { Prisma } from '@prisma/client'
 import { Decimal } from '@prisma/client/runtime/library'
 import prisma from '~/lib/prisma.server'
-import { COMMISSION_PERCENT, calculateCommissionAmount, isZeroPaymentOrder } from '~/lib/billing.server'
-import { recordOrderForVisitor } from '~/lib/visitor.server'
+import { COMMISSION_PERCENT, buildUsageIdempotencyKey, calculateCommissionAmount, isZeroPaymentOrder } from '~/lib/billing.server'
+import { getBillingFxSnapshot } from '~/lib/billingFx.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
 import {
   extractVipUploadIdsFromOrderNote,
@@ -311,8 +311,10 @@ async function reconcileCommission(input: {
       orderId: input.orderId,
     }))
   const zeroPayment = !forcedReviewReason && (isZeroPaymentOrder(input.order) || input.servedAmount <= 0)
-  const calculatedAmount =
-    zeroPayment || requestedReviewReason ? 0 : calculateCommissionAmount(input.servedAmount)
+  // Fee currency is always USD. Never apply the US$6 ceiling to a local-currency
+  // amount. The first captured fact fixes a disclosed FX snapshot for this fee.
+  let calculatedAmount = 0
+  let fxData: { servedAmountUsd: Decimal; fxRate: Decimal; fxSource: string; fxObservedAt: Date } | null = null
   const now = new Date()
   const observedAt = facts.observedAt || now
   const commissionKey = {
@@ -328,8 +330,24 @@ async function reconcileCommission(input: {
       reviewRequiredAt: true,
       shopifyRefundStatus: true,
       shopifyCancelledAt: true,
+      fxRate: true,
+      fxSource: true,
+      fxObservedAt: true,
     },
   })
+  if (!zeroPayment && !forcedReviewReason && facts.captureConfirmed && !facts.cancelledAt && facts.refundState === 'none') {
+    try {
+      const fx = existingBeforeUpsert?.fxRate && existingBeforeUpsert.fxSource && existingBeforeUpsert.fxObservedAt
+        ? { rate: Number(existingBeforeUpsert.fxRate), source: existingBeforeUpsert.fxSource, observedAt: existingBeforeUpsert.fxObservedAt }
+        : await getBillingFxSnapshot(input.orderCurrency)
+      const servedAmountUsd = new Decimal(input.servedAmount).mul(new Decimal(fx.rate)).toDecimalPlaces(2)
+      calculatedAmount = calculateCommissionAmount(Number(servedAmountUsd))
+      fxData = { servedAmountUsd, fxRate: new Decimal(fx.rate), fxSource: fx.source, fxObservedAt: fx.observedAt }
+    } catch (error) {
+      forcedReviewReason = 'billing_fx_unavailable'
+      console.error(`[Billing FX] ${input.shopId}/${input.orderId}:`, error instanceof Error ? error.message : String(error))
+    }
+  }
   const createPlan = forcedReviewReason
     ? {
         action: 'review' as const,
@@ -355,6 +373,8 @@ async function reconcileCommission(input: {
       orderCurrency: input.orderCurrency,
       commissionRate: new Decimal(COMMISSION_PERCENT),
       commissionAmount: new Decimal(createPlan.action === 'void' ? 0 : calculatedAmount),
+      billingCurrency: 'USD',
+      ...(fxData || {}),
       status: stageBeforeCollectible ? COMMISSION_AWAITING_PAYMENT_STATUS : createPlan.status,
       collectibleAt: null,
       eligibilitySource: null,
@@ -475,6 +495,13 @@ async function reconcileCommission(input: {
         cancelledAt: facts.cancelledAt?.toISOString() || null,
       },
     })
+    if (row.status === 'paid' && (facts.cancelledAt || facts.refundState === 'full')) {
+      const fee = await prisma.commission.findFirst({ where: { shopId: input.shopId, id: row.id }, select: { commissionAmount: true } })
+      if (fee) {
+        const creditKey = `credit-${buildUsageIdempotencyKey(input.shopId, input.orderId)}`
+        await prisma.billingCredit.upsert({ where: { idempotencyKey: creditKey }, create: { shopId: input.shopId, commissionId: row.id, amountUsd: fee.commissionAmount, status: 'review', idempotencyKey: creditKey }, update: {} })
+      }
+    }
   }
 
   if (plan.action === 'make_collectible') {
@@ -494,6 +521,8 @@ async function reconcileCommission(input: {
         orderCurrency: input.orderCurrency,
         commissionRate: new Decimal(COMMISSION_PERCENT),
         commissionAmount: new Decimal(calculatedAmount),
+        billingCurrency: 'USD',
+        ...(fxData || {}),
         status: 'pending',
         collectibleAt: current.collectibleAt || observedAt,
         eligibilitySource: input.topic,
@@ -776,7 +805,7 @@ export async function reconcileOrder(
     const isGhost = isGhostUploadItems(upload.items)
 
     await prisma.orderLink.upsert({
-      where: { orderId_uploadId: { orderId, uploadId } },
+      where: { shopId_orderId_uploadId: { shopId: shop.id, orderId, uploadId } },
       update: lineItemId ? { lineItemId } : {},
       create: { shopId: shop.id, orderId, uploadId, lineItemId },
     })
@@ -801,13 +830,7 @@ export async function reconcileOrder(
       },
     })
 
-    if (firstPaidTransition && upload.visitorId) {
-      try {
-        await recordOrderForVisitor(shop.id, upload.visitorId, orderTotal)
-        console.log(`[Reconcile] Revenue recorded for visitor ${upload.visitorId}: $${orderTotal}`)
-      } catch (visitorErr) {
-        console.warn('[Reconcile] Visitor revenue tracking failed:', visitorErr)
-      }
+    if (firstPaidTransition) {
       paidNewlyRecorded = true
     }
 
