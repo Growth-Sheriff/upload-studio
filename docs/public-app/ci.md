@@ -295,3 +295,68 @@ push produces a run. A signed webhook relay or `DispatchWorkflow` does not
 remove the documented GitHub-app connection requirement. `--forge=origin` is
 the separate **Cursor Origin** integration, not Depot Code, and is not an
 authorized shortcut; see [Origin integration](https://depot.dev/docs/ci/integrations/origin).
+
+## Final auth, retention and truthful-price candidate
+
+After the source freeze, both builds used committed application source
+`6544477d1ef273e97ecf7b8610efd1760c5f48bb`. The only dirty local file and untracked
+screenshots were excluded by the explicit build-context allowlists. This
+revision includes expiring offline authorization `431c441`, retention
+`3f74138`, truthful Mod 2 display `b75edb5`, and the CI baseline fixture copy.
+
+```text
+depot build --project 7fxkc8sd3p --platform linux/amd64 \
+  --file deploy/public/Dockerfile.ci \
+  --build-arg PUBLIC_REVIEW_SHA=2ff3faf9a856bc8d67be620f0591fc215fc2598e \
+  --label org.opencontainers.image.revision=6544477d1ef273e97ecf7b8610efd1760c5f48bb \
+  --no-cache-filter verify --progress plain .
+```
+
+`PUBLIC_REVIEW_SHA` pins the already-published historical Git material that the
+regression harness needs; **it is not the tested application revision**. The
+application is copied from the clean, allowlisted `6544477` source context.
+[CI pwxblmvxpc](https://depot.dev/orgs/zl650q33c5/projects/7fxkc8sd3p/builds/pwxblmvxpc)
+exited 0. Provider metadata: `finished`, start `2026-10-09T22:39:57Z`, duration
+76 seconds. Actual results:
+
+```text
+Test Files 62 passed (62)
+Tests      412 passed (412), zero skipped
+Typecheck: exit 0
+Measurement regression: strict gate passed; every historical difference labelled
+Remix production build: exit 0
+Theme check: []
+Pinned Shopify CLI 3.88.1 extension build: success (theme + checkout)
+```
+
+This run used fresh disposable PostgreSQL 15 and Redis 7, applied public
+migrations, exercised real database/lease/isolation/privacy tests and the actual
+SDK expired-offline refresh path with an in-test provider response. The latter
+proves refresh-before-query without an admin visit, not a live Shopify token
+exchange. Expected negative-test database conflicts are not test failures.
+
+```text
+depot build --project 7fxkc8sd3p --platform linux/amd64 \
+  --file deploy/public/Dockerfile \
+  --tag ghcr.io/growth-sheriff/auto-gang-sheet-public:6544477 \
+  --label org.opencontainers.image.revision=6544477d1ef273e97ecf7b8610efd1760c5f48bb \
+  --push --progress plain .
+docker buildx imagetools inspect ghcr.io/growth-sheriff/auto-gang-sheet-public:6544477
+```
+
+[Production build 6bp3c5zznj](https://depot.dev/orgs/zl650q33c5/projects/7fxkc8sd3p/builds/6bp3c5zznj)
+exited 0 and pushed only the new public package/tag. Provider metadata:
+`finished`, start `2026-10-09T22:39:57Z`, duration 90 seconds. Independent registry
+inspection confirmed:
+
+```text
+image index: sha256:c334036045370f564fd8b7afda8d3c01ccd5e6b36ed3ccd2851f94069b420b27
+linux/amd64: sha256:7411e1fdda1895e432ca05ec095ccc8af92c95802f7cffc81ead1d8fc39a1abe
+org.opencontainers.image.revision: 6544477d1ef273e97ecf7b8610efd1760c5f48bb
+```
+
+Two earlier candidate builds (`k7h2005bgx`, `8jn3ms81xs`) were interrupted before
+source-context transfer when the final display correction arrived; they did not
+push an image. This successful candidate is not itself proof of deployment,
+real merchant reauthorization, checkout, billing or App Store acceptance. Those
+facts require separate runtime evidence.
