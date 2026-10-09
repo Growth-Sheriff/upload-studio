@@ -1,0 +1,19 @@
+{
+  "sections": {
+    "intro": { "type": "ags-product-intro", "settings": { "eyebrow": "AUTOMATIC VARIANT · READY DTF SHEET", "intro": "Your artwork is already arranged. Upload the finished sheet and the app selects the smallest listed length that covers it. Demo sheet prices start at $6.00.", "length_label": "Listed sheet lengths", "length_value": "12–240 in" } },
+    "uploader": {
+      "type": "apps",
+      "disabled": true,
+      "blocks": {
+        "ags_variant_upload": {
+          "type": "shopify://apps/auto-gang-sheet-upload/blocks/main-product-upload-app/01a122b4-5d9a-7c7b-bf41-7485e57ad484",
+          "settings": { "app_proxy_path": "/apps/customizer", "heading": "Upload your finished sheet", "upload_label": "Upload finished files", "accent_color": "#1b625b", "enable_checkout_button": true, "show_product_title": false }
+        }
+      },
+      "block_order": ["ags_variant_upload"],
+      "settings": { "full_width": true }
+    },
+    "faq": { "type": "ags-faq", "settings": {} }
+  },
+  "order": ["intro", "uploader", "faq"]
+}
