@@ -1,29 +1,21 @@
 import type { ActionFunctionArgs } from '@remix-run/node';
 import { json } from '@remix-run/node';
-import { runAllShopUsageBilling } from '~/lib/billingRunner.server';
-
-const CRON_SECRET = process.env.CRON_SECRET;
+import { timingSafeEqual } from 'node:crypto';
+import { enqueueBillingShopPage } from '~/lib/billingQueueProducer.server';
 
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
     return json({ error: 'Method not allowed' }, { status: 405 });
   }
-  if (!CRON_SECRET) {
-    console.error('[Billing Cron] CRON_SECRET not configured');
-    return json({ error: 'Server misconfiguration' }, { status: 500 });
-  }
-  if (request.headers.get('x-cron-secret') !== CRON_SECRET) {
-    return json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const summary = await runAllShopUsageBilling();
-  const counts = summary.results.reduce<Record<string, number>>((acc, r) => {
-    const status = 'error' in r ? 'error' : r.recorded > 0 ? 'recorded' : 'waiting';
-    acc[status] = (acc[status] || 0) + 1;
-    return acc;
-  }, {});
-  console.log(
-    `[Billing Cron] Done: ${summary.total} shops considered, breakdown=${JSON.stringify(counts)}`
-  );
-  return json({ success: true, total: summary.total, counts, results: summary.results });
+  const expected = Buffer.from(process.env.PUBLIC_OPERATIONS_TOKEN || '');
+  const supplied = Buffer.from((request.headers.get('Authorization') || '').replace(/^Bearer /, ''));
+  if (!expected.length || supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return new Response('Not found', { status: 404 });
+  const after = new URL(request.url).searchParams.get('after') || undefined;
+  if (after && !/^[a-zA-Z0-9_-]{1,128}$/.test(after)) return json({ error: 'Invalid pagination cursor' }, { status: 400 });
+  try {
+    const page = await enqueueBillingShopPage({ after });
+    // Scheduled means submitted using the existing five-minute job identity,
+    // not fees recorded or new jobs created (duplicate turns are deduplicated).
+    return json({ success: true, ...page }, { status: 202, headers: { 'Cache-Control': 'no-store' } });
+  } catch { return json({ error: 'Billing queue unavailable; retry the same page' }, { status: 503 }); }
 }

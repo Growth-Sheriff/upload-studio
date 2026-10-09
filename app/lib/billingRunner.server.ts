@@ -103,14 +103,3 @@ async function executeShopUsageBilling(shopId: string, suppliedAdmin?: BillingAd
   }
   return { recorded, pending: candidates.length - recorded }
 }
-
-/** Global scheduler lists shops; fee selection and settlement remain scoped. */
-export async function runAllShopUsageBilling() {
-  const shops = await prisma.shop.findMany({ where: { uninstalledAt: null, OR: [{ billing: { status: { in: ['active', 'pending'] } } }, { commissions: { some: { status: 'charging' } } }] }, select: { id: true, shopDomain: true } })
-  const results = []
-  for (const shop of shops) {
-    try { results.push({ shop: shop.shopDomain, ...await runShopUsageBilling(shop.id) }) }
-    catch (error) { results.push({ shop: shop.shopDomain, recorded: 0, error: error instanceof Error ? error.message : String(error) }) }
-  }
-  return { total: shops.length, results }
-}
