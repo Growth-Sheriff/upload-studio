@@ -23,4 +23,10 @@ App Store approval, protected-data approval and measured 28-day Web Vitals canno
 
 - Dedicated managed worktree created from origin/main; `public-app` branch created. Original checkout untouched.
 - Official documentation read for stable version/deprecation, usage billing, privacy, access tokens, proxy, extensions, webhook duplication and performance.
-- Implementation and release evidence pending.
+- Visitor profiling, attribution, browser replay and external merchant-card collection removed; file hashes and order identity remain.
+- Shared durable sessions, mandatory row guards, signed upload/download ownership, Redis DB0 and distributed per-shop resource limits implemented.
+- Shopify usage billing, cap approval, immutable retries/unknown outcomes and durable privacy/retention implemented. Local PostgreSQL/Redis tests exercise real locks, leases and file deletion; provider transport remains simulated.
+- Self-service product setup, public legal/help drafts, minimum scopes, independent Docker/CI/config and both extension builds implemented.
+- Final review fixed OAuth/session-versus-erasure races, silent admin shop recreation and retention-versus-erasure races. Paid film-volume eligibility now uses immutable accepted units and paid order-line quantities, not a second orientation calculation; privacy unlinking is fenced.
+- Final Linux suite: 56 files and all 391 tests passed, including ImageMagick and real local PostgreSQL/Redis integrations. Full typecheck, regression harness, app/extension builds and nonroot read-only Docker HTTP smoke pass. Results and explicitly unproven live gates are in verification.md.
+- Actualscope registration and independent hosted credentials could not be verified with available browser access. No public Shopify app, demo-store installation, hosted deployment or App Store submission is claimed. No existing app/tenant infrastructure was used as a workaround.

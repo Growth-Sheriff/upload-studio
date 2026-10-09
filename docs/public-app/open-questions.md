@@ -1,9 +1,24 @@
 # Open evidence and external dependencies
 
-Updated: 2026-10-09.
+Updated: 2026-10-10 (Europe/Istanbul).
 
-No public app registration, infrastructure, live demo order, protected-data approval or publication is claimed yet. Actualscope authenticated access and independent hosting availability will be checked. Existing tenant secrets and infrastructure are not substitutes.
+## Launch blockers — no fabricated substitutes
 
-The underlying `main` baseline may contain existing test/type errors. Record baseline separately from public changes.
+1. Actualscope Partner/Dev Dashboard registration: the available browser automation did not expose the requested Chrome profile; native browser inspection stopped because it could not confidently identify the current page URL. No more UI interaction was attempted after that stop. Therefore account info@actualscope.com, organization identity and creation of the app are unverified. Complete only in Actualscope, not Growth Sheriff. Until verified, the new TOML retains a deliberately non-deployable client ID and example URLs.
+2. Independent hosting/storage: no new host, public PostgreSQL/Redis or R2 bucket was provisioned. The available DigitalOcean login is an existing account; its ownership/use for the new public project is not an authenticated Actualscope registration. Provisioning an idle host without a real app identity/secrets does not prove deployment. Use the independent manifests and fresh credentials; neither live droplet is a staging host.
+3. Protected customer data: the level-1 justification and minimized GraphQL snapshot are prepared, but permission approval and real order deliveries are not. No read_customers or buyer contact fields are requested. Verify actual API version headers, order/draft queries and webhook topic authorization in the new app.
+4. Live commerce proof: three real demo stores, a real test checkout, Shopify consent/usage record, duplicate signed order delivery, cap rejection/approval and next-period handling have not happened. Local real-database/mocked-provider tests do not establish these facts.
+5. Storage/privacy proof: actual R2 pagination/multipart erasure, presigned headers, wildcard non-credentialed CORS, expired capability behavior and 48-hour unattended deletion/retry alerts need the new provider account. Local file deletion and mocked R2 transport are not this proof. Confirm storage backups expire after 30 days and restore procedures reapply erasure tombstones. An absent Shop currently completes as `noStoredShop` without sweeping objects; unexpected row loss requires an independently tested orphan-prefix inventory/recovery procedure.
+6. Credits and financial operations: usage records cannot be undone. BillingCredit records queue owner review; Partner API/provider credit issuance, its audit reference and reconciliation procedure are not implemented/proven as an unattended workflow. Verify account revenue-share eligibility and tax treatment. Unsupported/stale FX safely blocks fee collection and needs an operator resolution path.
+7. Legal/support readiness: actual legal entity/address, hosting region, processor agreements and a working info@actualscope.com mailbox have not been authenticated. Policy/listing copy and the editable icon are release drafts, not legal approval or submission assets.
+8. Storefront/admin release evidence: extension builds and static checks pass locally; extensions are not published to a new app and no real storefront Network panel, keyboard/visual checks, review video, screenshots or Lighthouse comparison exists yet.
 
-Shopify's 28-day field Web Vitals cannot exist before real use. Local performance measurements supplement but do not replace that evidence.
+## Deliberate boundaries
+
+- The public schema is fresh. No custom tenant data, visitor tables, billing ledger or existing cart is migrated. Signed capabilities are public-app-specific; old custom links remain on their existing deployments.
+- New explicit rates and the central least-film policy are preserved; an inherited duplicate Math.max calculation was corrected on the public branch only. Paid-volume eligibility must use immutable accepted units and real paid order quantities, never reinterpret historical charges.
+- The Prisma guard is application isolation, not PostgreSQL RLS. Dedicated role permissions, TLS, statement_timeout, backups and reviewed administrative access are launch requirements.
+- Per-shop image concurrency and process/container limits are implemented. A peak-RSS/OOM test with real large files and several shops under sustained load has not been performed; do not extrapolate the 200ms child cancellation test into memory capacity claims.
+- Public proxy settings currently validate /apps/name. Other allowed Shopify prefixes require explicit compatibility work rather than silently issuing an incorrect endpoint.
+
+Shopify's 28-day field Web Vitals cannot exist before real use. Static payload sizes, zero theme-check offenses and local measurements supplement but do not replace that evidence. These blockers prevent declaring the user's eleven release criteria complete; they do not authorize reusing any live custom app or weakening its isolation.

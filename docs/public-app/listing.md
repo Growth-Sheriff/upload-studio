@@ -20,6 +20,8 @@ Checkout display requires Plus on checkout steps and is optional; ordinary uploa
 
 ## Review procedure and screenshots (pending live demo)
 
+`assets/icon-draft.svg` is an editable icon concept, not an App Store submission image. Export to the format/dimensions required by the actual dashboard and visually approve it there. Product screenshots and review video must come from the real demo, not a fabricated UI mockup.
+
 Create three independent development stores, install this one public app in all, approve provider test usage billing and configure products in Setup. Demo A uses variants 22x12/22x24/22x80; B uses measured-length rate0.30 in store currency, width22.5 and max length240; C proves data separation. Product configuration is self-service; do not write products_config rows by hand.
 
 Run a real test checkout and capture: setup/visible settings, product uploader with authoritative measurement, cart showing exactly three properties, Shopify order with the correct print link, admin production identity, usage billing record and duplicate delivery proof. Use only synthetic artwork and demo identities in screenshots. Capture the cap approval and cap-exceeded state. Include keyboard navigation, mobile upload/server-preview fallback and large-file failure/retry evidence.

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">Auto Gang Sheet Upload — finished film sheet</title>
+  <rect width="1024" height="1024" rx="220" fill="#083d3d"/>
+  <path d="M282 218h358c63 0 114 51 114 114v438H356c-41 0-74-33-74-74V218Z" fill="#f2fbf7"/>
+  <path d="M640 218v114h114" fill="#c5e9dd"/>
+  <path d="M386 394h208M386 468h270M386 542h156" stroke="#0b7770" stroke-width="42" stroke-linecap="round"/>
+  <path d="m622 619 60 60 108-121" fill="none" stroke="#ecae49" stroke-width="46" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="282" y="696" width="342" height="94" rx="47" fill="#b1ddcd"/>
+  <ellipse cx="326" cy="743" rx="25" ry="31" fill="#0b7770"/>
+</svg>
