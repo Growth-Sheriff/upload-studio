@@ -14,6 +14,11 @@ COPY public ./public
 COPY prisma ./prisma
 COPY extensions ./extensions
 COPY theme-snippets ./theme-snippets
+COPY demo/storefront/performance-baseline.test.ts ./demo/storefront/
+COPY demo/theme/templates/index.json demo/theme/templates/product.ags-variant.json demo/theme/templates/collection.json ./demo/theme/templates/
+COPY demo/theme/config/settings_data.json ./demo/theme/config/
+COPY demo/performance-baseline/templates/index.json demo/performance-baseline/templates/product.ags-variant.json ./demo/performance-baseline/templates/
+COPY demo/performance-baseline/config/settings_data.json ./demo/performance-baseline/config/
 COPY scripts/measurement-regression-harness.ts scripts/measurement-regression-fixtures.json ./scripts/
 COPY tsconfig.json vite.config.ts vitest.config.ts server.mjs shopify.app.auto-gang-sheet-upload.toml ./
 COPY deploy/public/verify.sh ./deploy/public/verify.sh

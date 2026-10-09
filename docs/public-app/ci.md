@@ -194,10 +194,13 @@ then set to `public-app` through GitHub's repository API. The original local
 were not changed. This avoids merging public workflows into tenant main merely
 to satisfy Depot's default-branch registration requirement.
 
-The documented integration entry point is the new Depot organization's settings
-page, **GitHub Code Access → Connect to GitHub**. Installation must select only
-this new repository, not all repositories. No installation or automatic native
-run is claimed here yet. Never run local `depot ci run` from a dirty shared
+The documented GitHub integration entry point is the Depot organization's
+settings page, **GitHub Code Access → Connect to GitHub**. The actual installer
+also requests organization-secret/Actions-variable read access and
+organization self-hosted-runner write access. Selecting one repository does
+not remove those organization permissions. The owner approved only the new
+repository, so this installation was **not authorized or performed**. No
+automatic native run is claimed here yet. Never run local `depot ci run` from a dirty shared
 worktree: the CLI uploads local changes automatically. Use the clean, dedicated
 repository checkout and explicitly select `--repo
 Growth-Sheriff/auto-gang-sheet-public --org zl650q33c5` instead.
@@ -246,3 +249,49 @@ seconds; the proof never clears Redis or queue state. It does not satisfy the
 separate requirement for three real installed demo stores, nor prove checkout
 or Shopify webhook delivery. Its execution status belongs in the main
 verification evidence, not an assumed success in this document.
+
+## Automatic CI without broad GitHub organization permissions
+
+The least-privilege documented alternative is a **new standalone Depot Code
+repository**, not a GitHub mirror. It can receive the public branch through an
+explicit HTTPS Git URL without changing local `origin` or any tenant branch.
+Its `.depot/workflows/` `push` trigger runs native Depot CI; there is no GitHub
+Code Access installation. Depot Code is free during beta. See the
+[Code quickstart](https://depot.dev/docs/code/quickstart) and
+[Code overview](https://depot.dev/docs/code/overview).
+
+The [Code API](https://depot.dev/docs/api/code-reference) documents:
+
+```text
+POST https://api.depot.dev/depot.code.v1beta1.CodeService/CreateRepository
+Authorization: Bearer <organization token>
+x-depot-org: zl650q33c5
+Connect-Protocol-Version: 1
+{"standalone":{"repository":"auto-gang-sheet-public","defaultBranch":"public-app"}}
+```
+
+This exact **new-repository-only** request was authorized and attempted on
+2026-10-10. Both the inventory token and existing CLI-login token returned:
+
+```text
+HTTP 401 {"code":"unauthenticated","message":"Invalid token"}
+```
+
+Control reads using the CLI-login token returned 200 from
+`depot.core.v1.OrganizationService/ListOrganizations` (one organization) and
+`depot.cli.v1beta1.ProjectsService/ListProjects` (six projects), while the
+organization-token `depot.core.v1.ProjectService/ListProjects` returned 401.
+Thus the CLI login remains usable for independent builds, but it did not
+satisfy the documented Code API credential boundary. No repository or token
+was created, and no existing project was altered. A valid existing organization
+API token, or separately authorized creation of a standalone repository/access
+credential, is the concrete next gate. See
+[API authentication](https://depot.dev/docs/api/authentication).
+
+Feature availability is not yet proven: the Code quickstart says standalone
+push triggers are enabled for all organizations, but the API reference still
+says private beta requires enablement. Do not claim automatic CI before a real
+push produces a run. A signed webhook relay or `DispatchWorkflow` does not
+remove the documented GitHub-app connection requirement. `--forge=origin` is
+the separate **Cursor Origin** integration, not Depot Code, and is not an
+authorized shortcut; see [Origin integration](https://depot.dev/docs/ci/integrations/origin).
