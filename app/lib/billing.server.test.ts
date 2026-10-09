@@ -1,11 +1,20 @@
 import { describe, expect, it, vi } from 'vitest'
 const store = vi.hoisted(() => ({ shop: { findUnique: vi.fn() } }))
 vi.mock('~/lib/prisma.server', () => ({ default: store }))
-import { BILLING_POLICY, MAX_FILE_SIZE_MB, billingCapState, buildUsageIdempotencyKey, calculateCommissionAmount, checkUploadAllowed, recommendedBillingCap, sumMoneyCents } from './billing.server'
+import { BILLING_POLICY, MAX_FILE_SIZE_MB, billingCapState, billingReviewLabel, buildUsageIdempotencyKey, calculateCommissionAmount, checkUploadAllowed, recommendedBillingCap, sumMoneyCents } from './billing.server'
 import { parseEcbRates } from './billingFx.server'
 import { getPublicLegalOperator } from './publicLegal.server'
 
 describe('public order fees', () => {
+  it('shows confirmed and quarantined review facts without treating the review budget as partial relief', () => {
+    expect(billingReviewLabel('review')).toBe('Credit review requested')
+    expect(billingReviewLabel('credited')).toBe('Shopify credit confirmed')
+    expect(billingReviewLabel('refunded')).toBe('Shopify refund confirmed')
+    expect(billingReviewLabel('partially_credited')).toContain('Partial Shopify credit confirmed')
+    expect(billingReviewLabel('partially_refunded')).toContain('remaining fee is not automatically adjusted')
+    expect(billingReviewLabel('quarantined')).toContain('outcome unknown')
+    expect(billingReviewLabel('unexpected')).not.toContain('confirmed')
+  })
   it('charges 3.5% after discounts and never more than US$6', () => {
     expect(BILLING_POLICY.rate).toBe(0.035)
     expect(calculateCommissionAmount(30.6)).toBe(1.07)

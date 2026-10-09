@@ -5,7 +5,7 @@ import { Banner, BlockStack, Button, Card, DataTable, InlineStack, Page, Select,
 import { useEffect, useState } from 'react'
 import prisma from '~/lib/prisma.server'
 import { authenticate } from '~/shopify.server'
-import { BILLING_CAP_TIERS, BILLING_TERMS, billingCapState, recommendedBillingCap } from '~/lib/billingPolicy'
+import { BILLING_CAP_TIERS, BILLING_TERMS, billingCapState, billingReviewLabel, recommendedBillingCap } from '~/lib/billingPolicy'
 import { buildUsageIdempotencyKey } from '~/lib/billing.server'
 import { requestShopifyBillingApproval, syncShopifyBilling } from '~/lib/shopifyBilling.server'
 import { merchantLegalAgreementSatisfied } from '~/lib/publicLegal.server'
@@ -22,7 +22,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     billing: { status: state.status, capUsd: Number(state.cappedAmountUsd), usedUsd: Number(state.balanceUsedUsd), pendingApprovalUrl: state.pendingApprovalUrl, pendingCapUsd: state.pendingCapUsd ? Number(state.pendingCapUsd) : null, periodEnd: state.currentPeriodEnd?.toISOString() || null, test: state.test },
     suggestedCapUsd: recommendedBillingCap(recentTotal),
     records: records.map((row) => ({ id: row.id, orderId: row.orderId, orderNumber: row.orderNumber, originalAmount: Number(row.attributableCapturedAmount || 0), originalCurrency: row.orderCurrency, amountUsd: Number(row.commissionAmount), status: row.status, reviewReason: row.reviewReason, usageRecordId: row.usageRecordId, fxRate: row.fxRate ? Number(row.fxRate) : null, fxDate: row.fxObservedAt?.toISOString().slice(0, 10) || null })),
-    credits: credits.map((credit) => ({ commissionId: credit.commissionId, status: credit.status, amountUsd: Number(credit.amountUsd) })),
+    credits: credits.map((credit) => ({ commissionId: credit.commissionId, status: credit.status })),
   })
 }
 
@@ -85,6 +85,9 @@ export default function PublicBillingPage() {
       const label = row.status === 'paid' ? 'Recorded on Shopify' : row.status === 'charging' ? 'Provider reconciliation pending' : row.status === 'awaiting_payment' ? 'Awaiting customer payment' : row.status
       return [row.orderNumber || row.orderId, `${row.originalAmount.toFixed(2)} ${row.originalCurrency}`, row.amountUsd.toFixed(2), row.reviewReason ? `${label}: ${row.reviewReason}` : label, `${row.fxRate ?? '—'} · ${row.fxDate || '—'} · ${row.usageRecordId || 'not recorded'}`]
     })} /></BlockStack></Card>
-    {records.filter((row) => row.status === 'paid' && row.reviewReason).map((row) => <Card key={row.id}><InlineStack align="space-between"><Text as="p">{row.orderNumber || row.orderId}: recorded fee preserved after cancellation/refund; support must review Shopify app credit.</Text>{credits.some((credit) => credit.commissionId === row.id) ? <Text as="p">Credit review requested</Text> : <Form method="post"><input type="hidden" name="_action" value="request_credit" /><input type="hidden" name="commissionId" value={row.id} /><Button submit>Request credit review</Button></Form>}</InlineStack></Card>)}
+    {records.filter((row) => row.status === 'paid' && row.reviewReason).map((row) => {
+      const credit = credits.find((entry) => entry.commissionId === row.id)
+      return <Card key={row.id}><InlineStack align="space-between"><Text as="p">{row.orderNumber || row.orderId}: recorded fee is unchanged; any confirmed relief is shown separately.</Text>{credit ? <Text as="p">{billingReviewLabel(credit.status)}</Text> : <Form method="post"><input type="hidden" name="_action" value="request_credit" /><input type="hidden" name="commissionId" value={row.id} /><Button submit>Request credit review</Button></Form>}</InlineStack></Card>
+    })}
   </BlockStack></Page>
 }

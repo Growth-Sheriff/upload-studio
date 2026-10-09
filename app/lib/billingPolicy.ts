@@ -28,6 +28,18 @@ export function billingCapState(cap: number, used: number, nextFee = 0): 'availa
   if (cap <= 0 || moneyToCents(used) + moneyToCents(nextFee) > moneyToCents(cap) || moneyToCents(used) >= moneyToCents(cap)) return 'exhausted'
   return used >= cap * 0.8 ? 'approaching' : 'available'
 }
+/** The review budget is not the amount returned, particularly for partial relief. */
+export function billingReviewLabel(status: string): string {
+  switch (status) {
+    case 'review': return 'Credit review requested'
+    case 'quarantined': return 'Provider outcome unknown — under review; do not reissue'
+    case 'credited': return 'Shopify credit confirmed'
+    case 'refunded': return 'Shopify refund confirmed'
+    case 'partially_credited': return 'Partial Shopify credit confirmed; remaining fee is not automatically adjusted'
+    case 'partially_refunded': return 'Partial Shopify refund confirmed; remaining fee is not automatically adjusted'
+    default: return 'Adjustment status needs support review'
+  }
+}
 export function isZeroPaymentOrder(order: { total_price?: string | number | null; current_total_price?: string | number | null }): boolean {
   return (parseFloat(String(order.current_total_price ?? order.total_price ?? '0')) || 0) <= 0
 }

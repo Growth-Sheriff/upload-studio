@@ -2,11 +2,11 @@
 
 Checked2026-10-10. Public app **Auto Gang Sheet Upload** only. This is a runbook, not evidence that any credit/refund was issued or that the account's permissions have been tested. Never apply it to custom-app Stripe/PayPal charges or other tenants. The commercial policy remains [billing.md](billing.md).
 
-## Current support boundary — publication blocker
+## Supported boundary
 
-Shopify Partner Dashboard supports issuing credits/refunds and retaining their provider history. This app supports **requesting review**, not recording its outcome. `app/routes/app.billing.tsx` only creates `BillingCredit.status=review`; it does not expose owner settlement controls, provider-reference entry or a completion audit. `billingRunner.server.ts` and `orderReconciler.server.ts` also only create reviews. `providerRef` and `settledAt` exist in the schema but have no application writer. No supported settlement CLI exists in `scripts/` or `deploy/`.
+Shopify Partner Dashboard issues credits/refunds and retains their provider history. The merchant's Billing page **requests review**; it never issues an adjustment. The owner-only `app/operations/record-billing-adjustment.ts` CLI records an already reconciled provider result, through `billingAdjustment.server.ts`. It does not call Shopify/Partner financial APIs, create a financial transaction, reopen a Commission or change a recorded fee.
 
-Therefore the provider steps below are actionable, but this release does **not** have an end-to-end internally audited adjustment workflow. Do not claim a review is settled merely because someone clicked a button or replied to a support ticket. Do not invent an admin action, patch financial rows through ad-hoc SQL, or reopen a paid Commission. A confirmed urgent provider adjustment can be evidenced in Shopify's history, while the app review remains open and explicitly marked unresolved in operator handoff; never issue it again just to make the app display change. Complete the supported outcome-recording gap before calling paid publication financially ready.
+Access is the authorized owner's SSH/Docker access to the independent public host; the operator field is an explicit owner attestation, not a Shopify-verified administrator ID. No merchant-facing settlement action exists. Do not claim a review is settled merely because someone clicked a button or replied to a support ticket. Provider permissions and an actual end-to-end owner rehearsal still need verification; local tests do not prove that a real Shopify refund/credit was issued. If a provider result is uncertain, record `unknown` and stop financial retries.
 
 ## 1. Establish the exact case before any money action
 
@@ -33,19 +33,28 @@ SELECT s.id AS shop_id, s.shop_domain, c.id AS commission_id,
        c.shopify_financial_status, c.shopify_refund_status,
        c.shopify_cancelled_at, b.id AS review_id,
        b.idempotency_key AS review_key, b.amount_usd AS review_amount_usd,
-       b.status AS review_status, b.provider_ref, b.settled_at
+       b.status AS review_status, b.provider_ref, b.settled_at,
+       b.settled_amount_usd, b.receipt_fingerprint
 FROM shops s
 JOIN commissions c ON c.shop_id = s.id
 LEFT JOIN billing_credits b ON b.shop_id = c.shop_id AND b.commission_id = c.id
 WHERE s.shop_domain = :'shop_domain' AND c.id = :'commission_id';
-SELECT a.id, a.action, a.created_at, a.metadata
+SELECT a.id, a.action, a.created_at, a.metadata_json
 FROM audit_logs a
 JOIN shops s ON s.id = a.shop_id
 JOIN commissions c ON c.shop_id = s.id AND c.order_id = a.resource_id
 WHERE s.shop_domain = :'shop_domain' AND c.id = :'commission_id'
   AND a.action IN ('shopify_usage_recorded', 'commission_review_required',
                    'shopify_app_credit_requested', 'shopify_usage_outcome_unknown')
-ORDER BY a.created_at;
+UNION ALL
+SELECT a.id, a.action, a.created_at, a.metadata_json
+FROM audit_logs a
+JOIN billing_credits b ON b.shop_id = a.shop_id AND b.id = a.resource_id
+JOIN commissions c ON c.shop_id = b.shop_id AND c.id = b.commission_id
+JOIN shops s ON s.id = c.shop_id
+WHERE s.shop_domain = :'shop_domain' AND c.id = :'commission_id'
+  AND a.action IN ('shopify_manual_adjustment_recorded', 'shopify_manual_adjustment_unknown')
+ORDER BY created_at;
 COMMIT;
 ```
 
@@ -78,17 +87,56 @@ A spinner, disconnected browser, timeout, missing local write or delayed history
 
 The optional [Partner `appCreditCreate` API](https://shopify.dev/docs/api/partner/latest/mutations/appCreditCreate) is not implemented here and exposes no idempotency-key argument. A new unattended integration is unnecessary for owner-operated publication and must not be assumed safe to retry.
 
-## 6. Outcome evidence and the missing internal recording step
+## 6. Record the outcome, not another payment
 
-**Supported today:** Shopify's credit event/updated charge history is the authoritative provider outcome. Preserve that reference, amount, currency, UTC time, original usage/charge IDs and responsible operator in the private case. Existing support replies may communicate the result to the merchant but are not financial settlement or proof of email delivery. The application does not consume provider credit/refund outcomes, expose review IDs/references completely in its Billing UI, or change its review label after payment.
+Shopify's credit event/updated charge history is the authoritative provider outcome. Preserve its canonical receipt/event identifier exactly (never alternative URL/ID spellings), amount, currency, original usage/charge IDs and responsible operator in the private case. The database can reject exact reference reuse; it cannot detect fabricated receipts or aliases, so independent provider-history reconciliation remains mandatory. `providerConfirmedAt` is the UTC time the owner verified that receipt. Do not paste credentials, buyer contacts or bearer URLs into receipts/reasons. Existing support replies may communicate the result to the merchant but are not financial settlement or proof of email delivery. The Billing page labels confirmed credit/refund, partial relief or unknown quarantine separately; it never displays the original review budget as the partial amount returned.
 
-**Not supported today:** marking the matching BillingCredit completed/rejected/unknown with providerRef/settledAt and an atomic immutable outcome audit. Merely having those schema columns is not a supported operation. Do not fabricate a command for them. Leave the review open, carry the authoritative provider receipt in the handoff, and flag the unresolved internal status so another operator cannot mistake it for an unissued adjustment.
+Create one private JSON case file outside Git on the encrypted public volume, owner-readable only. Replace every example identifier with the values from section1. `expectedFeeUsd` is the unchanged full recorded fee; `amountUsd` is the actual verified adjustment. This example records a partial refund, not a full US$3.50 return:
 
-Smallest future supported step, requiring a separate implementation decision: an owner-authenticated, exact-shop/exact-review recording operation, with immutable Commission amount/key/reference checks, concurrency-safe review claim, provider receipt plus exact adjusted amount/currency, operator/time audit in one transaction, and quarantine for unknown outcomes. It must record an already verified provider result, not issue money or reopen fees. It must handle partial relief without pretending the whole review amount was returned. No such action is claimed by this document.
+```json
+{
+  "shopId": "EXACT_INTERNAL_SHOP_ID",
+  "shopDomain": "exact-shop.myshopify.com",
+  "reviewId": "EXACT_BILLING_CREDIT_ID",
+  "commissionId": "EXACT_COMMISSION_ID",
+  "expectedUsageRecordId": "gid://shopify/AppUsageRecord/EXACT_ID",
+  "expectedFeeUsd": "3.50",
+  "operation": "refund",
+  "outcome": "confirmed",
+  "currency": "USD",
+  "amountUsd": "1.50",
+  "providerRef": "EXACT_PROVIDER_ISSUED_RECEIPT_OR_HISTORY_REFERENCE",
+  "providerConfirmedAt": "2026-10-10T12:00:00Z",
+  "operator": "ACCOUNTABLE_OWNER_IDENTITY",
+  "reason": "Verified partial relief for this exact usage; provider history reconciled"
+}
+```
+
+On **NEW host607746803 only**, run the shipped CLI in the existing billing container. This does not restart a service. Use the new image containing this command; an older running image has no tool until the coordinated release.
+
+```sh
+docker compose --env-file /opt/agsu-public/public.env \
+  -f /opt/agsu-public/compose.yml exec -T \
+  -e PUBLIC_BILLING_ALLOWED_DROPLET=607746803 billing \
+  node --import tsx app/operations/record-billing-adjustment.ts \
+  --record-provider-result < /opt/agsu-public/private-cases/CASE.json
+```
+
+The CLI checks the exact public app client ID/URL, private `public_app` database, restricted `agsu_app` role, strict TLS settings and read-only host metadata before recording. Its only network read besides the database is the DigitalOcean host-ID metadata guard; it never asks a financial provider to issue anything. Input is limited to16KiB. Failed target checks do not write. USD-only: if Shopify's receipt is in another currency, stop and obtain a documented USD association from Shopify Support; never relabel local currency as USD.
+
+The service locks the exact Shop (including an uninstalled shop not yet erasing), verifies the owned BillingCredit and immutable `paid` Shopify Commission, full fee, original usage/subscription/line/key and review budget. It atomically updates the review and creates `shopify_manual_adjustment_recorded` AuditLog with exact actual amount, receipt, confirmation time, operator/reason and frozen usage identity. The original `commissionAmount`, status and provider identifiers are never updated. `settledAt` is local recording time, not proof Shopify collected an invoice. Full relief becomes `credited`/`refunded`; partial relief becomes `partially_credited`/`partially_refunded`. The review's `amountUsd` remains its original budget; `settledAmountUsd` is the actual adjustment, with a durable receipt fingerprint.
+
+An identical normalized attestation returns `replayed:true` without another write, even after the ordinary365-day operator audit expires; the durable fingerprint and actual amount prove the same receipt without recreating that audit. A different amount, receipt, operator or reason cannot overwrite a recorded outcome. A provider receipt cannot be reused for another retained review/store: a UNIQUE constraint on `BillingCredit.providerRef` causes the entire conflicting transaction to roll back independently of audit retention. The migration must be applied to the independent public database before the new image starts. Receipt/actual-amount/fingerprint remain existing financial/replay facts; operator/reason keep the ordinary365-day audit retention. No new indefinite personal-data purpose is introduced. One receipt per review is supported. Do not issue a second partial adjustment or split one batch receipt across reviews using this tool; further relief needs an explicit supported follow-up case design and provider-history reconciliation, not ad-hoc SQL.
+
+For an **unknown** provider result use the same exact case/amount/operation with `"outcome":"unknown"` and omit both `providerRef` and `providerConfirmedAt`. It records `quarantined` plus `shopify_manual_adjustment_unknown`, without setting a receipt/settled time or changing the Commission. After Shopify confirms the original result, a confirmed attestation may settle that quarantined review. Never issue again to resolve an unknown state. A confirmed rejection with no relief remains an open/manual case; this lean tool does not fabricate a zero-dollar receipt or close it as paid.
+
+Preserve the CLI result (`reviewId`, status, auditId, replayed) in the private case and rerun section1's read-only queries. On a process timeout/unknown local result, inspect the exact audit first; only replay the identical case, never issue a new provider operation. An audit-write failure rolls back the review update. Erasing/deleted shops are closed: reconcile their retained private finance evidence through the owner/Shopify Support, not by recreating the shop. This document is not evidence of an actual hosted invocation or money movement.
 
 ## Publication exit checks
 
 - Confirm owner/staff permissions and the exact app/store charge-history path without issuing a real adjustment merely to demonstrate access.
-- Provide the supported internal outcome-recording operation above; verify duplicate operator submissions cannot record/issue relief twice.
+- Deploy the supported CLI and rehearse the target guard plus confirmed/unknown recording in a safe review fixture. Unit tests cover identical replay, conflicts, quarantine, partial relief and rollback; the opt-in disposable PostgreSQL test covers actual locking and cross-shop receipt uniqueness. These prove bookkeeping, not safe duplicate issuance in Partner Dashboard: one accountable operator must still check provider history before any money action.
 - Rehearse unpaid-credit, paid-refund and unknown-result handling with provider test/sandbox evidence where available; never describe a development test charge as real merchant money.
 - Keep one accountable owner and `info@actualscope.com` support, preserve provider receipts, and disclose manual refund review honestly. No claim of automatic reversal or completed settlement until the evidence exists.
+
+Local source checks,2026-10-10: `npx vitest run app/lib/billingAdjustment.server.test.ts app/lib/billingAdjustment.integration.test.ts app/lib/billing.server.test.ts` →13passed,1opt-in PostgreSQL test skipped without `PUBLIC_APP_TEST_DATABASE_URL`; `npx tsc --noEmit --pretty false` →0diagnostics. The CLI was invoked with public runtime disabled and refused before importing the database service. No hosted data/provider operation was performed. The new DB test uses only the existing disposable `127.0.0.1:55439/public_app_test` CI fixture and checks exact replay after audit deletion plus cross-shop receipt-constraint rollback; execution is left to the coordinated full CI run.
