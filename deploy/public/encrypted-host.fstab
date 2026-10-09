@@ -1,0 +1,10 @@
+LABEL=cloudimg-rootfs / ext4 discard,commit=30,errors=remount-ro 0 1
+LABEL=BOOT /boot ext4 defaults 0 2
+LABEL=UEFI /boot/efi vfat umask=0077 0 1
+# Only new public host 607746803, owned DO volume af20d117-c42e-11f1-a1c3-faccc92b5588.
+UUID=2a60676d-c49c-4bd1-bd88-be326425fd57 /mnt/agsu-public-secure ext4 defaults,discard 0 2
+/mnt/agsu-public-secure/app /opt/agsu-public none bind,x-systemd.requires-mounts-for=/mnt/agsu-public-secure 0 0
+/mnt/agsu-public-secure/docker /var/lib/docker none bind,x-systemd.requires-mounts-for=/mnt/agsu-public-secure 0 0
+/mnt/agsu-public-secure/containerd /var/lib/containerd none bind,x-systemd.requires-mounts-for=/mnt/agsu-public-secure 0 0
+/mnt/agsu-public-secure/caddy /var/lib/caddy none bind,x-systemd.requires-mounts-for=/mnt/agsu-public-secure 0 0
+/mnt/agsu-public-secure/logs /var/log none bind,x-systemd.requires-mounts-for=/mnt/agsu-public-secure 0 0

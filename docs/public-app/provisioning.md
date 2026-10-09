@@ -2,6 +2,18 @@
 
 This is a **new demo/review environment**, not a highly available production platform. Resources were created through official DigitalOcean APIs and Cloudflare Wrangler, using the owner's authorized accounts. No existing droplet, tenant container, database, bucket, Caddyfile or DNS record was modified. Application publication, Shopify billing and App Store approval are separate verification gates.
 
+## Encrypted application storage —10October follow-up
+
+The Droplet's OS disk is **not encrypted**. Managed PostgreSQL/Valkey/R2 encryption alone did not protect the original Docker metadata, app environment or host logs. A new owner-authorized40GiB encrypted DigitalOcean Volume was created and attached only to droplet607746803; base cost is nowUSD217.45/month (USD4 more).
+
+Volume `af20d117-c42e-11f1-a1c3-faccc92b5588`, guestUUID `2a60676d-c49c-4bd1-bd88-be326425fd57`, mounts `/mnt/agsu-public-secure`. Bind mounts hold `/opt/agsu-public`, `/var/lib/docker`, `/var/lib/containerd`, `/var/lib/caddy` and `/var/log`. At2026-10-09T22:17:39Z all resolved to `/dev/sda`, all six public containers were up, web healthy and verified publicHTTPS `/health` returned200. The owner-coordinated maintenance restarted **only this new deployment**.
+
+`/etc/fstab` validates without errors/warnings. Docker/containerd/Caddy service drop-ins require their encrypted mounts before start. Docker stdout logs rotate at10MiB×3 per container. Final `zz-agsu-volatile.conf` makes journald memory-backed,64MiB maximum, ForwardToSyslogno; the `zz` prefix overrides Ubuntu's vendor `syslog.conf`. The worker temporary filesystem remains2GiB tmpfs and the host has no swap. [Provider encryption details](https://docs.digitalocean.com/products/volumes/details/features/) are distinct from guest ext4 format.
+
+After verifying the healthy encrypted deployment, exact retired directories `/opt/.agsu-public-unencrypted-precutover`, `/var/lib/.docker-agsu-unencrypted-precutover`, `/var/lib/.containerd-agsu-unencrypted-precutover`, `/var/lib/.caddy-agsu-unencrypted-precutover` and `/var/.logs-agsu-unencrypted-precutover` were logically deleted. The working copies remain on the encrypted volume, but the removed root copies cannot be recovered at their old paths. No free-space wipe or guarantee of physical SSD sanitization was made. **Rotate pre-cutover app/DB/R2/capability credentials before public launch; historical unencrypted root residue is a remaining risk.** The OS disk itself must never be called fully encrypted.
+
+Native configuration and ownership-pinned helpers live in `deploy/public/provision-encrypted-volume.ps1`, `cutover-encrypted-storage.sh`, `encrypted-host.fstab`, service drop-ins, Docker log settings and journald override. The cutover helper is one-shot, refuses unknown host/volume identities, and requires a separate maintenance marker. It is not a generic live-tenant deploy script. Do not rerun cutover against the already migrated host.
+
 ## Created resources
 
 | Resource | New identity / configuration |
@@ -13,6 +25,7 @@ This is a **new demo/review environment**, not a highly available production pla
 | New host firewall | `5fdd482d-af9e-4c8e-a599-9304bf3e27e4`: SSH only `31.223.87.18/32`, TCP80/443 public; app port3000 is loopback-only |
 | PostgreSQL | `agsu-public-pg` — `00e966fb-f132-4af3-b9f4-d806d172cf0a`, PG16, 1vCPU / 2GiB / 30GiB, one node, database `public_app` |
 | Queue | `agsu-public-queue` — `8985bc57-1d3f-4a7f-baea-a885f4d38ba1`, Valkey8, 1vCPU / 1GiB, one node, DB0 |
+| Encrypted block storage | `agsu-public-secure` — `af20d117-c42e-11f1-a1c3-faccc92b5588`, NYC3,40GiB, attached only to607746803 |
 | New DNS record | `auto-gang-sheet.actualscope.com` A → `143.198.12.234`, DNS-only, TTL300, record `c5942dea67a8bf44af2744fe7bc98e57` |
 | Private R2 | `auto-gang-sheet-public`, account `3b964e63af3f0e752c640e35dab68c9b`, ENAM location / default jurisdiction / Standard storage; created `2026-10-09T21:53:04.562Z` |
 
@@ -29,7 +42,8 @@ Approved monthly base estimate, excluding tax, object storage/operations, option
 | 32GiB / 8vCPU PremiumAMD host | 168.00 |
 | PostgreSQL2GiB / 30GiB | 30.45 |
 | Valkey1GiB | 15.00 |
-| Base total | **213.45** |
+| Encrypted40GiB volume | 4.00 |
+| Base total | **217.45** |
 
 Host pricing was read from `GET /v2/sizes` (`price_monthly:168`, `price_hourly:0.25`). Database estimates use the [current official price list](https://www.digitalocean.com/pricing/managed-databases). Billing is usage-based; this is an estimate, not an invoice. The host's OS reports 31GiB available physical memory, with no swap. The checked-in Compose file caps web at1GiB, three image workers at4GiB each, billing/privacy at512MiB each:14GiB aggregate configured memory ceilings, plus OS/container overhead. Worker CPU ceilings total8vCPU, so concurrency still requires real workload observation. A replica increase must be budgeted, not silently fit onto this host.
 
