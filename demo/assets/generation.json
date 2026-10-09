@@ -1,0 +1,82 @@
+{
+  "model": "fal-ai/nano-banana-2",
+  "pricingSource": "https://fal.ai/pricing",
+  "estimatedUsdPerImage": 0.08,
+  "assets": {
+    "hero-ready-film": {
+      "requestId": "01a122a6-4a71-77f1-bf1a-acbf716244fd",
+      "statusUrl": "https://queue.fal.run/fal-ai/nano-banana-2/requests/01a122a6-4a71-77f1-bf1a-acbf716244fd/status",
+      "responseUrl": "https://queue.fal.run/fal-ai/nano-banana-2/requests/01a122a6-4a71-77f1-bf1a-acbf716244fd",
+      "prompt": "Premium editorial product photograph for an explicitly labeled demo DTF transfer shop. Realistic transparent PET transfer film with already arranged original generic colorful motifs, precise print detail, warm ivory tabletop, restrained coral and teal palette, soft daylight. The film is a finished production sheet, not a software layout. No people, no logos, no trademarks, no watermarks, no readable text, no invented certification or performance claims. Wide hero composition: an elegant long printed gang sheet gently curves from a film roll on the right of the frame, a few blank cotton garment folds nearby; generous quiet negative space across the left third for HTML headline. Clean boutique print studio, sophisticated light shadows, visually clear transfer film rather than paper.",
+      "submittedAt": "2026-10-09T21:51:25.125Z",
+      "localFile": "hero-ready-film.jpg",
+      "bytes": 302422,
+      "width": 1376,
+      "height": 768,
+      "completedAt": "2026-10-09T21:51:39.997Z",
+      "metrics": {
+        "inference_time": 12.25
+      }
+    },
+    "variant-ready-sheet": {
+      "requestId": "01a122a6-4b22-7a01-8c64-129bed5d3e09",
+      "statusUrl": "https://queue.fal.run/fal-ai/nano-banana-2/requests/01a122a6-4b22-7a01-8c64-129bed5d3e09/status",
+      "responseUrl": "https://queue.fal.run/fal-ai/nano-banana-2/requests/01a122a6-4b22-7a01-8c64-129bed5d3e09",
+      "prompt": "Premium editorial product photograph for an explicitly labeled demo DTF transfer shop. Realistic transparent PET transfer film with already arranged original generic colorful motifs, precise print detail, warm ivory tabletop, restrained coral and teal palette, soft daylight. The film is a finished production sheet, not a software layout. No people, no logos, no trademarks, no watermarks, no readable text, no invented certification or performance claims. Square product composition: one rectangular gang sheet lying flat, a slightly lifted transparent corner makes the film material unmistakable. A dozen vivid original botanical and abstract badge motifs are already arranged on the sheet. Entire finished sheet visible, organized studio product photograph.",
+      "submittedAt": "2026-10-09T21:51:25.308Z",
+      "localFile": "variant-ready-sheet.jpg",
+      "bytes": 398484,
+      "width": 1024,
+      "height": 1024,
+      "completedAt": "2026-10-09T21:51:40.819Z",
+      "metrics": {
+        "inference_time": 10.164000034332275
+      }
+    },
+    "measured-length-sheet": {
+      "requestId": "01a122a6-4bd0-7eb1-87fc-93deeb044b23",
+      "statusUrl": "https://queue.fal.run/fal-ai/nano-banana-2/requests/01a122a6-4bd0-7eb1-87fc-93deeb044b23/status",
+      "responseUrl": "https://queue.fal.run/fal-ai/nano-banana-2/requests/01a122a6-4bd0-7eb1-87fc-93deeb044b23",
+      "prompt": "Premium editorial product photograph for an explicitly labeled demo DTF transfer shop. Realistic transparent PET transfer film with already arranged original generic colorful motifs, precise print detail, warm ivory tabletop, restrained coral and teal palette, soft daylight. The film is a finished production sheet, not a software layout. No people, no logos, no trademarks, no watermarks, no readable text, no invented certification or performance claims. Square product composition: a long narrow finished printed film sheet unrolls in a graceful S curve on the desk, with repeating rows of original floral and geometric motifs. Show continuous film length clearly, no rulers with numbers, no cutting or rearranging.",
+      "submittedAt": "2026-10-09T21:51:25.475Z",
+      "localFile": "measured-length-sheet.jpg",
+      "bytes": 316997,
+      "width": 1024,
+      "height": 1024,
+      "completedAt": "2026-10-09T21:51:40.367Z",
+      "metrics": {
+        "inference_time": 9.913000106811523
+      }
+    },
+    "manual-sheet-detail": {
+      "requestId": "01a122a6-4c78-77c2-bbc2-279af0829216",
+      "statusUrl": "https://queue.fal.run/fal-ai/nano-banana-2/requests/01a122a6-4c78-77c2-bbc2-279af0829216/status",
+      "responseUrl": "https://queue.fal.run/fal-ai/nano-banana-2/requests/01a122a6-4c78-77c2-bbc2-279af0829216",
+      "prompt": "Premium editorial product photograph for an explicitly labeled demo DTF transfer shop. Realistic transparent PET transfer film with already arranged original generic colorful motifs, precise print detail, warm ivory tabletop, restrained coral and teal palette, soft daylight. The film is a finished production sheet, not a software layout. No people, no logos, no trademarks, no watermarks, no readable text, no invented certification or performance claims. Square product composition: close three-quarter view of the edge of a finished gang sheet on film, crisp saturated original abstract botanical transfers and clean transparent negative spaces, subtle light reflections on the film. A folded plain charcoal cotton shirt beside it. No hands or printer interface.",
+      "submittedAt": "2026-10-09T21:51:25.645Z",
+      "localFile": "manual-sheet-detail.jpg",
+      "bytes": 335274,
+      "width": 1024,
+      "height": 1024,
+      "completedAt": "2026-10-09T21:51:40.832Z",
+      "metrics": {
+        "inference_time": 11.928999900817871
+      }
+    },
+    "uv-transfer-film": {
+      "requestId": "01a122a6-4d21-7893-afbf-6611d37581f9",
+      "statusUrl": "https://queue.fal.run/fal-ai/nano-banana-2/requests/01a122a6-4d21-7893-afbf-6611d37581f9/status",
+      "responseUrl": "https://queue.fal.run/fal-ai/nano-banana-2/requests/01a122a6-4d21-7893-afbf-6611d37581f9",
+      "prompt": "Premium editorial product photograph for an explicitly labeled demo DTF transfer shop. Realistic transparent PET transfer film with already arranged original generic colorful motifs, precise print detail, warm ivory tabletop, restrained coral and teal palette, soft daylight. The film is a finished production sheet, not a software layout. No people, no logos, no trademarks, no watermarks, no readable text, no invented certification or performance claims. Square product composition: glossy UV DTF transfer film with small original colorful floral and geometric decals, beside a plain unbranded clear glass tumbler and a matte white ceramic cup. Transparent carrier edges visible; do not show decals being applied or claim physical test results.",
+      "submittedAt": "2026-10-09T21:51:25.813Z",
+      "localFile": "uv-transfer-film.jpg",
+      "bytes": 322490,
+      "width": 1024,
+      "height": 1024,
+      "completedAt": "2026-10-09T21:51:36.323Z",
+      "metrics": {
+        "inference_time": 8.865999937057495
+      }
+    }
+  }
+}
