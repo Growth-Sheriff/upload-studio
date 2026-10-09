@@ -1,6 +1,26 @@
 import { spawn } from 'node:child_process'
 import { currentJobSignal, remainingJobMs } from './jobBudget.server'
 
+const IMAGE_COMMAND_ENV_KEYS = [
+  'PATH', 'SystemRoot', 'ComSpec', 'WINDIR', 'PATHEXT',
+  'HOME', 'TMP', 'TEMP', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE',
+  'FONTCONFIG_FILE', 'FONTCONFIG_PATH', 'XDG_CACHE_HOME', 'XDG_CONFIG_HOME',
+  'GS_LIB', 'GS_FONTPATH', 'MAGICK_CONFIGURE_PATH',
+  'MAGICK_CODER_MODULE_PATH', 'MAGICK_CODER_FILTER_PATH', 'MAGICK_TEMPORARY_PATH',
+] as const
+
+/** Uploaded images and PostScript interpreters have no reason to inherit
+ * Shopify, object-storage, database or operational credentials. */
+export function imageCommandEnvironment(source: Readonly<Record<string, string | undefined>> = process.env): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = { NODE_ENV: 'production' }
+  for (const key of IMAGE_COMMAND_ENV_KEYS) if (source[key] !== undefined) environment[key] = source[key]
+  return {
+    ...environment,
+    MAGICK_MEMORY_LIMIT: '512MiB', MAGICK_MAP_LIMIT: '1GiB',
+    MAGICK_DISK_LIMIT: '2GiB', MAGICK_THREAD_LIMIT: '2',
+  }
+}
+
 /** A shell timeout must kill its descendants too: killing only /bin/sh leaves
  * convert/gs decoding in the background while another shop takes the slot. */
 export function runImageCommand(command: string, options: { timeout?: number; maxBuffer?: number } = {}): Promise<{ stdout: string; stderr: string }> {
@@ -14,11 +34,7 @@ export function runImageCommand(command: string, options: { timeout?: number; ma
       shell: true,
       detached: linux,
       windowsHide: true,
-      env: {
-        ...process.env,
-        MAGICK_MEMORY_LIMIT: '512MiB', MAGICK_MAP_LIMIT: '1GiB',
-        MAGICK_DISK_LIMIT: '2GiB', MAGICK_THREAD_LIMIT: '2',
-      },
+      env: imageCommandEnvironment(),
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let stdout = '', stderr = '', receivedBytes = 0
