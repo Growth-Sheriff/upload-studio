@@ -57,14 +57,14 @@ describe.skipIf(!url)('durable multishop session database integration', () => {
     try {
       const shop = await database.shop.create({ data: { shopDomain: domain, accessToken: '', billingStatus: 'uninstalled', installedAt: previousInstall, uninstalledAt: new Date(), settings: { uninstalledAt: 'old', keep: true } } })
       shopId = shop.id
-      for (const status of ['pending', 'processing']) await database.complianceRequest.create({ data: { shopDomain: domain, topic: 'uninstall/erase', eventId: status, payload: {}, status, leaseToken: status === 'processing' ? 'stale-owner' : null, leaseUntil: new Date(Date.now() + 60000) } })
+      for (const status of ['pending', 'processing']) await database.complianceRequest.create({ data: { shopDomain: domain, topic: 'uninstall/erase', eventId: status, payload: {}, status, dueAt: new Date(Date.now() + 86400000), leaseToken: status === 'processing' ? 'stale-owner' : null, leaseUntil: new Date(Date.now() + 60000) } })
       await persistVerifiedShopInstallation(database, { shop: domain, accessToken: 'replacement' })
       const installed = await database.shop.findUniqueOrThrow({ where: { id: shop.id } })
       expect(installed).toMatchObject({ accessToken: 'replacement', billingStatus: 'inactive', uninstalledAt: null, settings: { keep: true } })
       expect(installed.installedAt.getTime()).toBeGreaterThan(previousInstall.getTime())
       expect((await database.complianceRequest.findMany({ where: { shopDomain: domain } })).map(row => [row.status, row.leaseToken, row.leaseUntil])).toEqual([['cancelled', null, null], ['cancelled', null, null]])
       await database.shop.update({ where: { id: shop.id }, data: { erasureStartedAt: new Date(), billingStatus: 'erasing', accessToken: '' } })
-      await database.complianceRequest.create({ data: { shopDomain: domain, topic: 'uninstall/erase', eventId: 'started', payload: {}, status: 'pending' } })
+      await database.complianceRequest.create({ data: { shopDomain: domain, topic: 'uninstall/erase', eventId: 'started', payload: {}, status: 'pending', dueAt: new Date(Date.now() + 86400000) } })
       await expect(persistVerifiedShopInstallation(database, { shop: domain, accessToken: 'must-not-persist' })).rejects.toThrow('erasure')
       expect((await database.shop.findUniqueOrThrow({ where: { id: shop.id } })).accessToken).toBe('')
       expect((await database.complianceRequest.findFirstOrThrow({ where: { shopDomain: domain, eventId: 'started' } })).status).toBe('pending')
@@ -87,7 +87,9 @@ describe.skipIf(!url)('durable multishop session database integration', () => {
         domains.push(domain)
         const shop = await database.shop.create({ data: { shopDomain: domain, accessToken: 'old', billingStatus: 'inactive' } })
         shops.push(shop.id)
-        await database.complianceRequest.create({ data: { shopDomain: domain, topic: 'uninstall/erase', eventId: mode, payload: {}, status: 'pending' } })
+        // These receipts exercise auth cancellation, not a due privacy job.
+        // Keep the parallel privacy suite from legitimately claiming them.
+        await database.complianceRequest.create({ data: { shopDomain: domain, topic: 'uninstall/erase', eventId: mode, payload: {}, status: 'pending', dueAt: new Date(Date.now() + 86400000) } })
         const session = new Session({ id: `offline_${domain}`, shop: domain, state: 'test', isOnline: false })
         session.accessToken = 'late-secret'; sessions.push(session.id)
         let markReady!: () => void, releaseMark!: () => void, readReady!: () => void
