@@ -410,3 +410,79 @@ org.opencontainers.image.revision: 78e82f9bfb9a199ed7f9305bc31e332a747da116
 
 The image was handed to the deployment owner; the build agent did not deploy it
 or change any Shopify product, order, billing row or production configuration.
+
+## Final source freeze: decimal setup, exact rate display and receipt replay
+
+The final frozen application revision was
+`21ccab9012e78d21989bc9321e7b0af28eb7d7d5`. Commit `910da79` restored all three
+advanced product-editor widgets to their exact pre-decimal-correction source;
+only the Setup page's raw-string rate and custom-length inputs retain the
+decimal-safe correction. Commit `f519d22` displays the actual per-inch rate
+without changing total-price arithmetic. Commit `21ccab9` adds durable unique
+manual-receipt bookkeeping and its replay/cross-shop PostgreSQL regression.
+
+The clean verification and production builds below ran **sequentially**. No
+source changes or extra test runs occurred between them. Excluded local scratch
+HTML and evidence text did not enter either allowlisted build context.
+
+```text
+depot build --project 7fxkc8sd3p --platform linux/amd64 \
+  --file deploy/public/Dockerfile.ci \
+  --build-arg PUBLIC_REVIEW_SHA=2ff3faf9a856bc8d67be620f0591fc215fc2598e \
+  --label org.opencontainers.image.revision=21ccab9012e78d21989bc9321e7b0af28eb7d7d5 \
+  --no-cache-filter verify --progress plain .
+```
+
+[CI n8mzfd0mdp](https://depot.dev/orgs/zl650q33c5/projects/7fxkc8sd3p/builds/n8mzfd0mdp)
+exited 0. Read-only `depot list builds` confirmed terminal **`finished`**,
+start `2026-10-09T23:02:41Z`, duration **76 seconds**, before the production build
+was started. Unlike `v7t238tr7x`, this run emitted no builder-release failure.
+Persisted verification-step logs were read through the documented
+`GetBuildSteps` / `GetBuildStepLogs` API rather than rerunning tests when the
+local output budget truncated the command's middle. Actual results:
+
+```text
+8 migrations found; all successfully applied
+  includes 20261010230000_public_manual_receipt_unique
+Test Files 65 passed (65)
+Tests      424 passed (424), zero skipped
+billingAdjustment.integration.test.ts: 1 passed, 213 ms
+Typecheck: exit 0
+Measurement regression: strict gate passed; historical differences labelled
+Remix production build: exit 0
+Theme check: []
+Pinned Shopify CLI 3.88.1 theme + checkout extension build: success
+Disposable PostgreSQL and Redis shutdown: successful
+```
+
+The receipt integration's logged serializable conflict and unique
+`provider_ref` rejection are expected assertions: replay is retried safely and
+cross-shop receipt reuse rolls back without editing either paid commission.
+All database fixtures existed only in the disposable CI database. No Shopify
+or payment-provider transport was invoked by that integration.
+
+```text
+depot build --project 7fxkc8sd3p --platform linux/amd64 \
+  --file deploy/public/Dockerfile \
+  --tag ghcr.io/growth-sheriff/auto-gang-sheet-public:21ccab9 \
+  --label org.opencontainers.image.revision=21ccab9012e78d21989bc9321e7b0af28eb7d7d5 \
+  --push --progress plain .
+docker buildx imagetools inspect ghcr.io/growth-sheriff/auto-gang-sheet-public:21ccab9
+docker buildx imagetools inspect ghcr.io/growth-sheriff/auto-gang-sheet-public:21ccab9 \
+  --format '{{ index .Image.Config.Labels "org.opencontainers.image.revision" }}'
+```
+
+[Production build bht6fgfpzr](https://depot.dev/orgs/zl650q33c5/projects/7fxkc8sd3p/builds/bht6fgfpzr)
+exited 0; provider terminal status **`finished`**, start
+`2026-10-09T23:04:20Z`, duration **67 seconds**. Independent GHCR inspection
+confirmed only the new public package/tag and exact source label:
+
+```text
+image index: sha256:ca685ad2549e7c1d44651a7f4eb054d551d360dbc83817e6a1d7cd07f944c483
+linux/amd64: sha256:add1f7f9812dd6d41d0faaaa36374c1c0a1af764fd571761cba0d420adc2633a
+org.opencontainers.image.revision: 21ccab9012e78d21989bc9321e7b0af28eb7d7d5
+```
+
+The immutable index digest was handed to the deployment owner. This build
+agent did not deploy, apply migrations to the hosted database, publish Shopify
+extensions, push Git refs, or change any existing tenant infrastructure.
