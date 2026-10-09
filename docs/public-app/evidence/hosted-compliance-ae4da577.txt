@@ -1,0 +1,100 @@
+PASS Exact isolated fixtures created: three inactive synthetic shops, eight tiny R2 objects and one unfinished multipart; no orders, fees or queue jobs {}
+PASS Invalid HTTP HMAC rejected {"status":401,"durationMs":14}
+PASS customers/data_request: real HTTP original/replay, one minimized durable receipt {"original":{"status":200,"durationMs":22},"replay":{"status":200,"durationMs":20}}
+PASS Existing deployed privacy worker exported only the requested synthetic subject, cleared payload and did not reprocess completed replay {"attempts":1,"uploadCount":1}
+PASS customers/redact: real HTTP original/replay, one minimized durable receipt {"original":{"status":200,"durationMs":16},"replay":{"status":200,"durationMs":14}}
+PASS Customer erasure blocks immediately but preserves bytes while real 61-minute capability drain is pending {}
+PASS customers/redact: simulated 62-minute fixture clock only {"actualWaitMinutes":0,"productionDrainPolicyChanged":false}
+PASS Customer erasure completed: original/thumbnail/preview/archive HEAD404, upload/export rows removed, prior export fenced, selected assignment removed and replay immutable {}
+PASS shop/redact: real HTTP original/replay, one minimized durable receipt {"original":{"status":200,"durationMs":11},"replay":{"status":200,"durationMs":17}}
+PASS Shop erasure closes token/session access immediately and preserves orphan/multipart during the real capability drain {}
+PASS shop/redact: simulated 62-minute fixture clock only {"actualWaitMinutes":0,"productionDrainPolicyChanged":false}
+PASS Shop erasure completed: exact synthetic prefix including unreferenced orphan and unfinished multipart empty, shop cascades removed, replay immutable {}
+PASS Same customer ID in control shop and another customer within subject shop remain unchanged; no order, commission or paid-volume rows exist {}
+CLEANUP verified: All eight exact R2 keys HEAD404; all three synthetic prefixes and multipart lists empty; exact shops/cascades, sessions and minimized receipts/export results removed. No queue flush or real shop/order/fee changes.
+PASS Hosted proof complete {"durationMs":28551,"clockSimulation":"62 minutes on exact synthetic timestamps; not an actual 61-minute wait or 48-hour SLA proof"}
+{
+  "startedAt": "2026-10-09T22:29:02.654Z",
+  "run": "ae4da577-bcd1-4f50-8332-af7040fb5e3d",
+  "target": "Droplet 607746803 / public_app / auto-gang-sheet-public",
+  "checks": [
+    {
+      "name": "Exact isolated fixtures created: three inactive synthetic shops, eight tiny R2 objects and one unfinished multipart; no orders, fees or queue jobs"
+    },
+    {
+      "name": "Invalid HTTP HMAC rejected",
+      "status": 401,
+      "durationMs": 14
+    },
+    {
+      "name": "customers/data_request: real HTTP original/replay, one minimized durable receipt",
+      "original": {
+        "status": 200,
+        "durationMs": 22
+      },
+      "replay": {
+        "status": 200,
+        "durationMs": 20
+      }
+    },
+    {
+      "name": "Existing deployed privacy worker exported only the requested synthetic subject, cleared payload and did not reprocess completed replay",
+      "attempts": 1,
+      "uploadCount": 1
+    },
+    {
+      "name": "customers/redact: real HTTP original/replay, one minimized durable receipt",
+      "original": {
+        "status": 200,
+        "durationMs": 16
+      },
+      "replay": {
+        "status": 200,
+        "durationMs": 14
+      }
+    },
+    {
+      "name": "Customer erasure blocks immediately but preserves bytes while real 61-minute capability drain is pending"
+    },
+    {
+      "name": "customers/redact: simulated 62-minute fixture clock only",
+      "actualWaitMinutes": 0,
+      "productionDrainPolicyChanged": false
+    },
+    {
+      "name": "Customer erasure completed: original/thumbnail/preview/archive HEAD404, upload/export rows removed, prior export fenced, selected assignment removed and replay immutable"
+    },
+    {
+      "name": "shop/redact: real HTTP original/replay, one minimized durable receipt",
+      "original": {
+        "status": 200,
+        "durationMs": 11
+      },
+      "replay": {
+        "status": 200,
+        "durationMs": 17
+      }
+    },
+    {
+      "name": "Shop erasure closes token/session access immediately and preserves orphan/multipart during the real capability drain"
+    },
+    {
+      "name": "shop/redact: simulated 62-minute fixture clock only",
+      "actualWaitMinutes": 0,
+      "productionDrainPolicyChanged": false
+    },
+    {
+      "name": "Shop erasure completed: exact synthetic prefix including unreferenced orphan and unfinished multipart empty, shop cascades removed, replay immutable"
+    },
+    {
+      "name": "Same customer ID in control shop and another customer within subject shop remain unchanged; no order, commission or paid-volume rows exist"
+    },
+    {
+      "name": "Hosted proof complete",
+      "durationMs": 28551,
+      "clockSimulation": "62 minutes on exact synthetic timestamps; not an actual 61-minute wait or 48-hour SLA proof"
+    }
+  ],
+  "cleanup": "All eight exact R2 keys HEAD404; all three synthetic prefixes and multipart lists empty; exact shops/cascades, sessions and minimized receipts/export results removed. No queue flush or real shop/order/fee changes.",
+  "completedAt": "2026-10-09T22:29:31.205Z"
+}
