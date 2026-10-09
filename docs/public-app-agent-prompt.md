@@ -96,7 +96,36 @@ Tasarımda şunları çöz ve kararlarını `docs/public-app/billing.md` içinde
 
 Mevcut `COMMISSION_PERCENT` / `COMMISSION_CAP_USD` sabitlerini tek bir yerden yönetilebilir hâle getir ve testlerini yaz. Tavanın efektif oranı nasıl düşürdüğünü gösteren bir test ekle.
 
-### 4. App Store uyumluluğu
+### 4. Ziyaretçi takibi ve istatistik katmanını tamamen kaldır
+
+Bu, pazarlık konusu değil. Mevcut uygulamada public app'e taşınamayacak bir izleme altyapısı var ve **tamamı sökülecek** — kapatılmayacak, bayrak arkasına alınmayacak, **silinecek**.
+
+**Bugün ne toplanıyor.** `Visitor` tablosu şu alanları tutuyor: `fingerprint`, `localStorageId`, `deviceType`, `browser`, `browserVersion`, `os`, `osVersion`, `screenResolution`, `language`, `timezone`, `country`, `region`, `city`, `firstSeenAt`, `lastSeenAt`, `totalSessions`, `totalUploads`, `totalOrders`, `totalRevenue`, `consentGiven`, `consentTimestamp`, `shopifyCustomerId`, `customerEmail`. `VisitorSession` ayrıca `sessionToken`, `utmSource/Medium/Campaign/Term/Content` ve `gclid` tutuyor.
+
+Yani: tarayıcı parmak izi + kalıcı cihaz kimliği + coğrafi konum + davranışsal profil, sonunda **gerçek müşteri e-postasına bağlanıyor**. Tek bir tenant'ta (alphaprint) **78.038 ziyaretçi ve 365.954 oturum** kaydı birikmiş durumda. Bu, bir public app için App Store incelemesinde neredeyse kesin ret, ayrıca GDPR/CCPA açısından taşınması anlamsız bir yük. Uygulamanın işini yapması için bunların hiçbirine ihtiyacı yok.
+
+**Silinecekler:**
+
+- Rotalar: `app/routes/api.v1.visitors.tsx`, `api.v1.sessions.tsx`, `app.analytics.tsx`, `app.analytics._index.tsx`, `app.analytics.visitors.tsx`, `app.analytics.attribution.tsx`, `app.analytics.cohorts.tsx`, `app.analytics.insights.tsx`, `app.analytics.orders.tsx`
+- Kütüphane: `app/lib/visitor.server.ts`, `app/lib/analytics.server.ts`, `app/lib/telemetry.server.ts`
+- Tema uzantısı: `extensions/theme-extension/blocks/visitor-tracking.liquid`, `assets/ul-visitor.js`, `assets/ul-analytics.js`, `assets/ul-upload-telemetry.js`
+- Prisma: `Visitor` ve `VisitorSession` modelleri, bunlara giden tüm ilişkiler ve `uploads` üzerindeki `visitorId` / `sessionId` alanları
+- Admin menüsünde Analytics'e giden tüm bağlantılar ve bu sayfaları besleyen sorgular
+- Bu tablolara yazan tüm çağrı noktaları (logda `[TENANT GUARD] Query to Visitor ... without shopId scope` uyarıları bunların izi)
+
+**Silinmeyecek — karıştırma:**
+
+- `app/lib/uploadFingerprint.ts` **tarayıcı parmak izi değildir.** Yüklenen dosyanın içerik hash'idir (`v1-...` örnek bazlı, `v2-full-...` tam bayt); aynı dosyanın tekrar yüklenmesini önlemek ve multipart yüklemeyi kaldığı yerden sürdürmek için kullanılıyor, `api.upload.intent.tsx` içinde. **Kalacak.**
+- Siparişi yüklemeye bağlayan `orders_link` ve cart identity mekanizması **kalacak** — komisyon bunun üstünde çalışıyor. Bu, kişi takibi değil, sipariş–dosya eşleştirmesidir.
+- Merchant'ın kendi panelinde göreceği **toplam** iş metrikleri (kaç yükleme, kaç sipariş, ne kadar komisyon) kalabilir; ama kişi bazlı değil, **mağaza bazlı toplamlar** olarak. Ziyaretçi kimliği üzerinden kuruluysa yeniden yaz.
+
+**Scope temizliği.** Takip kalkınca `read_customers` gibi izinlere gerek kalmayabilir. Kalan her scope'u tek tek gerekçelendir; gerekçesi olmayanı toml'dan çıkar. Public app incelemesinde "neden bu izni istiyorsunuz" sorusuna her biri için tek cümlelik net cevabın olsun.
+
+**Veri saklama.** Geriye kalan ne varsa (yüklenen dosyalar, sipariş bağlantıları, komisyon kayıtları) için açık bir saklama süresi belirle ve `docs/public-app/data-retention.md` içine yaz: ne tutuluyor, neden, ne kadar süre, nasıl siliniyor. Bu belge hem App Store incelemesinde hem `shop/redact` implementasyonunda işine yarayacak.
+
+**Not:** Bu silme işlemi yalnızca `public-app` dalında yapılacak. Mevcut custom app'ler analytics'i kullanmaya devam ediyor; `main` tarafına dokunma.
+
+### 5. App Store uyumluluğu
 
 - **Üç zorunlu webhook'u sıfırdan yaz:** `customers/data_request`, `customers/redact`, `shop/redact`. HMAC doğrula, süre sınırında yanıt ver, gerçekten sil/dışa aktar — boş 200 dönme. `shop/redact` müşterinin tüm yüklemelerini ve R2 nesnelerini temizlemeli.
 - **`app/uninstalled`** bugün soft-delete yapıyor; veri saklama politikanı yaz ve 48 saat içinde gerçek silmeyi planla.
@@ -105,7 +134,7 @@ Mevcut `COMMISSION_PERCENT` / `COMMISSION_CAP_USD` sabitlerini tek bir yerden y�
 - **Performans ve erişilebilirlik:** admin arayüzü Polaris ile tutarlı, klavyeyle gezilebilir, Lighthouse eşiklerini geçen hâlde olsun. Theme extension'ın storefront'a eklediği yük ölçülsün — bugün tek üründe 78 kez geçen bir CSS ön eki ve birkaç yüz KB JS var.
 - **Kurulum akışı:** izinsiz veri toplama yok, kurulumda gereksiz scope isteme yok. Bugünkü scope listesi custom app'e göre geniş; public app için minimuma indir ve her birini gerekçelendir.
 
-### 5. Yayın
+### 6. Yayın
 
 - Partner hesabı: **info@actualscope.com**. Chrome'da `actualscope` profili açık, oradan ilerle.
 - App adı: **Auto Gang Sheet Upload**.
@@ -113,7 +142,7 @@ Mevcut `COMMISSION_PERCENT` / `COMMISSION_CAP_USD` sabitlerini tek bir yerden y�
 - Listeleme metinleri, görseller, demo mağaza, inceleme notları — hepsini hazırla.
 - Bir **demo/deneme mağazası** kur ve uçtan uca gerçek bir sipariş geçir: yükleme → ölçüm → sepet → checkout → webhook → usage record. Ekran görüntüleriyle belgele.
 
-### 6. Doğrulama — "bitti" ne demek
+### 7. Doğrulama — "bitti" ne demek
 
 Aşağıdakilerin hepsi kanıtlanmadan bitmiş sayma. Her maddenin kanıtını `docs/public-app/verification.md` içine komut çıktısı veya ekran görüntüsüyle yaz.
 
@@ -121,12 +150,13 @@ Aşağıdakilerin hepsi kanıtlanmadan bitmiş sayma. Her maddenin kanıtını `
 2. Canlı 14 container ve iki droplet etkilenmemiş: deploy öncesi/sonrası `docker ps` uptime'ları değişmemiş.
 3. Tek dağıtım, en az **üç farklı mağazaya** aynı anda hizmet veriyor; verileri birbirine sızmıyor (çapraz sorgu testi yaz).
 4. Üç zorunlu webhook gerçek HMAC'li istekle test edilmiş, gerçekten veri siliyor/döndürüyor.
-5. Billing: bir test mağazasında abonelik kurulmuş, sipariş geçilmiş, usage record oluşmuş, tutar **%3,5 ve 6 USD tavanıyla** birebir uyuşuyor. Aynı siparişin webhook'u iki kez gelirse **tek** usage record oluştuğu kanıtlanmış.
-6. Tavan dolduğunda davranış test edilmiş.
-7. `npx vitest run` tamamen yeşil; yeni iş kurallarının her biri için test var.
-8. Typecheck, değiştirilen dosyalarda sıfır hata.
-9. Theme extension ve checkout extension yeni app'e basılmış, storefront'ta render olduğu canlı sayfadan doğrulanmış.
-10. Lighthouse/Web Vitals ölçümü alınmış ve eşikleri geçiyor.
+5. **Takip katmanı tamamen gitmiş:** `grep -rniE "visitor|fingerprint|utm_|gclid|telemetry|analytics" app/ extensions/ prisma/` çıktısında kalan her eşleşme ya `uploadFingerprint` (dosya hash'i) ya da gerekçesi yazılmış bir istisna olmalı. `Visitor`/`VisitorSession` modelleri şemada yok; migration ile düşürülmüş. Storefront'a basılan JS'te ziyaretçi takibi yapan tek satır kalmamış — canlı sayfanın network sekmesinde takip isteği görünmediğini kanıtla.
+6. Billing: bir test mağazasında abonelik kurulmuş, sipariş geçilmiş, usage record oluşmuş, tutar **%3,5 ve 6 USD tavanıyla** birebir uyuşuyor. Aynı siparişin webhook'u iki kez gelirse **tek** usage record oluştuğu kanıtlanmış.
+7. Tavan dolduğunda davranış test edilmiş.
+8. `npx vitest run` tamamen yeşil; yeni iş kurallarının her biri için test var.
+9. Typecheck, değiştirilen dosyalarda sıfır hata.
+10. Theme extension ve checkout extension yeni app'e basılmış, storefront'ta render olduğu canlı sayfadan doğrulanmış.
+11. Lighthouse/Web Vitals ölçümü alınmış ve eşikleri geçiyor.
 
 ## Çalışma biçimi
 
