@@ -2,6 +2,12 @@
 
 Audit:10October2026 (UTC observations below occurred9October). Public application only. This is an engineering evidence record, not legal advice or an assertion that Shopify approved this app. No questionnaire answers were submitted by this audit.
 
+## Deployment delta — 9 October,23:13UTC
+
+The implementation-handoff table below is historical,not today's deployment inventory. Version2026-10-10.1 Terms/Privacy/DPA and bounded paid-volume customer-link retention are now deployed on independent607746803,source9c4b466. Real Polaris product setup works on all three installed shops; the demo's six settings were saved normally. Clean final CI passed425tests with zero skips. Actual hosted signed HTTP export/redaction/R2 erasure already passed on three exact disposable fixtures; see hosted-compliance.md for cleanup and simulated-clock limitations.
+
+The merchant acceptance checkbox remains unchecked; no receipt was backfilled and the nine Shopify data-protection answers remain unsubmitted. Final real Shopify commerce,provider cap,traffic review,pre-cutover credential rotation and backup/erasure operational proof are still outstanding. Deployed policy and synthetic privacy proof do not establish merchant acceptance,Shopify approval or the elapsed retention SLA.
+
 ## Operator and agreement ground truth
 
 The owner explicitly supplied **Actual Scope** as the operator/company display name. Use exactly that trading name and `info@actualscope.com`; no invented person, address, Ltd/Inc suffix or registration claim. Public `https://actualscope.com`, `/privacy`, `/terms` and `/contact` returned200 during this audit and identify that brand/mailbox, but not a registered legal entity or street address. Those website terms expressly do not themselves enter a software-service agreement. They cannot substitute for this product's merchant agreement.

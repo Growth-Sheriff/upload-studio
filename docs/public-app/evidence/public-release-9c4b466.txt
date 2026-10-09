@@ -1,0 +1,91 @@
+Public-only support release proof, observed 2026-10-09 23:13 UTC
+Frozen application source:9c4b466fc92ec7d155f48e7873c8ff606a78c81d
+CI qwqvfs6w8j:command0,providerfinished62s,66files/425tests/zero skips
+PROD7p77lwvp97:command0,providerfinished70s
+Immutable image:ghcr.io/growth-sheriff/auto-gang-sheet-public@sha256:37f10d8b6dbc87385ce9de0270b14231fbfd6023b8b6235cd940d33526e1c6fd
+New host ONLY:droplet607746803,143.198.12.234
+Deployment:pwsh -NoProfile -File deploy/public/prepare-runtime.ps1 -Phase Deploy
+Deployment exit0;8migrations,no pending migrations.
+New services read-only inspection:
+/auto-gang-sheet-public-web-1|2026-10-09T23:13:23.570916159Z|false|0|running|ghcr.io/growth-sheriff/auto-gang-sheet-public@sha256:37f10d8b6dbc87385ce9de0270b14231fbfd6023b8b6235cd940d33526e1c6fd
+/auto-gang-sheet-public-measure-1|2026-10-09T23:13:23.593547158Z|false|0|running|ghcr.io/growth-sheriff/auto-gang-sheet-public@sha256:37f10d8b6dbc87385ce9de0270b14231fbfd6023b8b6235cd940d33526e1c6fd
+/auto-gang-sheet-public-preview-1|2026-10-09T23:13:23.558075981Z|false|0|running|ghcr.io/growth-sheriff/auto-gang-sheet-public@sha256:37f10d8b6dbc87385ce9de0270b14231fbfd6023b8b6235cd940d33526e1c6fd
+/auto-gang-sheet-public-billing-1|2026-10-09T23:13:23.589950535Z|false|0|running|ghcr.io/growth-sheriff/auto-gang-sheet-public@sha256:37f10d8b6dbc87385ce9de0270b14231fbfd6023b8b6235cd940d33526e1c6fd
+/auto-gang-sheet-public-privacy-1|2026-10-09T23:13:23.582539241Z|false|0|running|ghcr.io/growth-sheriff/auto-gang-sheet-public@sha256:37f10d8b6dbc87385ce9de0270b14231fbfd6023b8b6235cd940d33526e1c6fd
+/auto-gang-sheet-public-export-1|2026-10-09T23:13:23.597887943Z|false|0|running|ghcr.io/growth-sheriff/auto-gang-sheet-public@sha256:37f10d8b6dbc87385ce9de0270b14231fbfd6023b8b6235cd940d33526e1c6fd
+
+HTTPS GET https://auto-gang-sheet.actualscope.com/health:{"status":"healthy"}
+Shopify extension Active version1161844129793 is unchanged,already contains the latest asset source.
+Support patch only changes server/admin route and test,not extensions,measurements,prices,fees or agreement version.
+
+ssh -o BatchMode=yes upload-studio 'docker inspect --format="{{.Name}}|{{.State.StartedAt}}|{{.State.OOMKilled}}|{{.RestartCount}}" us-legendtransfers us-fastdtftransfer us-chillitransfers us-localdtf us-gangsheet us-eagledtfprint us-dtftransferohio us-dtfprintarizona us-alphaprint us-dtfprinthouse us-everydaycustomprint us-dtfnash us-dtfprintdepot us-customprintaz us-caddy'
+old_web BEFORE:
+/us-legendtransfers|2026-10-05T18:08:50.364678569Z|false|0
+/us-fastdtftransfer|2026-10-05T18:08:50.364689355Z|false|0
+/us-chillitransfers|2026-10-05T18:08:50.368565192Z|false|0
+/us-localdtf|2026-10-05T18:08:50.356370645Z|false|0
+/us-gangsheet|2026-10-05T18:08:50.373353622Z|false|0
+/us-eagledtfprint|2026-10-05T18:08:50.371438079Z|false|0
+/us-dtftransferohio|2026-10-05T18:08:50.366169509Z|false|0
+/us-dtfprintarizona|2026-10-05T18:08:50.377417742Z|false|0
+/us-alphaprint|2026-10-05T18:08:50.365715375Z|false|0
+/us-dtfprinthouse|2026-10-05T18:08:50.371457604Z|false|0
+/us-everydaycustomprint|2026-10-05T18:08:50.358853206Z|false|0
+/us-dtfnash|2026-10-05T18:08:50.351965835Z|false|0
+/us-dtfprintdepot|2026-10-05T18:08:50.3646726Z|false|0
+/us-customprintaz|2026-10-05T18:08:50.364826591Z|false|0
+/us-caddy|2026-09-04T05:49:29.638786799Z|false|0
+
+old_web AFTER:
+/us-legendtransfers|2026-10-05T18:08:50.364678569Z|false|0
+/us-fastdtftransfer|2026-10-05T18:08:50.364689355Z|false|0
+/us-chillitransfers|2026-10-05T18:08:50.368565192Z|false|0
+/us-localdtf|2026-10-05T18:08:50.356370645Z|false|0
+/us-gangsheet|2026-10-05T18:08:50.373353622Z|false|0
+/us-eagledtfprint|2026-10-05T18:08:50.371438079Z|false|0
+/us-dtftransferohio|2026-10-05T18:08:50.366169509Z|false|0
+/us-dtfprintarizona|2026-10-05T18:08:50.377417742Z|false|0
+/us-alphaprint|2026-10-05T18:08:50.365715375Z|false|0
+/us-dtfprinthouse|2026-10-05T18:08:50.371457604Z|false|0
+/us-everydaycustomprint|2026-10-05T18:08:50.358853206Z|false|0
+/us-dtfnash|2026-10-05T18:08:50.351965835Z|false|0
+/us-dtfprintdepot|2026-10-05T18:08:50.3646726Z|false|0
+/us-customprintaz|2026-10-05T18:08:50.364826591Z|false|0
+/us-caddy|2026-09-04T05:49:29.638786799Z|false|0
+
+Byte-for-byte unchanged:true
+
+ssh -o BatchMode=yes upload-studio-worker 'docker inspect --format="{{.Name}}|{{.State.StartedAt}}|{{.State.OOMKilled}}|{{.RestartCount}}" usw-legendtransfers usw-everydaycustomprint usw-gangsheet usw-eagledtfprint usw-chillitransfers usw-fastdtftransfer usw-dtfprinthouse usw-dtfprintarizona usw-localdtf usw-alphaprint usw-dtfnash usw-dtftransferohio usw-dtfprintdepot usw-customprintaz'
+old_worker BEFORE:
+/usw-legendtransfers|2026-10-05T18:11:35.268554271Z|false|0
+/usw-everydaycustomprint|2026-10-05T18:11:36.889521757Z|false|0
+/usw-gangsheet|2026-10-05T18:11:34.973834624Z|false|0
+/usw-eagledtfprint|2026-10-05T18:11:36.558363621Z|false|0
+/usw-chillitransfers|2026-10-05T18:11:35.118934298Z|false|0
+/usw-fastdtftransfer|2026-10-05T18:11:35.594231948Z|false|0
+/usw-dtfprinthouse|2026-10-05T18:11:35.431811072Z|false|0
+/usw-dtfprintarizona|2026-10-05T18:11:37.709103827Z|false|0
+/usw-localdtf|2026-10-05T18:11:36.179808695Z|false|0
+/usw-alphaprint|2026-10-05T18:11:38.056030335Z|false|0
+/usw-dtfnash|2026-10-05T18:11:37.249226776Z|false|0
+/usw-dtftransferohio|2026-10-05T18:11:38.483911629Z|false|0
+/usw-dtfprintdepot|2026-10-05T18:11:35.755179724Z|false|0
+/usw-customprintaz|2026-10-05T18:11:35.955514273Z|false|0
+
+old_worker AFTER:
+/usw-legendtransfers|2026-10-05T18:11:35.268554271Z|false|0
+/usw-everydaycustomprint|2026-10-05T18:11:36.889521757Z|false|0
+/usw-gangsheet|2026-10-05T18:11:34.973834624Z|false|0
+/usw-eagledtfprint|2026-10-05T18:11:36.558363621Z|false|0
+/usw-chillitransfers|2026-10-05T18:11:35.118934298Z|false|0
+/usw-fastdtftransfer|2026-10-05T18:11:35.594231948Z|false|0
+/usw-dtfprinthouse|2026-10-05T18:11:35.431811072Z|false|0
+/usw-dtfprintarizona|2026-10-05T18:11:37.709103827Z|false|0
+/usw-localdtf|2026-10-05T18:11:36.179808695Z|false|0
+/usw-alphaprint|2026-10-05T18:11:38.056030335Z|false|0
+/usw-dtfnash|2026-10-05T18:11:37.249226776Z|false|0
+/usw-dtftransferohio|2026-10-05T18:11:38.483911629Z|false|0
+/usw-dtfprintdepot|2026-10-05T18:11:35.755179724Z|false|0
+/usw-customprintaz|2026-10-05T18:11:35.955514273Z|false|0
+
+Byte-for-byte unchanged:true

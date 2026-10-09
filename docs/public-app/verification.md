@@ -2,7 +2,15 @@
 
 Work performed 9–10 October 2026 (Europe/Istanbul), exclusively in the managed public worktree. Main baseline: `76113c193d7da789df9b2d3ea1ad7947af48b334`. The original custom checkout is unchanged and clean. A new public review app is now registered, hosted and installed in three development shops; no App Store submission or approval is claimed. Historical sections below retain their own executed revisions and limitations.
 
-## Latest public-only release — 9 October, 23:07 UTC
+## Latest public-only release — 9 October,23:13UTC
+
+The support-only follow-up source`9c4b466fc92ec7d155f48e7873c8ff606a78c81d` passed clean Depot CI`qwqvfs6w8j`:66files,425tests,zero skips,all8migrations and the same full chained gates. Provider terminal`finished`,62seconds. Sequential production build`7p77lwvp97` finished successfully,70seconds; OCI revision was independently verified. Only NEW607746803 was deployed to immutable index`sha256:37f10d8b6dbc87385ce9de0270b14231fbfd6023b8b6235cd940d33526e1c6fd`. All six new services started23:13:23UTC,running,OOMfalse/restart0;8migrations had none pending;external HTTPS health returnedhealthy. Exact old28containers+oldCaddy strings still match before/after. See evidence/public-release-9c4b466.txt.
+
+Actual second-shop Support UI now shows Contact Actual Scope/mailto:info@actualscope.com and honestly states email notifications are unavailable; it no longer asks merchants to configure our server API key. No ticket/email/provider mutation was performed. Screenshot:evidence/public-support-live.jpg. Initial navigation from the older loaded embedded page returnedDashboard;direct Shopify wrapper navigation and subsequent ordinary Dashboard→Support menu navigation worked. Idle-session/re-auth return-path behavior remains a bounded follow-up,not a proven root cause or universal navigation failure.
+
+Shopify extension version1161844129793 remains Active and current:the follow-up changes only the server/admin support route,test and documentation,not extension assets,pricing,measurement,fees or agreement version. Real contract acceptance,commerce/cap,performance/media and App Store submission remain unfinished. The pending unchecked merchant agreement screen is preserved in evidence/demo-terms-awaiting-owner.jpg. The unused local scratch demo-password copy was deleted;the shop password was not changed.
+
+## Historical public-only release — 9 October,23:07UTC
 
 - Frozen application source`21ccab9012e78d21989bc9321e7b0af28eb7d7d5` passed clean Depot CI`n8mzfd0mdp`:65 files,424 tests,zero skips,full typecheck,strict measurement regression,Remix build,theme check[] and both extension builds. Provider terminal status was`finished`,76seconds. Sequential production build`bht6fgfpzr` also finished successfully,67seconds. See ci.md for reproducible commands and source-label verification.
 - Only NEW droplet607746803 was deployed to immutable index`sha256:ca685ad2549e7c1d44651a7f4eb054d551d360dbc83817e6a1d7cd07f944c483`. All eight migrations were present;20261010230000_public_manual_receipt_unique applied before startup. All six public services started23:07:24UTC,running,OOMfalse/restart0. External HTTPS health returned`{"status":"healthy"}`.

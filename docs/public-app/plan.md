@@ -44,7 +44,11 @@ The owner now authorizes independent provisioning, provider CI, public deploymen
 
 Provider credentials remain outside Git and are consumed only for their authorized service. No raw credential inventory is committed. A mistaken inventory output exposed several API credentials in tool history; their values are not repeated or copied into evidence, and rotation is a separate owner-security action because existing services may use them.
 
-### Latest executed progress — 9 October, 23:07 UTC
+### Latest executed progress — 9 October,23:13UTC
+
+Support-only source9c4b466 passed clean CI66files/425tests/zero skips and full gates;sequential production image37f10d8b was independently verified and deployed only to607746803. Six new services are healthy with8migrations current;old28tenant containers and Caddy are byte-identical before/after. Actual second-shop UI confirms the honest email fallback and Actual Scope contact. Extension1161844129793 remains current because no extension asset changed. The unused local demo-password scratch copy was removed without changing the shop password. Terms/DPA acceptance,file-upload access,portable preview,real commerce/cap,performance/media and review submission are still pending,not manufactured.
+
+### Historical executed progress — 9 October,23:07UTC
 
 Clean Depot CI n8mzfd0mdp passed65files/424tests/zero skips and all chained gates on exact21ccab9; sequential production build bht6fgfpzr finished successfully. Root deployed immutable imageca685ad2 only to607746803,applying migration8 before startup. Six new services are healthy,OOMfalse/restart0; all28old tenant container strings plus oldCaddy are identical before/after. Explicit-config pinned CLI released both extensions as Active version1161844129793. Exact per-inch display,scoped Setup fix and provider-confirmed relief bookkeeping are included. No actual financial credit/refund was issued. Contract acceptance,real commerce/cap,privacy self-assessment,live performance/media and App Store submission remain open; no completed-publication claim.
 

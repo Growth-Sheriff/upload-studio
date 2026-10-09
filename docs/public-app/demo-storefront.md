@@ -2,6 +2,12 @@
 
 This is an isolated demonstration, not a new production printing business. Prices are illustrative, orders use the demo shop's test payment flow, and nothing is physically fulfilled. Existing merchant shops and themes are outside this work.
 
+## Latest executed state — 9 October,23:13UTC
+
+The historical provisioning steps below retain their own observations. All six real demo product configurations have now been loaded and saved through actual Polaris UI: four variant products,two measured-length products at0.30/in,width22.5,length240,tolerance0.02. They were not imported through a database writer. Real fractional-input rejection was reproduced and fixed; successful saves are shown in evidence/demo-setup-decimal-rate-saved.jpg and demo-mod2-configured.jpg. All three installed development shops render the embedded app. The nine canonical block bindings remain in unpublished theme189187817693; Horizon189187457245 remains live.
+
+Actual375px home and variant-product checks showed no horizontal overflow; keyboard menu navigation worked. Those snapshots are not a full accessibility or Lighthouse pass. Source9c4b466 is hosted in the independent public deployment,and both extensions remain Active version1161844129793 (server-only support follow-up). Merchant processing-terms acceptance is still unchecked/pending action-time owner approval. Browser file-upload access and a portable official theme-preview URL are pending owner handoff. Consequently no real buyer upload/cart/order/usage/cap or review-video proof is claimed. Do not turn the source manifest or product publication into a claim that those flows ran.
+
 ## What this store sells
 
 A finished gang sheet is one production file. The customer has already arranged the artwork. The app measures the page, checks the configured press limit, and either selects a listed sheet length or quotes measured length. Quantity prints the complete uploaded file that many times. There is no nesting, layout service, or invented production instruction.
