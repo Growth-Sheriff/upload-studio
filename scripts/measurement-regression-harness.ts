@@ -764,7 +764,7 @@ if (process.argv.includes('--json')) {
   console.log(`Previous code: ${baselineCommit}`)
   console.log(`Current code: ${currentRevision}`)
   console.log('Sheet final price is variant retail price × complete-sheet copies; measured-length final price is this upload\'s tier quote. The per-order fee cap is outside this resolver harness.')
-  console.log('Only uploaded dimensions are orientation-normalized. Variant dimensions retain their commercial width × length meaning, and variant length is the price ceiling.')
+  console.log('Uploaded dimensions use the printable orientation consuming least film when both sides fit. Variant dimensions retain their commercial width × length meaning, and variant length is the price ceiling.')
   console.log('Measured-length tier labels come from the captured live tier fixture; this harness does not test customer eligibility, multi-upload aggregation, or the hosted-checkout fee.')
   console.log('Every price difference must carry an explicit approved finished-sheet, no-nesting, or physical-rejection classification; otherwise the strict gate fails it as a regression.')
   console.log(`Comparison integrity: ${unexpectedRows.length ? 'FAIL' : 'PASS'}; release-blocking regressions: ${releaseBlockingRows.length} (${releaseBlockingRows.length ? 'owner approval required' : 'none'}).`)

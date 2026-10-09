@@ -10,7 +10,9 @@ import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import adminStyles from "~/styles/admin.css?url";
 import prisma from "~/lib/prisma.server";
 import { useAppBridgeNavigation } from "~/hooks/useAppBridgeNavigation";
-import { billingCapState } from "~/lib/billing.server";
+import { billingCapState } from "~/lib/billingPolicy";
+import { createElement } from 'react';
+import { Banner, Button, BlockStack } from '@shopify/polaris';
 
 export const links = () => [
   { rel: "stylesheet", href: polarisStyles },
@@ -68,11 +70,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
     pendingUploads,
     pendingQueue,
     billingBanner,
+    needsSetup: !shop?.onboardingCompleted,
   });
 }
 
 export default function AppLayout() {
-  const { apiKey, shop, pendingUploads, pendingQueue, billingBanner } =
+  const { apiKey, shop, pendingUploads, pendingQueue, billingBanner, needsSetup } =
     useLoaderData<typeof loader>();
 
 
@@ -80,18 +83,29 @@ export default function AppLayout() {
 
   return (
     <AppProvider isEmbeddedApp apiKey={apiKey}>
+      {createElement('s-app-nav', null,
+        createElement('a', { href: '/app', rel: 'home' }, 'Dashboard'),
+        createElement('a', { href: '/app/setup' }, 'Setup'),
+        createElement('a', { href: '/app/products' }, 'Products'),
+        createElement('a', { href: '/app/uploads' }, 'Uploads'),
+        createElement('a', { href: '/app/queue' }, 'Production'),
+        createElement('a', { href: '/app/billing' }, 'Billing'),
+        createElement('a', { href: '/app/privacy' }, 'Privacy requests'))}
       <AppFrame
         shop={shop}
         pendingUploads={pendingUploads}
         pendingQueue={pendingQueue}
         notice={
-          billingBanner ? (
+          <BlockStack gap="300">
+          {needsSetup && <Banner title="Choose your product and printable limits"><p>Finish setup before adding your upload block.</p><Button url="/app/setup">Start setup</Button></Banner>}
+          {billingBanner ? (
             <PaymentSetupBanner
               status={billingBanner.status}
               capUsd={billingBanner.capUsd}
               usedUsd={billingBanner.usedUsd}
             />
-          ) : null
+          ) : null}
+          </BlockStack>
         }
       />
     </AppProvider>

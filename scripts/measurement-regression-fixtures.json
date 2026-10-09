@@ -656,9 +656,7 @@
       },
       "expectedClassification": "approved_finished_sheet_rule",
       "expectedChangedFields": [
-        "heightIn",
-        "chosenVariant",
-        "finalPrice"
+        "heightIn"
       ],
       "expected": {
         "previous": {
@@ -677,8 +675,8 @@
           "widthIn": 21.26,
           "heightIn": 11.7334,
           "effectiveDpi": 299.9994,
-          "chosenVariant": "22\" / 24\"",
-          "finalPrice": 12,
+          "chosenVariant": "22\" / 12\"",
+          "finalPrice": 6,
           "billableLengthIn": null,
           "pricePerInch": null,
           "chosenTier": null,
@@ -686,7 +684,7 @@
           "fitFailure": null
         }
       },
-      "explanation": "Only the uploaded file is orientation-normalized: 11.7334 inches is width and 21.26 inches is billable length. Commercial variant dimensions retain width x length meaning, so the 12-inch length cannot cover it and the 22 x 24 variant costs USD 12."
+      "explanation": "The October finished-sheet policy chooses the printable orientation consuming least film. Both sides fit the 22.5-inch roll, so 21.26 inches runs across it and 11.7334 is length. Both historical and current outputs select 22 x 12 at USD 6; the earlier fixture's USD 12 expectation was stale, not a new public-app price change."
     },
     {
       "caseId": "alpha-eight-up",

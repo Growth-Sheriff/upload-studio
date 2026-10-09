@@ -167,7 +167,9 @@ const BuilderConfigSchema = z.object({
   volumeDiscountTierUnit: z.enum(["quantity", "linear_inches"]).optional().default("quantity"),
   volumeDiscountTiers: z.array(VolumeDiscountTierSchema).default(DEFAULT_BUILDER_CONFIG.volumeDiscountTiers),
   alphaProDiscount: z.record(z.unknown()).nullable().optional(),
-});
+  publicPricingMode: z.enum(['variant', 'measured_length']).optional(),
+  pricePerInch: z.number().min(0).max(10000).optional(),
+}).passthrough();
 
 function withoutRetiredMeasurementSettings(
   value: Record<string, unknown> | null | undefined

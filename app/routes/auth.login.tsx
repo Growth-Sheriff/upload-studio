@@ -27,7 +27,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   return { errors };
 };
 
-function loginErrorMessage(loginErrors: any) {
+function loginErrorMessage(loginErrors: any): { shop?: string } {
   if (loginErrors?.shop === "MissingShop") {
     return { shop: "Please enter your shop domain to log in" };
   } else if (loginErrors?.shop === "InvalidShop") {
