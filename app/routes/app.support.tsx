@@ -13,6 +13,7 @@ import { sendTicketReply, sendTicketStatusUpdate } from "~/lib/email.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request);
+  const emailDeliveryConfigured = Boolean(process.env.RESEND_API_KEY);
 
 
   const shop = await prisma.shop.findUnique({
@@ -20,7 +21,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
 
   if (!shop) {
-    return json({ tickets: [], stats: { open: 0, inProgress: 0, resolved: 0, total: 0 } });
+    return json({ tickets: [], stats: { open: 0, inProgress: 0, resolved: 0, total: 0 }, emailDeliveryConfigured });
   }
 
   const url = new URL(request.url);
@@ -53,6 +54,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   ]);
 
   return json({
+    emailDeliveryConfigured,
     tickets: tickets.map((t) => ({
       id: t.id,
       ticketNumber: t.ticketNumber,
@@ -141,7 +143,7 @@ export async function action({ request }: ActionFunctionArgs) {
         message: replyMessage,
         isStaff: true,
         authorName: agentName,
-        authorEmail: `support@${process.env.APP_DOMAIN || 'uploadstudio.app.techifyboost.com'}`,
+        authorEmail: 'info@actualscope.com',
       },
     });
 
@@ -173,7 +175,7 @@ export async function action({ request }: ActionFunctionArgs) {
       });
     }
 
-    return json({ success: true });
+    return json({ success: true, emailSent: emailResult.success });
   }
 
   return json({ success: false, error: "Invalid intent" });
@@ -226,8 +228,8 @@ function getCategoryLabel(category: string) {
 }
 
 export default function SupportPage() {
-  const { tickets, stats } = useLoaderData<typeof loader>();
-  const fetcher = useFetcher();
+  const { tickets, stats, emailDeliveryConfigured } = useLoaderData<typeof loader>();
+  const fetcher = useFetcher<typeof action>();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [selectedTicket, setSelectedTicket] = useState<typeof tickets[0] | null>(null);
@@ -353,16 +355,22 @@ export default function SupportPage() {
   ];
 
   return (
-    <Page title="Support Tickets" subtitle="Manage customer support requests">
+    <Page title="Support Tickets" subtitle="Manage customer support requests" primaryAction={{ content: 'Contact Actual Scope', url: 'mailto:info@actualscope.com' }}>
       <Layout>
-        {!process.env.RESEND_API_KEY && (
+        {!emailDeliveryConfigured && (
           <Layout.Section>
             <Banner tone="warning">
               <p>
-                <strong>Email not configured:</strong> Add <code>RESEND_API_KEY</code> to enable email notifications.
-                Get your API key from <a href="https://resend.com/api-keys" target="_blank" rel="noopener">resend.com</a>
+                Ticket changes and replies are saved here, but email notifications are unavailable.
+                For app support, contact <a href="mailto:info@actualscope.com">info@actualscope.com</a>.
               </p>
             </Banner>
+          </Layout.Section>
+        )}
+
+        {emailDeliveryConfigured && fetcher.data && 'emailSent' in fetcher.data && !fetcher.data.emailSent && (
+          <Layout.Section>
+            <Banner tone="warning">Your reply was saved, but its email was not sent. Contact <a href="mailto:info@actualscope.com">info@actualscope.com</a> for assistance.</Banner>
           </Layout.Section>
         )}
 
@@ -405,7 +413,7 @@ export default function SupportPage() {
         onClose={() => setReplyModalOpen(false)}
         title={`Reply to ${selectedTicket?.ticketNumber}`}
         primaryAction={{
-          content: "Send Reply",
+          content: emailDeliveryConfigured ? "Send Reply" : "Save Reply",
           onAction: handleSubmitReply,
           loading: fetcher.state === "submitting",
         }}
