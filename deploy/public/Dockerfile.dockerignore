@@ -1,0 +1,30 @@
+# Public runtime build context only: no tenant configuration, scratch files,
+# local Git metadata, credentials or customer-uploaded objects leave this host.
+**
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tsconfig.json
+!vite.config.ts
+!server.mjs
+!app/
+!app/**
+!workers/
+!workers/**
+!public/
+!public/**
+!prisma/
+!prisma/**
+!deploy/
+!deploy/public/
+!deploy/public/Dockerfile
+!deploy/public/Dockerfile.dockerignore
+**/node_modules/**
+**/.env*
+**/*.log
+**/*.pem
+**/*.key
+**/*.clixml
+**/uploads/**
+**/tmp/**
+**/temp/**

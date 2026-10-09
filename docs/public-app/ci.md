@@ -143,3 +143,41 @@ $0.0001/second overage rate; that engine has not been activated here.
 
 These checks do not prove a live installation, storefront rendering, payment,
 Shopify webhook delivery, Lighthouse score or production workload capacity.
+
+## Public runtime image publication
+
+The independent runtime Dockerfile was built and pushed only to the new GHCR
+package `ghcr.io/growth-sheriff/auto-gang-sheet-public:173f9cf`, using the same
+explicit Depot project. Existing `upload-studio` images were not referenced or
+changed. The later local revision `608f345` differed from `173f9cf` only outside
+the runtime image inputs; the application, worker, Prisma, package and Dockerfile
+inputs were identical. The Dockerfile-specific allowlist excludes all tenant
+TOMLs, envs, credentials, local Git metadata, demo scratch and uploaded objects.
+No production credentials were passed as build arguments.
+
+```powershell
+depot build --project 7fxkc8sd3p --platform linux/amd64 `
+  --file deploy/public/Dockerfile `
+  --tag ghcr.io/growth-sheriff/auto-gang-sheet-public:173f9cf `
+  --push --progress plain .
+docker buildx imagetools inspect ghcr.io/growth-sheriff/auto-gang-sheet-public:173f9cf
+```
+
+[Depot runtime build t3zqw05zs2](https://depot.dev/orgs/zl650q33c5/projects/7fxkc8sd3p/builds/t3zqw05zs2)
+exited 0. Its provider record reports `finished`, start
+`2026-10-09T21:59:39Z`, duration 48 seconds. A separate registry inspection
+confirmed the pushed image index:
+
+```text
+ghcr.io/growth-sheriff/auto-gang-sheet-public@sha256:9c039fc1dc6809006c604ae94b14074c255e0138f890347c813f83c398929d7c
+linux/amd64 manifest: sha256:643c9667b00881a4184bb5c0505178737eee8eb9e6e13d9aa57d4befa4992c2e
+```
+
+Existing GHCR credentials reported username `jesuisfatih`, matching the active
+GitHub CLI account with `write:packages` scope; the push succeeded without
+rewriting that credential. Publishing this new image is not a deployment or a
+claim that Shopify/R2 runtime integration has passed.
+
+The GitHub package metadata reports `visibility: private`; the independent
+public host therefore needs an authorized registry login to pull the digest.
+Package visibility was not changed.
