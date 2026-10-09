@@ -120,10 +120,11 @@ registration from the repository's default branch. This public branch is never
 merged into main. Neither the GitHub integration nor the default branch was
 changed. Therefore no automatic branch-triggered native CI run is claimed.
 
-Future automatic CI needs a separately approved, public-only source repository
-or equivalent isolated integration; it must not merge these workflows into the
-tenant main branch. Until then the working standalone builder command above is
-the verification path.
+Automatic CI needs a separately approved, public-only source repository or
+equivalent isolated integration; it must not merge these workflows into the
+tenant main branch. The new repository preparation below resolves the default
+branch issue, but the working standalone builder remains the verification path
+until the Code Access installation and an actual native run are verified.
 
 ## Cost boundary and official references
 
@@ -181,3 +182,67 @@ claim that Shopify/R2 runtime integration has passed.
 The GitHub package metadata reports `visibility: private`; the independent
 public host therefore needs an authorized registry login to pull the digest.
 Package visibility was not changed.
+
+## Follow-up source and release check
+
+The owner authorized a dedicated **private** GitHub source repository,
+[`Growth-Sheriff/auto-gang-sheet-public`](https://github.com/Growth-Sheriff/auto-gang-sheet-public)
+(repository ID `1412498160`). Only `public-app` was pushed there, explicitly by
+repository URL, at `2ff3faf9a856bc8d67be620f0591fc215fc2598e`. Its default branch was
+then set to `public-app` through GitHub's repository API. The original local
+`origin`, original repository default branch, tenant `main` and custom branch
+were not changed. This avoids merging public workflows into tenant main merely
+to satisfy Depot's default-branch registration requirement.
+
+The documented integration entry point is the new Depot organization's settings
+page, **GitHub Code Access → Connect to GitHub**. Installation must select only
+this new repository, not all repositories. No installation or automatic native
+run is claimed here yet. Never run local `depot ci run` from a dirty shared
+worktree: the CLI uploads local changes automatically. Use the clean, dedicated
+repository checkout and explicitly select `--repo
+Growth-Sheriff/auto-gang-sheet-public --org zl650q33c5` instead.
+
+After `2ff3faf` was available remotely, the fresh no-cache verification ran with
+that exact source reference and local source inputs. The independent container
+build [9tf7gbmzhp](https://depot.dev/orgs/zl650q33c5/projects/7fxkc8sd3p/builds/9tf7gbmzhp)
+exited 0; provider metadata reports start `2026-10-09T22:11:49Z`, duration 79
+seconds and status `finished`. Migrations, the full test suite, typecheck,
+measurement harness, runtime build, theme check `[]` and both extension builds
+completed successfully. Later uncommitted work is not covered by this run.
+
+The separate production build
+[jtj8pzf787](https://depot.dev/orgs/zl650q33c5/projects/7fxkc8sd3p/builds/jtj8pzf787)
+exited 0 and pushed only
+`ghcr.io/growth-sheriff/auto-gang-sheet-public:2ff3faf`. Provider metadata reports
+start `2026-10-09T22:12:00Z`, duration 84 seconds, status `finished`. An independent
+registry inspection confirmed:
+
+```text
+image index: sha256:271d78d3f4a952add56069d43f4ccf95ef644d9e76861f5301ce92dbe0ac7c00
+linux/amd64: sha256:8ad088d2a0439f48e731359f8bd4bfc1c55f47064751905b1747f47828e653f1
+```
+
+This image includes the final-claim cancellation fee fix `8c7bbd8`. It does not
+include changes made after `2ff3faf`; the operator must choose the exact tested
+digest, and a later application change needs a fresh image.
+
+## Hosted three-shop fixture boundary
+
+`deploy/public/prove-hosted-isolation.ts` is a separate, explicitly authorized
+synthetic proof for the **new** public deployment only. It refuses any other
+DigitalOcean droplet, application ID/origin, database name/private hostname,
+runtime role or non-strict TLS connection. It first requires a healthy public
+TLS endpoint. It creates three inactive synthetic shops with one empty draft
+upload each; no real Shopify installation, customer, item, storage object,
+order, commission or queue job is created. All fixture identifiers are random
+and selected before insertion, so cleanup can cover an ambiguous create result.
+
+The proof exercises simultaneous scoped reads, foreign unique reads, forbidden
+foreign writes/relations, contradicting caller scope and actual deployed
+signed app-proxy status requests (own/foreign/unsigned/tampered). Finally it
+deletes only the three exact, ownership-checked fixture shops and verifies
+their absence. Normal per-shop request rate-limit counters expire after 60
+seconds; the proof never clears Redis or queue state. It does not satisfy the
+separate requirement for three real installed demo stores, nor prove checkout
+or Shopify webhook delivery. Its execution status belongs in the main
+verification evidence, not an assumed success in this document.
