@@ -6,7 +6,6 @@ x-app: &app
   volumes:
     - ./pg-ca.pem:/run/secrets/pg-ca.pem:ro
   restart: unless-stopped
-  init: true
   read_only: true
   tmpfs:
     - /tmp:size=2147483648,mode=1777
