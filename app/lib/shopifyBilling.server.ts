@@ -1,5 +1,6 @@
 import prisma from '~/lib/prisma.server'
 import { BILLING_CAP_TIERS, BILLING_TERMS } from '~/lib/billing.server'
+import { requireMerchantLegalAgreement } from '~/lib/publicLegal.server'
 
 export interface BillingAdmin { graphql(query: string, options?: { variables?: Record<string, unknown> }): Promise<Response> }
 export class ShopifyBillingUserError extends Error {
@@ -65,6 +66,7 @@ export async function syncShopifyBilling(shopId: string, admin: BillingAdmin) {
 
 export async function requestShopifyBillingApproval(shopId: string, admin: BillingAdmin, capUsd: number, returnUrl: string): Promise<string> {
   if (!(BILLING_CAP_TIERS as readonly number[]).includes(capUsd)) throw new Error('Choose a displayed Shopify billing limit')
+  await requireMerchantLegalAgreement(shopId)
   const state = await syncShopifyBilling(shopId, admin)
   let payload: any
   if (state.status === 'active' && state.usageLineItemId) {

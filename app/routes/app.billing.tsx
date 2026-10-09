@@ -8,6 +8,7 @@ import { authenticate } from '~/shopify.server'
 import { BILLING_CAP_TIERS, BILLING_TERMS, billingCapState, recommendedBillingCap } from '~/lib/billingPolicy'
 import { buildUsageIdempotencyKey } from '~/lib/billing.server'
 import { requestShopifyBillingApproval, syncShopifyBilling } from '~/lib/shopifyBilling.server'
+import { merchantLegalAgreementSatisfied } from '~/lib/publicLegal.server'
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { session, admin } = await authenticate.admin(request)
@@ -17,6 +18,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const credits = await prisma.billingCredit.findMany({ where: { shopId: shop.id }, orderBy: { requestedAt: 'desc' }, take: 100 })
   const recentTotal = records.filter((row) => row.createdAt > new Date(Date.now() - 30 * 86400000)).reduce((total, row) => total + Number(row.servedAmountUsd || 0), 0)
   return json({
+    legalAccepted: merchantLegalAgreementSatisfied(shop),
     billing: { status: state.status, capUsd: Number(state.cappedAmountUsd), usedUsd: Number(state.balanceUsedUsd), pendingApprovalUrl: state.pendingApprovalUrl, pendingCapUsd: state.pendingCapUsd ? Number(state.pendingCapUsd) : null, periodEnd: state.currentPeriodEnd?.toISOString() || null, test: state.test },
     suggestedCapUsd: recommendedBillingCap(recentTotal),
     records: records.map((row) => ({ id: row.id, orderId: row.orderId, orderNumber: row.orderNumber, originalAmount: Number(row.attributableCapturedAmount || 0), originalCurrency: row.orderCurrency, amountUsd: Number(row.commissionAmount), status: row.status, reviewReason: row.reviewReason, usageRecordId: row.usageRecordId, fxRate: row.fxRate ? Number(row.fxRate) : null, fxDate: row.fxObservedAt?.toISOString().slice(0, 10) || null })),
@@ -55,7 +57,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function PublicBillingPage() {
-  const { billing, records, credits, suggestedCapUsd } = useLoaderData<typeof loader>()
+  const { billing, records, credits, suggestedCapUsd, legalAccepted } = useLoaderData<typeof loader>()
   const result = useActionData<typeof action>()
   const navigation = useNavigation()
   const [cap, setCap] = useState(String(suggestedCapUsd))
@@ -64,6 +66,7 @@ export default function PublicBillingPage() {
   const options = BILLING_CAP_TIERS.filter((amount) => billing.status !== 'active' || amount > billing.capUsd).map((amount) => ({ label: `US$${amount} per billing interval`, value: String(amount) }))
   return <Page title="Shopify app billing"><BlockStack gap="400">
     {result?.error && <Banner tone="critical"><p>{result.error}</p></Banner>}
+    {!legalAccepted && <Banner tone="warning"><p><a href="/app/setup">Review and accept the service and data processing terms in Setup</a> before activating app billing or customer uploads.</p></Banner>}
     {billing.test && <Banner tone="info"><p>Development-store test subscription. Shopify will not collect real app charges.</p></Banner>}
     <Card><BlockStack gap="300">
       <Text as="h2" variant="headingMd">3.5% per paid order · maximum US$6 per order</Text>
@@ -75,7 +78,7 @@ export default function PublicBillingPage() {
     {options.length > 0 && <Card><Form method="post"><BlockStack gap="300">
       <input type="hidden" name="_action" value="approve_billing" />
       <Select label="Maximum app usage charges per Shopify billing interval" name="capUsd" options={options} value={options.some((option) => option.value === cap) ? cap : options[0].value} onChange={setCap} helpText="This is permission to bill usage, not a flat charge. Increasing it requires your approval on Shopify." />
-      <Button submit variant="primary" loading={navigation.state === 'submitting'}>{billing.status === 'active' ? 'Request higher limit on Shopify' : 'Approve usage billing on Shopify'}</Button>
+      <Button submit variant="primary" disabled={!legalAccepted} loading={navigation.state === 'submitting'}>{billing.status === 'active' ? 'Request higher limit on Shopify' : 'Approve usage billing on Shopify'}</Button>
     </BlockStack></Form></Card>}
     {billing.pendingApprovalUrl && <Banner tone="info" title="Shopify approval is pending"><p>The effective limit has not changed. <a href={billing.pendingApprovalUrl} target="_top">Review US${billing.pendingCapUsd} limit on Shopify</a>.</p></Banner>}
     <Card><BlockStack gap="300"><Text as="h2" variant="headingMd">Latest 100 order fees</Text><DataTable columnContentTypes={['text', 'text', 'numeric', 'text', 'text']} headings={['Order', 'App-served captured amount', 'Fee USD', 'Status', 'FX snapshot / provider record']} rows={records.map((row) => {

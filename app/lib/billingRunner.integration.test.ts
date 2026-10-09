@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import type { BillingAdmin } from './shopifyBilling.server'
 
@@ -12,6 +12,9 @@ const domains: string[] = []
 beforeAll(async () => {
   if (!enabled) return
   process.env.DATABASE_URL = url
+  vi.stubEnv('PUBLIC_LEGAL_ENTITY_NAME', 'Disposable database fixture operator')
+  vi.stubEnv('PUBLIC_LEGAL_ENTITY_ADDRESS', 'Disposable database fixture address')
+  vi.stubEnv('PUBLIC_LEGAL_REVIEW_APPROVED', 'true')
   prisma = (await import('./prisma.server')).default
   context = (await import('./tenantContext.server')).withTenantContext
   run = (await import('./billingRunner.server')).runShopUsageBilling
@@ -20,11 +23,13 @@ afterAll(async () => {
   if (!enabled) return
   await prisma.shop.deleteMany({ where: { shopDomain: { in: domains } } })
   await prisma.$disconnect()
+  vi.unstubAllEnvs()
 })
 
 async function fixture(order: string) {
   const domain = `usage-${randomUUID()}.myshopify.com`; domains.push(domain)
-  const shop = await prisma.shop.create({ data: { shopDomain: domain, accessToken: 'local-test-no-shopify-access', billingStatus: 'active' } })
+  const version = (await import('./publicLegal.server')).getPublicLegalOperator().version
+  const shop = await prisma.shop.create({ data: { shopDomain: domain, accessToken: 'local-test-no-shopify-access', billingStatus: 'active', legalAgreementVersion: version, legalAgreementAcceptedAt: new Date(), legalAgreementActorId: '123' } })
   const fee = await context(shop.id, () => prisma.commission.create({ data: { shopId: shop.id, orderId: order, orderTotal: 100, attributableCapturedAmount: 100, servedAmountUsd: 100, commissionAmount: 3.5, status: 'pending', collectibleAt: new Date(), shopifyFinancialStatus: 'paid' } }))
   return { shop, fee }
 }

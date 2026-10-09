@@ -55,6 +55,9 @@ model Shop {
   onboardingCompleted Boolean @default(false) @map("onboarding_completed")
   onboardingStep      Int     @default(0) @map("onboarding_step")
   onboardingData      Json?   @map("onboarding_data_json")
+  legalAgreementVersion String? @map("legal_agreement_version")
+  legalAgreementAcceptedAt DateTime? @map("legal_agreement_accepted_at")
+  legalAgreementActorId String? @map("legal_agreement_actor_id")
 
 
 

@@ -1,11 +1,12 @@
 import { json, type LoaderFunctionArgs, type ActionFunctionArgs } from '@remix-run/node'
 import { Form, useActionData, useLoaderData, useNavigation } from '@remix-run/react'
-import { Page, Card, BlockStack, Text, TextField, Select, Button, Banner, InlineStack } from '@shopify/polaris'
+import { Page, Card, BlockStack, Text, TextField, Select, Button, Banner, InlineStack, Checkbox } from '@shopify/polaris'
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
 import { authenticate } from '~/shopify.server'
 import prisma from '~/lib/prisma.server'
 import { resolveFinishedSheetSettings } from '~/lib/finishedSheetMeasurement'
+import { acceptMerchantLegalAgreement, getPublicLegalOperator, merchantLegalAgreementSatisfied } from '~/lib/publicLegal.server'
 
 const SetupInput = z.object({
   productId: z.string().regex(/^gid:\/\/shopify\/Product\/\d+$/),
@@ -28,12 +29,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const shop = await prisma.shop.findUniqueOrThrow({ where: { shopDomain: session.shop } })
   const config = selected ? await prisma.productConfig.findUnique({ where: { shopId_productId: { shopId: shop.id, productId: selected.id } } }) : null
   const builder = (config?.builderConfig || {}) as Record<string, unknown>
-  return json({ products, selectedId: selected?.id || '', query, settings: resolveFinishedSheetSettings(builder), mode: builder.publicPricingMode === 'measured_length' ? 'measured_length' : 'variant', rate: Number(builder.pricePerInch || 0), onboardingCompleted: shop.onboardingCompleted })
+  return json({ products, selectedId: selected?.id || '', query, settings: resolveFinishedSheetSettings(builder), mode: builder.publicPricingMode === 'measured_length' ? 'measured_length' : 'variant', rate: Number(builder.pricePerInch || 0), onboardingCompleted: shop.onboardingCompleted, operator: getPublicLegalOperator(), legalAccepted: merchantLegalAgreementSatisfied(shop), legalAcceptedAt: shop.legalAgreementAcceptedAt?.toISOString() || null })
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const { session, admin } = await authenticate.admin(request)
-  const parsed = SetupInput.safeParse(Object.fromEntries(await request.formData()))
+  const { session, admin, sessionToken } = await authenticate.admin(request)
+  const form = await request.formData()
+  if (form.get('_action') === 'accept_legal') {
+    if (form.get('agree') !== 'yes') return json({ error: 'Read and explicitly accept the Terms and Data Processing Agreement.', saved: false }, { status: 400 })
+    const shop = await prisma.shop.findUniqueOrThrow({ where: { shopDomain: session.shop } })
+    try { await acceptMerchantLegalAgreement(shop.id, String(sessionToken?.sub || ''), String(form.get('version') || '')) }
+    catch (error) { return json({ error: error instanceof Error ? error.message : 'Acceptance was not recorded.', saved: false }, { status: 400 }) }
+    return json({ error: null, saved: true })
+  }
+  const parsed = SetupInput.safeParse(Object.fromEntries(form))
   if (!parsed.success) return json({ error: parsed.error.issues[0].message, saved: false }, { status: 400 })
   const input = parsed.data
   const check = await admin.graphql(`query SetupProduct($id: ID!) { product(id: $id) { id } }`, { variables: { id: input.productId } })
@@ -59,12 +68,23 @@ export default function Setup() {
   const [length, setLength] = useState(String(data.settings.maxPrintableLengthIn))
   const [tolerance, setTolerance] = useState(String(data.settings.fitToleranceIn))
   const [rate, setRate] = useState(data.rate ? String(data.rate) : '')
+  const [agree, setAgree] = useState(false)
   useEffect(() => {
     setMode(data.mode); setWidth(String(data.settings.maxPrintableWidthIn)); setLength(String(data.settings.maxPrintableLengthIn)); setTolerance(String(data.settings.fitToleranceIn)); setRate(data.rate ? String(data.rate) : '')
   }, [data.selectedId, data.mode, data.rate, data.settings.maxPrintableWidthIn, data.settings.maxPrintableLengthIn, data.settings.fitToleranceIn])
   return <Page title="Set up Auto Gang Sheet Upload"><BlockStack gap="400">
     {result?.error && <Banner tone="critical">{result.error}</Banner>}
-    {result?.saved && <Banner tone="success">Product settings saved. Approve billing and add the matching app block to this product template.</Banner>}
+    {result?.saved && <Banner tone="success">Saved. Review the remaining setup requirements below before enabling your app block.</Banner>}
+    <Card><BlockStack gap="400"><Text as="h2" variant="headingMd">Service and data processing agreement</Text>
+      <Text as="p">Your store controls customer artwork and order data. The operator processes them only to measure and deliver finished sheets, link orders, apply your rates and calculate app fees. No visitor tracking, advertising or sale of artwork is part of this service.</Text>
+      {data.operator.name && <Text as="p">Contracting operator: {data.operator.name}. {data.operator.address}</Text>}
+      <InlineStack gap="300"><Button url="/legal/terms" target="_blank">Terms</Button><Button url="/legal/privacy" target="_blank">Privacy policy</Button><Button url="/legal/dpa" target="_blank">Data Processing Agreement</Button></InlineStack>
+      {!data.operator.ready ? <Banner tone="warning">Activation is unavailable until the operator identity and processing terms are confirmed. You can configure products, but billing and customer uploads remain blocked. Contact info@actualscope.com.</Banner> : data.legalAccepted ? <Text as="p">Accepted by a verified Shopify administrator on {data.legalAcceptedAt?.slice(0, 10)}. Version {data.operator.version}.</Text> : <Form method="post"><BlockStack gap="300">
+        <input type="hidden" name="_action" value="accept_legal" /><input type="hidden" name="version" value={data.operator.version} />
+        <Checkbox name="agree" value="yes" label="I am authorized to represent this store and accept the Terms and Data Processing Agreement, including the disclosed providers and retention periods." checked={agree} onChange={setAgree} />
+        <Button submit variant="primary" disabled={!agree} loading={navigation.state === 'submitting'}>Accept processing terms</Button>
+      </BlockStack></Form>}
+    </BlockStack></Card>
     <Card><BlockStack gap="400"><Text as="h2" variant="headingMd">1. Choose a product</Text>
       <Form method="get"><BlockStack gap="300"><label>Search products <input name="q" defaultValue={data.query} /></label><Button submit>Search</Button></BlockStack></Form>
       {data.products.length ? <Form method="get"><BlockStack gap="300"><input type="hidden" name="q" value={data.query} /><label>Product <select name="productId" defaultValue={data.selectedId}>{data.products.map(product => <option key={product.id} value={product.id}>{product.title}</option>)}</select></label><Button submit>Load product settings</Button></BlockStack></Form> : <Text as="p">No products found. Create a Shopify product, then return here.</Text>}

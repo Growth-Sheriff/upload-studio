@@ -1,10 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-const store = vi.hoisted(() => ({ shop: { updateMany: vi.fn() }, shopBilling: { findUnique: vi.fn(), upsert: vi.fn(), update: vi.fn() }, auditLog: { create: vi.fn() }, $transaction: vi.fn() }))
+const store = vi.hoisted(() => ({ shop: { findUnique: vi.fn(), updateMany: vi.fn() }, shopBilling: { findUnique: vi.fn(), upsert: vi.fn(), update: vi.fn() }, auditLog: { create: vi.fn() }, $transaction: vi.fn() }))
 vi.mock('~/lib/prisma.server', () => ({ default: store }))
 import { requestShopifyBillingApproval, syncShopifyBilling } from './shopifyBilling.server'
+import { getPublicLegalOperator } from './publicLegal.server'
 
 describe('merchant-approved Shopify limits', () => {
-  beforeEach(() => { vi.clearAllMocks(); store.shop.updateMany.mockResolvedValue({ count: 1 }); store.$transaction.mockImplementation(run => run(store)) })
+  beforeEach(() => {
+    vi.clearAllMocks(); store.shop.updateMany.mockResolvedValue({ count: 1 }); store.$transaction.mockImplementation(run => run(store))
+    vi.stubEnv('PUBLIC_LEGAL_ENTITY_NAME', 'Fixture operator'); vi.stubEnv('PUBLIC_LEGAL_ENTITY_ADDRESS', 'Fixture address'); vi.stubEnv('PUBLIC_LEGAL_REVIEW_APPROVED', 'true')
+    store.shop.findUnique.mockResolvedValue({ legalAgreementVersion: getPublicLegalOperator().version, legalAgreementAcceptedAt: new Date(), legalAgreementActorId: '123', erasureStartedAt: null, uninstalledAt: null })
+  })
+  it('does not request a provider subscription without current processing agreement', async () => {
+    store.shop.findUnique.mockResolvedValue({ legalAgreementVersion: null })
+    const admin = { graphql: vi.fn() }
+    await expect(requestShopifyBillingApproval('shop-a', admin, 50, 'https://app.example.com/app/billing')).rejects.toThrow('Data Processing Agreement')
+    expect(admin.graphql).not.toHaveBeenCalled()
+  })
   it('does not activate a cap increase until Shopify returns it as effective', async () => {
     const previous = { status: 'active', usageLineItemId: 'line-1', cappedAmountUsd: 50, pendingCapUsd: null }
     store.shopBilling.findUnique.mockResolvedValue(previous)

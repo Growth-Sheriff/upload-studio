@@ -2,6 +2,7 @@ import prisma from '~/lib/prisma.server'
 import { billingCapState, buildUsageIdempotencyKey, moneyToCents } from '~/lib/billing.server'
 import { createShopifyUsageRecord, findShopifyUsageRecord, ShopifyBillingUserError, syncShopifyBilling, type BillingAdmin } from '~/lib/shopifyBilling.server'
 import { withTenantContext } from '~/lib/tenantContext.server'
+import { merchantLegalAgreementSatisfied } from '~/lib/publicLegal.server'
 
 export function usageFeeEligible(row: { collectibleAt?: Date | string | null; reviewRequiredAt?: Date | string | null; shopifyFinancialStatus?: string | null; shopifyRefundStatus?: string | null; shopifyCancelledAt?: Date | string | null }): boolean {
   return Boolean(row.collectibleAt) && !row.reviewRequiredAt && row.shopifyFinancialStatus === 'paid' && !row.shopifyRefundStatus && !row.shopifyCancelledAt
@@ -13,11 +14,11 @@ export async function runShopUsageBilling(shopId: string, suppliedAdmin?: Billin
 }
 
 async function executeShopUsageBilling(shopId: string, suppliedAdmin?: BillingAdmin) {
-  const shop = await prisma.shop.findUnique({ where: { id: shopId }, select: { id: true, shopDomain: true, uninstalledAt: true, erasureStartedAt: true } })
+  const shop = await prisma.shop.findUnique({ where: { id: shopId }, select: { id: true, shopDomain: true, uninstalledAt: true, erasureStartedAt: true, legalAgreementVersion: true, legalAgreementAcceptedAt: true, legalAgreementActorId: true } })
   if (!shop || shop.uninstalledAt || shop.erasureStartedAt) return { recorded: 0, pending: 0, reason: 'uninstalled_or_erasing' }
   const admin = suppliedAdmin || (await (await import('~/shopify.server')).unauthenticated.admin(shop.shopDomain)).admin
   const billing = await syncShopifyBilling(shopId, admin)
-  const approved = billing.status === 'active' && Boolean(billing.usageLineItemId)
+  const approved = billing.status === 'active' && Boolean(billing.usageLineItemId) && merchantLegalAgreementSatisfied(shop)
   const now = new Date()
   const candidates = await prisma.commission.findMany({
     where: { shopId, status: { in: ['pending', 'charging'] }, OR: [{ nextBillingAttemptAt: null }, { nextBillingAttemptAt: { lte: now } }] },

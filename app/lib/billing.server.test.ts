@@ -3,6 +3,7 @@ const store = vi.hoisted(() => ({ shop: { findUnique: vi.fn() } }))
 vi.mock('~/lib/prisma.server', () => ({ default: store }))
 import { BILLING_POLICY, MAX_FILE_SIZE_MB, billingCapState, buildUsageIdempotencyKey, calculateCommissionAmount, checkUploadAllowed, recommendedBillingCap, sumMoneyCents } from './billing.server'
 import { parseEcbRates } from './billingFx.server'
+import { getPublicLegalOperator } from './publicLegal.server'
 
 describe('public order fees', () => {
   it('charges 3.5% after discounts and never more than US$6', () => {
@@ -43,11 +44,19 @@ describe('public order fees', () => {
     expect(() => parseEcbRates(`<Cube time='2026-10-08'/>`, new Date('2026-10-09'))).toThrow('USD')
   })
   it('does not accept files exceeding worker capacity or an erasing shop', async () => {
-    store.shop.findUnique.mockResolvedValue({ billingStatus: 'active', erasureStartedAt: null, uninstalledAt: null })
+    vi.stubEnv('PUBLIC_LEGAL_ENTITY_NAME', 'Fixture operator')
+    vi.stubEnv('PUBLIC_LEGAL_ENTITY_ADDRESS', 'Fixture address')
+    vi.stubEnv('PUBLIC_LEGAL_REVIEW_APPROVED', 'true')
+    store.shop.findUnique.mockResolvedValue({ billingStatus: 'active', erasureStartedAt: null, uninstalledAt: null, legalAgreementVersion: getPublicLegalOperator().version, legalAgreementAcceptedAt: new Date(), legalAgreementActorId: '123' })
     expect(MAX_FILE_SIZE_MB).toBe(1024)
     expect((await checkUploadAllowed('shop-a', 'gang_sheet', 1024)).allowed).toBe(true)
     expect((await checkUploadAllowed('shop-a', 'gang_sheet', 1024.001)).allowed).toBe(false)
     store.shop.findUnique.mockResolvedValue({ billingStatus: 'active', erasureStartedAt: new Date(), uninstalledAt: null })
     expect((await checkUploadAllowed('shop-a', 'gang_sheet', 1)).allowed).toBe(false)
+    vi.unstubAllEnvs()
+  })
+  it('blocks customer uploads until the merchant explicitly accepts processing terms', async () => {
+    store.shop.findUnique.mockResolvedValue({ billingStatus: 'active', erasureStartedAt: null, uninstalledAt: null })
+    expect(await checkUploadAllowed('shop-a', 'gang_sheet', 1)).toMatchObject({ allowed: false, error: expect.stringContaining('processing terms') })
   })
 })

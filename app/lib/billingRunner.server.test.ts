@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('~/lib/prisma.server', () => ({ default: mocks }))
 import { runShopUsageBilling } from './billingRunner.server'
 import { buildUsageIdempotencyKey } from './billing.server'
+import { getPublicLegalOperator } from './publicLegal.server'
 
 describe('Shopify usage recording', () => {
   let row: any
@@ -21,10 +22,11 @@ describe('Shopify usage recording', () => {
   let beforeFirstRequest: (() => void) | null
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubEnv('PUBLIC_LEGAL_ENTITY_NAME', 'Fixture operator'); vi.stubEnv('PUBLIC_LEGAL_ENTITY_ADDRESS', 'Fixture address'); vi.stubEnv('PUBLIC_LEGAL_REVIEW_APPROVED', 'true')
     cap = 50; used = 0
     beforeFirstRequest = null
     row = { id: 'fee-1', shopId: 'shop-a', orderId: 'order-1', orderNumber: '#123', status: 'pending', commissionAmount: 3.5, paymentRef: null, collectibleAt: new Date(), reviewRequiredAt: null, shopifyFinancialStatus: 'paid', shopifyRefundStatus: null, shopifyCancelledAt: null, usageIdempotencyKey: null, usageLineItemId: null, usageRequestStartedAt: null, nextBillingAttemptAt: null }
-    mocks.shop.findUnique.mockResolvedValue({ id: 'shop-a', shopDomain: 'a.myshopify.com', uninstalledAt: null })
+    mocks.shop.findUnique.mockResolvedValue({ id: 'shop-a', shopDomain: 'a.myshopify.com', uninstalledAt: null, legalAgreementVersion: getPublicLegalOperator().version, legalAgreementAcceptedAt: new Date(), legalAgreementActorId: '123' })
     mocks.shop.updateMany.mockResolvedValue({ count: 1 })
     mocks.shopBilling.findUnique.mockResolvedValue(null)
     mocks.shopBilling.upsert.mockImplementation(({ create }) => create)
@@ -61,6 +63,12 @@ describe('Shopify usage recording', () => {
     expect(row.status).toBe('paid')
     await runShopUsageBilling('shop-a', admin)
     expect(usage).toHaveBeenCalledTimes(1)
+  })
+  it('does not start a usage charge without merchant processing agreement', async () => {
+    mocks.shop.findUnique.mockResolvedValue({ id: 'shop-a', shopDomain: 'a.myshopify.com', uninstalledAt: null })
+    await runShopUsageBilling('shop-a', admin)
+    expect(usage).not.toHaveBeenCalled()
+    expect(row.status).toBe('pending')
   })
   it('does not record unpaid, cancelled, refunded or partial-refund orders', async () => {
     for (const facts of [{ collectibleAt: null, shopifyFinancialStatus: 'pending' }, { shopifyCancelledAt: new Date() }, { shopifyRefundStatus: 'full' }, { shopifyRefundStatus: 'partial', reviewRequiredAt: new Date() }]) {
