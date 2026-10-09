@@ -26,6 +26,7 @@ import {
   storageConfigForShop,
 } from '~/lib/uploadUrls.server'
 import { corsJson } from '~/lib/cors.server'
+import { bindUploadCapability } from '~/lib/uploadCapability.server'
 import { shopifyGraphQL } from '~/lib/shopify.server'
 import {
   deriveUploadQuantityFacts,
@@ -86,7 +87,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return new Response('Not found', { status: 404 })
   }
 
-  // Each tenant container has its own database, so the id alone is scoped.
+  if (!bindUploadCapability(uploadId, new URL(request.url).searchParams.get('token'))) {
+    return new Response('Not found', { status: 404 })
+  }
+  // The verified capability binds the owner before any tenant data is read.
   const upload = await prisma.upload.findUnique({
     where: { id: uploadId },
     include: {
@@ -292,7 +296,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   </header>
   ${rows || '<p>No files attached to this design yet.</p>'}
   ${reorderUrl ? `<a class="reorder" href="${escapeHtml(reorderUrl)}">Order this design again</a>` : ''}
-  <footer>Created ${escapeHtml(upload.createdAt.toISOString().slice(0, 10))} · ${escapeHtml(upload.shop.shopDomain)} · <a href="${escapeHtml(buildIdentityUrl(upload.id))}.json">JSON</a></footer>
+  <footer>Created ${escapeHtml(upload.createdAt.toISOString().slice(0, 10))} · ${escapeHtml(upload.shop.shopDomain)} · <a href="${escapeHtml(buildIdentityUrl(upload.id, true))}">JSON</a></footer>
 </main>
 </body>
 </html>`

@@ -28,11 +28,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const category = url.searchParams.get("category") || "all";
 
 
-  const where: any = { shopDomain: session.shop };
+  const where: any = { shopId: shop.id };
   if (status !== "all") where.status = status;
   if (category !== "all") where.category = category;
 
-  const shopScope = { shopDomain: session.shop };
+  const shopScope = { shopId: shop.id };
 
   const [tickets, openCount, inProgressCount, resolvedCount, totalCount] = await Promise.all([
     prisma.supportTicket.findMany({
@@ -80,6 +80,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export async function action({ request }: ActionFunctionArgs) {
   const { session } = await authenticate.admin(request);
+  const shop = await prisma.shop.findUnique({ where: { shopDomain: session.shop }, select: { id: true } });
+  if (!shop) return json({ success: false, error: 'Shop not found' }, { status: 404 });
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
@@ -90,7 +92,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const ticket = await prisma.supportTicket.findFirst({
-    where: { id: ticketId, shopDomain: session.shop },
+    where: { id: ticketId, shopId: shop.id },
   });
 
   if (!ticket) {
@@ -102,7 +104,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const note = formData.get("note") as string;
 
     await prisma.supportTicket.updateMany({
-      where: { id: ticketId, shopDomain: session.shop },
+      where: { id: ticketId, shopId: shop.id },
       data: {
         status: newStatus,
         resolvedAt: newStatus === "resolved" ? new Date() : undefined,
@@ -146,7 +148,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     if (ticket.status === "open") {
       await prisma.supportTicket.updateMany({
-        where: { id: ticketId, shopDomain: session.shop },
+        where: { id: ticketId, shopId: shop.id },
         data: {
           status: "in_progress",
           firstReplyAt: ticket.firstReplyAt || new Date(),
@@ -367,7 +369,7 @@ export default function SupportPage() {
         <Layout.Section>
           <InlineStack gap="400" wrap={false}>
             <StatCard title="Open" value={stats.open} tone="warning" />
-            <StatCard title="In Progress" value={stats.inProgress} tone="info" />
+            <StatCard title="In Progress" value={stats.inProgress} />
             <StatCard title="Resolved" value={stats.resolved} tone="success" />
             <StatCard title="Total" value={stats.total} />
           </InlineStack>

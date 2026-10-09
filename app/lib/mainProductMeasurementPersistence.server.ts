@@ -1,6 +1,7 @@
 import prisma from '~/lib/prisma.server'
 import type { UploadLifecycleMetadata } from '~/lib/uploadLifecycle.server'
 import type { FinishedSheetSettings } from '~/lib/finishedSheetMeasurement'
+import { withTenantSql } from './tenantContext.server'
 
 export async function persistMainProductMeasurementProjection(
   itemId: string,
@@ -17,7 +18,7 @@ export async function persistMainProductMeasurementProjection(
     fitToleranceIn: settings.fitToleranceIn,
   })
 
-  const updated = await prisma.$executeRaw`
+  const updated = await withTenantSql((shopId) => prisma.$executeRaw`
     update upload_items
     set preflight_result_json = jsonb_set(
       jsonb_set(
@@ -36,7 +37,8 @@ export async function persistMainProductMeasurementProjection(
       true
     )
     where id = ${itemId}
-  `
+      and upload_id in (select id from uploads where shop_id = ${shopId})
+  `)
 
   if (updated !== 1) {
     throw new Error(`Upload item not found while saving canonical measurement: ${itemId}`)

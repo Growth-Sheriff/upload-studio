@@ -158,9 +158,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
       data: {
         shopId: shop.id,
         action: 'upload_approved',
-        entityType: 'upload',
-        entityId: uploadId!,
-        changes: { previousStatus: upload.status },
+        resourceType: 'upload',
+        resourceId: uploadId!,
+        metadata: { previousStatus: upload.status },
       },
     })
 
@@ -187,9 +187,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
       data: {
         shopId: shop.id,
         action: 'upload_rejected',
-        entityType: 'upload',
-        entityId: uploadId!,
-        changes: { reason, previousStatus: upload.status },
+        resourceType: 'upload',
+        resourceId: uploadId!,
+        metadata: { reason, previousStatus: upload.status },
       },
     })
 
@@ -208,9 +208,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
       data: {
         shopId: shop.id,
         action: 'upload_approved_with_warnings',
-        entityType: 'upload',
-        entityId: uploadId!,
-        changes: { previousStatus: upload.status },
+        resourceType: 'upload',
+        resourceId: uploadId!,
+        metadata: { previousStatus: upload.status },
       },
     })
 

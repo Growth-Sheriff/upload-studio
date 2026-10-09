@@ -13,6 +13,7 @@ import {
   isBunnyUrl,
   type StorageConfig,
 } from '~/lib/storage.server'
+import { createUploadCapability } from './uploadCapability.server'
 
 const LOCAL_TOKEN_TTL_MS = 365 * 24 * 3600 * 1000
 
@@ -31,8 +32,8 @@ function encodePath(key: string): string {
 }
 
 /** Absolute identity page URL for an upload (HTML for humans, .json for machines). */
-export function buildIdentityUrl(uploadId: string): string {
-  return `${appHost()}/i/${uploadId}`
+export function buildIdentityUrl(uploadId: string, json = false): string {
+  return `${appHost()}/i/${uploadId}${json ? '.json' : ''}?token=${createUploadCapability(uploadId)}`
 }
 
 export function storageConfigForShop(shop: {

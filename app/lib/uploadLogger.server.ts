@@ -15,6 +15,7 @@
 
 
 import prisma from './prisma.server'
+import { getTenantShopId } from './tenantContext.server'
 
 
 
@@ -396,6 +397,9 @@ class UploadLogger {
   }
 
   private async persistToDatabase(entry: UploadLogEntry): Promise<void> {
+    const shopId = getTenantShopId()
+    // Authentication errors have no owner and remain operational stdout logs.
+    if (!shopId || (entry.context.shopId && entry.context.shopId !== shopId)) return
     try {
 
 
@@ -405,7 +409,7 @@ class UploadLogger {
           level: entry.level,
           uploadId: entry.context.uploadId,
           itemId: entry.context.itemId,
-          shopId: entry.context.shopId,
+          shopId,
           provider: entry.context.provider,
           traceId: entry.traceId,
           context: entry.context as any,
