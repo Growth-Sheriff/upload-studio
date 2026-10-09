@@ -10,9 +10,8 @@
 <script src="{{ 'ul-multipart-uploader.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-line-properties.js' | asset_url }}" defer></script>
 <script src="{{ 'custom-price-upload-mod2.js' | asset_url }}" defer></script>
+{{ 'custom-price-upload-mod2-utilities.css' | asset_url | stylesheet_tag }}
 {{ 'custom-price-upload-mod2.css' | asset_url | stylesheet_tag }}
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="{{ 'custom-price-upload-mod2-tailwind.js' | asset_url }}" defer></script>
 <style>
   {{ settings.font_body | font_face: font_display: 'swap' }}
   {{ settings.font_heading | font_face: font_display: 'swap' }}
@@ -22,6 +21,10 @@
     --ul-mod2-font-size: {{ settings.font_size_base | default: 14 }}px;
     --ul-mod2-color-text: {{ settings.color_text | default: "#0f1111" }};
     --ul-mod2-color-primary: {{ settings.color_primary | default: "#ff9900" }};
+    --ul-mod2-color-yellow: {{ settings.color_primary | default: "#febd69" }};
+    --ul-mod2-color-secondary: {{ settings.color_secondary | default: "#131921" }};
+    --ul-mod2-color-link: {{ settings.color_link | default: "#007185" }};
+    --ul-mod2-color-link-hover: {{ settings.color_link | default: "#c45500" }};
   }
 </style>
 
@@ -33,7 +36,7 @@
         <div class="ul-main-gallery-panel">
           <div class="aspect-square bg-gray-50 mb-4 relative border border-gray-200 p-2">
             {% if product.featured_image %}
-              <img src="{{ product.featured_image | image_url: width: 800 }}" alt="{{ product.title | escape }}" class="ul-main-product-image w-full h-full object-contain mix-blend-multiply">
+              <img src="{{ product.featured_image | image_url: width: 800 }}" alt="{{ product.title | escape }}" width="{{ product.featured_image.width }}" height="{{ product.featured_image.height }}" class="ul-main-product-image w-full h-full object-contain mix-blend-multiply">
             {% else %}
               {{ 'product-1' | placeholder_svg_tag: 'w-full h-full object-contain' }}
             {% endif %}
@@ -45,7 +48,7 @@
           <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
             {% for image in product.images %}
               <button type="button" class="ul-main-thumb w-12 h-12 flex-shrink-0 border border-gray-300 hover:border-amazon-orange cursor-pointer js-thumb-click" data-image-url="{{ image | image_url: width: 800 }}" aria-label="Show product image {{ forloop.index }}">
-                <img src="{{ image | image_url: width: 100 }}" alt="{{ product.title | escape }}" class="w-full h-full object-cover">
+                <img src="{{ image | image_url: width: 100 }}" alt="{{ product.title | escape }}" width="{{ image.width }}" height="{{ image.height }}" loading="lazy" class="w-full h-full object-cover">
               </button>
             {% else %}
               {% for i in (1..4) %}
@@ -203,7 +206,7 @@
             </div>
             <div class="ul-main-upload-feedback hidden mt-4 text-left">
               <div class="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3">
-                <img class="ul-main-upload-thumb hidden h-16 w-16 rounded object-cover border border-gray-200" alt="Upload preview">
+                <img class="ul-main-upload-thumb hidden h-16 w-16 rounded object-cover border border-gray-200" alt="Upload preview" width="64" height="64">
                 <div class="min-w-0 flex-1">
                   <div class="ul-main-upload-name truncate text-sm font-medium text-gray-900"></div>
                   <div class="ul-main-upload-meta text-xs text-gray-500 mt-1"></div>
@@ -414,7 +417,7 @@
               <div class="ul-main-vip-preview-stage-wrap">
                 <div class="ul-main-vip-preview-stage-rail">
                   <div class="ul-main-vip-preview-stage">
-                    <img class="ul-main-vip-preview-image hidden" alt="VIP uploaded page preview">
+                    <img class="ul-main-vip-preview-image hidden" alt="VIP uploaded page preview" width="1024" height="1024">
                     <div class="ul-main-vip-preview-artwork hidden"></div>
                   </div>
                 </div>

@@ -1,7 +1,6 @@
 {% liquid
   assign api_base = proxy_path | default: "/apps/customizer"
   assign shop_domain = shop.permanent_domain
-  assign product_id = product.id
   assign current_variant = product.selected_or_first_available_variant
 %}
 {{ 'dtf-uploader.css' | asset_url | stylesheet_tag }}
@@ -56,7 +55,7 @@
         </div>
       </div>
       <div class="ul-file-preview" id="ul-preview-{{ product.id }}">
-        <img class="ul-file-thumb" id="ul-thumb-{{ product.id }}" src="" alt="Preview" width="72" height="72">
+        <img class="ul-file-thumb" id="ul-thumb-{{ product.id }}" alt="Preview" width="72" height="72">
         <div class="ul-file-info">
           <div class="ul-file-name" id="ul-filename-{{ product.id }}">design.png</div>
           <div class="ul-file-meta" id="ul-filemeta-{{ product.id }}">2400 x 3200 px • 300 DPI • 2.4 MB</div>

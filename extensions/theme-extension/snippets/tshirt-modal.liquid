@@ -39,7 +39,7 @@
               <div class="ul-step1-section-desc">Your uploaded design is ready to use on a t-shirt.</div>
               <div class="ul-inherited-design" id="ul-inherited-design">
                 <div class="ul-inherited-preview">
-                  <img src="" alt="Design preview" class="ul-inherited-thumb" id="ul-inherited-thumb" width="80" height="80">
+                  <img alt="Design preview" class="ul-inherited-thumb" id="ul-inherited-thumb" width="80" height="80">
                   <div class="ul-inherited-info">
                     <div class="ul-inherited-name" id="ul-inherited-name">design.png</div>
                     <div class="ul-inherited-meta" id="ul-inherited-meta">2400 x 3200 px • 300 DPI</div>
@@ -75,7 +75,7 @@
               <div id="ul-new-upload-preview" style="display: none; margin-top: 16px;">
                 <div class="ul-inherited-design selected">
                   <div class="ul-inherited-preview">
-                    <img src="" alt="Uploaded design" class="ul-inherited-thumb" id="ul-new-upload-thumb" width="80" height="80">
+                    <img alt="Uploaded design" class="ul-inherited-thumb" id="ul-new-upload-thumb" width="80" height="80">
                     <div class="ul-inherited-info">
                       <div class="ul-inherited-name" id="ul-new-upload-name">design.png</div>
                       <div class="ul-inherited-meta" id="ul-new-upload-meta">Uploaded successfully</div>
@@ -309,13 +309,4 @@
   }
 }
 </script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-<script type="module">
-  import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
-  import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-  window.THREE.DecalGeometry = DecalGeometry;
-  window.THREE.GLTFLoader = GLTFLoader;
-</script>
-<script src="{{ 'tshirt-three-addons.js' | asset_url }}"></script>
-
-<script src="{{ 'tshirt-modal.js' | asset_url }}" defer></script>
+<script type="module" src="{{ 'tshirt-three-runtime.js' | asset_url }}" data-ul-tshirt-runtime data-modal-script="{{ 'tshirt-modal.js' | asset_url }}"></script>
