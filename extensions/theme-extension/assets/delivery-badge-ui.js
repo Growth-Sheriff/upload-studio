@@ -7,7 +7,7 @@
     cutoffHour: 14,
     timezone: 'America/New_York',
     warehouseState: 'NJ',
-    geoIPCacheDuration: 30 * 60 * 1000,
+    deliveryLocationCacheDuration: 30 * 60 * 1000,
     debug: false
   };
 
@@ -35,15 +35,15 @@
     }
   }
 
-  const GEOIP_CACHE_KEY = 'deliveryGeoIP';
+  const DELIVERY_LOCATION_CACHE_KEY = 'deliveryPostalLocation';
 
-  function getCachedGeoIP() {
-    const cached = safeGetItem(GEOIP_CACHE_KEY);
+  function getCachedDeliveryLocation() {
+    const cached = safeGetItem(DELIVERY_LOCATION_CACHE_KEY);
     if (!cached) return null;
 
     try {
       const data = JSON.parse(cached);
-      if (Date.now() - data.timestamp < CONFIG.geoIPCacheDuration) {
+      if (Date.now() - data.timestamp < CONFIG.deliveryLocationCacheDuration) {
         return data.location;
       }
     } catch (e) {
@@ -52,8 +52,8 @@
     return null;
   }
 
-  function setCachedGeoIP(location) {
-    safeSetItem(GEOIP_CACHE_KEY, JSON.stringify({
+  function setCachedDeliveryLocation(location) {
+    safeSetItem(DELIVERY_LOCATION_CACHE_KEY, JSON.stringify({
       location,
       timestamp: Date.now()
     }));
@@ -175,7 +175,7 @@
 
   async function detectLocation() {
 
-    const cached = getCachedGeoIP();
+    const cached = getCachedDeliveryLocation();
     if (cached) {
       customerLocation = cached;
       return cached;
@@ -193,7 +193,7 @@
             source: 'shopify_customer'
           };
           customerLocation = location;
-          setCachedGeoIP(location);
+          setCachedDeliveryLocation(location);
           return location;
         }
       }
@@ -208,29 +208,8 @@
         source: 'stored'
       };
       customerLocation = location;
-      setCachedGeoIP(location);
+      setCachedDeliveryLocation(location);
       return location;
-    }
-
-    try {
-      const response = await fetch('https://ipapi.co/json/', { timeout: 3000 });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.country_code === 'US' && data.postal) {
-          const location = {
-            zip: data.postal,
-            state: data.region_code || getStateFromZip(data.postal),
-            city: data.city,
-            country: 'US',
-            source: 'geoip'
-          };
-          customerLocation = location;
-          setCachedGeoIP(location);
-          return location;
-        }
-      }
-    } catch (e) {
-
     }
 
     const defaultLocation = {
@@ -255,7 +234,7 @@
 
     customerLocation = location;
     safeSetItem('customerZip', zip);
-    setCachedGeoIP(location);
+    setCachedDeliveryLocation(location);
 
     document.dispatchEvent(new CustomEvent('deliveryLocationChanged', { detail: location }));
   }
@@ -468,5 +447,5 @@
     setTimeout(initDeliveryBadges, 0);
   }
 
-  console.log('[DeliveryBadge] v2.0.0 loaded - GeoIP caching & province fallback fixed');
+  console.log('[DeliveryBadge] Loaded - postal shipping estimates');
 })();

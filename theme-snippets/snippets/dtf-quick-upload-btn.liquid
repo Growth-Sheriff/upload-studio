@@ -36,7 +36,7 @@
 </button>
 
 <template id="{{ modal_id }}-tpl">
-<div id="{{ modal_id }}" class="ul-quick-modal" data-api-base="{{ api_base }}" data-shop="{{ shop_domain }}" data-product-id="{{ product.id }}" data-unique-id="{{ unique_id }}" data-customer-id="{{ customer.id | default: '' }}" data-customer-email="{{ customer.email | default: '' }}">
+<div id="{{ modal_id }}" class="ul-quick-modal" data-api-base="{{ api_base }}" data-shop="{{ shop_domain }}" data-product-id="{{ product.id }}" data-unique-id="{{ unique_id }}" data-customer-id="{{ customer.id | default: '' }}">
   <div class="ul-quick-modal-overlay" data-close="{{ modal_id }}"></div>
   <div class="ul-quick-modal-content">
     <button class="ul-quick-modal-close" data-close="{{ modal_id }}">&times;</button>
@@ -875,7 +875,6 @@
     const shopDomain = modal.dataset.shop;
     const productId = modal.dataset.productId;
     const customerId = modal.dataset.customerId || null;
-    const customerEmail = modal.dataset.customerEmail || null;
 
     const dropzone = document.getElementById('ul-dropzone-' + uniqueId);
     const progress = document.getElementById('ul-progress-' + uniqueId);
@@ -901,8 +900,6 @@
 
     const mimeType = file.type || 'application/octet-stream';
 
-    const visitorId = window.ULVisitor?.getVisitorId?.() || null;
-    const sessionId = window.ULVisitor?.getSessionId?.() || null;
 
     try {
       const intentResponse = await fetch(`${apiBase}/api/upload/intent`, {
@@ -915,10 +912,7 @@
           contentType: mimeType,
           fileName: file.name,
           fileSize: file.size,
-          customerId: customerId,
-          customerEmail: customerEmail,
-          visitorId: visitorId,
-          sessionId: sessionId
+          customerId: customerId
         })
       });
 

@@ -30,7 +30,6 @@
           <div class="ul-card-info">
             <span class="ul-card-vendor">{{ p.vendor | default: 'BRAND' }}</span>
             <h3 class="ul-card-title"><a href="{{ p.url }}">{{ p.title }}</a></h3>
-            {% if block.settings.show_reviews %}<div class="ul-card-rating"><span class="ul-stars">★★★★★</span><span class="ul-rating-count">({{ p.id | modulo: 200 | plus: 50 }})</span></div>{% endif %}
             <div class="ul-card-price">{% if p.compare_at_price > p.price %}<span class="ul-compare-price">{{ p.compare_at_price | money }}</span>{% endif %}<span class="ul-current-price">{{ p.price | money }}</span></div>
             <a class="ul-upload-btn" href="{{ p.url }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg><span>Open Product</span></a>
           </div>
@@ -80,12 +79,6 @@
       "step": 1,
       "default": 6,
       "label": "Max Products to Show"
-    },
-    {
-      "type": "checkbox",
-      "id": "show_reviews",
-      "label": "Show Star Ratings",
-      "default": true
     }
   ]
 }

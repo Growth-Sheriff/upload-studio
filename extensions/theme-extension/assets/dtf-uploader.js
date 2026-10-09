@@ -62,7 +62,9 @@
       const instance = {
         productId,
         container,
-        apiBase: container.dataset.apiBase,
+        apiBase: window.ULResolveProxyBase
+          ? window.ULResolveProxyBase(container.dataset.apiBase)
+          : '/apps/customizer',
         shopDomain: container.dataset.shopDomain,
         productTitle: container.dataset.productTitle,
 
@@ -482,14 +484,6 @@
             this.updatePriceDisplay(productId)
             this.validateForm(productId)
 
-            if (window.ULAnalytics) {
-              window.ULAnalytics.trackDTFSizeSelected({
-                size: option.dataset.title || option.textContent,
-                variantId: option.value,
-                price: instance.state.form.selectedVariantPrice / 100,
-                productId,
-              })
-            }
           }
         })
       } else if (elements.sizeGrid) {
@@ -502,14 +496,6 @@
             this.updatePriceDisplay(productId)
             this.validateForm(productId)
 
-            if (window.ULAnalytics) {
-              window.ULAnalytics.trackDTFSizeSelected({
-                size: radio.dataset.title,
-                variantId: radio.value,
-                price: instance.state.form.selectedVariantPrice / 100,
-                productId,
-              })
-            }
           })
         })
       }
@@ -634,15 +620,6 @@
         })
       }
 
-      if (window.ULAnalytics) {
-        window.ULAnalytics.startTiming('dtf_upload')
-        window.ULAnalytics.trackDTFUploadStarted({
-          fileName: file.name,
-          fileSize: file.size,
-          fileType: file.type,
-          productId,
-        })
-      }
 
       instance.uploadStartTime = Date.now()
 
@@ -670,10 +647,7 @@
         })
 
         const customerId = window.ULCustomer?.id || null
-        const customerEmail = window.ULCustomer?.email || null
 
-        const visitorId = window.ULVisitor?.getVisitorId?.() || null
-        const sessionId = window.ULVisitor?.getSessionId?.() || null
 
         const intentResponse = await fetch(`${apiBase}/api/upload/intent`, {
           method: 'POST',
@@ -687,9 +661,6 @@
             contentType: file.type || 'application/octet-stream',
             fileSize: file.size,
             customerId: customerId ? String(customerId) : null,
-            customerEmail: customerEmail,
-            visitorId: visitorId,
-            sessionId: sessionId,
           }),
         })
 
@@ -785,14 +756,6 @@
         const errorMessage = error.message || 'Upload failed. Please try again.'
         this.showError(productId, errorMessage)
 
-        if (window.ULAnalytics) {
-          window.ULAnalytics.trackDTFUploadFailed({
-            fileName: state.upload.file.name,
-            errorCode: 'UPLOAD_FAILED',
-            errorMessage: errorMessage,
-            productId,
-          })
-        }
 
         if (window.ULErrorHandler) {
 
@@ -823,38 +786,6 @@
       return new Promise((resolve) => setTimeout(resolve, ms))
     },
 
-    createUploadTelemetry() {
-      return window.ULUploadTelemetry && window.ULUploadTelemetry.create
-        ? window.ULUploadTelemetry.create()
-        : null
-    },
-
-    renderUploadProgress(elements, telemetry, loaded, total, suffix) {
-      if (!elements || !elements.progressText) return
-
-      if (telemetry) {
-        telemetry.tick(loaded, total)
-        elements.progressText.textContent = telemetry.formatProgress({ suffix })
-        return
-      }
-
-      const loadedMB = (loaded / (1024 * 1024)).toFixed(1)
-      const totalMB = (total / (1024 * 1024)).toFixed(1)
-      elements.progressText.textContent = `${loadedMB} / ${totalMB} MB${suffix ? ` ${suffix}` : ''}`
-    },
-
-    renderUploadComplete(elements, telemetry, fileSize) {
-      if (!elements || !elements.progressText) return
-
-      if (telemetry) {
-        elements.progressText.textContent = telemetry.formatComplete(fileSize)
-        return
-      }
-
-      const totalMB = (fileSize / (1024 * 1024)).toFixed(1)
-      elements.progressText.textContent = `✓ ${totalMB} MB uploaded`
-    },
-
     async uploadToStorage(productId, file, intentData) {
       const instance = this.instances[productId]
       const { elements, state } = instance
@@ -862,7 +793,7 @@
       // Try parallel multipart upload first (R2-only, large files)
       if (intentData.multipart && window.ULMultipartUploader && window.ULMultipartUploader.tryUpload) {
         try {
-          const mpTelemetry = this.createUploadTelemetry()
+          const mpStart = Date.now()
           const mpResult = await window.ULMultipartUploader.tryUpload(file, intentData, {
             shopDomain: instance.shopDomain || intentData.shopDomain,
             onProgress: (loaded, total) => {
@@ -870,8 +801,6 @@
               const ratio = total > 0 ? loaded / total : 0
               const percent = 15 + ratio * 60
               elements.progressFill.style.width = `${percent}%`
-              this.renderUploadProgress(elements, mpTelemetry, loaded, total, '(parallel)')
-              return
               const elapsed = (Date.now() - mpStart) / 1000
               const speed = elapsed > 0 ? loaded / elapsed : 0
               const remaining = speed > 0 ? (total - loaded) / speed : 0
@@ -1051,7 +980,6 @@
       const startTime = Date.now()
       const fileSize = file.size
       const instance = productId ? this.instances[productId] : null
-      const telemetry = this.createUploadTelemetry()
 
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest()
@@ -1064,8 +992,6 @@
           if (e.lengthComputable) {
             const percent = 15 + (e.loaded / e.total) * 60
             elements.progressFill.style.width = `${percent}%`
-            this.renderUploadProgress(elements, telemetry, e.loaded, e.total)
-            return
 
             const elapsed = (Date.now() - startTime) / 1000
             const speed = elapsed > 0 ? e.loaded / elapsed : 0
@@ -1086,9 +1012,6 @@
 
         xhr.addEventListener('load', () => {
           if (xhr.status >= 200 && xhr.status < 300) {
-            this.renderUploadComplete(elements, telemetry, fileSize)
-            resolve({ fileUrl: intentData.publicUrl })
-            return
             const duration = ((Date.now() - startTime) / 1000).toFixed(1)
             const totalMB = (fileSize / (1024 * 1024)).toFixed(1)
             elements.progressText.textContent = `✓ ${totalMB} MB uploaded in ${duration}s`
@@ -1155,7 +1078,6 @@
       const startTime = Date.now()
       const fileSize = file.size
       const instance = productId ? this.instances[productId] : null
-      const telemetry = this.createUploadTelemetry()
 
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest()
@@ -1168,8 +1090,6 @@
           if (e.lengthComputable) {
             const percent = 15 + (e.loaded / e.total) * 60
             elements.progressFill.style.width = `${percent}%`
-            this.renderUploadProgress(elements, telemetry, e.loaded, e.total)
-            return
 
             const elapsed = (Date.now() - startTime) / 1000
             const speed = elapsed > 0 ? e.loaded / elapsed : 0
@@ -1190,9 +1110,6 @@
 
         xhr.addEventListener('load', () => {
           if (xhr.status >= 200 && xhr.status < 300) {
-            this.renderUploadComplete(elements, telemetry, fileSize)
-            resolve({ fileUrl: intentData.publicUrl })
-            return
             const duration = ((Date.now() - startTime) / 1000).toFixed(1)
             const totalMB = (fileSize / (1024 * 1024)).toFixed(1)
             elements.progressText.textContent = `✓ ${totalMB} MB uploaded in ${duration}s`
@@ -1233,7 +1150,6 @@
       const startTime = Date.now()
       const fileSize = file.size
       const instance = productId ? this.instances[productId] : null
-      const telemetry = this.createUploadTelemetry()
 
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest()
@@ -1246,8 +1162,6 @@
           if (e.lengthComputable) {
             const percent = 15 + (e.loaded / e.total) * 60
             elements.progressFill.style.width = `${percent}%`
-            this.renderUploadProgress(elements, telemetry, e.loaded, e.total)
-            return
 
             const elapsed = (Date.now() - startTime) / 1000
             const speed = elapsed > 0 ? e.loaded / elapsed : 0
@@ -1268,9 +1182,6 @@
 
         xhr.addEventListener('load', () => {
           if (xhr.status >= 200 && xhr.status < 300) {
-            this.renderUploadComplete(elements, telemetry, fileSize)
-            resolve()
-            return
             const duration = ((Date.now() - startTime) / 1000).toFixed(1)
             const totalMB = (fileSize / (1024 * 1024)).toFixed(1)
             elements.progressText.textContent = `✓ ${totalMB} MB uploaded in ${duration}s`
@@ -1393,19 +1304,6 @@
         }))
       } catch (error) {
         console.warn('[UL] Failed to save upload to sessionStorage:', error)
-      }
-      if (window.ULAnalytics) {
-        const uploadDuration = window.ULAnalytics.endTiming('dtf_upload')
-        window.ULAnalytics.trackDTFUploadCompleted({
-          uploadId,
-          fileName: state.upload.file.name,
-          fileSize: state.upload.file.size,
-          width: state.upload.result.width,
-          height: state.upload.result.height,
-          dpi: state.upload.result.dpi,
-          duration: uploadDuration,
-          productId,
-        })
       }
       this.showPreview(productId)
       elements.progress.classList.remove('active')
@@ -1870,12 +1768,6 @@
         elements.progressText.textContent = 'Upload cancelled'
       }
 
-      if (window.ULAnalytics) {
-        window.ULAnalytics.trackEvent('upload_cancelled', {
-          productId,
-          fileName: state.upload.file?.name || '',
-        })
-      }
 
       console.log('[UL] Upload cancelled successfully')
     },
@@ -2054,12 +1946,6 @@
         return
       }
 
-      if (window.ULAnalytics) {
-        window.ULAnalytics.trackDTFCustomizeClicked({
-          uploadId: state.upload.uploadId,
-          productId,
-        })
-      }
 
       if (window.ULState) {
         window.ULState.set('tshirt.useInheritedDesign', true)
@@ -2201,16 +2087,6 @@
 
         this.showToast('Added to cart!', 'success')
 
-        if (window.ULAnalytics) {
-          window.ULAnalytics.trackDTFAddToCart({
-            uploadId: upload.uploadId,
-            variantId: form.selectedVariantId,
-            size: form.selectedVariantTitle,
-            quantity: form.quantity,
-            price: (form.selectedVariantPrice * form.quantity) / 100,
-            productId,
-          })
-        }
 
         document.dispatchEvent(
           new CustomEvent('ul:addedToCart', {
@@ -2376,14 +2252,6 @@
         this.updatePriceDisplay(productId)
         this.validateForm(productId)
 
-        if (window.ULAnalytics) {
-          window.ULAnalytics.trackDTFSizeSelected({
-            size: variant.title,
-            variantId: variant.id,
-            price: variant.price / 100,
-            productId,
-          })
-        }
       } else {
         console.warn('[UL] No matching variant found for options:', selectedOptions)
 

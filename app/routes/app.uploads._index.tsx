@@ -10,15 +10,12 @@ import {
   ChoiceList,
   DataTable,
   Filters,
-  Icon,
   InlineStack,
   Layout,
   Page,
   Pagination,
   Text,
-  Tooltip,
 } from '@shopify/polaris'
-import { PersonIcon } from '@shopify/polaris-icons'
 import { useCallback, useState } from 'react'
 import prisma from '~/lib/prisma.server'
 import { getDownloadSignedUrl, getStorageConfig } from '~/lib/storage.server'
@@ -70,26 +67,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
             uploadDurationMs: true,
           },
         },
-        visitor: {
-          select: {
-            id: true,
-            customerEmail: true,
-            shopifyCustomerId: true,
-            deviceType: true,
-            browser: true,
-            country: true,
-          },
-        },
-        session: {
-          select: {
-            id: true,
-            utmSource: true,
-            utmMedium: true,
-            utmCampaign: true,
-            referrerType: true,
-            referrerDomain: true,
-          },
-        },
       },
       orderBy: { createdAt: 'desc' },
       skip,
@@ -130,27 +107,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
       )
 
 
-      const utmInfo = u.session
-        ? {
-            source: u.session.utmSource,
-            medium: u.session.utmMedium,
-            campaign: u.session.utmCampaign,
-            referrerType: u.session.referrerType,
-            referrerDomain: u.session.referrerDomain,
-          }
-        : null
-
-
-      const visitorInfo = u.visitor
-        ? {
-            email: u.visitor.customerEmail,
-            customerId: u.visitor.shopifyCustomerId,
-            deviceType: u.visitor.deviceType,
-            browser: u.visitor.browser,
-            country: u.visitor.country,
-          }
-        : null
-
       return {
         id: u.id,
         mode: u.mode,
@@ -159,14 +115,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
         orderPaidAt: u.orderPaidAt?.toISOString() || null,
         cartAddedAt: u.cartAddedAt?.toISOString() || null,
         productId: u.productId,
-        customerId: u.customerId,
-        customerEmail: u.customerEmail,
         itemCount: u.items.length,
         thumbnailUrl,
         totalFileSize,
         totalUploadDurationMs,
-        utmInfo,
-        visitorInfo,
         preflightStatus: u.items.some((i) => i.preflightStatus === 'error')
           ? 'error'
           : u.items.some((i) => i.preflightStatus === 'warning')
@@ -233,128 +185,6 @@ function formatDuration(ms: number): string {
 }
 
 
-function UTMBadge({
-  utmInfo,
-}: {
-  utmInfo: {
-    source?: string | null
-    medium?: string | null
-    campaign?: string | null
-    referrerType?: string | null
-    referrerDomain?: string | null
-  } | null
-}) {
-  if (!utmInfo)
-    return (
-      <Text as="span" tone="subdued">
-        -
-      </Text>
-    )
-
-  const { source, medium, campaign, referrerType, referrerDomain } = utmInfo
-
-
-  let displayText = ''
-  let tooltipContent = ''
-
-  if (source) {
-    displayText = source
-    tooltipContent = `Source: ${source}`
-    if (medium) tooltipContent += `\nMedium: ${medium}`
-    if (campaign) tooltipContent += `\nCampaign: ${campaign}`
-  } else if (referrerType) {
-    displayText = referrerType.replace('_', ' ')
-    tooltipContent = `Referrer Type: ${referrerType}`
-    if (referrerDomain) tooltipContent += `\nDomain: ${referrerDomain}`
-  } else {
-    return (
-      <Text as="span" tone="subdued">
-        Direct
-      </Text>
-    )
-  }
-
-  const toneMap: Record<string, 'success' | 'info' | 'warning' | 'attention'> = {
-    google: 'success',
-    facebook: 'info',
-    instagram: 'info',
-    tiktok: 'attention',
-    organic_search: 'success',
-    paid_search: 'warning',
-    social: 'info',
-    email: 'attention',
-  }
-
-  return (
-    <Tooltip content={tooltipContent}>
-      <Badge tone={toneMap[source || referrerType || ''] || 'info'}>{displayText}</Badge>
-    </Tooltip>
-  )
-}
-
-
-function VisitorInfo({
-  visitorInfo,
-  customerEmail,
-  customerId: uploadCustomerId,
-}: {
-  visitorInfo: {
-    email?: string | null
-    customerId?: string | null
-    deviceType?: string | null
-    browser?: string | null
-    country?: string | null
-  } | null
-  customerEmail?: string | null
-  customerId?: string | null
-}) {
-
-  const email = customerEmail || visitorInfo?.email
-
-  const customerId = uploadCustomerId || visitorInfo?.customerId
-
-
-  const isLoggedInCustomer = !!email
-
-  if (!email && !customerId && !visitorInfo) {
-    return (
-      <Text as="span" tone="subdued">
-        Anonymous
-      </Text>
-    )
-  }
-
-  const tooltipParts = []
-  if (email) tooltipParts.push(`Email: ${email}`)
-  if (customerId) tooltipParts.push(`Customer ID: ${customerId}`)
-  if (visitorInfo?.deviceType) tooltipParts.push(`Device: ${visitorInfo.deviceType}`)
-  if (visitorInfo?.browser) tooltipParts.push(`Browser: ${visitorInfo.browser}`)
-  if (visitorInfo?.country) tooltipParts.push(`Country: ${visitorInfo.country}`)
-
-
-  const displayText = email
-    ? email.length > 20
-      ? email.slice(0, 17) + '...'
-      : email
-    : visitorInfo?.deviceType || 'Visitor'
-
-  return (
-    <Tooltip content={tooltipParts.join('\n')}>
-      <InlineStack gap="100" blockAlign="center">
-        <Icon source={PersonIcon} tone={isLoggedInCustomer ? 'magic' : 'subdued'} />
-        <Text as="span" variant="bodySm">
-          {displayText}
-        </Text>
-        {isLoggedInCustomer && (
-          <Badge tone="success" size="small">
-            Customer
-          </Badge>
-        )}
-      </InlineStack>
-    </Tooltip>
-  )
-}
-
 export default function UploadsPage() {
   const data = useLoaderData<typeof loader>()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -364,7 +194,7 @@ export default function UploadsPage() {
     return (
       <Page title="Error">
         <Card>
-          <Text as="p">{data.error}</Text>
+          <Text as="p">{String(data.error)}</Text>
         </Card>
       </Page>
     )
@@ -451,15 +281,6 @@ export default function UploadsPage() {
     </Text>,
 
     upload.itemCount,
-
-    <UTMBadge key={`${upload.id}-utm`} utmInfo={upload.utmInfo} />,
-
-    <VisitorInfo
-      key={`${upload.id}-visitor`}
-      visitorInfo={upload.visitorInfo}
-      customerEmail={upload.customerEmail}
-      customerId={upload.customerId}
-    />,
 
     new Date(upload.createdAt).toLocaleDateString(),
   ])
@@ -555,8 +376,6 @@ export default function UploadsPage() {
                     'text',
                     'numeric',
                     'text',
-                    'text',
-                    'text',
                   ]}
                   headings={[
                     'Upload',
@@ -566,8 +385,6 @@ export default function UploadsPage() {
                     'File size',
                     'Time',
                     'Items',
-                    'Source',
-                    'Customer',
                     'Date',
                   ]}
                   rows={rows}

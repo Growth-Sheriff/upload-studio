@@ -16,6 +16,7 @@ import {
 import { useState, useCallback } from "react";
 import { authenticate } from "~/shopify.server";
 import prisma from "~/lib/prisma.server";
+import { Prisma } from '@prisma/client';
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request);
@@ -175,7 +176,7 @@ export async function action({ request }: ActionFunctionArgs) {
       data: {
         onboardingStep: newStep,
         onboardingCompleted: isComplete,
-        onboardingData,
+        onboardingData: onboardingData as Prisma.InputJsonObject,
         storageProvider: storageProvider || shop.storageProvider,
       },
     });
@@ -547,7 +548,7 @@ export default function AppDashboard() {
 
         <Grid>
 
-          <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 8, lg: 8, xl: 8 }}>
+          <Grid.Cell columnSpan={{ xs: 6, sm: 6, md: 6, lg: 8, xl: 8 }}>
             <Card>
               <BlockStack gap="400">
                 <InlineStack align="space-between">
@@ -596,7 +597,7 @@ export default function AppDashboard() {
                   <Divider />
                   <BlockStack gap="200">
                     <Text as="p" variant="bodySm"><strong>3D Designer</strong> - Real-time product preview</Text>
-                    <Text as="p" variant="bodySm"><strong>Analytics</strong> - Track your upload performance</Text>
+                    <Text as="p" variant="bodySm"><strong>Production queue</strong> - Review files linked to your orders</Text>
                     <Text as="p" variant="bodySm"><strong>API v1</strong> - Integrate with your systems</Text>
                   </BlockStack>
                 </BlockStack>

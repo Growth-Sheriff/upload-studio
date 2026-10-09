@@ -1,5 +1,5 @@
 {% liquid
-  assign api_base = "/apps/customizer"
+  assign api_base = proxy_path | default: "/apps/customizer"
   assign shop_domain = shop.permanent_domain
   assign product_id = product.id
   assign current_variant = product.selected_or_first_available_variant
@@ -10,7 +10,7 @@
 <div
   id="ul-dtf-{{ product.id }}"
   class="ul-dtf-uploader"
-  data-api-base="{{ api_base }}"
+  data-api-base="{{ api_base | escape }}"
   data-shop-domain="{{ shop_domain }}"
   data-product-id="{{ product.id }}"
   data-product-title="{{ product.title | escape }}"
@@ -186,9 +186,7 @@
   <span id="ul-toast-text">Added to cart!</span>
 </div>
 <script src="{{ 'ul-line-properties.js' | asset_url }}" defer></script>
-<script src="{{ 'ul-analytics.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-error-handler.js' | asset_url }}" defer></script>
-<script src="{{ 'ul-upload-telemetry.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-multipart-uploader.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-file-probe.js' | asset_url }}" defer></script>
 <script src="{{ 'dtf-uploader.js' | asset_url }}" defer></script>

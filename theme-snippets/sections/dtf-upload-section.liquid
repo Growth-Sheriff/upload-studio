@@ -42,17 +42,13 @@
 
 <script>
   window.ULCustomer = window.ULCustomer || {
-    id: {{ customer.id | default: 'null' }},
-    email: {{ customer.email | json | default: 'null' }}
+    id: {{ customer.id | default: 'null' }}
   };
 </script>
 <script src="{{ asset_base }}ul-state.js" defer></script>
-<script src="{{ asset_base }}ul-visitor.js" defer data-shop-domain="{{ shop.permanent_domain }}"></script>
 
 {% if has_upload_studio %}
-  <script src="{{ asset_base }}ul-remote-logger.js" defer></script>
   <script src="{{ asset_base }}ul-hide-defaults.js" defer></script>
-  <script src="{{ asset_base }}ul-analytics.js" defer></script>
   <script src="{{ asset_base }}ul-error-handler.js" defer></script>
   <script src="{{ asset_base }}ul-line-properties.js" defer></script>
   <script src="{{ asset_base }}dtf-uploader.js" defer></script>

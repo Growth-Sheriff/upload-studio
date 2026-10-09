@@ -32,6 +32,7 @@ import {
 } from '@shopify/polaris'
 import { useCallback, useState } from 'react'
 import prisma from '~/lib/prisma.server'
+import { publicRedisUrl } from '~/lib/publicRedis.server'
 import { getDownloadSignedUrl, getStorageConfig } from '~/lib/storage.server'
 import {
   applyMeasurementBasisMetadata,
@@ -110,7 +111,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   if (search) {
     where.OR = [
-      { customerEmail: { contains: search, mode: 'insensitive' } },
+      { customerId: { contains: search } },
       { id: { contains: search } },
       { orderId: { contains: search } },
     ]
@@ -187,7 +188,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         orderId: u.orderId,
         orderPaidAt: u.orderPaidAt?.toISOString() || null,
         cartAddedAt: u.cartAddedAt?.toISOString() || null,
-        customerEmail: u.customerEmail,
+        customerId: u.customerId,
         itemCount: u.items.length,
         printableWidthIn:
           firstDimensionIn > 0 && secondDimensionIn > 0
@@ -361,7 +362,7 @@ export async function action({ request }: ActionFunctionArgs) {
     try {
       const { Queue } = await import('bullmq')
       const Redis = (await import('ioredis')).default
-      const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+      const connection = new Redis(publicRedisUrl(), {
         maxRetriesPerRequest: 1,
         connectTimeout: 3000,
         retryStrategy: (times: number) =>
@@ -526,7 +527,7 @@ export default function ProductionQueuePage() {
           {upload.id.slice(0, 8)}...
         </Text>
         <Text as="span" variant="bodySm" tone="subdued">
-          {upload.customerEmail || 'Guest'}
+          {upload.customerId ? `Customer ID ${upload.customerId}` : 'Guest'}
         </Text>
       </BlockStack>
     </InlineStack>,
@@ -584,7 +585,7 @@ export default function ProductionQueuePage() {
             if (form) form.submit()
           },
         },
-        { content: 'Analytics', url: '/app/analytics' },
+        { content: 'Dashboard', url: '/app' },
       ]}
     >
       <Layout>

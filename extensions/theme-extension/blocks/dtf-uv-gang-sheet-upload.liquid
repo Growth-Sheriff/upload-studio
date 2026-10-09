@@ -1,6 +1,6 @@
+{% render 'app-proxy-config', proxy_path: block.settings.app_proxy_path %}
 {{ 'main-product-upload-app.css' | asset_url | stylesheet_tag }}
 {{ 'dtf-uv-gang-sheet-upload.css' | asset_url | stylesheet_tag }}
-<script src="{{ 'ul-upload-telemetry.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-multipart-uploader.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-file-probe.js' | asset_url }}" defer></script>
 <script src="{{ 'main-product-upload-app.js' | asset_url }}" defer></script>
@@ -27,10 +27,8 @@
   data-page-product-id="{{ product.id }}"
   data-shop-domain="{{ shop.permanent_domain }}"
   data-customer-id="{{ customer.id | default: '' }}"
-  data-customer-email="{{ customer.email | default: '' | escape }}"
-  data-customer-name="{{ customer.name | default: '' | escape }}"
   data-currency="{{ cart.currency.iso_code | default: shop.currency | default: 'USD' }}"
-  data-api-base="/apps/customizer"
+  data-api-base="{{ block.settings.app_proxy_path | default: '/apps/customizer' | escape }}"
   data-accepted-files="{{ accept | escape }}"
   data-enable-checkout="{{ block.settings.enable_checkout_button }}"
   data-heading="{{ block.settings.heading | default: 'Upload your gang sheets' | escape }}"
@@ -51,6 +49,7 @@
   "target": "section",
   "templates": ["product"],
   "settings": [
+    { "type": "text", "id": "app_proxy_path", "label": "Storefront app proxy path", "default": "/apps/customizer", "info": "If renamed in Shopify app settings, use the same /apps/name path in all uploader blocks and the cart embed." },
     { "type": "paragraph", "content": "One page, two products: the customer picks DTF or UV at the top and every file is priced and added for that product. One cart or checkout for all of them." },
     { "type": "text", "id": "dtf_handle", "label": "DTF upload product handle", "info": "e.g. dtf-gang-sheet-upload-express" },
     { "type": "text", "id": "dtf_label", "label": "DTF label", "default": "DTF Gang Sheet" },

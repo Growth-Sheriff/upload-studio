@@ -7,7 +7,7 @@
     designFileKey: '_ul_design_file',
     pollInterval: 500,
     maxRetries: 20,
-    apiBase: '/apps/customizer',
+    apiBase: window.UL_API_BASE || '/apps/customizer',
     debug: true
   };
 

@@ -1,7 +1,6 @@
 import { Link, Outlet, useLocation, useNavigation } from '@remix-run/react'
 import { Box, Frame, Loading, Navigation, Text } from '@shopify/polaris'
 import {
-  ChartVerticalFilledIcon,
   ChatIcon,
   CreditCardIcon,
   HomeIcon,
@@ -55,37 +54,18 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0, notice }:
           </svg>
         </span>
         <Text variant="headingMd" as="h1">
-          Upload Studio
+          Auto Gang Sheet Upload
         </Text>
       </div>
 
       <Navigation.Section
-        title="Analytics"
+        title="Overview"
         items={[
           {
             url: '/app',
             label: 'Dashboard',
             icon: HomeIcon,
             selected: isSelected('/app') && !location.pathname.includes('/app/'),
-          },
-          {
-            url: '/app/analytics/orders',
-            label: 'Orders',
-            icon: OrderIcon,
-            selected: isSelected('/app/analytics/orders'),
-          },
-          {
-            url: '/app/analytics',
-            label: 'Reports',
-            icon: ChartVerticalFilledIcon,
-            selected: isSelected('/app/analytics') && !isSelected('/app/analytics/orders'),
-            subNavigationItems: [
-              { url: '/app/analytics', label: 'Overview' },
-              { url: '/app/analytics/attribution', label: 'Attribution' },
-              { url: '/app/analytics/visitors', label: 'Visitors' },
-              { url: '/app/analytics/insights', label: 'AI Insights' },
-              { url: '/app/analytics/cohorts', label: 'Cohorts' },
-            ],
           },
         ]}
       />
@@ -135,6 +115,12 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0, notice }:
             label: 'Branding',
             icon: PaintBrushFlatIcon,
             selected: isSelected('/app/white-label'),
+          },
+          {
+            url: '/app/privacy',
+            label: 'Privacy requests',
+            icon: ListBulletedIcon,
+            selected: isSelected('/app/privacy'),
           },
           {
             url: '/app/support',

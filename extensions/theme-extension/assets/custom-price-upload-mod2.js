@@ -195,7 +195,9 @@
 
     var productJsonEl = root.querySelector('script[data-ul-mod2-product-json]');
     var productData = productJsonEl ? JSON.parse(productJsonEl.textContent) : { variants: [] };
-    var apiBase = root.getAttribute('data-api-base') || '/apps/customizer';
+    var apiBase = window.ULResolveProxyBase
+      ? window.ULResolveProxyBase(root.getAttribute('data-api-base'))
+      : '/apps/customizer';
     var shopDomain = root.getAttribute('data-shop-domain') || '';
     var customerLoggedIn = root.getAttribute('data-customer-logged-in') === 'true';
     var productMeasurementConfigPromise = null;
@@ -328,6 +330,7 @@
         if (resumeData) {
           var resumed = {
             uploadId: session.uploadId,
+            checkoutToken: resumeData.checkoutToken || '',
             itemId: session.itemId,
             key: session.key,
             publicUrl: session.publicUrl,
@@ -363,7 +366,6 @@
           contentType: file.type || 'application/octet-stream',
           fileSize: file.size,
           customerId: root.getAttribute('data-customer-id') || null,
-          customerEmail: root.getAttribute('data-customer-email') || null,
           fingerprint: fingerprint || null,
           partSizeMb: file.size < 64 * 1024 * 1024 ? 8 : file.size < 512 * 1024 * 1024 ? 16 : 32
         })
@@ -615,8 +617,6 @@
       throw new Error('Upload failed after retries (' + msg + ')');
     }
 
-    var customerFirstName = root.getAttribute('data-customer-first-name') || '';
-    var customerLastName = root.getAttribute('data-customer-last-name') || '';
     var galleryPanel = root.querySelector('.ul-main-gallery-panel');
     var customerWorkspace = root.querySelector('.ul-main-customer-workspace');
     var customerWorkspaceStatus = root.querySelector('.ul-main-customer-workspace-status');
@@ -626,7 +626,6 @@
     var customerWorkspaceCount = root.querySelector('.ul-main-customer-workspace-count');
     var customerWorkspaceList = root.querySelector('.ul-main-customer-workspace-list');
     var themeCustomerId = root.getAttribute('data-customer-id') || '';
-    var themeCustomerEmail = root.getAttribute('data-customer-email') || '';
     var uploadInput = root.querySelector('.ul-main-upload-input');
     var uploadTrigger = root.querySelector('.ul-main-upload-trigger');
     var uploadBox = root.querySelector('.ul-main-upload-box');
@@ -920,6 +919,14 @@
       );
       setCustomerStatusCardVisible(accountDeskMode === 'always' || hasAssignedRate);
 
+      if (customerPricing.statusKey === 'product_rate') {
+        customerStatusTitle.textContent = 'Measured-length pricing';
+        customerStatusText.textContent = 'Upload a finished gang sheet. The server validates its dimensions and quotes the configured price per inch; no account is required.';
+        if (customerLoginLink) customerLoginLink.classList.add('hidden');
+        if (customerAccountLink) customerAccountLink.classList.add('hidden');
+        return;
+      }
+
       if (!customerLoggedIn) {
         customerStatusTitle.textContent = 'Unlock your account pricing';
         customerStatusText.textContent = 'Sign in to instantly load your assigned pricing profile, reorder access, and custom checkout privileges before you upload.';
@@ -936,7 +943,7 @@
       if (customerAccountLink) customerAccountLink.classList.remove('hidden');
 
       if (customerPricing.status === 'loading') {
-        customerStatusTitle.textContent = 'Checking pricing for ' + getCustomerDisplayName();
+        customerStatusTitle.textContent = 'Checking account pricing';
         customerStatusText.textContent = 'We are securely loading your assigned status, product rules, and customer-specific checkout pricing.';
         if (customerStatusBadge) {
           customerStatusBadge.textContent = '';
@@ -946,7 +953,6 @@
       }
 
       var label = customerPricing.statusLabel || (customerPricing.customerType === 'business' ? 'Business' : customerPricing.customerType === 'vip' ? 'VIP' : 'Standard Customer');
-      var customerName = getCustomerDisplayName();
       var badgeLabel = customerPricing.customerType === 'business'
         ? 'BUSINESS'
         : customerPricing.customerType === 'vip'
@@ -958,17 +964,17 @@
           ? 'Active rate: ' + formatMoneyValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in'
           : 'Rate is loading from the server.';
         if (customerPricing.customerType === 'business') {
-          customerStatusTitle.textContent = 'Welcome back, ' + customerName + '. Your private pricing desk is ready.';
+          customerStatusTitle.textContent = 'Your private pricing desk is ready.';
           customerStatusText.textContent = 'This page has been personalized for your ' + label + ' profile. Upload new artwork, revisit saved files, and check out with your assigned sheet-based pricing already applied. ' + rateText;
         } else {
-          customerStatusTitle.textContent = 'Welcome back, ' + customerName + '. Your private pricing desk is ready.';
+          customerStatusTitle.textContent = 'Your private pricing desk is ready.';
           customerStatusText.textContent = 'This page has been personalized for your ' + label + ' profile. Upload fresh artwork, reorder saved files, and place measured custom-priced orders with your assigned rate already applied. ' + rateText;
         }
       } else if (customerPricing.customerType === 'business' || customerPricing.customerType === 'vip') {
-        customerStatusTitle.textContent = 'Welcome back, ' + customerName;
+        customerStatusTitle.textContent = 'Welcome back';
         customerStatusText.textContent = label + ' is assigned to this account, but this product is currently using standard variant pricing.';
       } else {
-        customerStatusTitle.textContent = 'Welcome back, ' + customerName;
+        customerStatusTitle.textContent = 'Welcome back';
         customerStatusText.textContent = 'Your account is active with standard checkout pricing. Upload normally or log in with a custom-priced account to unlock assigned rates.';
       }
 
@@ -999,9 +1005,7 @@
             '&productId=' +
             encodeURIComponent(String(productData.productId)) +
             '&customerId=' +
-            encodeURIComponent(themeCustomerId || '') +
-            '&customerEmail=' +
-            encodeURIComponent(themeCustomerEmail || ''),
+            encodeURIComponent(themeCustomerId || ''),
           { credentials: 'same-origin' }
         );
         var data = await response.json().catch(function() { return {}; });
@@ -1236,6 +1240,7 @@
 
       state.activeCustomItemId = item.uploadId || item.id;
       state.uploadId = item.uploadId || '';
+      state.checkoutToken = item.checkoutToken || '';
       state.originalUrl = item.originalUrl || '';
       state.thumbnailUrl = item.thumbnailUrl || '';
       state.fileName = item.fileName || '';
@@ -1569,11 +1574,11 @@
     }
 
     function isBusinessPricingActive() {
-      return hasCustomPricingActive() && customerPricing.customerType === 'business';
+      return hasCustomPricingActive() && customerPricing.pricingMode === 'variant_length';
     }
 
     function isVipPricingActive() {
-      return hasCustomPricingActive() && customerPricing.customerType === 'vip';
+      return hasCustomPricingActive() && customerPricing.pricingMode === 'measured_length';
     }
 
     function isCustomerPricingLoading() {
@@ -1638,16 +1643,6 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
-    }
-
-    function getCustomerDisplayName() {
-      var first = String(customerFirstName || '').trim();
-      var last = String(customerLastName || '').trim();
-      if (first) return first;
-      if (last) return last;
-      var email = root.getAttribute('data-customer-email') || '';
-      if (email && email.indexOf('@') > 0) return email.split('@')[0];
-      return 'there';
     }
 
     function shouldShowCustomerWorkspace() {
@@ -1768,7 +1763,6 @@
       customerWorkspace.classList.remove('hidden');
       galleryPanel.classList.add('hidden');
 
-      var displayName = getCustomerDisplayName();
       var workspaceStatusLabel = customerPricing.statusLabel || (customerPricing.customerType === 'business' ? 'Business' : 'VIP');
       if (customerWorkspaceStatus) {
         customerWorkspaceStatus.textContent = workspaceStatusLabel;
@@ -1776,7 +1770,7 @@
       }
 
       if (customerWorkspaceTitle) {
-        customerWorkspaceTitle.textContent = 'Hello ' + displayName + ', your private pricing studio is ready.';
+        customerWorkspaceTitle.textContent = 'Your private pricing studio is ready.';
       }
 
       if (customerWorkspaceCopy) {
@@ -2654,16 +2648,6 @@
 
     async function loadCustomerPricingContext() {
       var requestToken = ++customerPricingRequestToken;
-      if (!customerLoggedIn) {
-        customerPricing.status = 'ready';
-        customerPricing.customerType = 'guest';
-        customerPricing.source = 'fallback';
-        updateCustomerStatusUI();
-        syncPricingVisibility();
-        syncPurchaseButtonsForCurrentState();
-        return customerPricing;
-      }
-
       updateCustomerStatusUI();
 
       try {
@@ -2674,9 +2658,7 @@
           '&productId=' +
           encodeURIComponent(String(productData.productId)) +
           '&customerId=' +
-          encodeURIComponent(themeCustomerId || '') +
-          '&customerEmail=' +
-          encodeURIComponent(themeCustomerEmail || '');
+          encodeURIComponent(themeCustomerId || '');
         var response = await fetch(contextUrl, { credentials: 'same-origin' });
         var data = await response.json().catch(function() { return {}; });
         if (requestToken !== customerPricingRequestToken) return customerPricing;
@@ -2778,9 +2760,7 @@
           '&productId=' +
           encodeURIComponent(String(productData.productId)) +
           '&customerId=' +
-          encodeURIComponent(themeCustomerId || '') +
-          '&customerEmail=' +
-          encodeURIComponent(themeCustomerEmail || '');
+          encodeURIComponent(themeCustomerId || '');
         var response = await fetch(workspaceUrl, { credentials: 'same-origin' });
         var data = await response.json().catch(function() { return {}; });
         if (!response.ok) {
@@ -2850,7 +2830,6 @@
               shopDomain: shopDomain,
               productId: String(productData.productId),
               customerId: themeCustomerId || '',
-              customerEmail: themeCustomerEmail || '',
               measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
               items: [{
                 uploadId: workspaceItem.uploadId,
@@ -2945,10 +2924,10 @@
                 shopDomain: shopDomain,
                 productId: String(productData.productId),
                 customerId: themeCustomerId || '',
-                customerEmail: themeCustomerEmail || '',
                 measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
                 items: [{
                   uploadId: queueItem.uploadId,
+                  checkoutToken: queueItem.checkoutToken || '',
                   quantity: queueItem.requestedQuantity || 1,
                   selectedVariantId: queueItem.selectedVariantId || ''
                 }]
@@ -3028,8 +3007,8 @@
           shopDomain: shopDomain,
           productId: String(productData.productId),
           customerId: themeCustomerId || '',
-          customerEmail: themeCustomerEmail || '',
           uploadId: state.uploadId,
+          checkoutToken: state.checkoutToken || '',
           quantity: state.quantity,
           measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY,
           selectedVariantId:
@@ -3357,6 +3336,9 @@
         state.widthIn = probe.widthIn;
         state.heightIn = probe.heightIn;
       }
+      // A custom product has no length variants to provisionally select. The
+      // authoritative custom quote validates both printable limits later.
+      if (hasCustomPricingActive()) return probe;
       updateDetectedUI();
       updatePreview();
       try {
@@ -3373,7 +3355,6 @@
             quantity: state.quantity,
             selectedVariantId: getFallbackVariantId() || state.selectedVariantId || null,
             customerId: root.getAttribute('data-customer-id') || null,
-            customerEmail: root.getAttribute('data-customer-email') || null,
             measurementPolicy: MAIN_PRODUCT_MEASUREMENT_POLICY
           })
         });
@@ -3404,6 +3385,7 @@
       uploadFlowToken += 1;
       state.provisional = false;
       state.uploadId = '';
+      state.checkoutToken = '';
       state.originalUrl = '';
       state.thumbnailUrl = '';
       if (state.clientPreviewUrl && window.URL && window.URL.revokeObjectURL) {
@@ -3831,6 +3813,7 @@
         var intent = await intentRes.json();
         if (queueItem.uploadToken !== uploadToken) return;
         queueItem.uploadId = intent.uploadId;
+        queueItem.checkoutToken = intent.checkoutToken || '';
         queueItem.uploadStatus = 'uploading';
         queueItem.quoteStatus = 'uploading';
         updateCustomBatchProgressForFile(
@@ -4096,6 +4079,7 @@
         var intent = await intentRes.json();
         if (uploadToken !== uploadFlowToken) return;
         state.uploadId = intent.uploadId;
+        state.checkoutToken = intent.checkoutToken || '';
         var previewUploadPromise = intent.deduplicated
           ? Promise.resolve(null)
           : previewPromise.then(function(preview) {
@@ -4243,6 +4227,7 @@
             ? getCustomQueueReadyItems().map(function(item) {
                 return {
                   uploadId: item.uploadId,
+                  checkoutToken: item.checkoutToken || '',
                   quantity: item.requestedQuantity || 1,
                   selectedVariantId: item.selectedVariantId || ''
                 };
@@ -4258,9 +4243,9 @@
               shopDomain: shopDomain,
               productId: String(productData.productId),
               uploadId: state.uploadId,
+              checkoutToken: state.checkoutToken || '',
               items: customItemsPayload,
               customerId: root.getAttribute('data-customer-id') || '',
-              customerEmail: root.getAttribute('data-customer-email') || '',
               customerType: customerPricing.customerType,
               statusKey: customerPricing.statusKey,
               pricePerInch: customerPricing.pricePerInch,

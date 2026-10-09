@@ -31,7 +31,7 @@ const BADGE_TONE: Record<Tone, 'success' | 'critical' | 'warning' | 'info' | 'at
   attention: 'attention',
 }
 
-// One KPI tile used by the dashboard and every analytics page: label on top,
+// One KPI tile used for shop-level operational totals: label on top,
 // large tabular number, optional badge / subtitle / action. Pure Polaris
 // primitives so it follows the admin theme automatically.
 export function StatCard({ title, value, subtitle, tone, badge, badgeTone, icon, action }: StatCardProps) {

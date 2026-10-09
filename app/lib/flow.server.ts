@@ -11,6 +11,8 @@
 
 
 import prisma from "~/lib/prisma.server";
+import type { Prisma } from '@prisma/client';
+import { shopifyConfig } from './shopify.server';
 
 
 export const FLOW_EVENTS = {
@@ -71,7 +73,6 @@ interface UploadPayload extends BasePayload {
   productId?: string;
   variantId?: string;
   customerId?: string;
-  customerEmail?: string;
   itemCount: number;
   locations: string[];
 }
@@ -117,7 +118,7 @@ export async function queueFlowTrigger(
         shopId,
         eventType,
         resourceId,
-        payload,
+        payload: payload as unknown as Prisma.InputJsonObject,
         status: "pending",
       },
     });
@@ -167,13 +168,14 @@ export async function sendFlowTrigger(triggerId: string, shopId?: string): Promi
 
 
     const response = await fetch(
-      `https://${trigger.shop.shopDomain}/admin/api/2025-10/graphql.json`,
+      `https://${trigger.shop.shopDomain}/admin/api/${shopifyConfig.apiVersion}/graphql.json`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Shopify-Access-Token": trigger.shop.accessToken,
         },
+        signal: AbortSignal.timeout(30_000),
         body: JSON.stringify({
           query: `
             mutation flowTriggerReceive($handle: String!, $payload: JSON!) {
@@ -245,7 +247,6 @@ export async function triggerUploadReceived(
     productId?: string | null;
     variantId?: string | null;
     customerId?: string | null;
-    customerEmail?: string | null;
     items: Array<{ location: string }>;
   }
 ): Promise<void> {
@@ -257,7 +258,6 @@ export async function triggerUploadReceived(
     productId: upload.productId || undefined,
     variantId: upload.variantId || undefined,
     customerId: upload.customerId || undefined,
-    customerEmail: upload.customerEmail || undefined,
     itemCount: upload.items.length,
     locations: upload.items.map(i => i.location),
   });

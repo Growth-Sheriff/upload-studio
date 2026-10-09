@@ -383,7 +383,7 @@ export async function sendTeamInvite(
   const roleDescriptions: Record<string, string> = {
     admin: "Full access to all features",
     operator: "Manage uploads and production queue",
-    viewer: "View-only access to uploads and analytics",
+    viewer: "View-only access to uploads and production orders",
   };
 
   const html = `

@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from '@remix-run/node'
 import { Queue } from 'bullmq'
 import Redis from 'ioredis'
+import { publicRedisUrl } from '~/lib/publicRedis.server'
 import { corsJson, handleCorsOptions } from '~/lib/cors.server'
 import { triggerUploadReceived } from '~/lib/flow.server'
 import { isFastRasterUpload } from '~/lib/fastRaster'
@@ -33,7 +34,7 @@ let redisConnection: Redis | null = null
 
 const getRedisConnection = (): Redis => {
   if (!redisConnection) {
-    redisConnection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+    redisConnection = new Redis(publicRedisUrl(), {
       maxRetriesPerRequest: 1,
       connectTimeout: 3000,
       enableReadyCheck: true,
@@ -335,36 +336,10 @@ export async function action({ request }: ActionFunctionArgs) {
         productId: upload.productId,
         variantId: upload.variantId,
         customerId: upload.customerId,
-        customerEmail: upload.customerEmail,
         items: upload.items.map((i: { location: string }) => ({ location: i.location })),
       }).catch((error) =>
         console.warn('[Upload Complete] Upload-received flow failed after commit:', error)
       )
-    }
-
-    if (firstCompletion && upload.visitorId) {
-      try {
-        await prisma.visitor.updateMany({
-          where: { id: upload.visitorId, shopId: shop.id },
-          data: {
-            totalUploads: { increment: 1 },
-            lastSeenAt: new Date(),
-          },
-        })
-
-        if (upload.sessionId) {
-          await prisma.visitorSession.updateMany({
-            where: { id: upload.sessionId, shopId: shop.id },
-            data: {
-              uploadsInSession: { increment: 1 },
-              lastActivityAt: new Date(),
-            },
-          })
-        }
-        console.log(`[Upload Complete] Updated visitor ${upload.visitorId} metrics`)
-      } catch (visitorErr) {
-        console.warn('[Upload Complete] Failed to update visitor metrics:', visitorErr)
-      }
     }
 
 

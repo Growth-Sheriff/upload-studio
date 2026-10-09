@@ -1,3 +1,4 @@
+{% render 'app-proxy-config', proxy_path: block.settings.app_proxy_path %}
 <script src="{{ 'cart-upload-display.js' | asset_url }}" defer></script>
 {% schema %}
 {
@@ -5,9 +6,10 @@
   "target": "body",
   "javascript": "cart-upload-display.js",
   "settings": [
+    { "type": "text", "id": "app_proxy_path", "label": "Storefront app proxy path", "default": "/apps/customizer", "info": "If renamed in Shopify app settings, use the same /apps/name path in all uploader blocks and this cart embed." },
     {
       "type": "paragraph",
-      "content": "Shows uploaded design info under cart line items. No configuration needed - works automatically."
+      "content": "Shows uploaded design info under cart line items. Match the storefront proxy path if you renamed it in Shopify."
     },
     {
       "type": "checkbox",

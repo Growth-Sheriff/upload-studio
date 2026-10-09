@@ -1,0 +1,11 @@
+{%- assign ul_proxy_path = proxy_path | default: '/apps/customizer' -%}
+<script>
+  // Shopify lets the merchant rename the storefront app proxy. Only a local
+  // app path is allowed: uploaded files and signed account context never go
+  // to a merchant-entered external endpoint.
+  window.ULResolveProxyBase = function(value) {
+    var path = String(value || '').trim().replace(/\/+$/, '');
+    return /^\/apps\/[a-z0-9][a-z0-9_-]*$/i.test(path) ? path : '/apps/customizer';
+  };
+  window.UL_API_BASE = window.ULResolveProxyBase({{ ul_proxy_path | json }});
+</script>

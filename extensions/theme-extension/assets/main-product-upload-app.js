@@ -107,10 +107,7 @@
 
   function getCustomerIdFromGlobals() {
     try {
-      var stId = window.__st && (window.__st.cid || window.__st.customerId || window.__st.customer_id);
-      var analyticsPage = window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.page;
-      var analyticsId = analyticsPage && (analyticsPage.customerId || analyticsPage.customer_id);
-      return normalizeCustomerId(stId || analyticsId);
+      return normalizeCustomerId(window.ULCustomer && window.ULCustomer.id);
     } catch (_) {
       return '';
     }
@@ -290,14 +287,14 @@
 
   function MainProductUpload(root) {
     this.root = root;
-    this.apiBase = root.getAttribute('data-api-base') || '/apps/customizer';
+    this.apiBase = window.ULResolveProxyBase
+      ? window.ULResolveProxyBase(root.getAttribute('data-api-base'))
+      : '/apps/customizer';
     this.shopDomain = root.getAttribute('data-shop-domain') || '';
     this.productId = root.getAttribute('data-product-id') || '';
     this.productTitle = root.getAttribute('data-product-title') || '';
     this.currentVariantId = root.getAttribute('data-current-variant-id') || '';
     this.customerId = normalizeCustomerId(root.getAttribute('data-customer-id') || getCustomerIdFromGlobals());
-    this.customerEmail = root.getAttribute('data-customer-email') || '';
-    this.customerName = root.getAttribute('data-customer-name') || '';
     if (this.customerId && !root.getAttribute('data-customer-id')) {
       root.setAttribute('data-customer-id', this.customerId);
     }
@@ -324,7 +321,6 @@
       pricingMode: 'standard_variant',
       hasCustomPricing: false,
       pricePerInch: 0,
-      customerName: this.customerName,
       currency: this.currency
     };
     this.productConfig = {
@@ -344,6 +340,7 @@
     this.exactCartStorageEnabled = exactCartStorageAvailable();
     this.state = {
       uploadId: '',
+      checkoutToken: '',
       itemId: '',
       fileName: '',
       localPreviewUrl: '',
@@ -406,6 +403,7 @@
       var items = (this.state.items || []).filter(this.isCartReadyItem.bind(this)).map(function(item) {
         return {
           uploadId: item.uploadId,
+          checkoutToken: item.checkoutToken || '',
           itemId: item.itemId,
           fileName: item.fileName,
           lastFile: item.lastFile ? { name: item.lastFile.name, size: item.lastFile.size, type: item.lastFile.type } : null,
@@ -760,7 +758,7 @@
   };
 
   MainProductUpload.prototype.getExactCartKey = function() {
-    var identity = this.customerId || this.customerEmail || 'guest';
+    var identity = this.customerId || 'guest';
     return [
       'umpExactMeasuredCart',
       this.shopDomain || 'shop',
@@ -827,6 +825,7 @@
       var quoteItem = quoteByUpload[String(item.uploadId)] || fallbackQuote || {};
       return {
         uploadId: item.uploadId,
+        checkoutToken: item.checkoutToken || '',
         productId: this.productId,
         productTitle: this.productTitle,
         fileName: item.fileName || quoteItem.fileName || '',
@@ -1153,8 +1152,7 @@
         shop: this.shopDomain,
         shopDomain: this.shopDomain,
         productId: this.productId,
-        customerId: this.customerId,
-        customerEmail: this.customerEmail
+        customerId: this.customerId
       }), { credentials: 'same-origin' });
       var data = await response.json().catch(function() { return {}; });
       if (!response.ok) throw new Error(data.error || 'Failed to load customer pricing.');
@@ -1170,7 +1168,6 @@
         (pricingMode !== 'standard_variant' && ['business', 'vip'].indexOf(customerType) >= 0)
       );
       this.customerPricing.pricePerInch = toNumber(data.pricePerInch);
-      this.customerPricing.customerName = getText(data.customerName || (data.assignment && data.assignment.customerName), this.customerName);
       this.customerPricing.currency = getText(data.currency, this.currency);
       this.root.setAttribute(
         'data-ump-exact-measured',
@@ -1183,7 +1180,6 @@
       this.customerPricing.pricingMode = 'standard_variant';
       this.customerPricing.hasCustomPricing = false;
       this.customerPricing.pricePerInch = 0;
-      this.customerPricing.customerName = this.customerName;
       this.root.setAttribute('data-ump-exact-measured', 'false');
     }
 
@@ -1203,9 +1199,7 @@
     try {
       var response = await fetch(this.apiBase + '/api/product-config/' + encodeURIComponent(this.productId) + buildQuery({
         shop: this.shopDomain,
-        customerId: this.customerId,
-        customerEmail: this.customerEmail,
-        customerName: this.customerName
+        customerId: this.customerId
       }), { credentials: 'same-origin' });
       var data = await response.json().catch(function() { return {}; });
       if (!response.ok) throw new Error(data.error || 'Failed to load product configuration.');
@@ -1243,14 +1237,13 @@
     if (!exact && !offer) return;
 
     if (offer) {
-      var offerName = getText(offer.customerName || this.customerPricing.customerName, this.customerName || 'valued customer');
       var sampleTier = this.getActiveLinearTier(1);
       var sampleRate = getTierUnitPrice(sampleTier);
       if (this.customerKicker) this.customerKicker.textContent = 'Returning customer pricing';
       if (this.customerTitle) {
         this.customerTitle.textContent = getText(
           offer.headline,
-          'Dear valued customer ' + offerName + ', your discounted inch pricing is active.'
+          'Your discounted inch pricing is active.'
         );
       }
       if (this.customerCopy) {
@@ -1265,11 +1258,10 @@
       return;
     }
 
-    var name = getText(this.customerPricing.customerName, 'valued customer');
     var rate = toNumber(this.customerPricing.pricePerInch);
     if (this.customerKicker) this.customerKicker.textContent = getText(this.customerPricing.statusLabel, 'Exact measured pricing');
     if (this.customerTitle) {
-      this.customerTitle.textContent = 'Dear valued customer ' + name + ', your exact measured pricing is active.';
+      this.customerTitle.textContent = 'Your exact measured pricing is active.';
     }
     if (this.customerCopy) {
       this.customerCopy.textContent = 'We charge the measured upload length at your assigned rate. No sheet-size variant rounding will be used.';
@@ -1516,18 +1508,6 @@
       this.progressText.textContent = '';
       return;
     }
-    if (window.ULUploadTelemetry && window.ULUploadTelemetry.create) {
-      if (!this.state.uploadTelemetry) {
-        this.state.uploadTelemetry = window.ULUploadTelemetry.create();
-      }
-      var snapshot = this.state.uploadTelemetry.tick(loaded, total);
-      this.progressText.hidden = false;
-      this.progressText.innerHTML =
-        '<span><strong>' + snapshot.loadedText + '</strong> / ' + snapshot.totalText + '</span>' +
-        '<span>Your internet speed: ' + snapshot.speedText + (snapshot.etaText ? ' • ' + snapshot.etaText : '') + '</span>' +
-        (snapshot.advisory ? '<span>' + snapshot.advisory + '</span>' : '');
-      return;
-    }
     var elapsedSec = Math.max(0.001, (Date.now() - (this.state.uploadStartTime || Date.now())) / 1000);
     var speed = loaded / elapsedSec;
     var remaining = speed > 0 ? (total - loaded) / speed : 0;
@@ -1616,6 +1596,7 @@
     }
     this.state = {
       uploadId: '',
+      checkoutToken: '',
       itemId: '',
       fileName: file ? file.name : '',
       lastFile: file || null,
@@ -1672,6 +1653,7 @@
       : null;
     return {
       uploadId: this.state.uploadId,
+      checkoutToken: this.state.checkoutToken || '',
       itemId: this.state.itemId,
       fileName: this.state.fileName,
       lastFile: lastFile,
@@ -1763,8 +1745,6 @@
           quantity: this.getRequestedCopies(),
           selectedVariantId: this.isLinearInchPricing() ? null : (this.getFallbackVariantId() || null),
           customerId: this.customerId || null,
-          customerEmail: this.customerEmail || null,
-          customerName: this.customerName || null,
           measurementPolicy: POLICY
         })
       });
@@ -1917,6 +1897,7 @@
   MainProductUpload.prototype.loadUploadItem = function(item) {
     if (!item) return;
     this.state.uploadId = item.uploadId || '';
+    this.state.checkoutToken = item.checkoutToken || '';
     this.state.itemId = item.itemId || '';
     this.state.fileName = item.fileName || '';
     this.state.lastFile = item.lastFile || null;
@@ -2305,6 +2286,7 @@
     return items.map(function(item) {
       return {
         uploadId: item.uploadId,
+        checkoutToken: item.checkoutToken || '',
         quantity: Math.max(1, Number(item.copies || item.quantity) || 1),
         selectedVariantId: item.selectedVariantId || null,
         measurementPolicy: POLICY
@@ -2366,7 +2348,6 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customerId: this.customerId || null,
-          customerEmail: this.customerEmail || null,
           measurementPolicy: POLICY,
           items: this.buildCustomItems(items)
         })
@@ -2418,7 +2399,6 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customerId: this.customerId || null,
-          customerEmail: this.customerEmail || null,
           // A host block (e.g. the DTF + UV block) may supply the whole note.
           customerNote: this.checkoutNoteOverride != null
             ? String(this.checkoutNoteOverride)
@@ -2785,9 +2765,6 @@
     this.state.batchToken = batchToken || this.state.batchToken || 0;
     var currentToken = this.token;
     this.state.uploadStartTime = Date.now();
-    this.state.uploadTelemetry = window.ULUploadTelemetry && window.ULUploadTelemetry.create
-      ? window.ULUploadTelemetry.create()
-      : null;
     this.setError('');
     this.setProgress(8);
     this.setStage('upload');
@@ -2827,6 +2804,7 @@
         if (resumeData) {
           intent = {
             uploadId: session.uploadId,
+            checkoutToken: resumeData.checkoutToken || session.checkoutToken || '',
             itemId: session.itemId,
             key: session.key,
             publicUrl: session.publicUrl,
@@ -2865,7 +2843,6 @@
             contentType: file.type || 'application/octet-stream',
             fileSize: file.size,
             customerId: this.customerId || null,
-            customerEmail: this.customerEmail || null,
             fingerprint: fingerprint || null,
             partSizeMb: suggestPartSizeMb(file.size)
           })
@@ -2876,6 +2853,7 @@
       }
 
       this.state.uploadId = intent.uploadId;
+      this.state.checkoutToken = intent.checkoutToken || '';
       this.state.itemId = intent.itemId;
 
       if (intent.deduplicated) {
@@ -3137,8 +3115,6 @@
         quantity: Math.max(1, Math.floor(Number(quantity) || 1)),
         selectedVariantId: linear ? null : (this.getFallbackVariantId() || null),
         customerId: this.customerId || null,
-        customerEmail: this.customerEmail || null,
-        customerName: this.customerName || null,
         measurementPolicy: POLICY
       })
     });

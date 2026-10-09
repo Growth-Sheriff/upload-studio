@@ -28,7 +28,6 @@
         <div class="ul-sh-content">
           <span class="ul-sh-vendor">{{ p.vendor | default: 'DTF TRANSFER' }}</span>
           <h3 class="ul-sh-title"><a href="{{ p.url }}">{{ p.title | truncate: 40 }}</a></h3>
-          {% if block.settings.show_reviews %}<div class="ul-sh-rating"><span class="ul-sh-stars">★★★★★</span><span class="ul-sh-count">({{ p.id | modulo: 200 | plus: 50 }})</span></div>{% endif %}
           <div class="ul-sh-price">{% if p.compare_at_price > p.price %}<span class="ul-sh-old">{{ p.compare_at_price | money }}</span>{% endif %}<span class="ul-sh-now">{{ p.price | money }}</span></div>
           <a class="ul-sh-upload-btn" href="{{ p.url }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>Open Product</a>
         </div>
@@ -81,12 +80,6 @@
       "id": "bg_color",
       "label": "Background Color",
       "default": "#f8f9fa"
-    },
-    {
-      "type": "checkbox",
-      "id": "show_reviews",
-      "label": "Show Star Ratings",
-      "default": true
     }
   ]
 }

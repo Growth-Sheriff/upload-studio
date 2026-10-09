@@ -142,12 +142,12 @@
 
   function ProUpload(root) {
     this.root = root;
-    this.apiBase = root.getAttribute('data-api-base') || '/apps/customizer';
+    this.apiBase = window.ULResolveProxyBase
+      ? window.ULResolveProxyBase(root.getAttribute('data-api-base'))
+      : '/apps/customizer';
     this.shopDomain = root.getAttribute('data-shop-domain') || '';
     this.productId = root.getAttribute('data-product-id') || '';
     this.customerId = root.getAttribute('data-customer-id') || '';
-    this.customerEmail = root.getAttribute('data-customer-email') || '';
-    this.customerName = root.getAttribute('data-customer-name') || '';
     // Product config is authoritative. This is only the loading fallback.
     this.maxPrintableWidthIn = 22.5;
     this.context = {
@@ -157,7 +157,6 @@
       pricingMode: 'standard_variant',
       hasCustomPricing: false,
       pricePerInch: 0,
-      customerName: this.customerName,
       currency: 'USD'
     };
     this.productConfig = {
@@ -341,8 +340,7 @@
         shop: this.shopDomain,
         shopDomain: this.shopDomain,
         productId: this.productId,
-        customerId: this.customerId,
-        customerEmail: this.customerEmail
+        customerId: this.customerId
       });
       var response = await fetch(url, { credentials: 'same-origin' });
       var data = await response.json().catch(function() { return {}; });
@@ -360,7 +358,6 @@
         (this.context.pricingMode !== 'standard_variant' && ['business', 'vip'].indexOf(this.context.customerType) >= 0)
       );
       this.context.pricePerInch = toNumber(data.pricePerInch);
-      this.context.customerName = getText(data.customerName || (data.assignment && data.assignment.customerName), this.customerName);
       this.context.currency = getText(data.currency, 'USD');
       this.root.setAttribute('data-ump-exact-measured', this.context.pricingMode === 'measured_length' ? 'true' : 'false');
     } catch (error) {
@@ -370,7 +367,6 @@
       this.context.pricingMode = 'standard_variant';
       this.context.hasCustomPricing = false;
       this.context.pricePerInch = 0;
-      this.context.customerName = this.customerName;
       this.root.setAttribute('data-ump-exact-measured', 'false');
     }
 
@@ -387,9 +383,7 @@
     try {
       var url = this.apiBase + '/api/product-config/' + encodeURIComponent(this.productId) + buildQuery({
         shop: this.shopDomain,
-        customerId: this.customerId,
-        customerEmail: this.customerEmail,
-        customerName: this.customerName
+        customerId: this.customerId
       });
       var response = await fetch(url, { credentials: 'same-origin' });
       var data = await response.json().catch(function() { return {}; });
@@ -419,6 +413,7 @@
     return items.map(function(item) {
       return {
         uploadId: item.uploadId,
+        checkoutToken: item.checkoutToken || '',
         quantity: Math.max(1, Number(item.copies) || 1),
         selectedVariantId: item.selectedVariantId || null,
         measurementPolicy: POLICY
@@ -455,7 +450,6 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customerId: this.customerId || null,
-          customerEmail: this.customerEmail || null,
           measurementPolicy: POLICY,
           items: this.buildCustomItems(items)
         })
@@ -503,7 +497,6 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customerId: this.customerId || null,
-          customerEmail: this.customerEmail || null,
           measurementPolicy: POLICY,
           items: this.buildCustomItems(readyItems)
         })
@@ -524,7 +517,7 @@
     var measuredCustom = this.isMeasuredLengthPricing();
     var linear = this.isLinearInchPricing();
     var offer = this.getLinearCustomerOffer();
-    var anonymous = !this.customerId && !this.customerEmail;
+    var anonymous = !this.customerId;
     this.root.classList.toggle('is-custom-pricing', custom || Boolean(offer));
     this.root.classList.toggle('is-linear-inch-pricing', linear);
     if (this.accountCard) this.accountCard.classList.toggle('is-custom', custom || Boolean(offer));
@@ -532,19 +525,15 @@
       if (this.context.status === 'loading' || this.productConfig.status === 'loading') {
         this.accountStatus.textContent = 'Checking account pricing';
       } else if (linear && offer) {
-        var offerName = getText(offer.customerName || this.context.customerName, this.customerName || 'valued customer');
-        this.accountStatus.textContent = 'Dear valued customer ' + offerName + ', your returning-customer inch pricing is active';
+        this.accountStatus.textContent = 'Your returning-customer inch pricing is active';
       } else if (linear && anonymous) {
         this.accountStatus.textContent = 'Sign in to unlock returning-customer inch pricing';
       } else if (linear) {
         this.accountStatus.textContent = 'Measured inch checkout';
       } else if (measuredCustom) {
-        var measuredName = getText(this.context.customerName, 'valued customer');
-        this.accountStatus.textContent = 'Dear valued customer ' + measuredName + ', exact measured pricing is active';
+        this.accountStatus.textContent = 'Exact measured pricing is active';
       } else if (custom) {
-        var name = getText(this.context.customerName, 'valued customer');
         this.accountStatus.textContent =
-          'Dear valued customer ' + name + ', ' +
           (this.context.customerType === 'business' ? 'your business pricing is active' : 'your VIP pricing is active');
       } else {
         this.accountStatus.textContent = 'Standard account pricing';

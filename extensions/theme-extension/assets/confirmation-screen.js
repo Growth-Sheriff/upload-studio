@@ -64,16 +64,6 @@
         window.ULState.set('cart.itemCount', this.cartData.item_count);
         window.ULState.set('cart.totalPrice', this.cartData.total_price);
       }
-      if (window.ULAnalytics && this.cartData) {
-        window.ULAnalytics.trackConfirmationShown({
-          source: detail.source || 'unknown',
-          itemCount: this.cartData.item_count,
-          cartTotal: this.cartData.total_price,
-          hasUploadLiftItems: this.cartData.items.some(item =>
-            item.properties && (item.properties['Sheet Identity'] || item.properties['_ul_upload_id'] || item.properties['_ul_is_tshirt'])
-          )
-        });
-      }
       this.render();
       this.el.overlay?.classList.add('active');
       document.body.style.overflow = 'hidden';
@@ -85,12 +75,6 @@
       document.body.style.overflow = '';
       if (window.ULState) {
         window.ULState.set('ui.confirmationOpen', false);
-      }
-      if (window.ULAnalytics) {
-        window.ULAnalytics.trackContinueShopping({
-          itemCount: this.cartData?.item_count || 0,
-          cartTotal: this.cartData?.total_price || 0
-        });
       }
       if (window.ULEvents) {
         window.ULEvents.emit('hideConfirmation', {});
@@ -184,15 +168,6 @@
       return div.innerHTML;
     },
     proceedToCheckout() {
-      if (window.ULAnalytics) {
-        window.ULAnalytics.trackProceedCheckout({
-          itemCount: this.cartData?.item_count || 0,
-          cartTotal: this.cartData?.total_price || 0,
-          hasUploadLiftItems: this.cartData?.items?.some(item =>
-            item.properties && (item.properties['_ul_upload_id'] || item.properties['_ul_is_tshirt'])
-          ) || false
-        });
-      }
       this.close();
       window.location.href = '/checkout';
     }

@@ -1,5 +1,5 @@
+{% render 'app-proxy-config', proxy_path: block.settings.app_proxy_path %}
 {{ 'main-product-upload-app.css' | asset_url | stylesheet_tag }}
-<script src="{{ 'ul-upload-telemetry.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-multipart-uploader.js' | asset_url }}" defer></script>
 <script src="{{ 'ul-file-probe.js' | asset_url }}" defer></script>
 <script src="{{ 'main-product-upload-app.js' | asset_url }}" defer></script>
@@ -21,9 +21,7 @@
   data-currency="{{ cart.currency.iso_code | default: shop.currency | default: 'USD' }}"
   data-shop-domain="{{ shop.permanent_domain }}"
   data-customer-id="{{ customer.id | default: '' }}"
-  data-customer-email="{{ customer.email | default: '' | escape }}"
-  data-customer-name="{{ customer.name | default: '' | escape }}"
-  data-api-base="/apps/customizer"
+  data-api-base="{{ block.settings.app_proxy_path | default: '/apps/customizer' | escape }}"
   data-max-printable-width-in="22.5"
   data-accepted-files="{{ ump_accept | escape }}"
   data-enable-checkout="{{ block.settings.enable_checkout_button }}"
@@ -172,6 +170,7 @@
   "target": "section",
   "templates": ["product"],
   "settings": [
+    { "type": "text", "id": "app_proxy_path", "label": "Storefront app proxy path", "default": "/apps/customizer", "info": "If renamed in Shopify app settings, enter the same /apps/name path in every Upload Studio block and the cart embed." },
     {
       "type": "paragraph",
       "content": "Upload-only main product section. It measures each gang sheet, chooses the fitting sheet variant, then unlocks Add to cart and Checkout."

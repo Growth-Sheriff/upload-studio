@@ -304,8 +304,9 @@
       'data-shop-domain': this.shopDomain,
       'data-customer-id': root.getAttribute('data-customer-id') || '',
       'data-customer-email': root.getAttribute('data-customer-email') || '',
-      'data-customer-name': root.getAttribute('data-customer-name') || '',
-      'data-api-base': root.getAttribute('data-api-base') || '/apps/customizer',
+      'data-api-base': window.ULResolveProxyBase
+        ? window.ULResolveProxyBase(root.getAttribute('data-api-base'))
+        : '/apps/customizer',
       'data-max-printable-width-in': '22.5',
       'data-accepted-files': root.getAttribute('data-accepted-files') || '',
       'data-enable-checkout': 'true',

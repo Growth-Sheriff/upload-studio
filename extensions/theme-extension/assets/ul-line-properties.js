@@ -18,7 +18,7 @@
    *   const { uploadId, properties, cartInstruction } = await window.ULLineProperties.uploadAndBuild({ file, productId, variantId, line })
    */
 
-  var API_BASE = '/apps/customizer';
+  var API_BASE = window.UL_API_BASE || '/apps/customizer';
 
   function shopDomain() {
     try {
@@ -85,7 +85,7 @@
 
   function customer() {
     var c = window.ULCustomer || {};
-    return { id: c.id || null, email: c.email || null };
+    return { id: c.id || null };
   }
 
   function putFile(intent, file) {
@@ -139,8 +139,7 @@
         fileName: file.name,
         contentType: file.type || 'application/octet-stream',
         fileSize: file.size,
-        customerId: who.id,
-        customerEmail: who.email
+        customerId: who.id
       })
     });
     var intent = await intentRes.json().catch(function() { return {}; });

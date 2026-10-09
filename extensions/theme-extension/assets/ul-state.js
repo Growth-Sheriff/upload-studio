@@ -100,9 +100,6 @@
 
     _getProductIdFromPage() {
 
-      if (window.ShopifyAnalytics?.meta?.product?.id) {
-        return window.ShopifyAnalytics.meta.product.id;
-      }
       if (window.meta?.product?.id) {
         return window.meta.product.id;
       }
@@ -451,10 +448,10 @@
     async loadStorefrontConfig(productId) {
       try {
         const shopDomain = window.Shopify?.shop || '';
-        const apiBase = '/apps/customizer';
+        const apiBase = window.UL_API_BASE || '/apps/customizer';
 
         const url = new URL(`${apiBase}/api/storefront/config`, window.location.origin);
-        url.searchParams.set('shopDomain', shopDomain);
+        url.searchParams.set('shop', shopDomain);
         if (productId) {
           url.searchParams.set('productId', productId);
         }

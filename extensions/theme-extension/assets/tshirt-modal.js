@@ -458,13 +458,6 @@ console.log('[ULTShirtModal] Script loading...')
         })
       }
 
-      if (window.ULAnalytics) {
-        window.ULAnalytics.trackTShirtModalOpened({
-          hasInheritedDesign: !!uploadData,
-          source: 'tshirt-modal',
-          productId,
-        })
-      }
 
       this.el.overlay?.classList.add('active')
       this.isOpen = true
@@ -484,13 +477,6 @@ console.log('[ULTShirtModal] Script loading...')
       this.isOpen = false
       document.body.style.overflow = ''
 
-      if (window.ULAnalytics) {
-        window.ULAnalytics.trackTShirtModalClosed({
-          stepReached: this.currentStep,
-          completed: this.currentStep === 4 && this.step4.confirmationChecked,
-          productId: this.product.id,
-        })
-      }
 
       if (window.ULState) {
         window.ULState.set('tshirt.isModalOpen', false)
@@ -607,19 +593,9 @@ console.log('[ULTShirtModal] Script loading...')
     },
 
     goToStep(step) {
-      const previousStep = this.currentStep
       this.currentStep = step
 
-      if (step > previousStep && window.ULAnalytics) {
-        window.ULAnalytics.trackTShirtStepCompleted({
-          step: previousStep,
-          stepName: this.getStepName(previousStep),
-          nextStep: step,
-          timeOnStep: this.stepStartTime ? Date.now() - this.stepStartTime : null,
-        })
-      }
 
-      this.stepStartTime = Date.now()
 
       if (window.ULState) {
         window.ULState.set('tshirt.currentStep', step)
@@ -1030,12 +1006,11 @@ console.log('[ULTShirtModal] Script loading...')
 
     async performUpload(file, progressCallback) {
 
-      const apiBase = '/apps/customizer'
+      const apiBase = window.UL_API_BASE || '/apps/customizer'
 
       const uploadStartTime = Date.now()
 
       const customerId = window.ULCustomer?.id || null
-      const customerEmail = window.ULCustomer?.email || null
 
       const shopDomain = this.getShopDomain()
 
@@ -1061,7 +1036,6 @@ console.log('[ULTShirtModal] Script loading...')
           contentType: file.type || 'application/octet-stream',
           fileSize: file.size,
           customerId: customerId ? String(customerId) : null,
-          customerEmail: customerEmail,
         }),
       })
 
@@ -1206,7 +1180,7 @@ console.log('[ULTShirtModal] Script loading...')
     },
 
     async pollForThumbnail(uploadId, uploadDuration, progressCallback) {
-      const apiBase = '/apps/customizer'
+      const apiBase = window.UL_API_BASE || '/apps/customizer'
       const shopDomain = this.getShopDomain()
       const MAX_POLLS = 60
       let pollCount = 0
@@ -1669,14 +1643,6 @@ console.log('[ULTShirtModal] Script loading...')
         `
       }
 
-      if (window.ULAnalytics) {
-        window.ULAnalytics.trackError({
-          code: 'TSHIRT_NOT_CONFIGURED',
-          step: 'loadProductVariants',
-          productId: this.product.id || 'unknown',
-          shopDomain: this.shopDomain || 'unknown',
-        })
-      }
 
       this.step1.configurationError = true
     },
@@ -1945,7 +1911,6 @@ console.log('[ULTShirtModal] Script loading...')
     },
 
     setColor(name, hex) {
-      const previousColor = this.step2.tshirtColorName
       this.step2.tshirtColor = hex
       this.step2.tshirtColorName = name
 
@@ -1957,13 +1922,6 @@ console.log('[ULTShirtModal] Script loading...')
         window.ULEvents.emit('colorChange', { name, hex })
       }
 
-      if (window.ULAnalytics && previousColor !== name) {
-        window.ULAnalytics.trackTShirtColorChanged({
-          colorName: name,
-          colorHex: hex,
-          previousColor,
-        })
-      }
 
       this.el.colorGrid?.querySelectorAll('.ul-color-swatch').forEach((s) => {
         s.classList.toggle('active', s.title === name)
@@ -1977,8 +1935,6 @@ console.log('[ULTShirtModal] Script loading...')
     },
 
     setSize(size) {
-      const previousSize = this.step2.tshirtSize
-      const previousPrice = this.step2.calculatedPrice
       this.step2.tshirtSize = size
 
       if (window.ULState) {
@@ -1991,13 +1947,6 @@ console.log('[ULTShirtModal] Script loading...')
 
       this.calculatePrice()
 
-      if (window.ULAnalytics && previousSize !== size) {
-        window.ULAnalytics.trackTShirtSizeChanged({
-          size,
-          previousSize,
-          priceDiff: this.step2.calculatedPrice - previousPrice,
-        })
-      }
     },
 
     toggleLocation(locationId) {
@@ -2014,13 +1963,6 @@ console.log('[ULTShirtModal] Script loading...')
         window.ULEvents.emit('locationToggle', { locationId, enabled: loc.enabled })
       }
 
-      if (window.ULAnalytics) {
-        window.ULAnalytics.trackTShirtLocationToggled({
-          location: locationId,
-          enabled: loc.enabled,
-          totalLocations: this.getEnabledLocations().length,
-        })
-      }
 
       const item = document.querySelector(`.ul-location-item[data-location="${locationId}"]`)
       item?.classList.toggle('selected', loc.enabled)
@@ -2542,7 +2484,7 @@ console.log('[ULTShirtModal] Script loading...')
       if (glTFLoaderReady) {
         return new Promise((resolve) => {
           const loader = new THREE.GLTFLoader()
-          const glbUrl = window.UL_TSHIRT_GLB_URL || '/apps/customizer/shirt_baked.glb'
+          const glbUrl = window.UL_TSHIRT_GLB_URL || (window.UL_API_BASE || '/apps/customizer') + '/shirt_baked.glb'
 
           console.log('[ULTShirtModal] Loading GLB model from:', glbUrl)
 
@@ -3331,22 +3273,6 @@ console.log('[ULTShirtModal] Script loading...')
         document.dispatchEvent(new CustomEvent('ul:cartUpdated'))
         document.dispatchEvent(new CustomEvent('cart:updated'))
 
-        if (window.ULAnalytics) {
-          const enabledLocations = Object.keys(this.step2.locations).filter(
-            (k) => this.step2.locations[k].enabled
-          )
-          window.ULAnalytics.trackTShirtAddToCart({
-            color: this.step2.tshirtColorName,
-            colorHex: this.step2.tshirtColor,
-            size: this.step2.tshirtSize,
-            quantity: this.step3.quantity,
-            locations: enabledLocations,
-            locationCount: enabledLocations.length,
-            hasDesign: !!this.inheritedDesign.uploadId,
-            variantId: variantId,
-            price: selectedVariant?.price || null,
-          })
-        }
 
         return true
       } catch (error) {
@@ -3510,15 +3436,6 @@ console.log('[ULTShirtModal] Script loading...')
       if (success) {
         this.showToast('✓ Added to cart! Design another item.', 'success')
 
-        if (window.ULAnalytics) {
-          window.ULAnalytics.trackTShirtDesignAnother({
-            previousColor: this.step2.tshirtColorName,
-            previousSize: this.step2.tshirtSize,
-            previousLocations: Object.keys(this.step2.locations).filter(
-              (k) => this.step2.locations[k].enabled
-            ),
-          })
-        }
 
         this.resetState()
 
@@ -3548,21 +3465,6 @@ console.log('[ULTShirtModal] Script loading...')
           })
         }
 
-        if (window.ULAnalytics) {
-          const enabledLocations = Object.keys(this.step2.locations).filter(
-            (k) => this.step2.locations[k].enabled
-          )
-          window.ULAnalytics.trackTShirtCheckout({
-            color: this.step2.tshirtColorName,
-            colorHex: this.step2.tshirtColor,
-            size: this.step2.tshirtSize,
-            quantity: this.step3.quantity,
-            locations: enabledLocations,
-            locationCount: enabledLocations.length,
-            hasDesign: !!this.inheritedDesign.uploadId,
-            currentStep: this.currentStep,
-          })
-        }
 
         this.close()
 
@@ -3570,16 +3472,6 @@ console.log('[ULTShirtModal] Script loading...')
           window.location.href = '/cart'
         }, 300)
       }
-    },
-
-    getStepName(step) {
-      const stepNames = {
-        1: 'design',
-        2: 'customize',
-        3: 'quantity',
-        4: 'confirm',
-      }
-      return stepNames[step] || `step_${step}`
     },
 
     isLightColor(hex) {
