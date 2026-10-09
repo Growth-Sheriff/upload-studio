@@ -12,9 +12,9 @@ const normalizeHost = (host: string): string => {
 export const shopifyConfig = {
   apiKey: process.env.SHOPIFY_API_KEY || '',
   apiSecret: process.env.SHOPIFY_API_SECRET || '',
-  scopes: process.env.SHOPIFY_SCOPES || 'read_products,write_products,read_orders,write_orders',
+  scopes: process.env.SHOPIFY_SCOPES || 'read_products,write_products,read_orders,write_draft_orders,write_app_proxy',
   hostName: normalizeHost(process.env.APP_DOMAIN || process.env.HOST || 'localhost:3000'),
-  apiVersion: '2025-10',
+  apiVersion: '2026-10',
 }
 
 
@@ -91,6 +91,7 @@ export async function shopifyGraphQL<T = unknown>(
         'X-Shopify-Access-Token': accessToken,
       },
       body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(5000),
     }
   )
 

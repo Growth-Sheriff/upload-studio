@@ -818,7 +818,6 @@ export async function reconcileOrder(
       data: {
         orderId,
         orderName,
-        customerEmail: order.email || upload.customerEmail,
         ...(nextStatus ? { status: nextStatus } : {}),
         ...(facts.paid
           ? {
@@ -844,7 +843,6 @@ export async function reconcileOrder(
           orderId: order.id,
           orderName: order.name,
           lineItemId,
-          customerEmail: order.email,
           matchSource,
           topic,
           statusApplied: nextStatus,
@@ -955,7 +953,6 @@ export async function reconcileOrder(
         productId: `gid://shopify/Product/${lineItem.product_id}`,
         variantId: `gid://shopify/ProductVariant/${lineItem.variant_id}`,
         customerId: order.customer?.id ? String(order.customer.id) : null,
-        customerEmail: order.email,
         orderId,
         orderName,
         status: 'blocked', // Blocked so merchant sees it immediately
