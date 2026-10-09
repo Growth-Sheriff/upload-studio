@@ -770,7 +770,7 @@
       hasCustomPricing: false,
       pricePerInch: null,
       currency: window.UL_STORE_CURRENCY || 'USD',
-      source: 'fallback',
+      source: 'pending',
       quoteStatus: 'idle',
       quoteTotal: null,
       quoteLengthIn: null,
@@ -816,6 +816,25 @@
       } catch (error) {
         return '$' + amount.toFixed(2);
       }
+    }
+
+    function getPriceHeadlineText(pricing, customPricingActive) {
+      if (pricing.source === 'fallback') return 'Pricing unavailable · reload to retry';
+      if (!customPricingActive) return 'Upload for a measured quote';
+      if (pricing.quoteStatus === 'ready' && pricing.quoteTotal != null) {
+        return 'Total: ' + formatMoneyValue(pricing.quoteTotal, pricing.currency);
+      }
+      var rate = Number(pricing.pricePerInch);
+      var pending = pricing.quoteStatus === 'error' ? 'quote unavailable' : 'quote pending';
+      return rate > 0 && isFinite(rate)
+        ? formatMoneyValue(rate, pricing.currency) + ' / billable inch · ' + pending
+        : 'Measured ' + pending;
+    }
+
+    function renderPriceHeadlines() {
+      var text = getPriceHeadlineText(customerPricing, hasCustomPricingActive());
+      if (productPrice) productPrice.textContent = text;
+      if (buyBoxPrice) buyBoxPrice.textContent = text;
     }
 
     function clearCustomBatchHideTimer() {
@@ -2500,6 +2519,7 @@
       syncPricingVisibility();
 
       if (!hasCustomPricingActive()) {
+        if (!state.selectedResult || customerPricing.source === 'fallback') renderPriceHeadlines();
         if (vipPricingTitle) vipPricingTitle.textContent = '';
         if (vipPricingRate) vipPricingRate.textContent = '';
         if (vipPricingLength) vipPricingLength.textContent = '';
@@ -2527,8 +2547,10 @@
       var billableLengthIn = customerPricing.quoteLengthIn || getBillablePageLengthIn();
       var billableWidthIn = getBillablePageWidthIn();
       var isBusiness = isBusinessPricingActive();
+      var productRate = customerPricing.statusKey === 'product_rate';
+      var quoteReady = customerPricing.quoteStatus === 'ready' && customerPricing.quoteTotal != null;
       var rateLabel = customerPricing.pricePerInch != null
-        ? (isBusiness ? 'Business rate: ' : 'VIP price per inch: ') + formatMoneyValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in'
+        ? (productRate ? 'Rate: ' : isBusiness ? 'Business rate: ' : 'VIP price per inch: ') + formatMoneyValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in'
         : 'Rate is loading from the server...';
       var lengthLabel = '';
       if (queueMode) {
@@ -2578,24 +2600,24 @@
           ? 'Uploaded page: ' + formatDisplaySheetDimensions(billableWidthIn, billableLengthIn)
           : 'Waiting for server-confirmed measurement...';
       }
-      var totalLabel = customerPricing.quoteTotal != null
+      var totalLabel = quoteReady
         ? 'Exact total: ' + formatMoneyValue(customerPricing.quoteTotal, customerPricing.currency)
         : (isBusiness ? 'Exact total will be returned after the sheet fit is confirmed.' : 'Exact total will be returned by the server quote.');
-      var titleLabel = customerPricing.statusLabel
+      var titleLabel = productRate ? 'Measured-length pricing' : customerPricing.statusLabel
         ? (isBusiness ? 'Business pricing: ' : 'VIP pricing: ') + customerPricing.statusLabel
         : (isBusiness ? 'Business pricing active' : 'VIP pricing active');
 
       if (queueMode) {
-        totalLabel = customerPricing.quoteTotal != null
+        totalLabel = quoteReady
           ? 'Queue total: ' + formatMoneyValue(customerPricing.quoteTotal, customerPricing.currency)
           : 'Queue total will be returned after every file is quoted.';
       }
 
-      var inlineKicker = isBusiness ? 'Business pricing live' : 'VIP pricing live';
-      var inlineTotalText = customerPricing.quoteTotal != null
+      var inlineKicker = productRate ? 'Measured pricing' : isBusiness ? 'Business pricing live' : 'VIP pricing live';
+      var inlineTotalText = quoteReady
         ? formatMoneyValue(customerPricing.quoteTotal, customerPricing.currency)
-        : 'Please upload your gang sheet';
-      var inlineMetaText = customerPricing.quoteTotal != null
+        : queueMode ? 'Measured quote pending' : 'Upload for a measured quote';
+      var inlineMetaText = quoteReady
         ? (queueMode
             ? readyCount + ' ready sheet' + (readyCount === 1 ? '' : 's') + ' • ' + totalCopies + ' whole-sheet ' + (totalCopies === 1 ? 'copy' : 'copies')
             : (billableLengthIn ? 'Billable length ' + billableLengthIn.toFixed(2) + '"' : 'Ready to create checkout'))
@@ -2620,17 +2642,11 @@
         inlineKicker,
         inlineTotalText,
         inlineMetaText,
-        customerPricing.quoteStatus === 'ready' && customerPricing.quoteTotal != null
+        quoteReady
       );
       setInlinePricingAlertLevel(inlineAlertLevel);
 
-      if (customerPricing.quoteTotal != null) {
-        if (productPrice) productPrice.textContent = formatMoneyValue(customerPricing.quoteTotal, customerPricing.currency);
-        if (buyBoxPrice) buyBoxPrice.textContent = formatMoneyValue(customerPricing.quoteTotal, customerPricing.currency);
-      } else {
-        if (productPrice) productPrice.textContent = isBusiness ? 'Business quote pending' : 'VIP quote pending';
-        if (buyBoxPrice) buyBoxPrice.textContent = isBusiness ? 'Business quote pending' : 'VIP quote pending';
-      }
+      renderPriceHeadlines();
 
       if (detectedVariant) {
         if (queueMode) {
@@ -2638,7 +2654,7 @@
         } else if (isBusiness) {
           detectedVariant.value = customerPricing.quoteVariantTitle || (state.selectedResult && state.selectedResult.selectedVariantTitle) || 'Business custom checkout';
         } else {
-          detectedVariant.value = customerPricing.statusLabel ? customerPricing.statusLabel : 'VIP measured checkout';
+          detectedVariant.value = customerPricing.statusLabel ? customerPricing.statusLabel : (productRate ? 'Measured checkout' : 'VIP measured checkout');
         }
       }
       if (detectedTitle) {
@@ -2724,6 +2740,7 @@
         syncPricingVisibility();
         renderCustomerWorkspace();
         updateVipPreviewUI();
+        renderPriceHeadlines();
         resetActionLabels();
         syncPurchaseButtonsForCurrentState();
         return customerPricing;
@@ -3166,11 +3183,11 @@
       });
 
       if (selectedVariant) {
-        if (!hasCustomPricingActive()) {
+        if (!hasCustomPricingActive() && customerPricing.source !== 'pending' && customerPricing.source !== 'fallback') {
           if (productPrice) productPrice.textContent = moneyFromCents(selectedVariant.price);
           if (buyBoxPrice) buyBoxPrice.textContent = moneyFromCents(selectedVariant.price);
           if (detectedVariant) detectedVariant.value = selectedVariant.title;
-        }
+        } else renderPriceHeadlines();
       } else if (detectedVariant && !normalizedVariantId) {
         detectedVariant.value = state.uploadId ? 'No matching sheet size' : '';
         if (!hasCustomPricingActive() && state.uploadId) {

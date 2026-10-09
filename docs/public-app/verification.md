@@ -14,7 +14,8 @@ Current hosted evidence does not silently relabel older local results:
 | New private R2 | Bucket-only runtime credential; private r2.dev disabled; tests below; exact test object deleted and HEAD404 verified |
 | Demo | Six published test products/media, three supporting pages and nine actual app block bindings in unpublished theme189187817693; no physical fulfillment claim |
 | Real merchant onboarding | NOT passed: Shopify rejects stored non-expiring offline tokens; setup/product403 reproduced on all3shops. products/update tenant binding defect also discovered. Fixes underway |
-| Commerce/privacy/review | Real test billing/order/usage/cap/compliance, Lighthouse and App Store submission are still outstanding |
+| Commerce/review | Real test billing/order/usage/cap, Lighthouse and App Store submission are still outstanding |
+| Hosted privacy, subsequent22:29 UTC proof | All three actual signed HTTP topics/replays, worker export/redaction and real R2 erasure passed on three exact synthetic fixtures, cleaned afterward. See hosted-compliance.md; simulated62-minute fixture clock is not elapsed SLA proof |
 
 ### Real new-bucket header validation
 
@@ -42,15 +43,23 @@ Desktop visual evidence: evidence/demo-home-original-theme.jpg is an actual scre
 | --- | --- | --- |
 | 1. Independent branch | public-app starts at origin/main; protected remote refs unchanged; public boundary CI/PR warnings | Proven locally; never merge back |
 | 2. Existing infrastructure untouched | Both hosts inspected read-only twice; all 14 web + 14 worker StartedAt values unchanged, restart0/OOMfalse | Proven for this run; no deployment occurred |
-| 3. One app, three stores | Real PostgreSQL three-shop read/write/connect isolation, durable sessions; real distributed Redis leases | Local proof only; three Shopify installations missing |
-| 4. Three privacy topics | Actual raw-body HMAC Requests, invalid401, durable dedupe, exports and real temp-file/archive deletion, real SQL leases/cascades/races | Local proof; real R2/account delivery still missing |
+| 3. One app, three stores | Three new Shopify installations; real hosted three-shop synthetic isolation and distributed Redis leases | Hosted isolation proven; real three-shop commerce still missing |
+| 4. Three privacy topics | Actual hosted raw-body HMAC HTTP requests, invalid401, replay, worker exports/redaction and real private R2 erasure with exact cleanup | Synthetic hosted proof passed; Shopify-origin delivery and elapsed SLA not claimed |
 | 5. Tracking removed | Source/compiled JS scans, removal guards, Visitor/VisitorSession absent, DROP migration | Local proof; live storefront Network capture missing |
 | 6. Shopify usage fees exactly once | SQL concurrent claims, frozen shop/order key and line/amount, unpaid/cancelled exclusion, lost-response retry, 3.5%/USD6 unit assertions | Simulated provider transport; real consent/order/usage missing |
 | 7. Cap behavior | Confirmed rejection/exhaustion tests and merchant-confirmed pending cap state | Real provider cap test missing |
 | 8. Full tests | Final commands/results recorded below | Local suite only; no invented live proof |
 | 9. Typecheck | Complete public tsconfig no-emit run | Final command below |
-| 10. Extensions | Pinned CLI3.88.1, theme check[], both extension bundles built | Not deployed/rendered on new app |
-| 11. Performance/accessibility | Removed runtime CSS compiler/blocking includes; real raw/gzip sizes | Lighthouse/keyboard/visual/28-day field evidence missing |
+| 10. Extensions | Pinned CLI3.88.1, theme check[], both extension bundles released; nine real theme-block bindings in new draft | Theme surfaces bound/rendered; actual checkout extension checkout proof still missing |
+| 11. Performance/accessibility | Removed runtime CSS compiler/blocking includes; real raw/gzip sizes; paired three-page app-free draft baseline | Mobile Lighthouse before/after and keyboard evidence incomplete;28-day field data is optional Built for Shopify, not ordinary App Store prerequisite |
+
+### Honest price and performance presentation
+
+Mod2 no longer server-renders its product unit rate as an unexplained whole-sheet price. Before authoritative readiness it labels the amount per billable inch; only a ready quote is a total, and failed pricing context is visibly unavailable. Generic product-rate guests are not described as VIP/Business accounts. Unsupported hardcoded “Works with Any Design” and “In Stock” claims were removed. The measured-pro block already distinguishes per-inch rate, pending quote and exact total; it required no display change. Price calculation, cart authority gates, measurements and fees are untouched.
+
+Scoped checks after this display-only correction: publicStorefrontProxy/theme-bindings/performance-baseline —3 files,6 tests passed; node --check custom-price-upload-mod2.js exit0; pinned Shopify theme check extensions/theme-extension returned[]; scoped git diff --check passed. The new assertion executes the actual headline functions for pending unit rate, stale quote, ready total and unavailable pricing. These are source checks, not a live order or storefront performance result.
+
+The ordinary [App Store storefront test](https://shopify.dev/docs/apps/build/performance/storefront) is the mobile before/after Lighthouse score impact, home17%/product40%/collection43%, no more than10 points degradation. A clean supported theme with typical app features is the review benchmark; the existing identical-content demo baseline is an additional reproducible comparison, not a claimed pass. The28-day Web Vitals targets belong to [Built for Shopify](https://shopify.dev/docs/apps/launch/built-for-shopify/requirements), so they do not impose a28-day wait for ordinary listing submission.
 
 ## Branch and live boundary
 

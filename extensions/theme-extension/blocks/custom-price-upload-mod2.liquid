@@ -40,9 +40,6 @@
             {% else %}
               {{ 'product-1' | placeholder_svg_tag: 'w-full h-full object-contain' }}
             {% endif %}
-            <div class="absolute top-2 left-2 bg-amazon-dark text-white text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1">
-              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg> Works with Any Design
-            </div>
           </div>
 
           <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
@@ -149,7 +146,7 @@
         </div>
 
         <div class="mb-2">
-          <span class="ul-main-product-price text-3xl font-medium text-gray-900">{{ product.price | money }}</span>
+          <span class="ul-main-product-price text-3xl font-medium text-gray-900">Upload for a measured quote</span>
         </div>
         <p class="text-sm text-gray-500 mb-4">Shipping calculated at checkout.</p>
 
@@ -319,15 +316,13 @@
         {% endif %}
 
         <div class="ul-main-buybox-card border border-gray-200 rounded-lg p-4 bg-white mb-6">
-          <div class="ul-main-buybox-price text-2xl font-medium text-gray-900 mb-2">{{ product.price | money }}</div>
+          <div class="ul-main-buybox-price text-2xl font-medium text-gray-900 mb-2">Upload for a measured quote</div>
           <div class="ul-main-vip-pricing hidden mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
             <div class="ul-main-vip-pricing-title font-semibold"></div>
             <div class="ul-main-vip-pricing-rate mt-1 text-xs"></div>
             <div class="ul-main-vip-pricing-length mt-1 text-xs"></div>
             <div class="ul-main-vip-pricing-total mt-2 font-semibold"></div>
           </div>
-
-          <div class="text-lg text-green-700 font-medium mb-4">In Stock.</div>
 
           <div class="ul-main-buybox-form flex flex-col gap-3" data-ul-buybox>
             <input type="hidden" class="ul-main-variant-input" value="{{ product.selected_or_first_available_variant.id }}">
