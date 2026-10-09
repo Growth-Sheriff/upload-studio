@@ -66,7 +66,13 @@ async function executeShopUsageBilling(shopId: string, suppliedAdmin?: BillingAd
       await prisma.commission.updateMany({ where: { shopId, id: claimed.id, status: 'charging', usageRequestStartedAt: null }, data: { status: 'pending', paymentRef: null, nextBillingAttemptAt: null } })
       continue
     }
-    const started = await prisma.commission.updateMany({ where: { shopId, id: claimed.id, status: 'charging', paymentRef: key }, data: { usageRequestStartedAt: claimed.usageRequestStartedAt || new Date() } })
+    // Cancellation/refund can arrive after the eligibility read above. The
+    // first request may start only if those facts are still true in this CAS.
+    // Previously sent, unknown requests keep their original reconciliation path.
+    const started = await prisma.commission.updateMany({ where: {
+      shopId, id: claimed.id, status: 'charging', paymentRef: key,
+      ...(wasUnknown ? {} : { usageRequestStartedAt: null, collectibleAt: { not: null }, reviewRequiredAt: null, shopifyFinancialStatus: 'paid', shopifyRefundStatus: null, shopifyCancelledAt: null }),
+    }, data: { usageRequestStartedAt: claimed.usageRequestStartedAt || new Date() } })
     if (!started.count) continue
     try {
       let recordId: string

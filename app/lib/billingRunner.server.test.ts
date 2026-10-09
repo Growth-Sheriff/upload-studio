@@ -18,9 +18,11 @@ describe('Shopify usage recording', () => {
   let usage: ReturnType<typeof vi.fn>
   let lookup: ReturnType<typeof vi.fn>
   let admin: any
+  let beforeFirstRequest: (() => void) | null
   beforeEach(() => {
     vi.clearAllMocks()
     cap = 50; used = 0
+    beforeFirstRequest = null
     row = { id: 'fee-1', shopId: 'shop-a', orderId: 'order-1', orderNumber: '#123', status: 'pending', commissionAmount: 3.5, paymentRef: null, collectibleAt: new Date(), reviewRequiredAt: null, shopifyFinancialStatus: 'paid', shopifyRefundStatus: null, shopifyCancelledAt: null, usageIdempotencyKey: null, usageLineItemId: null, usageRequestStartedAt: null, nextBillingAttemptAt: null }
     mocks.shop.findUnique.mockResolvedValue({ id: 'shop-a', shopDomain: 'a.myshopify.com', uninstalledAt: null })
     mocks.shop.updateMany.mockResolvedValue({ count: 1 })
@@ -29,9 +31,17 @@ describe('Shopify usage recording', () => {
     mocks.commission.findMany.mockImplementation(() => Promise.resolve(row.status === 'paid' ? [] : [{ ...row }]))
     mocks.commission.findFirst.mockImplementation(() => Promise.resolve({ ...row }))
     mocks.commission.updateMany.mockImplementation(({ where, data }) => {
+      if (data.usageRequestStartedAt && !row.usageRequestStartedAt && beforeFirstRequest) {
+        beforeFirstRequest()
+        beforeFirstRequest = null
+      }
       if (where.status && row.status !== where.status) return Promise.resolve({ count: 0 })
       if (where.paymentRef !== undefined && row.paymentRef !== where.paymentRef) return Promise.resolve({ count: 0 })
       if (where.usageRequestStartedAt === null && row.usageRequestStartedAt) return Promise.resolve({ count: 0 })
+      if (where.collectibleAt?.not === null && !row.collectibleAt) return Promise.resolve({ count: 0 })
+      for (const field of ['reviewRequiredAt', 'shopifyFinancialStatus', 'shopifyRefundStatus', 'shopifyCancelledAt']) {
+        if (where[field] !== undefined && row[field] !== where[field]) return Promise.resolve({ count: 0 })
+      }
       if (where.OR && row.nextBillingAttemptAt && row.nextBillingAttemptAt > new Date()) return Promise.resolve({ count: 0 })
       Object.assign(row, data)
       return Promise.resolve({ count: 1 })
@@ -68,6 +78,22 @@ describe('Shopify usage recording', () => {
     await runShopUsageBilling('shop-a', admin)
     expect(row.status).toBe('paid')
     expect(usage).toHaveBeenCalledOnce()
+  })
+  it('does not send a first usage request when cancellation races the final marker', async () => {
+    beforeFirstRequest = () => {
+      // The webhook preserves the provider-owned claim but makes it terminal.
+      row.shopifyCancelledAt = new Date()
+      row.reviewRequiredAt = new Date()
+    }
+    await runShopUsageBilling('shop-a', admin)
+    expect(usage).not.toHaveBeenCalled()
+    expect(lookup).not.toHaveBeenCalled()
+    expect(row.usageRequestStartedAt).toBeNull()
+    expect(row.status).toBe('charging')
+    row.nextBillingAttemptAt = new Date(0)
+    await runShopUsageBilling('shop-a', admin)
+    expect(row.status).toBe('void')
+    expect(usage).not.toHaveBeenCalled()
   })
   it('keeps fees pending at the approved cap; provider rejection never becomes paid', async () => {
     used = 49
