@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { resolveEffectivePricingForShop } from './customerPricingRuntime.server'
+import { loadRecentBillableInches, resolveEffectivePricingForShop } from './customerPricingRuntime.server'
+import prisma from '~/lib/prisma.server'
 
 vi.mock('~/lib/prisma.server', () => ({ default: {
-  upload: { findMany: vi.fn() }, productConfig: { findMany: vi.fn(async () => []) },
+  upload: { findMany: vi.fn() }, paidSheetVolume: { aggregate: vi.fn(async () => ({ _sum: { paidBillableInches: null } })) },
+  productConfig: { findMany: vi.fn(async () => []) },
 } }))
 
 const settings = {
@@ -20,6 +22,15 @@ const shop = { id: 'shop-a', shopDomain: 'example.myshopify.com', settings }
 afterEach(() => vi.restoreAllMocks())
 
 describe('public pricing identity', () => {
+  it('sums durable paid order-line facts without loading or truncating upload measurements', async () => {
+    vi.mocked(prisma.paidSheetVolume.aggregate).mockResolvedValueOnce({ _sum: { paidBillableInches: 72 } } as any)
+    expect(await loadRecentBillableInches(shop, '42', 3)).toBe(72)
+    expect(prisma.paidSheetVolume.aggregate).toHaveBeenCalledWith({
+      where: { shopId: shop.id, paidAt: { gte: expect.any(Date) },
+        paidCustomerId: '42' }, _sum: { paidBillableInches: true },
+    })
+    expect(prisma.upload.findMany).not.toHaveBeenCalled()
+  })
   it('uses an explicitly configured product base rate for a guest, with no account or carrier variant', async () => {
     const result = await resolveEffectivePricingForShop({ shop, customerId: null, productId: '1',
       builderConfig: { publicPricingMode: 'measured_length', pricePerInch: 0.3 } })

@@ -69,6 +69,56 @@ still bills 80 inches. At a 10-inch limit the 22×6 file bills 22 inches. This i
 explicit approved public-branch correction, not an unnoticed price difference.
 No orientation chooser, embedded-DPI rule or deployed custom app is changed.
 
+## Future paid-volume eligibility
+
+The previous optional automatic eligibility path measured historical uploads
+again with `Math.max(width, height)`, then multiplied their requested copies and
+arbitrarily stopped after 500 uploads. A reproduced 22×6 sheet at quantity 12
+was quoted as 72 inches ($21.60 at $0.30/in) but counted as 264 inches; it crossed
+a 250-inch discount threshold without paying for that much film.
+
+New public checkouts freeze the server's accepted billable inches per Shopify
+line unit, pricing mode and expected variant before returning checkout/cart
+instructions. Quantities may change. A later preparation that changes the
+unit length, pricing mode or variant asks for a new upload, because an older
+invoice/cart may still be paid and cannot be reinterpreted using new settings.
+This affects checkout preparation only, never access to an ordered production
+file. Native variant quantities must match the exact accepted variant; an
+integer-inch carrier unit records the inch that was actually sold.
+
+After full payment, one exact order line earns volume from its actual quantity
+and Shopify customer ID. Capture date comes from the latest successful typed
+SALE/CAPTURE transaction, not order creation or webhook delivery time. Multiple
+ambiguous lines, note-only attribution, missing units/payment dates, truncated
+transaction lists, partial payment and already cancelled/refunded snapshots
+award no invented volume. Unknown historical charges are not backfilled.
+Legacy reference-only/manual cart calls without a server-resolved sheet line
+also award no automatic volume; explicit customer-ID rate assignments remain
+available. They must obtain an authoritative sheet quote before this optional
+benefit can be counted safely.
+The current [Order transaction fields](https://shopify.dev/docs/api/admin-graphql/2026-10/objects/OrderTransaction)
+and [Order transaction list](https://shopify.dev/docs/api/admin-graphql/2026-10/objects/Order)
+were checked on 10 October 2026; no gateway receipt JSON or buyer contact fields
+are used.
+
+The minimal `PaidSheetVolume` accounting ledger has a Shop foreign key only,
+not a cascading relationship to artwork. Ninety-day file retention therefore
+does not truncate a merchant's visible 12-month or longer lookback. Its
+order/line/unit/quantity/capture facts are immutable and remain for the installed
+shop's lifetime under the disclosed finance policy. Customer erasure removes
+its nullable customer linkage; replay cannot refill it. Whole-shop erasure
+deletes the ledger. An owned Upload row lock fences new facts against privacy
+erasure before they commit.
+
+The runtime uses a tenant/customer/date-filtered database SUM with no arbitrary
+row cap and no stale per-process eligibility cache. Duplicate deliveries count
+once; the same upload in another legitimate paid order has a separate fact.
+A later quantity/customer/line edit is audited for manual review and does not
+rewrite the original paid fact. Subsequent refunds likewise do not silently
+recalculate an already captured film history; finance refund relief remains
+the separate immutable fee/credit workflow. Production matching, the three
+cart properties and finished-sheet orientation do not change.
+
 ## Direct file-write capabilities and retired external services
 
 Local/Bunny upload URLs use a short-lived v2 signature covering shop ID,

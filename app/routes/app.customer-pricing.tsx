@@ -16,7 +16,6 @@ import {
   normalizeVolumeProgram,
   resolveCustomerPricingModelState,
 } from '~/lib/customerPricingModel.server'
-import { invalidatePricingRuntimeCaches } from '~/lib/customerPricingRuntime.server'
 import { isCustomerPricingModel, type VolumeTier } from '~/lib/customerPricingShared'
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -156,7 +155,6 @@ export async function action({ request }: ActionFunctionArgs) {
     await prisma.shop.update({ where: { id: shop.id }, data: { settings: next as Prisma.InputJsonObject } })
     await prisma.auditLog.create({ data: { shopId: shop.id, action: 'customer_pricing_updated',
       resourceType: 'pricing', resourceId: shop.id, metadata: { intent } } })
-    invalidatePricingRuntimeCaches(shop.shopDomain)
     return json({ success: 'Pricing saved. New quotes use these settings; existing orders are unchanged.' })
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : 'Pricing could not be saved.' }, { status: 400 })

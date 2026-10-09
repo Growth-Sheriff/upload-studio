@@ -10,6 +10,7 @@ import { authenticate } from '~/shopify.server'
 import prisma from '~/lib/prisma.server'
 import { DPI_PROPERTY, PRINT_READY_PROPERTY, SHEET_IDENTITY_PROPERTY } from '~/lib/orderMatching.server'
 import { buildIdentityUrl } from '~/lib/uploadUrls.server'
+import { acceptCheckoutSheetFacts, CHECKOUT_SHEET_CHANGED } from '~/lib/paidSheetVolume.server'
 
 const DRAFT_ORDER_CREATE_MUTATION = `
   mutation CustomPricingDraftOrderCreate($input: DraftOrderInput!) {
@@ -141,6 +142,7 @@ function normalizeCheckoutItems(body: Record<string, unknown>) {
 }
 
 function errorStatusFromMessage(message: string): number {
+  if (message === CHECKOUT_SHEET_CHANGED) return 409
   if (message === 'Shop not found') return 404
   if (message === 'Upload not found') return 404
   if (message === 'Product not found') return 404
@@ -290,6 +292,11 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   try {
+    await Promise.all(preparedItems.map(item => acceptCheckoutSheetFacts({
+      shopId: prepared.shop.id, uploadId: item.upload.id,
+      unitBillableInches: item.quote.billableLengthIn / Math.max(1, item.requestedQuantity),
+      pricingMode: item.pricingContext.pricingMode, variantId: item.checkoutVariantId,
+    })))
     const draftOrderResponse = await shopifyGraphQL<{
       draftOrderCreate: {
         draftOrder: { id: string; invoiceUrl: string | null } | null
@@ -393,6 +400,9 @@ export async function action({ request }: ActionFunctionArgs) {
       },
     })
   } catch (error) {
+    if (error instanceof Error && error.message === CHECKOUT_SHEET_CHANGED) {
+      return json({ error: error.message }, { status: 409 })
+    }
     console.error('[Custom Checkout] Draft order creation failed:', error)
     return json({ error: `Failed to create ${checkoutLabel}` }, { status: 500 })
   }

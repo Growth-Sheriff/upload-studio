@@ -7,7 +7,7 @@ export interface TenantOperation { model?: string; action: string; args?: Args }
 const scopedModels = new Set([
   'ProductConfig', 'AssetSet', 'Upload', 'OrderLink', 'ExportJob', 'AuditLog',
   'TeamMember', 'ApiKey', 'WhiteLabelConfig', 'FlowTrigger', 'Commission',
-  'UploadLog', 'ShopBilling', 'BillingCredit', 'SupportTicket',
+  'UploadLog', 'ShopBilling', 'BillingCredit', 'SupportTicket', 'PaidSheetVolume',
 ])
 const whereActions = new Set(['findMany', 'findFirst', 'findFirstOrThrow', 'findUnique', 'findUniqueOrThrow', 'count', 'aggregate', 'groupBy', 'update', 'updateMany', 'delete', 'deleteMany', 'upsert'])
 
@@ -56,7 +56,7 @@ export function scopeTenantOperation(params: TenantOperation): void {
       const values = [params.args?.data, params.args?.create, params.args?.update]
       for (const value of values) if (value) {
         if (['update', 'updateMany', 'upsert'].includes(action) && Object.prototype.hasOwnProperty.call(value, 'erasureStartedAt') && value.erasureStartedAt === null) throw new TenantIsolationError('erasure marker cannot be cleared')
-        for (const key of ['uploads', 'productsConfig', 'assetSets', 'ordersLink', 'commissions', 'exportJobs', 'auditLogs', 'uploadLogs', 'billing', 'billingCredits', 'teamMembers', 'apiKeys', 'whiteLabelConfig', 'flowTriggers', 'supportTickets']) if (value[key]) throw new TenantIsolationError('Shop nested tenant mutation is forbidden')
+        for (const key of ['uploads', 'productsConfig', 'assetSets', 'ordersLink', 'commissions', 'exportJobs', 'auditLogs', 'uploadLogs', 'billing', 'billingCredits', 'teamMembers', 'apiKeys', 'whiteLabelConfig', 'flowTriggers', 'supportTickets', 'paidSheetVolumes']) if (value[key]) throw new TenantIsolationError('Shop nested tenant mutation is forbidden')
       }
     }
     return
@@ -124,7 +124,7 @@ export async function validateTenantRelations(client: PrismaClient, params: Tena
     if (params.model === 'Upload' && record.items) {
       for (const key of ['connect', 'set', 'connectOrCreate', 'update', 'updateMany', 'delete', 'deleteMany', 'upsert']) if (record.items[key]) throw new TenantIsolationError('nested item reassignment/mutation is forbidden; use its scoped delegate')
     }
-    for (const key of ['ordersLink', 'productsConfig', 'uploads', 'assetSets', 'exportJobs', 'commissions', 'auditLogs', 'teamMembers', 'apiKeys', 'flowTriggers']) if (record[key]) throw new TenantIsolationError(`nested ${key} mutation is forbidden`)
+    for (const key of ['ordersLink', 'productsConfig', 'uploads', 'assetSets', 'exportJobs', 'commissions', 'auditLogs', 'teamMembers', 'apiKeys', 'flowTriggers', 'paidSheetVolumes']) if (record[key]) throw new TenantIsolationError(`nested ${key} mutation is forbidden`)
   }
 }
 

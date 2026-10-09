@@ -13,7 +13,8 @@ describe('GraphQL order snapshots', () => {
     expect(order.line_items[0]).toMatchObject({ id: '1', price: '60.00', quantity: 2, discount_allocations: [{ amount: '20.00' }], properties: [{ name: 'Sheet Identity', value: '/i/upload123' }] })
     expect(extractShopifyCommissionFacts(order)).toMatchObject({ refundState: 'full', captureConfirmed: false })
     expect(order).not.toHaveProperty('email')
-    expect(api.shopifyGraphQL.mock.calls[0][2]).not.toMatch(/\b(email|phone|customer|shippingAddress)\b/)
+    expect(api.shopifyGraphQL.mock.calls[0][2]).not.toMatch(/\b(email|phone|firstName|lastName|shippingAddress)\b/)
+    expect(api.shopifyGraphQL.mock.calls[0][2]).toContain('customer { id }')
     expect(api.shopifyGraphQL.mock.calls[0][3]).toEqual({ id: 'gid://shopify/Order/123' })
   })
   it('fails closed on missing or truncated orders/refunds and mismatched currency', async () => {

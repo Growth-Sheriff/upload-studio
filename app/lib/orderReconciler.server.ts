@@ -39,6 +39,8 @@ import {
   extractShopifyCommissionFacts,
   planCommissionReconciliation,
 } from '~/lib/commissionEligibility.server'
+import { recordPaidSheetFacts } from '~/lib/paidSheetVolume.server'
+import { fetchShopifyOrderSnapshot } from '~/lib/shopifyOrderSnapshot.server'
 
 /** Constant-time webhook HMAC check shared by every order webhook adapter.
  *  (Two of the legacy handlers compared strings with `!==`; unified here on
@@ -705,6 +707,7 @@ export async function reconcileOrder(
   }
   const processed = new Set<string>()
   let paidNewlyRecorded = false
+  let paidVolumeOrder: Promise<any> | null = null
 
   // ── Resolution sources ───────────────────────────────────────────────────
   const productConfigs = await prisma.productConfig.findMany({
@@ -770,7 +773,7 @@ export async function reconcileOrder(
     // Pass 2 and billed 4% on an order this app never handled.
     const isGhost = isGhostUploadItems(upload.items)
 
-    await prisma.orderLink.upsert({
+    const orderLink = await prisma.orderLink.upsert({
       where: { shopId_orderId_uploadId: { shopId: shop.id, orderId, uploadId } },
       update: lineItemId ? { lineItemId } : {},
       create: { shopId: shop.id, orderId, uploadId, lineItemId },
@@ -822,6 +825,24 @@ export async function reconcileOrder(
       summary.affectedUploadIds.push(uploadId)
       console.log(`[Reconcile] Ghost upload ${uploadId} refreshed for order ${orderId} (source=${matchSource}); not billable`)
       return true
+    }
+    if (upload.checkoutQuoteAcceptedAt && order.financial_status === 'paid' && !facts.cancelled && lineItemId) {
+      try {
+        paidVolumeOrder ||= fetchShopifyOrderSnapshot(shop.shopDomain, shop.accessToken, orderId)
+        await recordPaidSheetFacts({ shopId: shop.id, linkId: orderLink.id,
+          upload, order: await paidVolumeOrder, lineItemId })
+      } catch (error) {
+        // Missing verified payment facts never invent eligibility or deny the
+        // merchant access to an already ordered production file.
+        console.warn('[PaidSheetVolume] Verified order facts unavailable:',
+          error instanceof Error ? error.message : String(error))
+        await prisma.auditLog.upsert({
+          where: { id: `paid_volume_unavailable_${orderLink.id}` }, update: {},
+          create: { id: `paid_volume_unavailable_${orderLink.id}`, shopId: shop.id,
+            action: 'paid_sheet_volume_snapshot_unavailable', resourceType: 'order', resourceId: orderId,
+            metadata: { uploadId, lineItemId, message: 'No volume was awarded; payment facts require review or a later successful reconciliation.' } },
+        })
+      }
     }
     summary.linked.push({ uploadId, matchSource })
     if (lineItemId && !summary.servedLineItemIds.includes(lineItemId)) summary.servedLineItemIds.push(lineItemId)

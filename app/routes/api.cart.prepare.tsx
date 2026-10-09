@@ -29,6 +29,7 @@ import { resolveForMetadata } from '~/lib/sheetResolution.server'
 import { shopifyProductIdCandidates } from '~/lib/shopifyProductIdentity'
 import { selectProductConfigForIdentity } from '~/lib/productConfigIdentity.server'
 import { authenticate } from '~/shopify.server'
+import { acceptCheckoutSheetFacts } from '~/lib/paidSheetVolume.server'
 import {
   DPI_PROPERTY,
   PRINT_READY_PROPERTY,
@@ -315,6 +316,19 @@ export async function action({ request }: ActionFunctionArgs) {
           ) || requestedLine.copies
         )
       )
+      try {
+        await acceptCheckoutSheetFacts({
+          shopId: shop.id, uploadId: upload.id, variantId,
+          pricingMode: resolved.pricingMode === 'linear_inches' ? 'linear_inches' : 'standard_variant',
+          // Integer-inch carrier quantity means purchased inches, not copies.
+          // A named sheet variant bills its merchant-authored sheet length.
+          unitBillableInches: resolved.pricingMode === 'linear_inches' ? 1 : Number(resolution.sheetHeightIn),
+        })
+      } catch (error) {
+        lifecycleByUploadId.set(upload.id, { ...lifecycleState, orderable: false })
+        preparationErrorByUpload.set(upload.id, error instanceof Error ? error.message : 'Prepare a new upload before changing its checkout sheet.')
+        return
+      }
       canonicalLineByUpload.set(upload.id, {
         copies: requestedLine.copies,
         sheetsNeeded: requestedLine.copies,

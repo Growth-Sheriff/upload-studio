@@ -16,11 +16,6 @@ import {
   resolveEffectivePricing,
   type EffectivePricing,
 } from '~/lib/customerPricingModel.server'
-import {
-  applyMeasurementBasisMetadata,
-  deriveUploadItemLifecycle,
-  getStoredMeasurementBasis,
-} from '~/lib/uploadLifecycle.server'
 
 export interface PricingShopLike {
   id: string
@@ -29,74 +24,25 @@ export interface PricingShopLike {
   settings: unknown
 }
 
-const INCHES_CACHE_TTL_MS = 10 * 60 * 1000
-const inchesCache = new Map<string, { inches: number; expiresAt: number }>()
-
-function pruneCache<T extends { expiresAt: number }>(cache: Map<string, T>, now: number) {
-  if (cache.size < 500) return
-  for (const [key, value] of cache) {
-    if (value.expiresAt <= now) cache.delete(key)
-  }
-}
-
-export function invalidatePricingRuntimeCaches(shopDomain?: string) {
-  if (!shopDomain) {
-    inchesCache.clear()
-    return
-  }
-  for (const key of Array.from(inchesCache.keys())) if (key.startsWith(`${shopDomain}:`)) inchesCache.delete(key)
-}
-
-/** Billable inches this customer paid for in the last `months`, from our own
- *  order-linked uploads (measured length × copies). */
+/** Immutable paid order-line facts only. Legacy/unknown measurements cannot
+ * invent eligibility, and a reused upload can belong to several paid orders. */
 export async function loadRecentBillableInches(
   shop: PricingShopLike,
   customerId: string | null,
-  months: number,
-  basis: 'full_page' | 'artwork_bounds'
+  months: number
 ): Promise<number> {
   if (!customerId) return 0
   const now = Date.now()
-  const key = `${shop.shopDomain}:${customerId}:${months}:${basis}`
-  const cached = inchesCache.get(key)
-  if (cached && cached.expiresAt > now) return cached.inches
-
   const since = new Date(now - Math.max(1, months) * 30 * 24 * 3600 * 1000)
-  const uploads = await prisma.upload.findMany({
+  const result = await prisma.paidSheetVolume.aggregate({
     where: {
       shopId: shop.id,
-      orderPaidAt: { gte: since },
-      customerId: { in: [customerId, `gid://shopify/Customer/${customerId}`] },
+      paidAt: { gte: since },
+      paidCustomerId: customerId,
     },
-    select: {
-      requestedCopies: true,
-      sheetsNeeded: true,
-      items: {
-        orderBy: { createdAt: 'asc' },
-        take: 1,
-        select: { preflightStatus: true, preflightResult: true },
-      },
-    },
-    take: 500,
+    _sum: { paidBillableInches: true },
   })
-
-  let inches = 0
-  for (const upload of uploads) {
-    const item = upload.items[0]
-    if (!item) continue
-    const lifecycle = deriveUploadItemLifecycle(item)
-    const metadata = applyMeasurementBasisMetadata(
-      lifecycle.metadata,
-      getStoredMeasurementBasis(item.preflightResult, basis)
-    )
-    if (!metadata || lifecycle.measurementStatus !== 'ready') continue
-    const lengthIn = Math.max(Number(metadata.widthIn) || 0, Number(metadata.heightIn) || 0)
-    const copies = Math.max(1, Number(upload.requestedCopies) || Number(upload.sheetsNeeded) || 1)
-    inches += lengthIn * copies
-  }
-  inches = Number(inches.toFixed(2))
-  pruneCache(inchesCache, now)
-  inchesCache.set(key, { inches, expiresAt: now + INCHES_CACHE_TTL_MS })
+  const inches = Number(Number(result._sum.paidBillableInches || 0).toFixed(2))
   return inches
 }
 
@@ -132,8 +78,7 @@ export async function resolveEffectivePricingForShop(input: EffectivePricingRequ
     ? await loadRecentBillableInches(
         shop,
         customerId,
-        program.autoEligibility.months,
-        state.policyExplicit ? state.policy.measurementBasis : 'full_page'
+        program.autoEligibility.months
       )
     : 0
 

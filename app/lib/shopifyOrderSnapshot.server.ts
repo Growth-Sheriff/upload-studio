@@ -4,6 +4,8 @@ const ORDER_SNAPSHOT_QUERY = `query PublicOrderFinancialSnapshot($id: ID!) {
   order(id: $id) {
     id legacyResourceId name currencyCode displayFinancialStatus displayFulfillmentStatus
     cancelledAt updatedAt processedAt cartToken note
+    customer { id }
+    transactions(first: 250) { kind status processedAt }
     totalPriceSet { shopMoney { amount currencyCode } }
     currentTotalPriceSet { shopMoney { amount currencyCode } }
     subtotalPriceSet { shopMoney { amount currencyCode } }
@@ -67,6 +69,15 @@ export function normalizeShopifyOrderSnapshot(order: any): any {
     fulfillment_status: order.displayFulfillmentStatus === 'FULFILLED' ? 'fulfilled' : order.displayFulfillmentStatus === 'PARTIALLY_FULFILLED' ? 'partial' : null,
     cancelled_at: order.cancelledAt || null, updated_at: order.updatedAt, processed_at: order.processedAt,
     cart_token: order.cartToken, note: order.note,
+    customer: order.customer ? { id: numericId(order.customer.id, 'Customer') } : null,
+    // Order.transactions is a bounded list, not a connection. Exactly the
+    // bound cannot prove completeness and is excluded from volume eligibility.
+    volume_transactions_complete: Array.isArray(order.transactions) && order.transactions.length < 250,
+    transactions: Array.isArray(order.transactions) ? order.transactions.map((transaction: any) => ({
+      kind: String(transaction.kind || '').toLowerCase(),
+      status: String(transaction.status || '').toLowerCase(),
+      processed_at: transaction.processedAt || null,
+    })) : [],
     total_price: money(order.totalPriceSet, currency), current_total_price: money(order.currentTotalPriceSet, currency), subtotal_price: money(order.subtotalPriceSet, currency),
     line_items: lineItems, refunds,
   }
