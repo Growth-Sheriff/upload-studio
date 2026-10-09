@@ -92,7 +92,7 @@ The production Docker image was built locally with Node22, ImageMagick6, Ghostsc
 
 ## Final executed results
 
-Source freeze: `726c53b2a48b61ec0c135f777dda1e2a64152d19`. Later changes are documentation and draft release assets, not application logic.
+Implementation source freeze: `726c53b2a48b61ec0c135f777dda1e2a64152d19`. The table below records that executed revision. A subsequent public-only compatible security dependency update and due-date correction to concurrent test fixtures are recorded separately below; these results are not silently relabelled as their proof.
 
 | Check | Actual final output |
 | --- | --- |
@@ -139,7 +139,43 @@ Full matching paths and earlier compiled-asset scan are in tracking-removal.md. 
 
 ### Local cleanup
 
-After the final checks, the local native HTTP process was stopped. Exact inspected containers `agsu-public-smoke`, `agsu-public-test-db` and `agsu-public-test-redis` were stopped and removed; all commands succeeded. Disposable SQL/Redis test state is gone. The local `agsu-public-review:final` image remains available for reproduction. No remote container, database row, queue, billing record or storage object was changed by these cleanup steps. The unrelated pre-existing temp_page.html worktree change is preserved and is not part of any public commit.
+After the implementation checks, the local native HTTP process was stopped. Exact inspected containers `agsu-public-smoke`, `agsu-public-test-db` and `agsu-public-test-redis` were stopped and removed; all commands succeeded. The same local-only SQL/Redis fixture containers were recreated for the compatible dependency checks, not reused from any live deployment. No remote container, database row, queue, billing record or storage object was changed by these cleanup steps. The unrelated pre-existing temp_page.html worktree change is preserved and is not part of any public commit.
+
+## Public push and CI boundary
+
+`git push -u origin public-app` created only the new public branch. Immediately afterwards, read-only remote inspection showed public-app=`4f5d7359e9354e63dfa4c703f2c55b7b4d034395`, main=`76113c193d7da789df9b2d3ea1ad7947af48b334` and custom-container-upload-studio-app=`d8470f5bca9ab182ca1b9d6b635d89ee7c7a5075`. No PR into a protected branch was opened. Both live hosts were inspected again; all listed StartedAt/restart/OOM values still matched the initial sample. Original checkout remained clean.
+
+[Public checks run37992897397](https://github.com/Growth-Sheriff/upload-studio/actions/runs/37992897397) did not start any steps. The check annotation from `gh api repos/Growth-Sheriff/upload-studio/check-runs/114031374441/annotations` says: "The job was not started because your account is locked due to a billing issue." No organization billing setting was changed; this is not a code-test failure or a green CI claim.
+
+## Compatible security update — subsequent executed revision
+
+Dependency changes are commit `e67b7e0`; auth-fixture due dates are commit `358e47c`. No application fee, measurement or tenant data is repriced. See dependency-security.md for exact versions and remaining risks.
+
+Post-update Windows full run at00:27:45 Istanbul:55files passed/1skipped,386tests passed/5skipped, duration5.67s, exit0. Whole tsc again returned no diagnostics/exit0. Harness again returned integrity=pass, regressions=0, unclassified differences=0, releaseGate=clear. Pinned theme check again returned[] and both extensions built with explicit public config.
+
+Intermediate retries are not hidden: one parallel auth receipt assertion found the privacy suite legitimately claiming its due receipt. Those auth-only fixtures now use future `dueAt` values; held-SQL-lock race assertions are unchanged. An initial fixture edit mistakenly named `availableAt`; Prisma rejected it and it was corrected to the actual schema field before either commit. Overlapping test runs during a Docker layer copy also produced local database timeouts/unreachability; the local database remained running/OOMfalse. The successful final run above had no overlapping full-suite process. No test timeout or production error check was weakened to get green.
+
+Final application/dependency revision: `358e47c095a779cae7ed7992923c6b891f3bdedb`.
+
+```text
+docker build -f deploy/public/Dockerfile -t agsu-public-review:release .
+exit0
+manifest-list sha256:702d70a6376f61b97cdeab9e9331a286377d01a4646598ed12a3a64a6e235f51
+client1601 modules; server160 modules /874.64kB
+
+node /app/node_modules/vitest/vitest.mjs run
+Start at21:30:38 UTC, 9 October2026
+Test Files 56 passed (56)
+Tests 391 passed (391)
+Duration4.71s
+exit0
+```
+
+This final Linux run used **the latest release image's baked source and dependency lock**, not the pre-security image. Extension/theme-snippet/test-config inputs were mounted read-only; local PostgreSQL/Redis were reached through the same two temporary loopback bridges described above. Every integration opt-in URL was set explicitly. All five ImageMagick tests and the SQL/Redis/HMAC suites actually ran. No Windows skip is counted as Linux success.
+
+The release image was then run as `node` with read-only root filesystem, dropped capabilities, loopback-only port55441 and fake local secrets. Inspection: runningtrue/OOMfalse; health200/20bytes and public privacy200/8,592bytes. This is a startup smoke, not an installed Shopify app test.
+
+Final cleanup inspected and removed the three exact local agsu-public containers again. This pass used `docker rm -v` and removed the inspected test PostgreSQL/Redis anonymous volumes too. Earlier first-cycle container removal did not include `-v`; no blanket volume prune was attempted, and this report does not claim that unverified older anonymous Docker volumes were erased. Local review images remain reproducible. No live resource was stopped, removed or modified.
 
 ## Performance and remaining evidence
 

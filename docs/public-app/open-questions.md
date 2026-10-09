@@ -12,6 +12,8 @@ Updated: 2026-10-10 (Europe/Istanbul).
 6. Credits and financial operations: usage records cannot be undone. BillingCredit records queue owner review; Partner API/provider credit issuance, its audit reference and reconciliation procedure are not implemented/proven as an unattended workflow. Verify account revenue-share eligibility and tax treatment. Unsupported/stale FX safely blocks fee collection and needs an operator resolution path.
 7. Legal/support readiness: actual legal entity/address, hosting region, processor agreements and a working info@actualscope.com mailbox have not been authenticated. Policy/listing copy and the editable icon are release drafts, not legal approval or submission assets.
 8. Storefront/admin release evidence: extension builds and static checks pass locally; extensions are not published to a new app and no real storefront Network panel, keyboard/visual checks, review video, screenshots or Lighthouse comparison exists yet.
+9. GitHub Actions: public-app push created the public checks run, but no test step started. GitHub's annotation states, "The job was not started because your account is locked due to a billing issue." Existing organization billing was not changed. Local executed results are not a green hosted CI claim.
+10. Dependency disposition: compatible updates reduce the production audit from2critical/30high/27moderate/6low to0critical/2high/3moderate/0low. Remaining framework/tooling advisories and their actual exposure conditions are in dependency-security.md. Supported upstream updates and final release review remain necessary; audit exclusions or unsafe major overrides were not used to manufacture a clean result.
 
 ## Deliberate boundaries
 
