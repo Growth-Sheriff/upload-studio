@@ -62,6 +62,8 @@ PostgreSQL reports one provider backup at this point. Official [managed PostgreS
 
 Valkey configuration was read back as `valkey_ssl:true`, `frequent_snapshots:true`, `valkey_persistence:rdb`, `valkey_maxmemory_policy:noeviction`. DigitalOcean [documents](https://docs.digitalocean.com/reference/api/reference/databases/) ten-minute RDB snapshots; this is weaker than [BullMQ's one-second AOF recommendation](https://docs.bullmq.io/guide/going-to-production). Pending jobs can be lost across a crash. A queue-loss/rehydration proof from durable upload, privacy and commission rows is a launch gate, not solved by claiming that managed Valkey is durable enough.
 
+A read-only OpenSSL handshake from the new host to the queue's private endpoint returned `TLSv1.3` and `Verification: OK` using default system roots. The [Valkey connection guide](https://docs.digitalocean.com/products/databases/valkey/how-to/connect/) confirms that its Let'sEncrypt certificate needs no separately downloaded CA. Keep `rediss://` certificate checks enabled; never disable verification to get a worker online.
+
 [Standard PostgreSQL plan restrictions](https://docs.digitalocean.com/products/databases/postgresql/details/pricing/) change on15Oct2026 for new accounts and30Nov2026 for all accounts. Future larger/HA production must reassess AdvancedEdition or another independently provisioned database. Current single-node databases and one host are explicitly for demo/review; none are claimed HA.
 
 ## Reproduction and current publication gates
@@ -79,3 +81,7 @@ New-host package evidence: cloud-init `done`, Docker29.1.3, Compose2.40.3, Caddy
 At `2026-10-09T22:01:57Z`, HTTP redirected308 to HTTPS. TLS certificate issuance was pending an automatic Let'sEncrypt retry: early boot before DNS caused failed authorization rate limiting, with the provider's explicit retry-after `2026-10-09T22:04:35Z`. Do not bypass that limit or mistake HTTP redirect for validTLS.
 
 At this provisioning handoff no application containers were running, no migrations were applied by this helper, and no Shopify/provider billing calls were made. The root release workflow must separately verify TLS, deploy the independent image, apply new-database migrations, supply new-bucketS3 credentials, then prove real demo upload/cart/order/usage-record flows. Existing invalid inventoryS3 credentials and successful OAuth bucket creation do not prove applicationR2 access. App Store approval and three-store live isolation remain separate gates.
+
+### Later deployment observation — 22:09:06 UTC
+
+The root release workflow subsequently started six containers on **only droplet607746803**. The read-only snapshot at `2026-10-09T22:09:06Z` found web/measure/preview/export/billing/privacy all up for seven seconds (web healthcheck still starting). An ordinary certificate-verifying HTTPS request to `https://auto-gang-sheet.actualscope.com/health` returned **HTTP/2 200**. Caddy's `22:09:05` log confirmed `certificate obtained successfully` from the production `acme-v02.api.letsencrypt.org-directory` issuer. This clears the DNS/TLS/basic runtime-health gate, not the commerce, billing, privacy or App Store review gates. No insecure TLS flag, ACME account reset or rate-limit workaround was used.
