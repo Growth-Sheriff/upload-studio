@@ -1,6 +1,40 @@
 # Public app verification — evidence, not publication
 
-Work performed 9–10 October 2026 (Europe/Istanbul), exclusively in the managed public worktree. Main baseline: `76113c193d7da789df9b2d3ea1ad7947af48b334`. The original custom checkout is unchanged and clean. No public app has been registered, hosted or submitted in this run.
+Work performed 9–10 October 2026 (Europe/Istanbul), exclusively in the managed public worktree. Main baseline: `76113c193d7da789df9b2d3ea1ad7947af48b334`. The original custom checkout is unchanged and clean. A new public review app is now registered, hosted and installed in three development shops; no App Store submission or approval is claimed. Historical sections below retain their own executed revisions and limitations.
+
+## Hosted release execution update — 9 October, 22:25 UTC
+
+Current hosted evidence does not silently relabel older local results:
+
+| Check | Actually observed |
+| --- | --- |
+| Public identity/extensions | Actual Scope app433768202241; released version1161809625089; API2026-10; all three new development shops installed |
+| Independent public HTTPS | Trusted TLS and /health HTTP200 after issuance22:09:05 UTC; no certificate-warning bypass |
+| Hosted isolation | New droplet607746803, deployed digest9c039fc1…;24 assertions/three simultaneous synthetic shops passed; exact3 fixture shops and uploads removed; no order/commission rows. See hosted-isolation.md |
+| New private R2 | Bucket-only runtime credential; private r2.dev disabled; tests below; exact test object deleted and HEAD404 verified |
+| Demo | Six published test products/media, three supporting pages and nine actual app block bindings in unpublished theme189187817693; no physical fulfillment claim |
+| Real merchant onboarding | NOT passed: Shopify rejects stored non-expiring offline tokens; setup/product403 reproduced on all3shops. products/update tenant binding defect also discovered. Fixes underway |
+| Commerce/privacy/review | Real test billing/order/usage/cap/compliance, Lighthouse and App Store submission are still outstanding |
+
+### Real new-bucket header validation
+
+Executed deploy/public/prove-storage.mjs at22:14:43.617–22:14:45.091 UTC against only auto-gang-sheet-public. The helper refuses a different app client ID, account or bucket and a public R2 URL; it creates no database/queue/order/billing row.
+
+```text
+signed PUT HTTP200, CORS *, ETag present,70816 bytes,331ms
+HEAD ContentLength70816
+Range HTTP206,65536 bytes, Content-Range bytes0-65535/70816
+actual validateStoredRasterHeader:300x600,133ms
+tampered browser1x2/DPI9999 overridden by stored header
+unsigned access HTTP400, codeInvalidArgument (R2 rejects unsupported anonymous S3 credentials)
+multipart created then aborted; exact remaining multipart count0
+missing object projected blocked; canAddToCartfalse
+finally: exact synthetic object deleted; HEAD404 verified
+```
+
+The first attempt expected only401/403 for anonymous S3 access, so it failed on R2's400InvalidArgument; its finally cleanup also verified object absence. The revised assertion accepts that error shape, not successful anonymous access. This proof is header/storage validation, not a real storefront order or a performance benchmark for large images.
+
+Desktop visual evidence: evidence/demo-home-original-theme.jpg is an actual screenshot of the password-protected draft demo storefront, not a mockup or claimed App Store approval.
 
 ## The eleven release gates
 

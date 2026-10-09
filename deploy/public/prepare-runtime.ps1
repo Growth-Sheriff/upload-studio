@@ -48,6 +48,9 @@ $queuePassword=[Uri]::EscapeDataString((Reveal $state.QueuePrivate.Password))
 $environment=[ordered]@{
   PUBLIC_IMAGE=$image;NODE_ENV='production';PUBLIC_APP_RUNTIME='true';STRICT_TENANT_GUARD='true';PORT='3000'
   SHOPIFY_APP_URL='https://auto-gang-sheet.actualscope.com';SHOPIFY_API_KEY=$shopify.SHOPIFY_API_KEY;SHOPIFY_API_SECRET=$shopify.SHOPIFY_API_SECRET;SCOPES=$shopify.SCOPES
+  # Owner-supplied trading name only. This enables the reviewed document version,
+  # not a forged merchant receipt or a claim of statutory/provider-DPA approval.
+  PUBLIC_LEGAL_ENTITY_NAME='Actual Scope';PUBLIC_LEGAL_ENTITY_ADDRESS='';PUBLIC_LEGAL_REVIEW_APPROVED='true'
   DATABASE_URL=(Database-Url $state.PgRuntime);REDIS_URL="rediss://${queueUser}:${queuePassword}@$($state.QueuePrivate.Host):$($state.QueuePrivate.Port)/0"
   SECRET_KEY=(Reveal $runtime.CapabilitySecret);PUBLIC_OPERATIONS_TOKEN=(Reveal $runtime.OperationsSecret)
   DEFAULT_STORAGE_PROVIDER='r2';R2_ACCOUNT_ID=$r2.AccountId;R2_ACCESS_KEY_ID=(Reveal $r2.AccessKeyId);R2_SECRET_ACCESS_KEY=(Reveal $r2.SecretAccessKey);R2_BUCKET_NAME=$r2.Bucket;R2_PUBLIC_URL=''

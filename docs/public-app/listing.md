@@ -20,7 +20,7 @@ Checkout display requires Plus on checkout steps and is optional; ordinary uploa
 
 ## Review procedure and screenshots (pending live demo)
 
-`assets/icon-draft.svg` is an editable icon concept, not an App Store submission image. Export to the format/dimensions required by the actual dashboard and visually approve it there. Product screenshots and review video must come from the real demo, not a fabricated UI mockup.
+`assets/icon-draft.svg` is the editable native vector source. The actual new-app settings request1200×1200 PNG/JPG, at most1MB; assets/icon-1200.png is its visually inspected1200×1200/56,034-byte PNG export. It has not been uploaded: Chrome's extension lacks file-URL access and the owner must enable that permission. Product screenshots and review video must come from the real demo, not a fabricated UI mockup.
 
 Create three independent development stores, install this one public app in all, approve provider test usage billing and configure products in Setup. Demo A uses variants 22x12/22x24/22x80; B uses measured-length rate0.30 in store currency, width22.5 and max length240; C proves data separation. Product configuration is self-service; do not write products_config rows by hand.
 
