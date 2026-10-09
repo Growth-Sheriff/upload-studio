@@ -3,6 +3,8 @@ name: auto-gang-sheet-public
 x-app: &app
   image: ${PUBLIC_IMAGE:?Set the independent public image}
   env_file: public.env
+  volumes:
+    - ./pg-ca.pem:/run/secrets/pg-ca.pem:ro
   restart: unless-stopped
   init: true
   read_only: true
