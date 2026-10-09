@@ -12,6 +12,19 @@ import {
 } from './customerPricing.server'
 
 describe('measured-length finished-sheet fit', () => {
+  it('returns the exact fractional-cent rate used in measured and variant totals', () => {
+    const measurement = { widthPx: 0, heightPx: 0, measurementWidthPx: 0, measurementHeightPx: 0,
+      widthIn: 22, heightIn: 80, dpi: 300, effectiveDpi: 300,
+      sizingSource: 'document_dpi', measurementMode: 'full' }
+    const measured = calculateMeasuredLengthQuote(measurement, 0.285)
+    expect(measured).toMatchObject({ pricePerInch: 0.285, billableLengthIn: 80, totalPrice: 22.80 })
+    expect(calculateVariantLengthQuote({ measurement, pricePerInch: 0.285,
+      variantTitle: '22 x 80', sheetsNeeded: 1 })).toMatchObject({ pricePerInch: 0.285, totalPrice: 22.80 })
+    expect(calculateMeasuredLengthQuote(measurement, 0.000025)).toMatchObject({ pricePerInch: 0.000025, totalPrice: 0 })
+    expect(calculateVariantLengthQuote({ measurement, pricePerInch: 0.000025,
+      variantTitle: '22 x 80', sheetsNeeded: 1 })).toMatchObject({ pricePerInch: 0.000025, totalPrice: 0 })
+  })
+
   it('bills the least-film orientation consistently instead of expanding a turned sheet to its long side again', () => {
     const base = { widthPx: 0, heightPx: 0, measurementWidthPx: 0, measurementHeightPx: 0,
       dpi: 300, effectiveDpi: 300, sizingSource: 'document_dpi', measurementMode: 'full' }

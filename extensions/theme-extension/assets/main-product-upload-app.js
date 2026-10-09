@@ -78,6 +78,18 @@
     }
   }
 
+  function formatRate(value, currency) {
+    var n = Number(value);
+    if (!isFinite(n) || n <= 0) return '--';
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency', currency: currency || 'USD', maximumFractionDigits: 20
+      }).format(n);
+    } catch (_) {
+      return (currency || 'USD') + ' ' + String(n);
+    }
+  }
+
   function getTierUnitPrice(tier) {
     if (!tier) return 0;
     var value = tier.price_per_inch != null ? tier.price_per_inch : tier.price_per_sqin;
@@ -975,7 +987,7 @@
         '<div class="ump__exact-price">',
           '<div>',
             '<small>Rate</small>',
-            '<strong>', escapeHtml(rate ? formatMoney(rate, this.customerPricing.currency || this.currency) + ' / in' : '--'), '</strong>',
+            '<strong>', escapeHtml(rate ? formatRate(rate, this.customerPricing.currency || this.currency) + ' / in' : '--'), '</strong>',
           '</div>',
           '<div>',
             '<small>Billable</small>',
@@ -1005,7 +1017,7 @@
         return [
           '<span class="ump__price-chip ump__price-chip--tier', active ? ' is-active' : '', '" role="listitem">',
             '<small>', escapeHtml(getTierLabel(tier)), tier.popular ? ' / Popular' : '', '</small>',
-            '<strong>', escapeHtml(price ? formatMoney(price, this.currency) + ' / in' : '--'), '</strong>',
+            '<strong>', escapeHtml(price ? formatRate(price, this.currency) + ' / in' : '--'), '</strong>',
           '</span>'
         ].join('');
       }, this).join('');
@@ -1253,7 +1265,7 @@
         );
       }
       if (this.customerRate) {
-        this.customerRate.textContent = sampleRate ? 'From ' + formatMoney(sampleRate, this.currency) + ' / in' : 'Tier pricing';
+        this.customerRate.textContent = sampleRate ? 'From ' + formatRate(sampleRate, this.currency) + ' / in' : 'Tier pricing';
       }
       return;
     }
@@ -1267,7 +1279,7 @@
       this.customerCopy.textContent = 'We charge the measured upload length at your assigned rate. No sheet-size variant rounding will be used.';
     }
     if (this.customerRate) {
-      this.customerRate.textContent = rate ? formatMoney(rate, this.customerPricing.currency || this.currency) + ' / in' : '--';
+      this.customerRate.textContent = rate ? formatRate(rate, this.customerPricing.currency || this.currency) + ' / in' : '--';
     }
   };
 

@@ -57,6 +57,18 @@
     }
   }
 
+  function formatRate(value, currency) {
+    var amount = Number(value);
+    if (!isFinite(amount)) return '--';
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency', currency: currency || 'USD', maximumFractionDigits: 20
+      }).format(amount);
+    } catch (_) {
+      return (currency || 'USD') + ' ' + String(amount);
+    }
+  }
+
   function formatInches(value) {
     var n = Math.round(toNumber(value) * 100) / 100;
     return (n % 1 === 0 ? String(n) : n.toFixed(2)) + '"';
@@ -584,7 +596,7 @@
   DualUpload.prototype.rateHint = function(side) {
     var pricing = this.engines[side] && this.engines[side].customerPricing;
     if (!this.isExact(side) || !pricing || !(pricing.pricePerInch > 0)) return { short: '', long: '' };
-    var rate = formatMoney(pricing.pricePerInch, this.currency);
+    var rate = formatRate(pricing.pricePerInch, this.currency);
     return { short: rate + '/in', long: 'Your rate: ' + rate + ' per inch, billed by measured length' };
   };
 
@@ -628,7 +640,7 @@
             row.price = toNumber(quoted.totalPrice);
             row.inches = toNumber(quoted.billableLengthIn);
             row.detail = formatInches(row.inches) + ' billed · ' +
-              formatMoney(toNumber(quoted.pricePerInch), this.currency) + '/in';
+              formatRate(toNumber(quoted.pricePerInch), this.currency) + '/in';
           } else {
             row.detail = 'Calculating your price…';
           }

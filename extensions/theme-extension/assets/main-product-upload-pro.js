@@ -26,6 +26,20 @@
     }
   }
 
+  function formatRate(value, currency) {
+    var n = Number(value);
+    if (!isFinite(n)) return '--';
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: currency || 'USD',
+        maximumFractionDigits: 20
+      }).format(n);
+    } catch (_) {
+      return (currency || 'USD') + ' ' + String(n);
+    }
+  }
+
   function getText(value, fallback) {
     var out = String(value == null ? '' : value).trim();
     return out || fallback || '';
@@ -544,7 +558,7 @@
         var sampleTier = this.getActiveLinearTier(1);
         var sampleRate = getTierUnitPrice(sampleTier);
         this.accountRate.textContent = sampleRate
-          ? 'Returning rate from ' + formatMoney(sampleRate, this.context.currency) + ' per inch'
+          ? 'Returning rate from ' + formatRate(sampleRate, this.context.currency) + ' per inch'
           : 'Returning-customer inch tiers are active';
       } else if (linear && anonymous) {
         this.accountRate.textContent = 'You can still upload and checkout at the standard inch rate';
@@ -552,10 +566,10 @@
         this.accountRate.textContent = 'Pay by measured billable inches';
       } else if (measuredCustom) {
         var measuredLabel = this.context.statusLabel ? this.context.statusLabel + ' / ' : '';
-        this.accountRate.textContent = measuredLabel + formatMoney(this.context.pricePerInch, this.context.currency) + ' per measured inch';
+        this.accountRate.textContent = measuredLabel + formatRate(this.context.pricePerInch, this.context.currency) + ' per measured inch';
       } else if (custom) {
         var label = this.context.statusLabel ? this.context.statusLabel + ' / ' : '';
-        this.accountRate.textContent = label + formatMoney(this.context.pricePerInch, this.context.currency) + ' per inch';
+        this.accountRate.textContent = label + formatRate(this.context.pricePerInch, this.context.currency) + ' per inch';
       } else {
         this.accountRate.textContent = 'Variant pricing checkout';
       }
@@ -631,9 +645,9 @@
     if (this.rate) {
       var linearSummaryForRate = linear ? this.getLinearSummary(items) : null;
       this.rate.textContent = linear && linearSummaryForRate && linearSummaryForRate.unitPrice
-        ? formatMoney(linearSummaryForRate.unitPrice, this.context.currency) + '/in'
+        ? formatRate(linearSummaryForRate.unitPrice, this.context.currency) + '/in'
         : custom && this.context.pricePerInch
-        ? formatMoney(this.context.pricePerInch, this.context.currency) + '/in'
+        ? formatRate(this.context.pricePerInch, this.context.currency) + '/in'
         : '--';
     }
 
@@ -681,7 +695,7 @@
       if (this.quoteTotal) this.quoteTotal.textContent = 'Upload required';
       if (this.quoteMeta) {
         this.quoteMeta.textContent = measuredCustom
-          ? 'You pay only for the uploaded gang-sheet length at ' + formatMoney(this.context.pricePerInch, this.context.currency) + ' per inch.'
+          ? 'You pay only for the uploaded gang-sheet length at ' + formatRate(this.context.pricePerInch, this.context.currency) + ' per inch.'
           : 'Your custom rate will be applied after measurement.';
       }
       if (this.billable) this.billable.textContent = '--';

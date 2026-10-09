@@ -31,10 +31,12 @@ describe('merchant storefront proxy configuration', () => {
   it('never presents the Mod2 unit rate or a stale quote as the payable sheet total', () => {
     const source = readFileSync('extensions/theme-extension/assets/custom-price-upload-mod2.js', 'utf8')
     const money = source.match(/    function formatMoneyValue[\s\S]*?\n    }\n/)?.[0]
+    const rateFormatter = source.match(/    function formatRateValue[\s\S]*?\n    }\n/)?.[0]
     const headline = source.match(/    function getPriceHeadlineText[\s\S]*?\n    }\n/)?.[0]
     expect(money).toBeTruthy()
+    expect(rateFormatter).toBeTruthy()
     expect(headline).toBeTruthy()
-    const render = vm.runInNewContext(`${money}\n${headline}\ngetPriceHeadlineText`, { Intl }) as (
+    const render = vm.runInNewContext(`${money}\n${rateFormatter}\n${headline}\ngetPriceHeadlineText`, { Intl }) as (
       pricing: Record<string, unknown>, customPricingActive: boolean,
     ) => string
     const rate = { source: 'app_proxy', statusKey: 'product_rate', pricePerInch: 0.30, currency: 'USD', quoteStatus: 'idle' }
@@ -50,5 +52,30 @@ describe('merchant storefront proxy configuration', () => {
     const pro = readFileSync('extensions/theme-extension/assets/main-product-upload-pro.js', 'utf8')
     expect(pro).toContain(' per measured inch')
     expect(pro).toContain('Calculating exact quote')
+  })
+
+  it('preserves fractional-cent unit rates without changing currency-rounded totals', () => {
+    for (const [file, rateName, moneyName, indent, locale] of [
+      ['custom-price-upload-mod2.js', 'formatRateValue', 'formatMoneyValue', '    ', 'en-US'],
+      ['main-product-upload-pro.js', 'formatRate', 'formatMoney', '  ', undefined],
+      ['dtf-uv-gang-sheet-upload.js', 'formatRate', 'formatMoney', '  ', 'en-US'],
+      ['main-product-upload-app.js', 'formatRate', 'formatMoney', '  ', 'en-US'],
+    ] as const) {
+      const source = readFileSync(`extensions/theme-extension/assets/${file}`, 'utf8')
+      const rateSource = source.match(new RegExp(`${indent}function ${rateName}[\\s\\S]*?\\n${indent}}\\n`))?.[0]
+      const moneySource = source.match(new RegExp(`${indent}function ${moneyName}[\\s\\S]*?\\n${indent}}\\n`))?.[0]
+      expect(rateSource, file).toBeTruthy()
+      expect(moneySource, file).toBeTruthy()
+      const rate = vm.runInNewContext(`${rateSource}\n${rateName}`, { Intl }) as (value: number, currency: string) => string
+      const money = vm.runInNewContext(`${moneySource}\n${moneyName}`, { Intl }) as (value: number, currency: string) => string
+      const precise = (value: number, currency: string) => new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 20 }).format(value)
+      expect(rate(0.285, 'USD'), file).toBe(precise(0.285, 'USD'))
+      expect(rate(0.000025, 'USD'), file).toBe(precise(0.000025, 'USD'))
+      expect(rate(0.30, 'USD'), file).toBe(new Intl.NumberFormat(locale, { style: 'currency', currency: 'USD' }).format(0.30))
+      expect(rate(0.285, 'JPY'), file).toBe(precise(0.285, 'JPY'))
+      expect(rate(30, 'JPY'), file).toBe(new Intl.NumberFormat(locale, { style: 'currency', currency: 'JPY' }).format(30))
+      expect(money(22.80, 'USD'), file).toBe(new Intl.NumberFormat(locale, { style: 'currency', currency: 'USD' }).format(22.80))
+      expect(money(0.285, 'USD'), file).toBe(new Intl.NumberFormat(locale, { style: 'currency', currency: 'USD' }).format(0.285))
+    }
   })
 })

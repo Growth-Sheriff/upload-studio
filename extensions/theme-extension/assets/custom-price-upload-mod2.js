@@ -818,6 +818,20 @@
       }
     }
 
+    function formatRateValue(value, currency) {
+      var amount = Number(value);
+      if (!isFinite(amount)) return '--';
+      try {
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: currency || 'USD',
+          maximumFractionDigits: 20
+        }).format(amount);
+      } catch (error) {
+        return (currency || 'USD') + ' ' + String(amount);
+      }
+    }
+
     function getPriceHeadlineText(pricing, customPricingActive) {
       if (pricing.source === 'fallback') return 'Pricing unavailable · reload to retry';
       if (!customPricingActive) return 'Upload for a measured quote';
@@ -827,7 +841,7 @@
       var rate = Number(pricing.pricePerInch);
       var pending = pricing.quoteStatus === 'error' ? 'quote unavailable' : 'quote pending';
       return rate > 0 && isFinite(rate)
-        ? formatMoneyValue(rate, pricing.currency) + ' / billable inch · ' + pending
+        ? formatRateValue(rate, pricing.currency) + ' / billable inch · ' + pending
         : 'Measured ' + pending;
     }
 
@@ -981,7 +995,7 @@
 
       if (customerPricing.hasCustomPricing && (customerPricing.customerType === 'business' || customerPricing.customerType === 'vip')) {
         var rateText = customerPricing.pricePerInch != null
-          ? 'Active rate: ' + formatMoneyValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in'
+          ? 'Active rate: ' + formatRateValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in'
           : 'Rate is loading from the server.';
         if (customerPricing.customerType === 'business') {
           customerStatusTitle.textContent = 'Your private pricing desk is ready.';
@@ -1803,7 +1817,7 @@
       if (customerWorkspaceMeta) {
         var metaChips = [];
         if (customerPricing.pricePerInch != null) {
-          metaChips.push('<span class="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">' + escapeHtml(formatMoneyValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in') + '</span>');
+          metaChips.push('<span class="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">' + escapeHtml(formatRateValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in') + '</span>');
         }
         metaChips.push('<span class="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">' + escapeHtml(customerPricing.customerType === 'business' ? 'Business reorder flow' : 'VIP reorder flow') + '</span>');
         metaChips.push('<span class="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">' + escapeHtml(String(getCustomerWorkspaceItems().length)) + ' saved files</span>');
@@ -2550,7 +2564,7 @@
       var productRate = customerPricing.statusKey === 'product_rate';
       var quoteReady = customerPricing.quoteStatus === 'ready' && customerPricing.quoteTotal != null;
       var rateLabel = customerPricing.pricePerInch != null
-        ? (productRate ? 'Rate: ' : isBusiness ? 'Business rate: ' : 'VIP price per inch: ') + formatMoneyValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in'
+        ? (productRate ? 'Rate: ' : isBusiness ? 'Business rate: ' : 'VIP price per inch: ') + formatRateValue(customerPricing.pricePerInch, customerPricing.currency) + ' / in'
         : 'Rate is loading from the server...';
       var lengthLabel = '';
       if (queueMode) {
