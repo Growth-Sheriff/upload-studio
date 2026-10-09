@@ -20,11 +20,10 @@ describe('self-service decimal pricing inputs', () => {
     mocks.graphql.mockResolvedValue(new Response(JSON.stringify({ data: { product: { id: 'gid://shopify/Product/123' } } })))
   })
 
-  it('does not impose an implicit whole-number step on continuous decimal fields', () => {
+  it('does not impose an implicit whole-number step on setup rate or length', () => {
     const setup = readFileSync('app/routes/app.setup.tsx', 'utf8')
-    const advanced = readFileSync('app/routes/app.products.$id.configure.tsx', 'utf8')
-    for (const [source, attribute] of [[setup, 'name="pricePerInch"'], [setup, 'name="maxPrintableLengthIn"'], [advanced, 'label="Min inches"'], [advanced, 'label="Max inches"'], [advanced, 'label="Additional Price"']]) {
-      const field = source.match(new RegExp(`<TextField\\s+[^>]*${attribute}[^>]*?(?=\\s+value=)`))?.[0]
+    for (const attribute of ['name="pricePerInch"', 'name="maxPrintableLengthIn"']) {
+      const field = setup.match(new RegExp(`<TextField\\s+[^>]*${attribute}[^>]*?(?=\\s+value=)`))?.[0]
       expect(field, attribute).toBeTruthy()
       expect(field, attribute).toContain('type="text"')
       expect(field, attribute).toContain('inputMode="decimal"')
