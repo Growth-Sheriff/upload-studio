@@ -1,9 +1,10 @@
-// Runtime side of customer special pricing: loads the few external facts the
-// pure model needs (Shopify customer tags, recent ordered inches) and returns
+// Runtime side of customer special pricing: loads the paid-sheet order facts the
+// pure model needs and returns
 // the effective pricing for a customer on a product.
 
 import prisma from '~/lib/prisma.server'
-import { shopifyGraphQL } from '~/lib/shopify.server'
+import { selectProductConfigForIdentity } from '~/lib/productConfigIdentity.server'
+import { shopifyProductIdCandidates } from '~/lib/shopifyProductIdentity'
 import {
   applyCustomerPricingDefaultsForShop,
   normalizeCustomerId,
@@ -28,59 +29,7 @@ export interface PricingShopLike {
   settings: unknown
 }
 
-const CUSTOMER_PROFILE_QUERY = `
-  query CustomerPricingProfile($id: ID!) {
-    customer(id: $id) {
-      id
-      tags
-      email
-      displayName
-    }
-  }
-`
-
-const TAG_CACHE_TTL_MS = 5 * 60 * 1000
 const INCHES_CACHE_TTL_MS = 10 * 60 * 1000
-export interface TrustedCustomerProfile {
-  customerId: string
-  tags: string[]
-  email: string | null
-  name: string | null
-}
-
-export class TrustedCustomerProfileUnavailableError extends Error {
-  constructor(options?: ErrorOptions) {
-    super('Customer profile lookup is temporarily unavailable', options)
-    this.name = 'TrustedCustomerProfileUnavailableError'
-  }
-}
-
-interface CustomerProfileQueryData {
-  customer?: {
-    id?: string
-    tags?: string[]
-    email?: string | null
-    displayName?: string | null
-  } | null
-}
-
-export function trustedCustomerProfileFromQuery(
-  customerId: string,
-  response: CustomerProfileQueryData | null | undefined
-): TrustedCustomerProfile | null {
-  const customer = response?.customer
-  if (!customer) return null
-  return {
-    customerId,
-    tags: (customer.tags || [])
-      .map((tag) => String(tag || '').trim().toLowerCase())
-      .filter(Boolean),
-    email: String(customer.email || '').trim().toLowerCase() || null,
-    name: String(customer.displayName || '').trim() || null,
-  }
-}
-
-const profileCache = new Map<string, { profile: TrustedCustomerProfile; expiresAt: number }>()
 const inchesCache = new Map<string, { inches: number; expiresAt: number }>()
 
 function pruneCache<T extends { expiresAt: number }>(cache: Map<string, T>, now: number) {
@@ -92,45 +41,10 @@ function pruneCache<T extends { expiresAt: number }>(cache: Map<string, T>, now:
 
 export function invalidatePricingRuntimeCaches(shopDomain?: string) {
   if (!shopDomain) {
-    profileCache.clear()
     inchesCache.clear()
     return
   }
-  for (const key of Array.from(profileCache.keys())) if (key.startsWith(`${shopDomain}:`)) profileCache.delete(key)
   for (const key of Array.from(inchesCache.keys())) if (key.startsWith(`${shopDomain}:`)) inchesCache.delete(key)
-}
-
-/** Shopify-sourced identity and tags, cached per shop+customer for a few minutes. */
-export async function loadTrustedCustomerProfile(
-  shop: PricingShopLike,
-  customerId: string | null
-): Promise<TrustedCustomerProfile | null> {
-  if (!customerId || !shop.accessToken) return null
-  const now = Date.now()
-  const key = `${shop.shopDomain}:${customerId}`
-  const cached = profileCache.get(key)
-  if (cached && cached.expiresAt > now) return cached.profile
-  try {
-    const response = await shopifyGraphQL<CustomerProfileQueryData>(
-      shop.shopDomain,
-      shop.accessToken,
-      CUSTOMER_PROFILE_QUERY,
-      { id: `gid://shopify/Customer/${customerId}` }
-    )
-    const profile = trustedCustomerProfileFromQuery(customerId, response)
-    if (!profile) return null
-    pruneCache(profileCache, now)
-    profileCache.set(key, { profile, expiresAt: now + TAG_CACHE_TTL_MS })
-    return profile
-  } catch (error) {
-    console.warn('[Customer Pricing] customer profile lookup failed:', error)
-    throw new TrustedCustomerProfileUnavailableError({ cause: error })
-  }
-}
-
-/** Lower-cased customer tags, cached per shop+customer for a few minutes. */
-export async function loadCustomerTags(shop: PricingShopLike, customerId: string | null): Promise<string[]> {
-  return (await loadTrustedCustomerProfile(shop, customerId))?.tags || []
 }
 
 /** Billable inches this customer paid for in the last `months`, from our own
@@ -195,12 +109,16 @@ export interface EffectivePricingRequest {
   billableInches?: number | null
   /** Pre-normalised status settings when the caller already built them. */
   settings?: CustomerPricingSettings
+  /** Already-loaded product settings; omitted callers load the same scoped
+   * product row used by the product editor. */
+  builderConfig?: Record<string, unknown> | null
 }
 
 /**
- * Effective pricing for a customer on a product. Only fetches customer tags
- * when a tag rule exists and only aggregates order history when the volume
- * program's automatic eligibility is switched on, so plain shops pay nothing.
+ * Signed proxy customer IDs select merchant-entered assignments. Aggregate
+ * paid-sheet history is read only when the merchant enables volume eligibility.
+ * Customer contact/profile APIs and tag-based eligibility are not part of the
+ * public app's permissions or pricing identity.
  */
 export async function resolveEffectivePricingForShop(input: EffectivePricingRequest): Promise<EffectivePricing> {
   const { shop } = input
@@ -209,39 +127,60 @@ export async function resolveEffectivePricingForShop(input: EffectivePricingRequ
   const program = normalizeVolumeProgram(shop.settings, shop.shopDomain)
   const customerId = normalizeCustomerId(input.customerId)
 
-  const needsTags =
-    Boolean(customerId) &&
-    ((state.statusRatesEnabled && settings.tagRules.length > 0) ||
-      (state.volumeTiersEnabled && program.eligibleTags.length > 0))
   const needsInches = Boolean(customerId) && state.volumeTiersEnabled && program.autoEligibility.enabled
+  const recentBillableInches = needsInches
+    ? await loadRecentBillableInches(
+        shop,
+        customerId,
+        program.autoEligibility.months,
+        state.policyExplicit ? state.policy.measurementBasis : 'full_page'
+      )
+    : 0
 
-  const [trustedProfile, recentBillableInches] = await Promise.all([
-    customerId
-      ? loadTrustedCustomerProfile(shop, customerId)
-      : Promise.resolve<TrustedCustomerProfile | null>(null),
-    needsInches
-      ? loadRecentBillableInches(
-          shop,
-          customerId,
-          program.autoEligibility.months,
-          state.policyExplicit ? state.policy.measurementBasis : 'full_page'
-        )
-      : Promise.resolve(0),
-  ])
-  const customerTags = needsTags ? trustedProfile?.tags || [] : []
-  const trustedEmail = customerId ? trustedProfile?.email || null : input.customerEmail || null
-  const trustedName = customerId ? trustedProfile?.name || null : input.customerName || null
-
-  return resolveEffectivePricing({
+  const effective = resolveEffectivePricing({
     shopDomain: shop.shopDomain,
     rawSettings: shop.settings,
     normalizedSettings: settings,
     customerId,
-    customerEmail: trustedEmail,
-    customerName: trustedName,
-    customerTags,
+    customerEmail: null,
+    customerName: null,
+    customerTags: [],
     recentBillableInches: needsInches ? recentBillableInches : null,
     productId: input.productId,
     billableInches: input.billableInches,
   })
+  // A legacy/imported pricing record may carry contact fields. Pricing only
+  // needs its assigned ID/rate, and the storefront must never receive those
+  // fields or a personalized headline derived from them.
+  if (effective.context.assignment) {
+    const { customerEmail: _email, customerName: _name, ...assignment } = effective.context.assignment
+    effective.context.assignment = assignment
+  }
+  if (effective.volumeOffer) {
+    effective.volumeOffer.customerName = ''
+    effective.volumeOffer.headline = 'Your returning-customer inch pricing is active.'
+  }
+  // A custom measured-length product has a merchant-entered public base rate.
+  // It does not require account assignment or a hidden inch-carrier variant.
+  // An explicit account/volume price still takes precedence over that base.
+  if (!effective.context.hasCustomPricing && input.productId) {
+    let builderConfig = input.builderConfig
+    if (builderConfig === undefined) {
+      const rows = await prisma.productConfig.findMany({
+        where: { shopId: shop.id, productId: { in: shopifyProductIdCandidates(input.productId) } },
+        select: { productId: true, builderConfig: true },
+      })
+      const product = selectProductConfigForIdentity({ rows, productId: input.productId,
+        shopId: shop.id, source: 'publicProductPricing' })
+      builderConfig = (product?.builderConfig as Record<string, unknown> | null) || null
+    }
+    const rate = Number(builderConfig?.pricePerInch)
+    if (builderConfig?.publicPricingMode === 'measured_length' && Number.isFinite(rate) && rate > 0) {
+      effective.source = 'product_rate'
+      effective.context = { ...effective.context, enabled: true, customerType: customerId ? 'standard' : 'guest',
+        statusKey: 'product_rate', statusLabel: 'Measured length', pricePerInch: rate,
+        businessPricePerInch: rate, pricingMode: 'measured_length', hasCustomPricing: true }
+    }
+  }
+  return effective
 }

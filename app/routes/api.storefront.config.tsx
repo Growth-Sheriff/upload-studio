@@ -113,7 +113,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         type: (schema.model as any)?.type || "glb",
         source: (schema.model as any)?.source || "default_tshirt.glb",
 
-        url: `/apps/customizer/api/asset-sets/${defaultAssetSet.id}/model`,
+        url: `${url.searchParams.get('path_prefix') || '/apps/customizer'}/api/asset-sets/${defaultAssetSet.id}/model`,
       },
       printLocations: (schema as any).printLocations || [
         { id: "front", name: "Front", default: true, price: 0 },
@@ -146,6 +146,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const rawBuilderConfigResponse = productConfig
     ? {
         pricingMode: builderConfigRaw.pricingMode === "sheet" ? "sheet" : "area",
+        publicPricingMode: builderConfigRaw.publicPricingMode === 'measured_length' ? 'measured_length' : 'variant',
+        pricePerInch: builderConfigRaw.publicPricingMode === 'measured_length' ? builderConfigRaw.pricePerInch ?? null : null,
         sheetOptionName: builderConfigRaw.sheetOptionName ?? null,
         widthOptionName: builderConfigRaw.widthOptionName ?? null,
         heightOptionName: builderConfigRaw.heightOptionName ?? null,

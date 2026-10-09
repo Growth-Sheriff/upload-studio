@@ -31,6 +31,9 @@ The product editor/onboarding can explicitly configure a public measured-length
 base rate with `builderConfig.publicPricingMode = measured_length` and positive
 `pricePerInch`. Guests and standard accounts get this rate without a private
 assignment or inch-carrier variant; an explicit account/volume custom price wins.
+Native cart-property preparation refuses these products, so a failed account
+context request cannot silently substitute a variant price. The guest/session
+holder receives a clear re-upload message when its checkout token is missing.
 Signed-in uploads retain exact customer-ID ownership. A guest upload requires a
 separate shop-and-upload checkout capability issued with its upload intent or a
 verified multipart resume. Public status/identity links never issue this token.
@@ -42,7 +45,14 @@ old guest session require a fresh upload; an existing order remains immutable.
 All uploader blocks and the cart embed expose their storefront app proxy path;
 the default remains `/apps/customizer`. A merchant who renames the Shopify proxy
 must enter the same `/apps/name` value in each uploader block/cart embed. Values
-are validated as local paths, never arbitrary remote endpoints. The listing and
+are validated as local paths, never arbitrary remote endpoints.
+Multipart complete/abort requests also use that validated local path, rather
+than the old storage helper's fixed `/apps/customizer` URLs. Merchant-authored
+per-inch rates display in the Liquid shop currency until the authoritative quote
+confirms it, rather than silently assuming USD or a Markets presentment currency.
+The public blocks currently support customized `/apps/name` paths; other Shopify
+proxy prefixes require a deliberate follow-up validation change.
+The listing and
 showcase blocks link to product pages and make no upload API requests. Synthetic
 review counts, hardcoded stars and the unused fake-review setting are removed;
 these blocks do not claim customer reviews the merchant never supplied.

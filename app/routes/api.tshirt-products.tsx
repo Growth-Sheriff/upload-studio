@@ -138,8 +138,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
     const data = await response.json();
 
-    if (data.errors) {
-      console.error("[T-Shirt Products API] GraphQL errors:", data.errors);
+    // The SDK throws GraphQL errors; a missing data payload is still a failed
+    // catalog read, not a partially successful product list.
+    if (!data.data?.products) {
+      console.error("[T-Shirt Products API] Missing GraphQL product payload");
       return json({ error: "Failed to fetch products" }, { status: 500 });
     }
 

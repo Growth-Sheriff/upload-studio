@@ -795,6 +795,7 @@
         try {
           const mpStart = Date.now()
           const mpResult = await window.ULMultipartUploader.tryUpload(file, intentData, {
+            apiBase: instance.apiBase,
             shopDomain: instance.shopDomain || intentData.shopDomain,
             onProgress: (loaded, total) => {
               if (!elements || !elements.progressFill) return

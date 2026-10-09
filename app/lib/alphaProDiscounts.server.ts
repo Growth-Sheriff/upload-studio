@@ -65,9 +65,6 @@ export function buildAlphaProCustomerOffer({
   productId,
   settings,
   customerId,
-  customerEmail,
-  customerName,
-  customerTags,
 }: {
   shopDomain: string | null | undefined
   productId: string | number | null | undefined
@@ -79,17 +76,16 @@ export function buildAlphaProCustomerOffer({
 }): Record<string, unknown> | null {
   const offer = resolveVolumeOffer(shopDomain, settings, productId, {
     customerId,
-    customerEmail,
-    customerName,
-    customerTags,
+    customerEmail: null,
+    customerName: null,
+    customerTags: [],
   })
   if (!offer) return null
   return {
     enabled: true,
     source: offer.source,
     label: offer.label,
-    customerName: offer.customerName,
-    headline: offer.headline,
+    headline: 'Your returning-customer inch pricing is active.',
     body: offer.body,
     tierUnit: offer.tierUnit,
     tiers: offer.tiers,

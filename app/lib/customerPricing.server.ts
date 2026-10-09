@@ -1,4 +1,4 @@
-import { validateFinishedSheetFit } from './finishedSheetMeasurement'
+import { chooseFinishedSheetOrientation, DEFAULT_MAX_PRINTABLE_WIDTH_IN, DEFAULT_FIT_TOLERANCE_IN, validateFinishedSheetFit } from './finishedSheetMeasurement'
 
 export const DTF_PRINTHOUSE_SHOP_DOMAIN = 'e3bd2d-3.myshopify.com'
 
@@ -738,10 +738,16 @@ export function resolveCustomerPricingContext(
 export function calculateMeasuredLengthQuote(
   measurement: VipUploadMeasurement,
   pricePerInch: number,
-  requestedQuantity = 1
+  requestedQuantity = 1,
+  maxPrintableWidthIn = DEFAULT_MAX_PRINTABLE_WIDTH_IN,
+  fitToleranceIn = DEFAULT_FIT_TOLERANCE_IN
 ): CustomPricedQuote {
-  const pageWidthIn = Number(Math.min(measurement.widthIn, measurement.heightIn).toFixed(2))
-  const pageLengthIn = Number(Math.max(measurement.widthIn, measurement.heightIn).toFixed(2))
+  // Physical file dimensions retain their uploaded orientation. The central
+  // film-orientation chooser, not Math.max, determines the consumed length.
+  const placed = chooseFinishedSheetOrientation(measurement.widthIn, measurement.heightIn, maxPrintableWidthIn, fitToleranceIn)
+  if (!placed) throw new Error('Valid finished-sheet dimensions are required')
+  const pageWidthIn = Number(placed.widthIn.toFixed(2))
+  const pageLengthIn = Number(placed.lengthIn.toFixed(2))
   const sheetsNeeded = Math.max(1, Math.floor(Number(requestedQuantity) || 1))
   // The displayed two-decimal sheet length is the billing unit. Multiplying
   // that same visible number makes quantity math explainable and preserves

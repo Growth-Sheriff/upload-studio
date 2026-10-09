@@ -28,7 +28,6 @@ import {
   type VolumeTier,
 } from '~/lib/customerPricingModel.server'
 import {
-  loadTrustedCustomerProfile,
   resolveEffectivePricingForShop,
 } from '~/lib/customerPricingRuntime.server'
 import {
@@ -52,6 +51,7 @@ import {
 import { selectProductConfigForIdentity } from '~/lib/productConfigIdentity.server'
 import { collectShopifyConnectionPages } from '~/lib/shopifyVariantPagination.server'
 import { hasUploadOrderHistory } from '~/lib/uploadQuantitySemantics'
+import { verifyUploadCheckoutToken } from '~/lib/uploadCheckoutCapability.server'
 export const HISTORICAL_UPLOAD_REUPLOAD_REQUIRED =
   'Upload this file again before ordering so the previous order record stays unchanged.'
 
@@ -150,6 +150,7 @@ export interface PreparedCustomPricingQuote {
 
 export interface CustomPricingJobItemInput {
   uploadId: string
+  checkoutToken?: string | null
   quantity: number
   selectedVariantId?: string | null
 }
@@ -234,6 +235,7 @@ export async function prepareCustomPricingQuote({
   loggedInCustomerId,
   loggedInCustomerEmail,
   uploadId,
+  checkoutToken,
   quantity,
   selectedVariantId,
 }: {
@@ -241,6 +243,7 @@ export async function prepareCustomPricingQuote({
   loggedInCustomerId: string | null
   loggedInCustomerEmail?: string | null
   uploadId: string
+  checkoutToken?: string | null
   quantity: number
   selectedVariantId?: string | null
 }): Promise<PreparedCustomPricingQuote> {
@@ -248,7 +251,7 @@ export async function prepareCustomPricingQuote({
     shopDomain,
     loggedInCustomerId,
     loggedInCustomerEmail,
-    items: [{ uploadId, quantity, selectedVariantId }],
+    items: [{ uploadId, checkoutToken, quantity, selectedVariantId }],
   })
 
   return preparedJob.items[0]
@@ -268,6 +271,7 @@ export async function prepareCustomPricingJobQuote({
   const normalizedItems = items
     .map((item) => ({
       uploadId: String(item.uploadId || '').trim(),
+      checkoutToken: item.checkoutToken || null,
       quantity: Math.max(1, Math.floor(Number(item.quantity) || 1)),
       selectedVariantId:
         item.selectedVariantId != null && String(item.selectedVariantId).trim()
@@ -298,17 +302,6 @@ export async function prepareCustomPricingJobQuote({
 
   const activeShop = shop
   const normalizedLoggedInCustomerId = normalizeCustomerId(loggedInCustomerId)
-  if (!normalizedLoggedInCustomerId) {
-    throw new Error('Upload does not belong to the logged in customer')
-  }
-  const trustedCustomer = await loadTrustedCustomerProfile(
-    activeShop,
-    normalizedLoggedInCustomerId
-  )
-  if (!trustedCustomer) {
-    throw new Error('Upload does not belong to the logged in customer')
-  }
-  const trustedCustomerProfile = trustedCustomer
   const settings = applyCustomerPricingDefaultsForShop(activeShop.shopDomain, activeShop.settings)
   const measurementBasis = getRuntimeMeasurementBasis(activeShop.shopDomain, activeShop.settings)
   const storageConfig = getStorageConfig({
@@ -335,7 +328,6 @@ export async function prepareCustomPricingJobQuote({
         productId: true,
         variantId: true,
         customerId: true,
-        customerEmail: true,
         orderId: true,
         quantitySemantics: true,
         requestedCopies: true,
@@ -364,14 +356,16 @@ export async function prepareCustomPricingJobQuote({
     }
 
     if (
-      !matchesTrustedUploadOwner({
-        loggedInCustomerId: normalizedLoggedInCustomerId,
-        trustedCustomerEmail: trustedCustomerProfile.email,
-        uploadCustomerId: upload.customerId,
-        uploadCustomerEmail: upload.customerEmail,
-      })
+      upload.customerId
+        ? !matchesTrustedUploadOwner({
+            loggedInCustomerId: normalizedLoggedInCustomerId,
+            uploadCustomerId: upload.customerId,
+          })
+        : !verifyUploadCheckoutToken(upload.id, itemInput.checkoutToken)
     ) {
-      throw new Error('Upload does not belong to the logged in customer')
+      throw new Error(upload.customerId
+        ? 'Upload does not belong to the logged in customer'
+        : 'This upload session could not be verified. Upload the file again before checkout.')
     }
 
     const hasOrderHistory = hasUploadOrderHistory(upload)
@@ -486,13 +480,14 @@ export async function prepareCustomPricingJobQuote({
     // First resolve eligibility and pricing mode. Variant-length tiers are
     // selected a second time below after sheet matching determines the exact
     // billable sheet inches.
-    const measuredLengthIn = Math.max(measurement.widthIn, measurement.heightIn)
+    const measuredFit = validateMeasuredFinishedSheetFit({ measurement, ...finishedSheetSettings })
+    const measuredLengthIn = measuredFit.placedLengthIn
     let effective = await resolveEffectivePricingForShop({
       shop: activeShop,
       settings,
       customerId: normalizedLoggedInCustomerId,
-      customerEmail: trustedCustomerProfile.email,
       productId: upload.productId,
+      builderConfig: cachedProduct.builderConfig,
       billableInches: Number((measuredLengthIn * itemInput.quantity).toFixed(2)),
     })
     let pricingContext = effective.context
@@ -507,14 +502,11 @@ export async function prepareCustomPricingJobQuote({
     let quote: CustomPricedQuote | null = null
 
     if (pricingContext.pricingMode === 'measured_length') {
-      quote = calculateMeasuredLengthQuote(measurement, pricePerInch, itemInput.quantity)
-      const measuredFit = validateMeasuredFinishedSheetFit({
-        measurement,
-        ...finishedSheetSettings,
-      })
       if (!measuredFit.ok) {
         throw new Error(measuredFit.reason || 'The file is outside this product’s printable limits')
       }
+      quote = calculateMeasuredLengthQuote(measurement, pricePerInch, itemInput.quantity,
+        finishedSheetSettings.maxPrintableWidthIn, finishedSheetSettings.fitToleranceIn)
       // The price is the measured length; the draft line is linked to the
       // smallest sheet the file fits (an 80.3 in file shows as 22"x84"), so the
       // order never reads as the first/cheapest variant. The requested variant
@@ -592,8 +584,8 @@ export async function prepareCustomPricingJobQuote({
         shop: activeShop,
         settings,
         customerId: normalizedLoggedInCustomerId,
-        customerEmail: trustedCustomerProfile.email,
         productId: upload.productId,
+        builderConfig: cachedProduct.builderConfig,
         billableInches: billableSheetLengthIn,
       })
       pricingContext = effective.context

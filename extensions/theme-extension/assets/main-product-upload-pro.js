@@ -157,7 +157,7 @@
       pricingMode: 'standard_variant',
       hasCustomPricing: false,
       pricePerInch: 0,
-      currency: 'USD'
+      currency: window.UL_STORE_CURRENCY || 'USD'
     };
     this.productConfig = {
       status: 'loading',
@@ -358,7 +358,7 @@
         (this.context.pricingMode !== 'standard_variant' && ['business', 'vip'].indexOf(this.context.customerType) >= 0)
       );
       this.context.pricePerInch = toNumber(data.pricePerInch);
-      this.context.currency = getText(data.currency, 'USD');
+      this.context.currency = getText(data.currency, this.context.currency);
       this.root.setAttribute('data-ump-exact-measured', this.context.pricingMode === 'measured_length' ? 'true' : 'false');
     } catch (error) {
       this.context.status = 'ready';

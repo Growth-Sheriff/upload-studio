@@ -30,6 +30,7 @@ import {
   normalizeUploadFingerprint,
 } from '~/lib/uploadFingerprint'
 import { authenticate } from '~/shopify.server'
+import { createUploadCheckoutToken } from '~/lib/uploadCheckoutCapability.server'
 
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -84,7 +85,7 @@ export async function action({ request }: ActionFunctionArgs) {
         try {
           body = JSON.parse(text)
         } catch {
-          console.error('[Upload Intent] Failed to parse body:', text.substring(0, 200))
+          console.error('[Upload Intent] Invalid JSON body')
           return corsJson({ error: 'Invalid JSON body' }, request, { status: 400 })
         }
       } else {
@@ -103,8 +104,6 @@ export async function action({ request }: ActionFunctionArgs) {
     contentType,
     fileName,
     fileSize: rawFileSize,
-    visitorId,
-    sessionId,
   } = body
   const fileSize = Number(rawFileSize)
   // Optional transport hints from the storefront probe.
@@ -181,7 +180,6 @@ export async function action({ request }: ActionFunctionArgs) {
   // The storefront email field is customer-controlled. The signed customer
   // id is sufficient for ownership; the verified order webhook backfills the
   // email after checkout without delaying the upload URL on an Admin API call.
-  const customerEmail: string | null = null
 
 
   if (!['dtf', '3d_designer', 'classic', 'quick', 'builder'].includes(mode)) {
@@ -281,9 +279,9 @@ export async function action({ request }: ActionFunctionArgs) {
 
 
   // Instant re-upload: the same file (content fingerprint) from the same
-  // customer/visitor that already measured fine is reused — zero bytes sent.
+  // signed-in customer that already measured fine is reused — zero bytes sent.
   // Guests without any identity never dedupe (no cross-customer reuse).
-  if (canReuseUploadByFingerprint(fingerprint) && (customerId || visitorId)) {
+  if (canReuseUploadByFingerprint(fingerprint) && customerId) {
     const candidates = await prisma.upload.findMany({
       where: {
         shopId: shop.id,
@@ -303,7 +301,7 @@ export async function action({ request }: ActionFunctionArgs) {
         cartVariantId: null,
         cartToken: null,
         createdAt: { gte: new Date(Date.now() - 30 * 24 * 3600 * 1000) },
-        ...(customerId ? { customerId: String(customerId) } : { visitorId: String(visitorId) }),
+        customerId: String(customerId),
         items: {
           some: {
             fingerprint,
@@ -366,6 +364,7 @@ export async function action({ request }: ActionFunctionArgs) {
         {
           deduplicated: true,
           uploadId: existing.id,
+          checkoutToken: createUploadCheckoutToken(existing.id),
           itemId: item.id,
           fileName,
           fileSize,
@@ -403,33 +402,6 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
 
 
-    let validVisitorId = visitorId || null
-    let validSessionId = sessionId || null
-
-    if (visitorId) {
-      const visitorExists = await prisma.visitor.findFirst({
-        where: { id: visitorId, shopId: shop.id },
-        select: { id: true },
-      })
-      if (!visitorExists) {
-        console.warn(`[Upload Intent] visitorId ${visitorId} not found for shop ${shop.id} - ignoring`)
-        validVisitorId = null
-        validSessionId = null
-      }
-    }
-
-    if (validVisitorId && sessionId) {
-      const sessionExists = await prisma.visitorSession.findFirst({
-        where: { id: sessionId, shopId: shop.id },
-        select: { id: true },
-      })
-      if (!sessionExists) {
-        console.warn(`[Upload Intent] sessionId ${sessionId} not found for shop ${shop.id} - ignoring`)
-        validSessionId = null
-      }
-    }
-
-
     const upload = await prisma.upload.create({
       data: {
         id: uploadId,
@@ -439,18 +411,8 @@ export async function action({ request }: ActionFunctionArgs) {
         mode,
         status: 'draft',
         customerId: customerId || null,
-        customerEmail: customerEmail || null,
-        visitorId: validVisitorId,
-        sessionId: validSessionId,
       },
     })
-
-
-    if (validVisitorId) {
-      console.log(
-        `[Upload Intent] Upload ${uploadId} linked to visitor ${validVisitorId}, session ${validSessionId || 'N/A'}`
-      )
-    }
 
 
 
@@ -524,14 +486,13 @@ export async function action({ request }: ActionFunctionArgs) {
         variantId,
         hasR2Fallback: !!uploadResult.fallbackUrls?.r2,
         hasLocalFallback: !!uploadResult.fallbackUrls?.local,
-        visitorId,
-        sessionId,
       },
     })
 
     return corsJson(
       {
         uploadId,
+        checkoutToken: createUploadCheckoutToken(uploadId),
         itemId,
         uploadUrl: uploadResult.url,
         key: uploadResult.key,
@@ -554,10 +515,9 @@ export async function action({ request }: ActionFunctionArgs) {
     console.error('[Upload Intent] Error:', error)
 
 
-    await uploadLogger.uploadFailed('intent_error', 'unknown', {
+    console.warn('[Upload Intent] Intent creation failed', {
+      shopId: shop.id,
       code: 'INTENT_CREATION_FAILED',
-      message: error instanceof Error ? error.message : 'Unknown error',
-      details: { shopDomain, fileName },
     })
 
     return corsJson({ error: 'Failed to create upload intent' }, request, { status: 500 })

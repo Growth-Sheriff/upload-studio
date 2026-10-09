@@ -15,6 +15,7 @@ import {
   storageKeyMatchesObjectKey,
 } from '~/lib/storage.server'
 import { authenticate } from '~/shopify.server'
+import { createUploadCheckoutToken } from '~/lib/uploadCheckoutCapability.server'
 
 export async function loader({ request }: LoaderFunctionArgs) {
   if (request.method === 'OPTIONS') return handleCorsOptions(request)
@@ -117,6 +118,7 @@ export async function action({ request }: ActionFunctionArgs) {
   return corsJson(
     {
       success: true,
+      checkoutToken: createUploadCheckoutToken(upload.id),
       uploadedParts: listed.parts.map((p) => ({ partNumber: p.partNumber, etag: p.etag })),
       parts: presigned,
       completeUrl: '/apps/customizer/api/upload/multipart-complete',

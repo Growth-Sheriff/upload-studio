@@ -8,4 +8,7 @@
     return /^\/apps\/[a-z0-9][a-z0-9_-]*$/i.test(path) ? path : '/apps/customizer';
   };
   window.UL_API_BASE = window.ULResolveProxyBase({{ ul_proxy_path | json }});
+  // Per-inch rates are authored in the shop currency, not a Markets visitor's
+  // presentment currency. The authoritative server quote supplies it again.
+  window.UL_STORE_CURRENCY = {{ shop.currency | json }};
 </script>

@@ -8,7 +8,7 @@ export type MeasurementBasis = 'full_page' | 'artwork_bounds'
 export type SheetSelection = 'block_default' | 'lowest_total_cost' | 'smallest_fitting_sheet'
 export type VolumeCheckoutMode = 'custom_checkout' | 'standard_cart'
 export type VolumeBillingBasis = 'measured_length' | 'variant_length'
-export type PricingSource = 'none' | 'status_rates' | 'volume_tiers'
+export type PricingSource = 'none' | 'status_rates' | 'volume_tiers' | 'product_rate'
 
 export const CUSTOMER_PRICING_MODELS: CustomerPricingModel[] = ['off', 'status_rates', 'volume_tiers', 'both']
 

@@ -6,6 +6,7 @@ describe('merchant storefront proxy configuration', () => {
   it('accepts a renamed local app proxy but never sends file/account data to an external URL', () => {
     const liquid = readFileSync('extensions/theme-extension/snippets/app-proxy-config.liquid', 'utf8')
     const code = liquid.split('<script>')[1].split('</script>')[0].replace('{{ ul_proxy_path | json }}', '"/apps/my-print-shop"')
+      .replace('{{ shop.currency | json }}', '"CAD"')
     const window: { UL_API_BASE?: string; ULResolveProxyBase?: (value: string) => string } = {}
     vm.runInNewContext(code, { window })
     expect(window.UL_API_BASE).toBe('/apps/my-print-shop')

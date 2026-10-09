@@ -211,15 +211,13 @@ export async function action({ request }: ActionFunctionArgs) {
         preparationErrorByUpload.set(upload.id, 'This upload does not belong to the logged-in customer.')
         return
       }
-      // Listing blocks only need the canonical three reference properties.
-      // Main-product lines also send copies and require a server resolution.
-      if (!requestedLine) return
       if (!upload.productId || !shop.accessToken) {
+        if (!requestedLine) return
         lifecycleByUploadId.set(upload.id, { ...lifecycleState, orderable: false })
         preparationErrorByUpload.set(upload.id, 'This upload is missing its product configuration.')
         return
       }
-      if (requestedLine.lockSelectedVariant && !requestedLine.selectedVariantId) {
+      if (requestedLine?.lockSelectedVariant && !requestedLine.selectedVariantId) {
         lifecycleByUploadId.set(upload.id, { ...lifecycleState, orderable: false })
         preparationErrorByUpload.set(upload.id, 'Select a valid product variant before adding this upload.')
         return
@@ -243,6 +241,17 @@ export async function action({ request }: ActionFunctionArgs) {
         productConfig?.builderConfig && typeof productConfig.builderConfig === 'object'
           ? (productConfig.builderConfig as Record<string, unknown>)
           : null
+      // A measured-price product must use the server-priced draft checkout.
+      // A failed context request cannot turn it into a cheaper native variant
+      // line, even if the client asks only for the three reference properties.
+      if (builderConfig?.publicPricingMode === 'measured_length') {
+        lifecycleByUploadId.set(upload.id, { ...lifecycleState, orderable: false })
+        preparationErrorByUpload.set(upload.id, 'Use the measured-price checkout for this product; its price must be quoted from the validated file length.')
+        return
+      }
+      // Listing/manual blocks only need the canonical three reference
+      // properties. Main-product lines also send copies for sheet resolution.
+      if (!requestedLine) return
       // The product's three visible settings are authoritative. The request
       // body cannot supply or override measurement limits.
       const finishedSheetSettings = resolveFinishedSheetSettings(builderConfig)

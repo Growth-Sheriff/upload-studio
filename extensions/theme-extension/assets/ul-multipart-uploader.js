@@ -114,6 +114,13 @@
     if (!intent || !intent.multipart) return null;
     var mp = intent.multipart;
     options = options || {};
+    var apiBase = window.ULResolveProxyBase
+      ? window.ULResolveProxyBase(options.apiBase || window.UL_API_BASE)
+      : '/apps/customizer';
+    // Storage does not know the merchant's renamed storefront proxy. Finalize
+    // and abort through the configured signed local path, never a stale URL.
+    mp = Object.assign({}, mp, { completeUrl: apiBase + '/api/upload/multipart-complete',
+      abortUrl: apiBase + '/api/upload/multipart-abort' });
     var resumedCount = options.resume && options.resume.uploadedParts ? options.resume.uploadedParts.length : 0;
     if (!mp.uploadId || !mp.completeUrl || ((!mp.parts || !mp.parts.length) && !resumedCount)) {
       console.warn('[ULMultipart] Malformed multipart info in intent, falling back');

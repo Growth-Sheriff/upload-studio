@@ -505,6 +505,7 @@
           mpAttempt += 1;
           try {
             var mpResult = await window.ULMultipartUploader.tryUpload(file, intent, {
+              apiBase: apiBase,
               onProgress: onProgress,
               shopDomain: shopDomain,
               concurrency: window.ULMultipartUploader.DEFAULT_CONCURRENCY || 6,
@@ -768,7 +769,7 @@
       pricingMode: 'standard_variant',
       hasCustomPricing: false,
       pricePerInch: null,
-      currency: 'USD',
+      currency: window.UL_STORE_CURRENCY || 'USD',
       source: 'fallback',
       quoteStatus: 'idle',
       quoteTotal: null,
@@ -2686,7 +2687,7 @@
               ? data.quote.pricePerInch
               : null
         );
-        customerPricing.currency = String(data.currency || data.quote && data.quote.currency || 'USD');
+        customerPricing.currency = String(data.currency || data.quote && data.quote.currency || customerPricing.currency || 'USD');
         customerPricing.source = String(data.source || 'app_proxy');
         if (!customerPricing.hasCustomPricing) {
           resetVipQuoteState();

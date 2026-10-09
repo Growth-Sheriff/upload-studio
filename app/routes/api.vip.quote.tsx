@@ -44,6 +44,7 @@ function normalizeQuoteItems(body: Record<string, unknown>) {
       if (!uploadId) return null
       return {
         uploadId,
+        checkoutToken: typeof item.checkoutToken === 'string' ? item.checkoutToken : null,
         quantity: parsePositiveInteger(item.quantity, 1),
         selectedVariantId:
           item.selectedVariantId != null && String(item.selectedVariantId).trim()
@@ -53,6 +54,7 @@ function normalizeQuoteItems(body: Record<string, unknown>) {
     })
     .filter(Boolean) as Array<{
       uploadId: string
+      checkoutToken: string | null
       quantity: number
       selectedVariantId: string | null
     }>
@@ -65,6 +67,7 @@ function normalizeQuoteItems(body: Record<string, unknown>) {
   return [
     {
       uploadId,
+      checkoutToken: typeof body.checkoutToken === 'string' ? body.checkoutToken : null,
       quantity: parsePositiveInteger(body.quantity, 1),
       selectedVariantId:
         body.selectedVariantId != null && String(body.selectedVariantId).trim()
@@ -75,7 +78,6 @@ function normalizeQuoteItems(body: Record<string, unknown>) {
 }
 
 function errorStatusFromMessage(message: string): number {
-  if (message === 'Customer profile lookup is temporarily unavailable') return 503
   if (message === 'Shop not found') return 404
   if (message === 'Upload not found') return 404
   if (message === 'Product not found') return 404
@@ -83,6 +85,7 @@ function errorStatusFromMessage(message: string): number {
   if (message === 'Upload is blocked by preflight checks') return 422
   if (message === HISTORICAL_UPLOAD_REUPLOAD_REQUIRED) return 422
   if (message === 'Upload does not belong to the logged in customer') return 403
+  if (message === 'This upload session could not be verified. Upload the file again before checkout.') return 403
   if (message === 'Custom pricing is not active for this customer and product') return 403
   if (message === 'Upload product is missing') return 422
   if (message.includes('No product variant can fit')) return 422
@@ -127,6 +130,7 @@ export async function action({ request }: ActionFunctionArgs) {
                 shopDomain,
                 loggedInCustomerId,
                 uploadId: normalizedItems[0].uploadId,
+                checkoutToken: normalizedItems[0].checkoutToken,
                 quantity: normalizedItems[0].quantity,
                 selectedVariantId: normalizedItems[0].selectedVariantId,
               }),

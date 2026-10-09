@@ -321,7 +321,7 @@
       pricingMode: 'standard_variant',
       hasCustomPricing: false,
       pricePerInch: 0,
-      currency: this.currency
+      currency: window.UL_STORE_CURRENCY || this.currency
     };
     this.productConfig = {
       status: 'loading',
@@ -1168,7 +1168,7 @@
         (pricingMode !== 'standard_variant' && ['business', 'vip'].indexOf(customerType) >= 0)
       );
       this.customerPricing.pricePerInch = toNumber(data.pricePerInch);
-      this.customerPricing.currency = getText(data.currency, this.currency);
+      this.customerPricing.currency = getText(data.currency, window.UL_STORE_CURRENCY || this.currency);
       this.root.setAttribute(
         'data-ump-exact-measured',
         this.customerPricing.hasCustomPricing && pricingMode === 'measured_length' ? 'true' : 'false'
@@ -2645,6 +2645,7 @@
         mpAttempt += 1;
         try {
           var mpResult = await window.ULMultipartUploader.tryUpload(file, intent, {
+            apiBase: self.apiBase,
             onProgress: onProgress,
             shopDomain: this.shopDomain,
             concurrency: window.ULMultipartUploader.DEFAULT_CONCURRENCY || 6,

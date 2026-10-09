@@ -65,7 +65,5 @@ export async function loader({ request }: LoaderFunctionArgs) {
     isStatusAssigned: context.isStatusAssigned,
     status: context.status,
     assignment: context.assignment,
-    customerName: context.assignment?.customerName || effective.volumeOffer?.customerName || null,
-    customerEmail: context.assignment?.customerEmail || null,
   })
 }

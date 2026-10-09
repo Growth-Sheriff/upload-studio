@@ -12,6 +12,18 @@ import {
 } from './customerPricing.server'
 
 describe('measured-length finished-sheet fit', () => {
+  it('bills the least-film orientation consistently instead of expanding a turned sheet to its long side again', () => {
+    const base = { widthPx: 0, heightPx: 0, measurementWidthPx: 0, measurementHeightPx: 0,
+      dpi: 300, effectiveDpi: 300, sizingSource: 'document_dpi', measurementMode: 'full' }
+    for (const [widthIn, heightIn] of [[22, 6], [6, 22]]) {
+      const quote = calculateMeasuredLengthQuote({ ...base, widthIn, heightIn }, 0.3, 1, 22.5, 0.02)
+      expect(quote.pageLengthIn).toBe(6)
+      expect(quote.totalPrice).toBe(1.8)
+    }
+    expect(calculateMeasuredLengthQuote({ ...base, widthIn: 80, heightIn: 22 }, 0.3, 1, 22.5, 0.02).billableLengthIn).toBe(80)
+    expect(calculateMeasuredLengthQuote({ ...base, widthIn: 22, heightIn: 6 }, 0.3, 1, 10, 0.02).billableLengthIn).toBe(22)
+  })
+
   it('uses requested copies as both billable lengths and production sheets', () => {
     const quote = calculateMeasuredLengthQuote(
       {

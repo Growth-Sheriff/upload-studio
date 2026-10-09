@@ -150,6 +150,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
     const builderConfigResponse = applyAlphaProBuilderDefaults(shopDomain, productGid, {
       pricingMode: builderConfig.pricingMode === "sheet" ? "sheet" : "area",
+      publicPricingMode: builderConfig.publicPricingMode === 'measured_length' ? 'measured_length' : 'variant',
+      pricePerInch: builderConfig.publicPricingMode === 'measured_length' ? builderConfig.pricePerInch ?? null : null,
       sheetOptionName: builderConfig.sheetOptionName ?? null,
       widthOptionName: builderConfig.widthOptionName ?? null,
       heightOptionName: builderConfig.heightOptionName ?? null,

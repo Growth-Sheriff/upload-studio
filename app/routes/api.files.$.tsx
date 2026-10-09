@@ -97,7 +97,7 @@ export async function loader({ params, request }: LoaderFunctionArgs) {
     const ext = decodedKey.split('.').pop() || ''
     const contentType = mime.lookup(ext) || 'application/octet-stream'
 
-    return new Response(buffer, {
+    return new Response(new Uint8Array(buffer), {
       status: 200,
       headers: {
         'Content-Type': contentType,
