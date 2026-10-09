@@ -85,6 +85,11 @@ describe('privacy payload authentication and minimization', () => {
     expect(compliance.minimizeCompliancePayload({ customer: { email: 'buyer@example.com', phone: 'private', id: 7 }, orders_requested: [101, 101, 'invalid'] }, 'test.myshopify.com')).toEqual({ shop_domain: 'test.myshopify.com', customer: { id: '7' }, orders_requested: ['101'], orders_to_redact: [] })
     expect(compliance.minimizeCompliancePayload({ customer: { email: 'only@example.com' } }, 'test.myshopify.com').customer.id).toBeNull()
   })
+  it('rejects an oversized untrusted stream before buffering or database work', async () => {
+    const body = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new Uint8Array(512 * 1024)); controller.enqueue(new Uint8Array(512 * 1024)); controller.enqueue(new Uint8Array(1)); controller.close() } })
+    const request = new Request('http://localhost/webhooks/compliance', { method: 'POST', body, duplex: 'half' } as RequestInit)
+    expect((await compliance.receiveComplianceRequest(request)).status).toBe(413)
+  })
 })
 
 describeDb('real HMAC requests and disposable database erasure', () => {
@@ -170,5 +175,21 @@ describeDb('real HMAC requests and disposable database erasure', () => {
     expect(await withTenantContext(shop.id, () => prisma.upload.count({ where: { id: upload.id } }))).toBe(1)
     const row = await prisma.complianceRequest.findFirstOrThrow({ where: { shopDomain: shop.shopDomain, eventId: 'lease-race' } })
     expect(row.status).toBe('processing'); expect(row.leaseToken).toBe('other-worker')
+  })
+
+  it('retention blocks late upload work before draining capabilities and deleting files', async () => {
+    const { shop, upload, key, archiveKey } = await fixture()
+    await withTenantContext(shop.id, () => prisma.upload.update({ where: { id: upload.id }, data: { orderId: null, createdAt: new Date(Date.now() - 8 * 86400000) } }))
+    await compliance.runRetentionBatch()
+    expect((await withTenantContext(shop.id, () => prisma.upload.findUniqueOrThrow({ where: { id: upload.id } }))).privacyRedactedAt).not.toBeNull()
+    expect(await readFile(join(directory, key), 'utf8')).toBe('isolated fixture artwork')
+    // Fixture changes the clock marker in this disposable DB only. Normal
+    // application writes cannot reopen a privacy-blocked upload.
+    const { withTenantSql } = await import('./tenantContext.server')
+    await withTenantContext(shop.id, () => withTenantSql(owner => prisma.$executeRaw`UPDATE uploads SET privacy_redacted_at = ${past()} WHERE id = ${upload.id} AND shop_id = ${owner}`))
+    await compliance.runRetentionBatch()
+    await expect(readFile(join(directory, key))).rejects.toThrow()
+    await expect(readFile(join(directory, archiveKey))).rejects.toThrow()
+    expect(await withTenantContext(shop.id, () => prisma.upload.count({ where: { id: upload.id } }))).toBe(0)
   })
 })

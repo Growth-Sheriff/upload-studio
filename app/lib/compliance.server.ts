@@ -7,23 +7,41 @@ import { deleteFile, deleteShopStorageObjects, getStorageConfig } from './storag
 export const COMPLIANCE_TOPICS = ['customers/data_request', 'customers/redact', 'shop/redact'] as const
 type ComplianceTopic = typeof COMPLIANCE_TOPICS[number]
 
-export function verifyComplianceHmac(body: string, signature: string | null, secret: string): boolean {
+export function verifyComplianceHmac(body: string | Uint8Array, signature: string | null, secret: string): boolean {
   if (!signature || !secret) return false
   const supplied = Buffer.from(signature, 'base64')
   const expected = createHmac('sha256', secret).update(body).digest()
   return supplied.length === expected.length && timingSafeEqual(supplied, expected)
 }
 
+const MAX_PRIVACY_BODY_BYTES = 1024 * 1024
+async function readComplianceBody(request: Request): Promise<Buffer | null> {
+  if (!request.body) return Buffer.alloc(0)
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let bytes = 0
+  try {
+    for (;;) {
+      const part = await reader.read()
+      if (part.done) return Buffer.concat(chunks, bytes)
+      bytes += part.value.byteLength
+      if (bytes > MAX_PRIVACY_BODY_BYTES) { await reader.cancel(); return null }
+      chunks.push(part.value)
+    }
+  } finally { reader.releaseLock() }
+}
+
 /** Acknowledgment means accepted durably, never merely launched as an
  * unawaited promise. Payloads are cleared after erasure/export expires. */
 export async function receiveComplianceRequest(request: Request) {
-  const body = await request.text()
+  const body = await readComplianceBody(request)
+  if (!body) return new Response('Privacy request body exceeds 1 MiB', { status: 413 })
   if (!verifyComplianceHmac(body, request.headers.get('X-Shopify-Hmac-Sha256'), process.env.SHOPIFY_API_SECRET || '')) return new Response('Invalid HMAC', { status: 401 })
   const topic = request.headers.get('X-Shopify-Topic') as ComplianceTopic
   const shopDomain = request.headers.get('X-Shopify-Shop-Domain') || ''
   if (!COMPLIANCE_TOPICS.includes(topic) || !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shopDomain)) return new Response('Invalid topic or shop', { status: 400 })
   let payload: Record<string, unknown>
-  try { payload = JSON.parse(body) } catch { return new Response('Invalid JSON', { status: 400 }) }
+  try { payload = JSON.parse(body.toString('utf8')) } catch { return new Response('Invalid JSON', { status: 400 }) }
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) || payload.shop_domain !== shopDomain) return new Response('Shop mismatch', { status: 400 })
   if (topic !== 'shop/redact' && !(payload.customer && typeof payload.customer === 'object')) return new Response('Missing customer', { status: 400 })
   // Shopify also sends contact-only requests. We never stored buyer contacts,
@@ -150,7 +168,7 @@ async function processRequest(row: { shopDomain: string; topic: string; payload:
       await assertLease()
       await deleteShopStorageObjects(getStorageConfig({ storageProvider: shop.storageProvider, storageConfig: shop.storageConfig as Record<string, string> | null }), shop.shopDomain)
       await assertLease()
-      await prisma.complianceRequest.updateMany({ where: { shopDomain: shop.shopDomain, topic: { notIn: ['shop/redact', 'uninstall/erase'] } }, data: { payload: Prisma.DbNull, result: Prisma.DbNull, status: 'erased', completedAt: new Date() } })
+      await prisma.complianceRequest.updateMany({ where: { shopDomain: shop.shopDomain, topic: { notIn: ['shop/redact', 'uninstall/erase'] } }, data: { payload: Prisma.DbNull, result: Prisma.DbNull, status: 'erased', completedAt: new Date(), leaseToken: null, leaseUntil: null } })
       await prisma.supportTicket.deleteMany({ where: { shopDomain: shop.shopDomain } })
       await prisma.shop.delete({ where: { id: shop.id } })
       return { erased: true }
@@ -182,14 +200,15 @@ async function processRequest(row: { shopDomain: string; topic: string; payload:
     await redactCustomerSettings(shop.id, row.payload)
     // Clear earlier export snapshots for this subject too; erasure must not
     // leave a second copy in the compliance inbox.
-    const exports = await prisma.complianceRequest.findMany({ where: { shopDomain: shop.shopDomain, topic: 'customers/data_request', result: { not: Prisma.AnyNull } }, select: { id: true, result: true } })
+    const exports = await prisma.complianceRequest.findMany({ where: { shopDomain: shop.shopDomain, topic: 'customers/data_request' }, select: { id: true, result: true, payload: true } })
     const ids = customerIds(row.payload)
     const orders = new Set((row.payload?.orders_to_redact || []).map(String))
     const exportIds = exports.filter(entry => {
       const result: any = entry.result
-      return (result?.uploads || []).some((upload: any) => ids.includes(String(upload.customerId)) || orders.has(String(upload.orderId))) || (result?.commissions || []).some((fee: any) => orders.has(String(fee.orderId))) || Object.values(result?.customerPricing || {}).some((entries: any) => Array.isArray(entries) && entries.some(entry => ids.includes(String(entry.customerId || entry.shopifyCustomerId))))
+      const payload: any = entry.payload
+      return customerIds(payload).some(id => ids.includes(id)) || (payload?.orders_requested || []).some((order: unknown) => orders.has(String(order))) || (result?.uploads || []).some((upload: any) => ids.includes(String(upload.customerId)) || orders.has(String(upload.orderId))) || (result?.commissions || []).some((fee: any) => orders.has(String(fee.orderId))) || Object.values(result?.customerPricing || {}).some((entries: any) => Array.isArray(entries) && entries.some(entry => ids.includes(String(entry.customerId || entry.shopifyCustomerId))))
     }).map(entry => entry.id)
-    if (exportIds.length) await prisma.complianceRequest.updateMany({ where: { id: { in: exportIds }, shopDomain: shop.shopDomain }, data: { result: Prisma.DbNull } })
+    if (exportIds.length) await prisma.complianceRequest.updateMany({ where: { id: { in: exportIds }, shopDomain: shop.shopDomain }, data: { result: Prisma.DbNull, payload: Prisma.DbNull, status: 'erased', completedAt: new Date(), leaseToken: null, leaseUntil: null } })
     await prisma.auditLog.create({ data: { shopId: shop.id, action: 'customer_data_erased', resourceType: 'compliance', metadata: { topic: row.topic } } })
     return { erased: true, retainedFinancialRecords: 'Minimal merchant accounting, usage idempotency and refund-review records have no buyer contact fields; they remain until shop erasure.' }
   })
@@ -222,7 +241,11 @@ export async function runRetentionBatch() {
     const shops = await prisma.shop.findMany({ where: { uninstalledAt: null, billingStatus: { not: 'erasing' } }, select: { id: true, shopDomain: true, storageProvider: true, storageConfig: true }, orderBy: { id: 'asc' }, take: 100, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}) })
     if (!shops.length) break
     for (const shop of shops) await withTenantContext(shop.id, async () => {
-    const uploads = await prisma.upload.findMany({ where: { shopId: shop.id, OR: [{ orderId: null, createdAt: { lt: new Date(Date.now() - 7 * 86400000) } }, { orderId: { not: null }, createdAt: { lt: new Date(Date.now() - 90 * 86400000) } }] }, include: { items: true }, take: 50 })
+    const expiredWhere = { shopId: shop.id, OR: [{ orderId: null, createdAt: { lt: new Date(Date.now() - 7 * 86400000) } }, { orderId: { not: null }, createdAt: { lt: new Date(Date.now() - 90 * 86400000) } }] }
+    // Retention has the same late-PUT/queued-worker race as explicit erasure.
+    // Mark first; a later pass deletes only after outstanding URLs have drained.
+    await prisma.upload.updateMany({ where: { ...expiredWhere, privacyRedactedAt: null }, data: { status: 'blocked', privacyRedactedAt: new Date() } })
+    const uploads = await prisma.upload.findMany({ where: { ...expiredWhere, privacyRedactedAt: { lte: new Date(Date.now() - 61 * 60000) } }, include: { items: true }, take: 50 })
     await eraseUploadFiles(shop, uploads)
     if (uploads.length) {
       const archiveWhere = { shopId: shop.id, uploadIds: { hasSome: uploads.map(upload => upload.id) } }
