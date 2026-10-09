@@ -388,9 +388,13 @@ Verification process: exit 0
 ```
 
 Depot then emitted `error releasing builder: internal: internal error` after
-successful verification and disposable database shutdown. The last provider
-metadata read still reported `running`; this is a provider-cleanup discrepancy,
-not a hidden test failure or a claim of final provider success.
+successful verification and disposable database shutdown. Initial provider
+metadata still reported `running`. The single read-only follow-up returned
+terminal status **`canceled`**, duration **177 seconds**. No cancel or rerun
+command was sent by the build agent. Verification exit 0 and all 415 passing
+tests remain the actual command result; the provider run must not be described
+as `finished` or wholly green because its post-build control-plane outcome was
+canceled.
 
 The production command above was repeated with tag `:78e82f9` and the same
 revision label. Build
