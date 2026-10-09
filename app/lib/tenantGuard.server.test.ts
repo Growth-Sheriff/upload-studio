@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { enterTenantContext, requireTenantShopId, withTenantContext, withTenantRequest } from './tenantContext.server'
 import { assertTenantWriteAllowed, scopeTenantOperation, validateTenantRelations, type TenantOperation } from './tenantGuard.server'
 import { createUploadCapability, bindUploadCapability } from './uploadCapability.server'
+import { withJobBudget } from './jobBudget.server'
 
 describe('public tenant isolation', () => {
   it('keeps three simultaneous authenticated requests in separate shops after await', async () => {
@@ -52,9 +53,19 @@ describe('public tenant isolation', () => {
     })
     vi.unstubAllEnvs()
   })
+  it('active processing can neither read nor revive a privacy-stopped upload', async () => withTenantContext('shop_one', () => withJobBudget(1000, async () => {
+    const upload: TenantOperation = { model: 'Upload', action: 'updateMany', args: { where: { id: 'upload_001' }, data: { status: 'ready' } } }
+    const item: TenantOperation = { model: 'UploadItem', action: 'findUnique', args: { where: { id: 'item_001' } } }
+    scopeTenantOperation(upload); scopeTenantOperation(item)
+    expect(upload.args?.where).toMatchObject({ shopId: 'shop_one', privacyRedactedAt: null })
+    expect(item.args?.where.upload).toEqual({ shopId: 'shop_one', privacyRedactedAt: null })
+  })))
   it('erasing shops cannot write records even from an already authenticated request', async () => withTenantContext('shop_one', async () => {
     const client = { shop: { findUnique: vi.fn().mockResolvedValue({ billingStatus: 'erasing' }) } }
     await expect(assertTenantWriteAllowed(client as any, { model: 'UploadItem', action: 'update' })).rejects.toThrow('writes are closed')
     await expect(assertTenantWriteAllowed(client as any, { model: 'Upload', action: 'deleteMany' })).resolves.toBeUndefined()
+    client.shop.findUnique.mockResolvedValue({ billingStatus: 'active', erasureStartedAt: new Date() } as any)
+    await expect(assertTenantWriteAllowed(client as any, { model: 'Upload', action: 'create' })).rejects.toThrow('writes are closed')
+    expect(() => scopeTenantOperation({ model: 'Shop', action: 'update', args: { where: { id: 'shop_one' }, data: { erasureStartedAt: null } } })).toThrow('cannot be cleared')
   }))
 })

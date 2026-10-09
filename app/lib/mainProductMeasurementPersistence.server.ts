@@ -37,7 +37,7 @@ export async function persistMainProductMeasurementProjection(
       true
     )
     where id = ${itemId}
-      and upload_id in (select id from uploads where shop_id = ${shopId})
+      and upload_id in (select id from uploads where shop_id = ${shopId} and privacy_redacted_at is null)
   `)
 
   if (updated !== 1) {

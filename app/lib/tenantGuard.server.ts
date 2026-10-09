@@ -1,6 +1,6 @@
 import type { PrismaClient } from '@prisma/client'
 import { getTenantShopId, isTenantSqlAuthorized, requireTenantShopId, TenantIsolationError } from './tenantContext.server'
-import { assertJobActive } from './jobBudget.server'
+import { assertJobActive, currentJobSignal } from './jobBudget.server'
 
 type Args = Record<string, any>
 export interface TenantOperation { model?: string; action: string; args?: Args }
@@ -55,6 +55,7 @@ export function scopeTenantOperation(params: TenantOperation): void {
     if (params.args?.data || params.args?.create || params.args?.update) {
       const values = [params.args?.data, params.args?.create, params.args?.update]
       for (const value of values) if (value) {
+        if (['update', 'updateMany', 'upsert'].includes(action) && Object.prototype.hasOwnProperty.call(value, 'erasureStartedAt') && value.erasureStartedAt === null) throw new TenantIsolationError('erasure marker cannot be cleared')
         for (const key of ['uploads', 'productsConfig', 'assetSets', 'ordersLink', 'commissions', 'exportJobs', 'auditLogs', 'uploadLogs', 'billing', 'billingCredits']) if (value[key]) throw new TenantIsolationError('Shop nested tenant mutation is forbidden')
       }
     }
@@ -72,6 +73,10 @@ export function scopeTenantOperation(params: TenantOperation): void {
     if (model === 'UploadItem') where.upload = { ...(where.upload ?? {}), shopId }
     else if (model === 'SupportReply') where.ticket = { ...(where.ticket ?? {}), shopId }
     else where.shopId = shopId
+    if (currentJobSignal()) {
+      if (model === 'Upload') where.privacyRedactedAt = null
+      if (model === 'UploadItem') where.upload.privacyRedactedAt = null
+    }
   }
   if (['create', 'createMany', 'createManyAndReturn'].includes(action)) {
     const records = Array.isArray(args.data) ? args.data : [args.data]
@@ -127,6 +132,6 @@ export async function assertTenantWriteAllowed(client: PrismaClient, params: Ten
   if (!['create', 'createMany', 'createManyAndReturn', 'update', 'updateMany', 'upsert', 'executeRaw'].includes(params.action)) return
   if (params.model && !scopedModels.has(params.model) && !['UploadItem', 'SupportReply'].includes(params.model)) return
   const shopId = requireTenantShopId()
-  const shop = await client.shop.findUnique({ where: { id: shopId }, select: { billingStatus: true } })
-  if (!shop || shop.billingStatus === 'erasing') throw new TenantIsolationError('shop is being erased; writes are closed')
+  const shop = await client.shop.findUnique({ where: { id: shopId }, select: { billingStatus: true, erasureStartedAt: true } })
+  if (!shop || shop.erasureStartedAt || shop.billingStatus === 'erasing') throw new TenantIsolationError('shop is being erased; writes are closed')
 }

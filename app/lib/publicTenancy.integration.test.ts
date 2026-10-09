@@ -9,12 +9,13 @@ const url = process.env.PUBLIC_TENANCY_TEST_DATABASE_URL
 describe.skipIf(!url)('three-shop PostgreSQL isolation integration', () => {
   it('cannot read, change or attach another shop record', async () => {
     const target = new URL(url!)
-    if (!target.pathname.endsWith('_public_test') || (target.searchParams.get('schema') && target.searchParams.get('schema') !== 'public')) throw new Error('Isolation fixture requires a dedicated *_public_test database')
+    if (!/^\/public[_a-z]*_test$/.test(target.pathname) || (target.searchParams.get('schema') && target.searchParams.get('schema') !== 'public')) throw new Error('Isolation fixture requires a dedicated public_*_test database')
     const client = createTenantPrismaClient({ datasources: { db: { url } } })
     const shops: string[] = []
     const uploads: string[] = []
     const marker = randomUUID().replace(/-/g, '')
     try {
+      expect(await client.$queryRaw`SELECT 1`).toHaveLength(1)
       for (let i = 0; i < 3; i++) {
         const shop = await client.shop.create({ data: { shopDomain: `isolation-${i}-${marker}.myshopify.com`, accessToken: 'test-only', storageProvider: 'local' } })
         shops.push(shop.id)
@@ -30,6 +31,8 @@ describe.skipIf(!url)('three-shop PostgreSQL isolation integration', () => {
         await expect(client.upload.findMany({ where: { shopId: shops[(index + 1) % 3] } })).rejects.toThrow('differs')
         expect((await client.upload.findUnique({ where: { id: uploads[index] } }))?.status).toBe('draft')
       })))
+      await withTenantContext(shops[0], () => client.shop.update({ where: { id: shops[0] }, data: { billingStatus: 'erasing' } }))
+      await expect(withTenantContext(shops[0], () => client.upload.update({ where: { id: uploads[0] }, data: { status: 'ready' } }))).rejects.toThrow('writes are closed')
     } finally {
       for (const shopId of shops) await withTenantContext(shopId, () => client.shop.delete({ where: { id: shopId } })).catch(() => undefined)
       await client.$disconnect()
