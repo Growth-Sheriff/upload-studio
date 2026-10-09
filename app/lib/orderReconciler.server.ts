@@ -26,14 +26,12 @@ import { Decimal } from '@prisma/client/runtime/library'
 import prisma from '~/lib/prisma.server'
 import { COMMISSION_PERCENT, buildUsageIdempotencyKey, calculateCommissionAmount, isZeroPaymentOrder } from '~/lib/billing.server'
 import { getBillingFxSnapshot } from '~/lib/billingFx.server'
-import { shopifyGraphQL } from '~/lib/shopify.server'
 import {
   extractVipUploadIdsFromOrderNote,
   isForeignAppLine,
   matchUploadFromLineItem,
   normalizeCartToken,
 } from '~/lib/orderMatching.server'
-import { buildIdentityUrl } from '~/lib/uploadUrls.server'
 import { variantIdsEqual } from '~/lib/dtfSheetResolver.server'
 import { shopifyProductIdsEqual } from '~/lib/shopifyProductIdentity'
 import {
@@ -678,41 +676,14 @@ export function deriveUploadStatusTransition(
   return 'needs_review'
 }
 
-interface DesignManifestRow {
-  lineItemId: string
-  uploadId: string
-  location: string
-  originalFile: string
-  previewUrl: string
-  transform: unknown
-  preflightStatus: string
-}
-
 export interface ReconcileSummary {
   linked: Array<{ uploadId: string; matchSource: string }>
-  /** Order line ids this app served (basis of the 4% commission). */
+  /** Order line ids this app served (basis of the public 3.5% commission). */
   servedLineItemIds: string[]
   ghostsCreated: string[]
   foreignLinesSkipped: number
   affectedUploadIds: string[]
 }
-
-const ORDER_DESIGNS_METAFIELD_MUTATION = `
-  mutation orderMetafieldSet($input: OrderInput!) {
-    orderUpdate(input: $input) {
-      order { id }
-      userErrors { field message }
-    }
-  }
-`
-
-const ORDER_UPLOADS_METAFIELD_MUTATION = `
-  mutation setOrderUploads($metafields: [MetafieldsSetInput!]!) {
-    metafieldsSet(metafields: $metafields) {
-      userErrors { field message }
-    }
-  }
-`
 
 export async function reconcileOrder(
   shop: { id: string; shopDomain: string; accessToken: string },
@@ -724,10 +695,6 @@ export async function reconcileOrder(
   const orderTotal = parseFloat(order.total_price) || 0
   const orderCurrency = order.currency || 'USD'
   const orderName = order.name ? String(order.name) : null
-  // orders/updated can itself be caused by an order metafield write. Never
-  // write the mirrors again from that catch-all topic (or its refund refresh),
-  // otherwise Shopify can feed our own update back into the webhook loop.
-  const mayWriteOrderMetafields = topic !== 'orders/updated' && topic !== 'refunds/create'
 
   const summary: ReconcileSummary = {
     linked: [],
@@ -737,7 +704,6 @@ export async function reconcileOrder(
     affectedUploadIds: [],
   }
   const processed = new Set<string>()
-  const designManifest: DesignManifestRow[] = []
   let paidNewlyRecorded = false
 
   // ── Resolution sources ───────────────────────────────────────────────────
@@ -849,20 +815,6 @@ export async function reconcileOrder(
         },
       },
     })
-
-    if (facts.paid && !isGhost) {
-      for (const item of upload.items) {
-        designManifest.push({
-          lineItemId: lineItemId || `order-${orderId}`,
-          uploadId: upload.id,
-          location: item.location,
-          originalFile: item.originalName || '',
-          previewUrl: item.thumbnailKey || item.previewKey || '',
-          transform: item.transform,
-          preflightStatus: item.preflightStatus,
-        })
-      }
-    }
 
     processed.add(uploadId)
     unconsumedTokenUploads.delete(uploadId)
@@ -1050,56 +1002,8 @@ export async function reconcileOrder(
     })
   }
 
-  // ── Metafield mirrors (best-effort, never fail the webhook) ──────────────
-  if (mayWriteOrderMetafields && summary.linked.length > 0 && shop.accessToken) {
-    try {
-      await shopifyGraphQL(shop.shopDomain, shop.accessToken, ORDER_UPLOADS_METAFIELD_MUTATION, {
-        metafields: [
-          {
-            ownerId: `gid://shopify/Order/${orderId}`,
-            namespace: 'upload_studio',
-            key: 'uploads',
-            type: 'json',
-            value: JSON.stringify(
-              summary.linked.map((u) => ({
-                uploadId: u.uploadId,
-                identityUrl: buildIdentityUrl(u.uploadId),
-                matchSource: u.matchSource,
-              }))
-            ),
-          },
-        ],
-      })
-    } catch (error) {
-      console.warn('[Reconcile] upload_studio.uploads metafield write failed (non-fatal):', error)
-    }
-  }
-
-  if (mayWriteOrderMetafields && facts.paid && designManifest.length > 0 && shop.accessToken) {
-    try {
-      await shopifyGraphQL(shop.shopDomain, shop.accessToken, ORDER_DESIGNS_METAFIELD_MUTATION, {
-        input: {
-          id: `gid://shopify/Order/${orderId}`,
-          metafields: [
-            {
-              namespace: 'upload_lift',
-              key: 'designs',
-              value: JSON.stringify({
-                version: '1.0',
-                totalDesigns: designManifest.length,
-                designs: designManifest,
-                processedAt: new Date().toISOString(),
-              }),
-              type: 'json',
-            },
-          ],
-        },
-      })
-      console.log(`[Reconcile] upload_lift.designs metafield written for order ${orderId}`)
-    } catch (error) {
-      console.error('[Reconcile] Failed to write designs metafield:', error)
-    }
-  }
+  // The existing three cart properties and orders_link are the production
+  // identity contract. No duplicate order metafield or write_orders scope.
 
   console.log(
     `[Reconcile] order ${orderId} topic=${topic}: linked=${summary.linked.length} ghosts=${summary.ghostsCreated.length} foreignSkipped=${summary.foreignLinesSkipped} paidNew=${paidNewlyRecorded}`

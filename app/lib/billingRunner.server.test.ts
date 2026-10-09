@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
-  shop: { findUnique: vi.fn(), update: vi.fn() },
+  shop: { findUnique: vi.fn(), updateMany: vi.fn() },
   shopBilling: { findUnique: vi.fn(), upsert: vi.fn() },
   commission: { findMany: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn() },
   auditLog: { create: vi.fn(), upsert: vi.fn() },
@@ -23,6 +23,7 @@ describe('Shopify usage recording', () => {
     cap = 50; used = 0
     row = { id: 'fee-1', shopId: 'shop-a', orderId: 'order-1', orderNumber: '#123', status: 'pending', commissionAmount: 3.5, paymentRef: null, collectibleAt: new Date(), reviewRequiredAt: null, shopifyFinancialStatus: 'paid', shopifyRefundStatus: null, shopifyCancelledAt: null, usageIdempotencyKey: null, usageLineItemId: null, usageRequestStartedAt: null, nextBillingAttemptAt: null }
     mocks.shop.findUnique.mockResolvedValue({ id: 'shop-a', shopDomain: 'a.myshopify.com', uninstalledAt: null })
+    mocks.shop.updateMany.mockResolvedValue({ count: 1 })
     mocks.shopBilling.findUnique.mockResolvedValue(null)
     mocks.shopBilling.upsert.mockImplementation(({ create }) => create)
     mocks.commission.findMany.mockImplementation(() => Promise.resolve(row.status === 'paid' ? [] : [{ ...row }]))

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-vi.mock('~/lib/prisma.server', () => ({ default: {} }))
-import { BILLING_POLICY, billingCapState, buildUsageIdempotencyKey, calculateCommissionAmount, recommendedBillingCap, sumMoneyCents } from './billing.server'
+const store = vi.hoisted(() => ({ shop: { findUnique: vi.fn() } }))
+vi.mock('~/lib/prisma.server', () => ({ default: store }))
+import { BILLING_POLICY, MAX_FILE_SIZE_MB, billingCapState, buildUsageIdempotencyKey, calculateCommissionAmount, checkUploadAllowed, recommendedBillingCap, sumMoneyCents } from './billing.server'
 import { parseEcbRates } from './billingFx.server'
 
 describe('public order fees', () => {
@@ -40,5 +41,13 @@ describe('public order fees', () => {
     expect(() => parseEcbRates(`<Cube time='2026-09-01'><Cube currency='USD' rate='1.1'/></Cube>`, new Date('2026-10-09'))).toThrow('stale')
     expect(() => parseEcbRates(`<Cube time='2026-10-10'><Cube currency='USD' rate='1.1'/></Cube>`, new Date('2026-10-09'))).toThrow('stale')
     expect(() => parseEcbRates(`<Cube time='2026-10-08'/>`, new Date('2026-10-09'))).toThrow('USD')
+  })
+  it('does not accept files exceeding worker capacity or an erasing shop', async () => {
+    store.shop.findUnique.mockResolvedValue({ billingStatus: 'active', erasureStartedAt: null, uninstalledAt: null })
+    expect(MAX_FILE_SIZE_MB).toBe(1024)
+    expect((await checkUploadAllowed('shop-a', 'gang_sheet', 1024)).allowed).toBe(true)
+    expect((await checkUploadAllowed('shop-a', 'gang_sheet', 1024.001)).allowed).toBe(false)
+    store.shop.findUnique.mockResolvedValue({ billingStatus: 'active', erasureStartedAt: new Date(), uninstalledAt: null })
+    expect((await checkUploadAllowed('shop-a', 'gang_sheet', 1)).allowed).toBe(false)
   })
 })

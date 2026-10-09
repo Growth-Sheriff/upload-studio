@@ -5,7 +5,8 @@ import { Banner, BlockStack, Button, Card, DataTable, InlineStack, Page, Select,
 import { useEffect, useState } from 'react'
 import prisma from '~/lib/prisma.server'
 import { authenticate } from '~/shopify.server'
-import { BILLING_CAP_TIERS, BILLING_TERMS, billingCapState, buildUsageIdempotencyKey, recommendedBillingCap } from '~/lib/billing.server'
+import { BILLING_CAP_TIERS, BILLING_TERMS, billingCapState, recommendedBillingCap } from '~/lib/billingPolicy'
+import { buildUsageIdempotencyKey } from '~/lib/billing.server'
 import { requestShopifyBillingApproval, syncShopifyBilling } from '~/lib/shopifyBilling.server'
 
 export async function loader({ request }: LoaderFunctionArgs) {

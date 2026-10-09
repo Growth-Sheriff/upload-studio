@@ -13,8 +13,8 @@ export async function runShopUsageBilling(shopId: string, suppliedAdmin?: Billin
 }
 
 async function executeShopUsageBilling(shopId: string, suppliedAdmin?: BillingAdmin) {
-  const shop = await prisma.shop.findUnique({ where: { id: shopId }, select: { id: true, shopDomain: true, uninstalledAt: true } })
-  if (!shop || shop.uninstalledAt) return { recorded: 0, pending: 0, reason: 'uninstalled' }
+  const shop = await prisma.shop.findUnique({ where: { id: shopId }, select: { id: true, shopDomain: true, uninstalledAt: true, erasureStartedAt: true } })
+  if (!shop || shop.uninstalledAt || shop.erasureStartedAt) return { recorded: 0, pending: 0, reason: 'uninstalled_or_erasing' }
   const admin = suppliedAdmin || (await (await import('~/shopify.server')).unauthenticated.admin(shop.shopDomain)).admin
   const billing = await syncShopifyBilling(shopId, admin)
   const approved = billing.status === 'active' && Boolean(billing.usageLineItemId)

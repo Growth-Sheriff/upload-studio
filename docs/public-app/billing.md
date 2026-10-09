@@ -1,5 +1,7 @@
 # Shopify usage billing — public app only
 
+Public upload acceptance is capped at 1,024 MiB, matching the shared workers' one-GiB bounded download ceiling. Products may choose a lower visible limit (default 500 MiB). Accepting legacy ten-GiB files would guarantee a later processing failure and burden every shop; no live custom app setting is changed.
+
 Checked against the official 2026-10 Admin GraphQL API on 2026-10-09. This branch has no Stripe/PayPal merchant-card collection, hosted checkout reservation, manual mark-paid action or external payment webhook. Custom-app production billing is untouched.
 
 ## Commercial contract

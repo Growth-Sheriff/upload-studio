@@ -37,9 +37,11 @@ export async function syncShopifyBilling(shopId: string, admin: BillingAdmin) {
   const previous = await prisma.shopBilling.findUnique({ where: { shopId } })
   if (usable.length !== 1 || usable[0].line.plan.pricingDetails.cappedAmount.currencyCode !== 'USD') {
     const status = usable.length ? 'review_required' : previous?.status === 'pending' ? 'pending' : 'inactive'
-    const state = await prisma.shopBilling.upsert({ where: { shopId }, create: { shopId, status }, update: { status, syncedAt: new Date() } })
-    await prisma.shop.update({ where: { id: shopId }, data: { billingStatus: 'inactive' } })
-    return state
+    return prisma.$transaction(async tx => {
+      const owner = await tx.shop.updateMany({ where: { id: shopId, erasureStartedAt: null, uninstalledAt: null, billingStatus: { notIn: ['erasing', 'uninstalled'] } }, data: { billingStatus: 'inactive' } })
+      if (!owner.count) throw new Error('Shop uninstalled or erasing; billing cannot reactivate it')
+      return tx.shopBilling.upsert({ where: { shopId }, create: { shopId, status }, update: { status, syncedAt: new Date() } })
+    })
   }
   const { subscription, line } = usable[0]
   const pricing = line.plan.pricingDetails
@@ -52,9 +54,13 @@ export async function syncShopifyBilling(shopId: string, admin: BillingAdmin) {
     test: Boolean(subscription.test), syncedAt: new Date(),
     ...(!previous?.pendingCapUsd || approvalSatisfied ? { pendingApprovalUrl: null, pendingCapUsd: null } : {}),
   }
-  const state = await prisma.shopBilling.upsert({ where: { shopId }, create: { shopId, ...approved }, update: approved })
-  await prisma.shop.update({ where: { id: shopId }, data: { billingStatus: 'active' } })
-  return state
+  return prisma.$transaction(async tx => {
+    // Provider lookup is awaited above; uninstall/redaction may have arrived
+    // meanwhile. Lock/check the immutable erasure marker before persisting.
+    const owner = await tx.shop.updateMany({ where: { id: shopId, erasureStartedAt: null, uninstalledAt: null, billingStatus: { notIn: ['erasing', 'uninstalled'] } }, data: { billingStatus: 'active' } })
+    if (!owner.count) throw new Error('Shop uninstalled or erasing; billing cannot reactivate it')
+    return tx.shopBilling.upsert({ where: { shopId }, create: { shopId, ...approved }, update: approved })
+  })
 }
 
 export async function requestShopifyBillingApproval(shopId: string, admin: BillingAdmin, capUsd: number, returnUrl: string): Promise<string> {
