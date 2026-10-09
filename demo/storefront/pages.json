@@ -13,7 +13,7 @@
       "bodyHtml": "<p>The uploader is the product experience; the blocks below are catalog views linking to real demo products. They do not measure a file or arrange artwork.</p><p>Explore <a href='/products/ready-dtf-gang-sheets'>automatic variant selection</a>, <a href='/products/measured-dtf-gang-sheets'>measured Studio pricing</a>, <a href='/products/measured-dtf-png-sheets'>the PNG detail page</a>, <a href='/products/manual-dtf-gang-sheets'>manual sheet selection</a>, and <a href='/products/dtf-uv-upload-desk'>the DTF + UV desk</a>.</p><p>Each uploaded file remains a finished sheet. Quantity means copies. Demo catalog prices below refer to complete variant sheets; per-inch products are kept out of these generic catalog cards so the units cannot be confused.</p>"
     },
     {
-      "handle": "contact",
+      "handle": "demo-support",
       "title": "Demo support",
       "templateSuffix": "contact",
       "bodyHtml": "<p>Contact info@actualscope.com for Auto Gang Sheet Upload demo support. Include the file format, measured size, product view, and sheet identity. Do not send payment-card information.</p><p>Test orders are not physically printed or shipped.</p>"
