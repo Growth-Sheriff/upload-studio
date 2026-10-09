@@ -2,7 +2,7 @@ client_id = "0237a035d0fdcf7b5c828aa39373c2bb"
 name = "UStudio DTF Print Arizona"
 application_url = "https://dtfprintarizona.uploadstudio.app.techifyboost.com"
 embedded = true
-handle = "dtfprintarizona"
+handle = "ustudio-dtfarizona"
 
 [build]
 automatically_update_urls_on_dev = false
