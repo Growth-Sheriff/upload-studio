@@ -45,12 +45,12 @@ services:
   billing:
     <<: *app
     command: ["node", "--import", "tsx", "workers/public-app.worker.ts"]
-    environment: {PUBLIC_WORKER_ROLE: billing}
+    environment: {PUBLIC_WORKER_ROLE: billing, NODE_OPTIONS: "--max-old-space-size=256"}
     mem_limit: 512m
     cpus: 0.5
   privacy:
     <<: *app
     command: ["node", "--import", "tsx", "workers/public-app.worker.ts"]
-    environment: {PUBLIC_WORKER_ROLE: privacy}
+    environment: {PUBLIC_WORKER_ROLE: privacy, NODE_OPTIONS: "--max-old-space-size=256"}
     mem_limit: 512m
     cpus: 0.5

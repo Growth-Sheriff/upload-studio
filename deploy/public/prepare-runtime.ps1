@@ -77,8 +77,13 @@ foreach($file in @($envPath,$migrationPath,(Join-Path $secretDirectory 'pg-ca.pe
 }
 & scp.exe @sshOptions (Join-Path $PSScriptRoot 'compose.yml') ($target+':/opt/agsu-public/compose.yml')
 if($LASTEXITCODE -ne 0) { throw 'New-host compose transfer failed' }
-& ssh.exe @sshOptions $target "chmod 600 /opt/agsu-public/public.env /opt/agsu-public/migration.env; chmod 644 /opt/agsu-public/pg-ca.pem; docker pull $image"
-if($LASTEXITCODE -ne 0) { throw 'Public image pull failed' }
+try {
+  & ssh.exe @sshOptions $target "chmod 600 /opt/agsu-public/public.env /opt/agsu-public/migration.env; chmod 644 /opt/agsu-public/pg-ca.pem; docker pull $image"
+  if($LASTEXITCODE -ne 0) { throw 'Public image pull failed' }
+} finally {
+  # Only the new host's temporary package-pull login, never an existing host credential.
+  & ssh.exe @sshOptions $target 'docker logout ghcr.io >/dev/null 2>&1'
+}
 & ssh.exe @sshOptions $target "docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --memory 512m --pids-limit 64 --tmpfs /tmp:rw,nosuid,nodev,size=256m --env-file /opt/agsu-public/migration.env -v /opt/agsu-public/pg-ca.pem:/run/secrets/pg-ca.pem:ro $image node node_modules/prisma/build/index.js migrate deploy"
 if($LASTEXITCODE -ne 0) { throw 'New database migration failed; application was not started' }
 & ssh.exe @sshOptions $target 'docker compose --env-file /opt/agsu-public/public.env -f /opt/agsu-public/compose.yml up -d'
