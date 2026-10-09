@@ -1,0 +1,37 @@
+# An allowlist keeps tenant envs, local Git metadata, scratch files and customer
+# objects out of the remote public verification context.
+**
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tsconfig.json
+!vite.config.ts
+!vitest.config.ts
+!server.mjs
+!shopify.app.auto-gang-sheet-upload.toml
+!app/
+!app/**
+!workers/
+!workers/**
+!public/
+!public/**
+!prisma/
+!prisma/**
+!extensions/
+!extensions/**
+!theme-snippets/
+!theme-snippets/**
+!scripts/
+!scripts/measurement-regression-harness.ts
+!scripts/measurement-regression-fixtures.json
+!deploy/
+!deploy/public/
+!deploy/public/verify.sh
+!deploy/public/Dockerfile.ci
+!deploy/public/Dockerfile.ci.dockerignore
+**/node_modules/**
+**/.env*
+**/*.log
+**/uploads/**
+**/tmp/**
+**/temp/**

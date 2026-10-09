@@ -1,0 +1,48 @@
+# Independent public checks on Depot BuildKit; no GitHub Actions runner needed.
+FROM node:22-bookworm AS verify
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git openssl imagemagick ghostscript poppler-utils fonts-dejavu-core \
+    postgresql-15 redis-server \
+    && rm -rf /var/lib/apt/lists/*
+RUN corepack enable && corepack prepare pnpm@11.21.0 --activate
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY app ./app
+COPY workers ./workers
+COPY public ./public
+COPY prisma ./prisma
+COPY extensions ./extensions
+COPY theme-snippets ./theme-snippets
+COPY scripts/measurement-regression-harness.ts scripts/measurement-regression-fixtures.json ./scripts/
+COPY tsconfig.json vite.config.ts vitest.config.ts server.mjs shopify.app.auto-gang-sheet-upload.toml ./
+COPY deploy/public/verify.sh ./deploy/public/verify.sh
+
+# The harness reads the historical source with git show. Only the public Git
+# repository is fetched; host worktree metadata and credentials never enter CI.
+ARG PUBLIC_REVIEW_SHA
+RUN test -n "$PUBLIC_REVIEW_SHA" \
+    && git clone --bare --filter=blob:none https://github.com/Growth-Sheriff/upload-studio.git /tmp/public-source.git \
+    && git --git-dir=/tmp/public-source.git cat-file -e "$PUBLIC_REVIEW_SHA^{commit}" \
+    && git --git-dir=/tmp/public-source.git update-ref refs/heads/public-ci-review "$PUBLIC_REVIEW_SHA" \
+    && git --git-dir=/tmp/public-source.git symbolic-ref HEAD refs/heads/public-ci-review
+ENV GIT_DIR=/tmp/public-source.git GIT_WORK_TREE=/app \
+    DATABASE_URL=postgresql://public_app:local-test-only@127.0.0.1:55439/public_app_test?schema=public \
+    PUBLIC_TENANCY_TEST_DATABASE_URL=postgresql://public_app:local-test-only@127.0.0.1:55439/public_app_test?schema=public \
+    PUBLIC_APP_TEST_DATABASE_URL=postgresql://public_app:local-test-only@127.0.0.1:55439/public_app_test?schema=public \
+    PUBLIC_TENANCY_TEST_REDIS_URL=redis://127.0.0.1:56389/0 \
+    REDIS_URL=redis://127.0.0.1:56389/0 PUBLIC_APP_RUNTIME=true \
+    SHOPIFY_API_KEY=test-public-app-only SHOPIFY_API_SECRET=test-public-secret-only \
+    SHOPIFY_APP_URL=https://public-test.example.com CI=true
+RUN set -eu; \
+    install -d -o postgres -g postgres /tmp/public-ci-postgres; \
+    runuser -u postgres -- /usr/lib/postgresql/15/bin/initdb -D /tmp/public-ci-postgres --auth-local=trust --auth-host=trust; \
+    runuser -u postgres -- /usr/lib/postgresql/15/bin/pg_ctl -D /tmp/public-ci-postgres -l /tmp/public-ci-postgres.log -o '-p 55439 -h 127.0.0.1' -w start; \
+    redis-server --port 56389 --bind 127.0.0.1 --save '' --appendonly no --daemonize yes --pidfile /tmp/public-ci-redis.pid; \
+    trap 'redis-cli -p 56389 shutdown nosave; runuser -u postgres -- /usr/lib/postgresql/15/bin/pg_ctl -D /tmp/public-ci-postgres -m fast -w stop' EXIT; \
+    runuser -u postgres -- createuser -h 127.0.0.1 -p 55439 public_app; \
+    runuser -u postgres -- createdb -h 127.0.0.1 -p 55439 -O public_app public_app_test; \
+    bash deploy/public/verify.sh
+
+# Test databases exist only in the disposable build step, never in a runtime
+# application image. Successful completion is the artifact, not a deployment.
