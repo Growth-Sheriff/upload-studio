@@ -133,7 +133,7 @@ export function AppFrame({ shop, pendingUploads = 0, pendingQueue = 0, notice }:
 
       <div className="us-sidebar-footer">
         <span className="us-sidebar-footer__by">by</span>
-        <span className="us-sidebar-footer__brand">Techify Boost</span>
+        <span className="us-sidebar-footer__brand">Actualscope</span>
         <nav className="us-sidebar-footer__links" aria-label="Legal">
           <Link to="/app/legal/privacy">Privacy</Link>
           <Link to="/app/legal/terms">Terms</Link>

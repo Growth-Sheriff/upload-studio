@@ -3,129 +3,73 @@ import {
   ApiVersion,
   AppDistribution,
   shopifyApp,
-  DeliveryMethod,
-  BillingInterval,
 } from "@shopify/shopify-app-remix/server";
-import { RedisSessionStorage } from "@shopify/shopify-app-session-storage-redis";
-import type { Prisma } from "@prisma/client";
+import { PrismaSessionStorage } from '~/lib/prismaSessionStorage.server';
+import { enterTenantContext } from '~/lib/tenantContext.server';
+import { persistVerifiedShopInstallation } from '~/lib/publicAuthPersistence.server';
 import prisma from "~/lib/prisma.server";
 
 
-const redisSessionStorage = new RedisSessionStorage(
-  process.env.REDIS_URL || "redis://localhost:6379"
-);
+const sessionStorage = new PrismaSessionStorage(prisma);
+export const apiVersion = '2026-10' as ApiVersion;
+export const PUBLIC_SCOPES = ['read_products', 'write_products', 'read_orders', 'write_draft_orders', 'write_app_proxy'];
 
 
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY || "",
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
-  apiVersion: ApiVersion.October25,
-  scopes: process.env.SHOPIFY_SCOPES?.split(",") || [
-    "read_products",
-    "write_products",
-    "read_orders",
-    "write_orders",
-    "read_customers",
-    "write_draft_orders",
-  ],
-  appUrl: process.env.SHOPIFY_APP_URL!,
+  apiVersion,
+  scopes: PUBLIC_SCOPES,
+  appUrl: process.env.SHOPIFY_APP_URL || 'http://localhost:3000',
   authPathPrefix: "/auth",
-  sessionStorage: redisSessionStorage,
+  sessionStorage,
   distribution: AppDistribution.AppStore,
   isEmbeddedApp: true,
-  webhooks: {
-    APP_UNINSTALLED: {
-      deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/app-uninstalled",
-    },
-    ORDERS_CREATE: {
-      deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/orders-create",
-    },
-    ORDERS_PAID: {
-      deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/orders-paid",
-    },
-    ORDERS_UPDATED: {
-      deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/orders-updated",
-    },
-    ORDERS_CANCELLED: {
-      deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/orders-cancelled",
-    },
-    ORDERS_FULFILLED: {
-      deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/orders-fulfilled",
-    },
-    REFUNDS_CREATE: {
-      deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/refunds-create",
-    },
-    PRODUCTS_UPDATE: {
-      deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/products-update",
-    },
-    PRODUCTS_DELETE: {
-      deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/products-delete",
-    },
-  },
   hooks: {
     afterAuth: async ({ session }) => {
-      // Webhook subscriptions are managed declaratively in every tenant's
-      // shopify.app.*.toml. Registering the same topics again here can create
-      // duplicate deliveries and makes authentication depend on a second
-      // Shopify API call.
-      // Reinstall must reactivate a shop that webhooks.app-uninstalled
-      // deactivated (data is retained through uninstall; see that handler).
-      const existing = await prisma.shop.findUnique({
-        where: { shopDomain: session.shop },
-        select: { billingStatus: true, settings: true },
-      });
-      const reactivating = existing?.billingStatus === "uninstalled";
-      const cleanedSettings =
-        reactivating && existing?.settings && typeof existing.settings === "object"
-          ? (Object.fromEntries(
-              Object.entries(existing.settings as Record<string, unknown>).filter(
-                ([key]) => key !== "uninstalledAt"
-              )
-            ) as Prisma.InputJsonObject)
-          : undefined;
-
-      await prisma.shop.upsert({
-        where: { shopDomain: session.shop },
-        update: {
-          accessToken: session.accessToken,
-          updatedAt: new Date(),
-          ...(reactivating
-            ? { billingStatus: "active", ...(cleanedSettings ? { settings: cleanedSettings } : {}) }
-            : {}),
-        },
-        create: {
-          shopDomain: session.shop,
-          accessToken: session.accessToken || "",
-          plan: "starter",
-          billingStatus: "active",
-          storageProvider: "r2",
-          settings: {},
-        },
-      });
+      // One declarative public app config owns every subscription. Reinstall
+      // may cancel the scheduled uninstall purge, never an erasure in progress.
+      await persistVerifiedShopInstallation(prisma, session);
     },
   },
   future: {
     unstable_newEmbeddedAuthStrategy: true,
   },
-  ...(process.env.SHOP_CUSTOM_DOMAIN
-    ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
-    : {}),
 });
 
 export default shopify;
-export const apiVersion = ApiVersion.October25;
 export const addDocumentResponseHeaders = shopify.addDocumentResponseHeaders;
-export const authenticate = shopify.authenticate;
+async function bindVerifiedShop(domain: string) {
+  const shop = await prisma.shop.findUnique({ where: { shopDomain: domain }, select: { id: true, billingStatus: true, erasureStartedAt: true } });
+  if (!shop) throw new Response('Shop installation not found', { status: 401 });
+  if (shop.erasureStartedAt || ['erasing', 'uninstalled'].includes(shop.billingStatus)) throw new Response('Shop installation inactive', { status: 403 });
+  enterTenantContext(shop.id);
+}
+export const authenticate = {
+  ...shopify.authenticate,
+  admin: async (...args: Parameters<typeof shopify.authenticate.admin>) => {
+    const result = await shopify.authenticate.admin(...args);
+    await bindVerifiedShop(result.session.shop);
+    return result;
+  },
+  webhook: async (...args: Parameters<typeof shopify.authenticate.webhook>) => {
+    const result = await shopify.authenticate.webhook(...args);
+    const installed = await prisma.shop.findUnique({ where: { shopDomain: result.shop }, select: { id: true } });
+    if (installed) enterTenantContext(installed.id);
+    return result;
+  },
+  public: {
+    ...shopify.authenticate.public,
+    appProxy: async (...args: Parameters<typeof shopify.authenticate.public.appProxy>) => {
+      const result = await shopify.authenticate.public.appProxy(...args);
+      const domain = result.session?.shop || new URL(args[0].url).searchParams.get('shop');
+      if (!domain) throw new Response('Missing signed shop', { status: 401 });
+      await bindVerifiedShop(domain);
+      return result;
+    },
+  },
+};
 export const unauthenticated = shopify.unauthenticated;
 export const login = shopify.login;
 export const registerWebhooks = shopify.registerWebhooks;

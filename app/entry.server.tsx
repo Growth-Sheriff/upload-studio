@@ -1,16 +1,15 @@
 import { PassThrough } from "stream";
 import { renderToPipeableStream } from "react-dom/server";
 import { RemixServer } from "@remix-run/react";
-import * as Sentry from "@sentry/remix";
 import {
   createReadableStreamFromReadable,
   type EntryContext,
 } from "@remix-run/node";
 import { isbot } from "isbot";
 import { addDocumentResponseHeaders } from "./shopify.server";
-import { initBillingScheduler } from "./lib/billingScheduler.server";
+export { withTenantRequest } from './lib/tenantContext.server';
 
-initBillingScheduler();
+// Billing is dispatched once by its worker, never by every web replica.
 
 export const streamTimeout = 5000;
 
@@ -51,8 +50,7 @@ export default async function handleRequest(
         },
         onError(error) {
           responseStatusCode = 500;
-          Sentry.captureRemixServerException(error, "remix.server", request);
-          console.error(error);
+          console.error('[SSR] Rendering failed', error instanceof Error ? error.name : 'Unknown error');
         },
       }
     );

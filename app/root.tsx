@@ -1,3 +1,5 @@
+import type { LoaderFunctionArgs } from '@remix-run/node';
+import { json } from '@remix-run/node';
 import {
   Links,
   Meta,
@@ -5,17 +7,20 @@ import {
   Scripts,
   ScrollRestoration,
   useRouteError,
-  isRouteErrorResponse
+  isRouteErrorResponse,
+  useLoaderData
 } from "@remix-run/react";
-import * as Sentry from "@sentry/remix";
-import { withSentry, captureRemixErrorBoundaryError } from "@sentry/remix";
 
+export function loader(_args: LoaderFunctionArgs) { return json({ apiKey: process.env.SHOPIFY_API_KEY || '' }); }
 function App() {
+  const { apiKey } = useLoaderData<typeof loader>();
   return (
     <html>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <meta name="shopify-api-key" content={apiKey} />
+        <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" />
         <link rel="preconnect" href="https://cdn.shopify.com/" />
         <link
           rel="stylesheet"
@@ -36,14 +41,6 @@ function App() {
 export function ErrorBoundary() {
   const error = useRouteError();
 
-  if (error instanceof Error) {
-    Sentry.captureException(error);
-  } else {
-    Sentry.captureException(new Error(`Unknown Remix Route Error: ${JSON.stringify(error)}`));
-  }
-
-  captureRemixErrorBoundaryError(error);
-
   return (
     <html>
       <head>
@@ -54,11 +51,11 @@ export function ErrorBoundary() {
       <body>
         <div style={{ padding: "20px", fontFamily: "system-ui, sans-serif" }}>
           <h1>Application Error</h1>
-          <p>An unexpected error occurred. The support team has been notified.</p>
+          <p>The request could not be completed. Please retry or contact info@actualscope.com.</p>
           {isRouteErrorResponse(error) ? (
             <p>{error.status} {error.statusText}</p>
           ) : (
-            <p>{error instanceof Error ? error.message : "Unknown Error"}</p>
+            <p>Please try again.</p>
           )}
         </div>
         <Scripts />
@@ -67,4 +64,4 @@ export function ErrorBoundary() {
   );
 }
 
-export default withSentry(App);
+export default App;

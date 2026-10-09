@@ -1,7 +1,6 @@
 import { vitePlugin as remix } from "@remix-run/dev";
 import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
-import { sentryVitePlugin } from "@sentry/vite-plugin";
 
 
 
@@ -30,11 +29,6 @@ export default defineConfig({
       },
     }),
     tsconfigPaths(),
-    sentryVitePlugin({
-      org: "techify-boost-36",
-      project: "javascript-remix",
-      authToken: process.env.SENTRY_AUTH_TOKEN,
-    }),
   ],
   server: {
     port: Number(process.env.PORT || 3000),
@@ -42,7 +36,7 @@ export default defineConfig({
   },
   build: {
     assetsInlineLimit: 0,
-    sourcemap: true
+    sourcemap: false
   },
   optimizeDeps: {
     include: ["@shopify/app-bridge-react", "@shopify/polaris"],
