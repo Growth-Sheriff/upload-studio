@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import { Prisma, type PaidSheetVolume } from '@prisma/client'
 import prisma from './prisma.server'
-import { withTenantContext } from './tenantContext.server'
+import { TenantIsolationError, withTenantContext } from './tenantContext.server'
 import { deleteFile, deleteShopStorageObjects, getStorageConfig } from './storage.server'
 
 export const COMPLIANCE_TOPICS = ['customers/data_request', 'customers/redact', 'shop/redact'] as const
@@ -295,9 +295,10 @@ export async function runComplianceBatch() {
 export async function runRetentionBatch() {
   let cursor: string | undefined
   for (;;) {
-    const shops = await prisma.shop.findMany({ where: { uninstalledAt: null, erasureStartedAt: null, billingStatus: { not: 'erasing' } }, select: { id: true, shopDomain: true, storageProvider: true, storageConfig: true }, orderBy: { id: 'asc' }, take: 100, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}) })
+    const shops = await prisma.shop.findMany({ where: { uninstalledAt: null, erasureStartedAt: null, billingStatus: { not: 'erasing' }, ...(cursor ? { id: { gt: cursor } } : {}) }, select: { id: true, shopDomain: true, storageProvider: true, storageConfig: true }, orderBy: { id: 'asc' }, take: 100 })
     if (!shops.length) break
-    for (const shop of shops) await withTenantContext(shop.id, async () => {
+    for (const shop of shops) {
+    try { await withTenantContext(shop.id, async () => {
     const expiredWhere = { shopId: shop.id, OR: [{ orderId: null, createdAt: { lt: new Date(Date.now() - 7 * 86400000) } }, { orderId: { not: null }, createdAt: { lt: new Date(Date.now() - 90 * 86400000) } }] }
     // Retention has the same late-PUT/queued-worker race as explicit erasure.
     // Mark first; a later pass deletes only after outstanding URLs have drained.
@@ -317,7 +318,15 @@ export async function runRetentionBatch() {
     // Financial keys are the durable exactly-once ledger. Expiring them while
     // installed could bill a replay twice. Shop erasure removes this ledger.
     await prisma.auditLog.deleteMany({ where: { shopId: shop.id, createdAt: { lt: new Date(Date.now() - 365 * 86400000) } } })
-    })
+    }) } catch (error) {
+      // Discovery is not a lease: another worker may close/delete this shop
+      // before its first retention write. Erasure owns that cleanup now.
+      // Never hide storage failures or unrelated tenant-isolation violations.
+      if (!(error instanceof TenantIsolationError) || error.message !== 'Tenant isolation violation: shop is being erased; writes are closed') throw error
+      const current = await prisma.shop.findUnique({ where: { id: shop.id }, select: { erasureStartedAt: true, billingStatus: true } })
+      if (current && !current.erasureStartedAt && current.billingStatus !== 'erasing') throw error
+    }
+    }
     cursor = shops[shops.length - 1].id
   }
 }

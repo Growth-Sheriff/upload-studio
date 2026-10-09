@@ -197,6 +197,32 @@ describeDb('real HMAC requests and disposable database erasure', { timeout: 1500
     expect(await withTenantContext(shop.id, () => prisma.upload.count({ where: { id: upload.id } }))).toBe(0)
   })
 
+  it('retention skips confirmed discovery-time erasure/deletion races but not storage failures', async () => {
+    const closed = await fixture(); const deleted = await fixture(); const active = await fixture()
+    await withTenantContext(active.shop.id, () => prisma.upload.update({ where: { id: active.upload.id }, data: { orderId: null, createdAt: new Date(Date.now() - 8 * 86400000) } }))
+    let injectRace = true
+    // Deterministically let the discovery SELECT finish, then commit the
+    // concurrent erasure before retention starts writing any discovered shop.
+    prisma.$use(async (params, next) => {
+      const result = await next(params)
+      if (injectRace && params.model === 'Shop' && params.action === 'findMany' && params.args?.select?.storageProvider && params.args?.where?.erasureStartedAt === null) {
+        injectRace = false
+        await prisma.shop.update({ where: { id: closed.shop.id }, data: { erasureStartedAt: new Date(), billingStatus: 'erasing' } })
+        await prisma.shop.delete({ where: { id: deleted.shop.id } })
+      }
+      return result
+    })
+    await expect(compliance.runRetentionBatch()).resolves.toBeUndefined()
+    expect(injectRace).toBe(false)
+    expect((await withTenantContext(active.shop.id, () => prisma.upload.findUniqueOrThrow({ where: { id: active.upload.id } }))).privacyRedactedAt).not.toBeNull()
+    expect((await withTenantContext(closed.shop.id, () => prisma.upload.findUniqueOrThrow({ where: { id: closed.upload.id } }))).privacyRedactedAt).toBeNull()
+    expect(await prisma.shop.findUnique({ where: { id: deleted.shop.id } })).toBeNull()
+    const { withTenantSql } = await import('./tenantContext.server')
+    await withTenantContext(active.shop.id, () => withTenantSql(owner => prisma.$executeRaw`UPDATE uploads SET privacy_redacted_at = ${past()} WHERE id = ${active.upload.id} AND shop_id = ${owner}`))
+    storage.deleteFile.mockRejectedValueOnce(new Error('retention storage outage'))
+    await expect(compliance.runRetentionBatch()).rejects.toThrow('retention storage outage')
+  })
+
   it('a stale uninstall cannot erase a winning reinstall, while a winning erase keeps its original marker', async () => {
     const { shop } = await fixture()
     const originalUninstall = past()
