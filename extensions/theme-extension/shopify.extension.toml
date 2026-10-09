@@ -1,6 +1,7 @@
 api_version = "2026-10"
 
 [[extensions]]
+uid = "acc51b25-4d01-f869-72ba-84b176195603623cdff6"
 type = "theme"
 name = "Auto Gang Sheet Upload"
 handle = "auto-gang-sheet-upload"

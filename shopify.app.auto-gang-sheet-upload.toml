@@ -1,8 +1,8 @@
-# New public app only. Registration is blocked until the Actualscope account
-# is accessible; this placeholder deliberately cannot identify a live app.
-client_id = "PUBLIC_APP_REGISTRATION_REQUIRED"
+# New public app only, registered in Actual Scope organization239354566.
+# Existing custom-app configurations are never deployment targets here.
+client_id = "8822c01b1f0be2280240cfab7d4e9a79"
 name = "Auto Gang Sheet Upload"
-application_url = "https://auto-gang-sheet-upload.example.com"
+application_url = "https://auto-gang-sheet.actualscope.com"
 embedded = true
 
 [build]
@@ -55,9 +55,9 @@ optional_scopes = []
 use_legacy_install_flow = false
 
 [auth]
-redirect_urls = ["https://auto-gang-sheet-upload.example.com/auth/callback", "https://auto-gang-sheet-upload.example.com/api/auth/callback"]
+redirect_urls = ["https://auto-gang-sheet.actualscope.com/auth/callback", "https://auto-gang-sheet.actualscope.com/api/auth/callback"]
 
 [app_proxy]
-url = "https://auto-gang-sheet-upload.example.com"
+url = "https://auto-gang-sheet.actualscope.com"
 subpath = "customizer"
 prefix = "apps"

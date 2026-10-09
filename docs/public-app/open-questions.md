@@ -2,6 +2,10 @@
 
 Updated: 2026-10-10 (Europe/Istanbul).
 
+## Release execution update
+
+The numbered inventory below records the earlier pre-access state. Actual Scope organization239354566 and new public app433768202241 are now verified; the public TOML uses its real client ID and independent domain. Three new development shops exist, and a separate Depot project has passed all391 Linux tests and builds. New isolated DigitalOcean/R2 provisioning is in progress, not the old tenant infrastructure. See registration.md, ci.md and the provisioning evidence for current identities. Installation, runtime S3 credentials, protected-data development selection, real commerce/privacy/usage proofs and review submission are still open. An accidental empty CLI registration under the previously cached account is quarantined and needs exact-target cleanup; it is never a public deployment target.
+
 ## Launch blockers — no fabricated substitutes
 
 1. Actualscope Partner/Dev Dashboard registration: the available browser automation did not expose the requested Chrome profile; native browser inspection stopped because it could not confidently identify the current page URL. No more UI interaction was attempted after that stop. Therefore account info@actualscope.com, organization identity and creation of the app are unverified. Complete only in Actualscope, not Growth Sheriff. Until verified, the new TOML retains a deliberately non-deployable client ID and example URLs.

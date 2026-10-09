@@ -31,3 +31,15 @@ App Store approval, protected-data approval and measured 28-day Web Vitals canno
 - Final Linux suite: 56 files and all 391 tests passed, including ImageMagick and real local PostgreSQL/Redis integrations. Full typecheck, regression harness, app/extension builds and nonroot read-only Docker HTTP smoke pass. Results and explicitly unproven live gates are in verification.md.
 - After the public push, dependency review removed the unused Express server chain and applied compatible published security patches. The production audit now has zero critical entries, with two high/three moderate conditions explicitly retained in dependency-security.md. Post-update Linux suite again passes all391 tests; Windows, typecheck, harness, extension builds and the latest nonroot read-only image smoke also pass. GitHub CI is blocked before any steps by the organization's billing lock; no organization billing setting was changed.
 - Actualscope registration and independent hosted credentials could not be verified with available browser access. No public Shopify app, demo-store installation, hosted deployment or App Store submission is claimed. No existing app/tenant infrastructure was used as a workaround.
+
+## Authorized release work — 2026-10-10
+
+The owner now authorizes independent provisioning, provider CI, public deployment, demo-store content and App Store submission. The existing tenant/app/droplet exclusions remain absolute. Chrome's Actual Scope profile is connected; the existing development shop is accessible, but the app organization must still be verified before registration.
+
+1. Verify Actualscope Shopify organization and create only Auto Gang Sheet Upload; keep pinned CLI3.88.1 and explicit public config.
+2. Use a new Depot project for public builds/tests, independent of the GitHub Actions billing lock. Never reuse the existing Upload Studio or gang-sheet-editor projects.
+3. Provision a new DigitalOcean project/host/data services and new Cloudflare R2 bucket/DNS records. Verify exact targets and estimated recurring costs; never reuse either live Upload Studio droplet or shared databases/buckets.
+4. Download the development shop theme into a separate demo directory before editing. Build honest product demos for every relevant product block and supporting catalog/cart surfaces, using FAL-generated original print-shop images rather than fake product claims or review screenshots.
+5. Run hosted multishop isolation, real storage, signed compliance requests, Shopify test subscription/order/usage/replay/cap checks, extension rendering and Lighthouse. Submit only after the real gates are satisfied; external approval is never reported as completed before Shopify grants it.
+
+Provider credentials remain outside Git and are consumed only for their authorized service. No raw credential inventory is committed. A mistaken inventory output exposed several API credentials in tool history; their values are not repeated or copied into evidence, and rotation is a separate owner-security action because existing services may use them.

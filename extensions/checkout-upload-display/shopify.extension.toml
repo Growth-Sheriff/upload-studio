@@ -6,6 +6,7 @@ api_version = "2026-10"
 [[extensions]]
 name = "Upload Design Display"
 handle = "checkout-upload-display"
+uid = "75fa9cf3-704b-8be2-29e0-d78cac960accf61b2993"
 type = "ui_extension"
 
 

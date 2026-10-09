@@ -1,6 +1,6 @@
 # Protected customer data submission draft
 
-Request **level 1** order/customer-associated data, without level 2 buyer contact fields. This is a submission draft, not approval. Orders webhooks must not be published until the Actualscope public app is approved for this legitimate purpose.
+Request **level 1** order/customer-associated data, without level 2 buyer contact fields. This is a submission draft, not approval. Production shops require approval for this purpose. Shopify permits development-store testing after the distribution method and required data are selected in the Dashboard, without completing review: [official development exception](https://shopify.dev/docs/apps/launch/protected-customer-data). Never use that exception to install on a production tenant.
 
 | Scope | Required purpose |
 | --- | --- |
