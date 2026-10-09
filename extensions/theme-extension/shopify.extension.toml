@@ -1,9 +1,8 @@
-api_version = "2025-10"
+api_version = "2026-10"
 
 [[extensions]]
-uid = "a15fda35-486a-d53f-7288-b233dc6fe3900fa8210e"
 type = "theme"
-name = "Upload Studio"
-handle = "product-3d-customizer"
+name = "Auto Gang Sheet Upload"
+handle = "auto-gang-sheet-upload"
 
 

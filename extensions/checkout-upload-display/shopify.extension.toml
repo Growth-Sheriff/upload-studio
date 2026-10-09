@@ -1,13 +1,12 @@
 
 
 
-api_version = "2025-10"
+api_version = "2026-10"
 
 [[extensions]]
 name = "Upload Design Display"
 handle = "checkout-upload-display"
 type = "ui_extension"
-uid = "75fa9cf3-704b-8be2-29e0-d78cac960accf61b2993"
 
 
 

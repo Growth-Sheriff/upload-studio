@@ -16,6 +16,8 @@ envs/
 *.log
 *.sql
 !prisma/migrations/*.sql
+!prisma/migrations/**/*.sql
+deploy/public/public.env
 *.csv
 temp/
 uploads/

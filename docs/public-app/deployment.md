@@ -1,0 +1,13 @@
+# Independent deployment
+
+No public deployment exists yet. `deploy/public/Dockerfile` and `compose.yml` are separate from the tenant infrastructure and never call its scripts. Run them only on a newly provisioned public host, not either existing droplet. A new database, Redis DB0, R2 bucket, app identity and capability secrets are mandatory. Never reuse a tenant env or image credential bundle.
+
+Build the public image from this worktree: `docker build -f deploy/public/Dockerfile -t auto-gang-sheet-public:<commit> .`. Apply only the public Prisma directory using `prisma migrate deploy` against the new database. No migration is intended for a live tenant database. Public image commands bypass the old entrypoint that starts every worker.
+
+One deployment serves every shop. Web replicas share PostgreSQL sessions and Redis; image workers run in separate bounded containers. Each image worker has concurrency one, a 4 GiB cgroup, 3 GiB subprocess address-space limit, bounded temporary storage, PID cap, no privileged capabilities and per-job timeout. Add worker replicas for aggregate capacity, not per shop. Distributed shop leases cap active image jobs per shop at two across the pool. Delay congested shops to allow other shops through. Monitor delayed age, budget failures, RSS and privacy/billing retry queues.
+
+Cloud resources must be newly created under the public project. Managed PostgreSQL and Redis are required; configure TLS and backups with a documented 30-day expiry. New ingress must terminate TLS on the new host and must not edit either existing Caddyfile. R2 CORS permits only the actual public/demo shop origins for PUT/GET/HEAD; apply a lifecycle rule to abort incomplete multipart uploads after one day. Do not make customer files into a browsable bucket listing.
+
+Environment names are in `public.env.example`; values are deliberately placeholders. The Actualscope registration and public host are unavailable in this run, so the app TOML uses a non-deployable client placeholder and example host. Replace only `shopify.app.auto-gang-sheet-upload.toml` with the registered public identity and new host. Extension UIDs were removed on this branch so the new app creates its own extensions, not reuses custom app identities.
+
+Use only repository CLI3.88.1: `npx shopify app deploy --config auto-gang-sheet-upload`. First verify branch `public-app`, client ID in the Actualscope organization and independent application/proxy/auth URLs. Never use an implicit config, global Shopify4 app command, or remove-orphans. Do not publish this skeleton while open verification gates remain.

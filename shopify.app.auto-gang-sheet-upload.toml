@@ -1,0 +1,63 @@
+# New public app only. Registration is blocked until the Actualscope account
+# is accessible; this placeholder deliberately cannot identify a live app.
+client_id = "PUBLIC_APP_REGISTRATION_REQUIRED"
+name = "Auto Gang Sheet Upload"
+application_url = "https://auto-gang-sheet-upload.example.com"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = false
+
+[webhooks]
+api_version = "2026-10"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+uri = "/webhooks/compliance"
+
+[[webhooks.subscriptions]]
+topics = ["app/uninstalled"]
+uri = "/webhooks/app-uninstalled"
+[[webhooks.subscriptions]]
+topics = ["products/delete"]
+uri = "/webhooks/products-delete"
+[[webhooks.subscriptions]]
+topics = ["products/update"]
+uri = "/webhooks/products-update"
+[[webhooks.subscriptions]]
+topics = ["orders/create"]
+uri = "/webhooks/orders-create"
+[[webhooks.subscriptions]]
+topics = ["orders/paid"]
+uri = "/webhooks/orders-paid"
+[[webhooks.subscriptions]]
+topics = ["orders/updated"]
+uri = "/webhooks/orders-updated"
+[[webhooks.subscriptions]]
+topics = ["orders/cancelled"]
+uri = "/webhooks/orders-cancelled"
+[[webhooks.subscriptions]]
+topics = ["orders/fulfilled"]
+uri = "/webhooks/orders-fulfilled"
+[[webhooks.subscriptions]]
+topics = ["refunds/create"]
+uri = "/webhooks/refunds-create"
+[[webhooks.subscriptions]]
+topics = ["app_subscriptions/update"]
+uri = "/webhooks/app-subscriptions-update"
+[[webhooks.subscriptions]]
+topics = ["app_subscriptions/approaching_capped_amount"]
+uri = "/webhooks/app-subscriptions-approaching-capped-amount"
+
+[access_scopes]
+scopes = "read_products,write_products,read_orders,write_draft_orders,write_app_proxy"
+optional_scopes = []
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = ["https://auto-gang-sheet-upload.example.com/auth/callback", "https://auto-gang-sheet-upload.example.com/api/auth/callback"]
+
+[app_proxy]
+url = "https://auto-gang-sheet-upload.example.com"
+subpath = "customizer"
+prefix = "apps"
