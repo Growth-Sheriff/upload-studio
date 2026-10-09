@@ -1,0 +1,16 @@
+name: Public application boundary
+on:
+  pull_request:
+    branches: [main, custom-container-upload-studio-app]
+jobs:
+  reject-public-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject public application source branches
+        env:
+          SOURCE_BRANCH: ${{ github.head_ref }}
+        run: |
+          if [ "$SOURCE_BRANCH" = "public-app" ]; then
+            echo "Public app must never merge into a live custom-app branch."
+            exit 1
+          fi
