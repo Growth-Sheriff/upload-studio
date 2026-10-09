@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
-import { Prisma } from '@prisma/client'
+import { Prisma, type PaidSheetVolume } from '@prisma/client'
 import prisma from './prisma.server'
 import { withTenantContext } from './tenantContext.server'
 import { deleteFile, deleteShopStorageObjects, getStorageConfig } from './storage.server'
@@ -117,14 +117,25 @@ function customerPricingEntries(settings: any, ids: string[]) {
   return result
 }
 
-async function exportSubject(shopId: string, payload: any, settings: unknown) {
-  const uploads = await prisma.upload.findMany({ where: { shopId, ...subjectWhere(payload) }, select: { id: true, customerId: true, createdAt: true, orderId: true, orderName: true, status: true, items: { select: { originalName: true, fileSize: true, mimeType: true, preflightResult: true } } } })
-  const orders = [...new Set([...uploads.map(upload => upload.orderId).filter((id): id is string => Boolean(id)), ...(payload?.orders_requested || [])])]
+async function loadSubjectVolume(shopId: string, payload: any): Promise<PaidSheetVolume[]> {
+  const orders = [...(payload?.orders_requested || []), ...(payload?.orders_to_redact || [])].map(String)
+  return prisma.paidSheetVolume.findMany({ where: { shopId, OR: [{ paidCustomerId: { in: customerIds(payload) } }, { orderId: { in: orders } }] } })
+}
+
+function subjectUploadWhere(shopId: string, payload: any, volumes: PaidSheetVolume[]): Prisma.UploadWhereInput {
+  // Anonymous uploads can acquire the buyer association only when Shopify
+  // confirms payment. The independent ledger still finds them for erasure.
+  return { shopId, OR: [subjectWhere(payload), { id: { in: volumes.map(volume => volume.uploadId) } }] }
+}
+
+async function exportSubject(shopId: string, payload: any, settings: unknown, volumes: PaidSheetVolume[]) {
+  const uploads = await prisma.upload.findMany({ where: subjectUploadWhere(shopId, payload, volumes), select: { id: true, customerId: true, createdAt: true, orderId: true, orderName: true, status: true, items: { select: { originalName: true, fileSize: true, mimeType: true, preflightResult: true } } } })
+  const orders = [...new Set([...uploads.map(upload => upload.orderId).filter((id): id is string => Boolean(id)), ...volumes.map(volume => volume.orderId), ...(payload?.orders_requested || [])])]
   const uploadIds = uploads.map(upload => upload.id)
   const orderLinks = await prisma.orderLink.findMany({ where: { shopId, OR: [{ uploadId: { in: uploadIds } }, { orderId: { in: orders } }] }, select: { orderId: true, uploadId: true, lineItemId: true, createdAt: true } })
   const commissions = await prisma.commission.findMany({ where: { shopId, orderId: { in: orders } }, select: { id: true, orderId: true, orderTotal: true, orderCurrency: true, commissionAmount: true, billingCurrency: true, status: true, attributableCapturedAmount: true, usageRecordId: true, paymentRef: true, shopifyFinancialStatus: true, shopifyRefundStatus: true, reviewReason: true, createdAt: true, paidAt: true } })
   const credits = await prisma.billingCredit.findMany({ where: { shopId, commissionId: { in: commissions.map(fee => fee.id) } }, select: { commissionId: true, amountUsd: true, status: true, providerRef: true, requestedAt: true, settledAt: true } })
-  return JSON.parse(JSON.stringify({ generatedAt: new Date().toISOString(), uploads, orderLinks, commissions, credits, customerPricing: customerPricingEntries(settings, customerIds(payload)), contactData: 'Buyer email, name, phone and address are not collected. A contact-only request with no order IDs cannot identify any stored records.' }))
+  return JSON.parse(JSON.stringify({ generatedAt: new Date().toISOString(), uploads, orderLinks, commissions, credits, paidSheetVolume: volumes.map(({ shopId: _owner, ...facts }) => facts), customerPricing: customerPricingEntries(settings, customerIds(payload)), contactData: 'Buyer email, name, phone and address are not collected. A contact-only request with no order IDs cannot identify any stored records.' }))
 }
 
 async function redactCustomerSettings(shopId: string, payload: any) {
@@ -205,11 +216,12 @@ async function processRequest(row: { shopDomain: string; topic: string; payload:
       await prisma.shop.delete({ where: { id: shop.id } })
       return { erased: true }
     }
-    const where = { shopId: shop.id, ...subjectWhere(row.payload) }
+    const volumes = await loadSubjectVolume(shop.id, row.payload)
+    const where = subjectUploadWhere(shop.id, row.payload, volumes)
     if (row.topic === 'customers/data_request') {
       // Kept in the merchant's authenticated privacy page; webhook response
       // bodies are not a delivery channel to the buyer.
-      return exportSubject(shop.id, row.payload, shop.settings)
+      return exportSubject(shop.id, row.payload, shop.settings, volumes)
     }
     if (row.topic !== 'customers/redact') throw new Error('Unsupported compliance topic')
     await prisma.upload.updateMany({ where, data: { status: 'blocked', privacyRedactedAt: new Date() } })
@@ -227,6 +239,14 @@ async function processRequest(row: { shopDomain: string; topic: string; payload:
       await prisma.exportJob.deleteMany({ where: archiveWhere })
       await prisma.upload.deleteMany({ where: { shopId: shop.id, id: { in: uploads.map(upload => upload.id) } } })
     }
+    if (volumes.length) {
+      // An archive can outlive an already-expired original upload. Its scalar
+      // upload reference still identifies it without keeping the buyer link.
+      const archiveWhere = { shopId: shop.id, uploadIds: { hasSome: volumes.map(volume => volume.uploadId) } }
+      await eraseExportFiles(shop, await prisma.exportJob.findMany({ where: archiveWhere, select: { storageKey: true, status: true } }), assertLease)
+      await assertLease()
+      await prisma.exportJob.deleteMany({ where: archiveWhere })
+    }
     // Customer rates are merchant-entered IDs; redact those assignments too.
     await assertLease()
     await redactCustomerSettings(shop.id, row.payload)
@@ -234,13 +254,18 @@ async function processRequest(row: { shopDomain: string; topic: string; payload:
     // leave a second copy in the compliance inbox.
     const exports = await prisma.complianceRequest.findMany({ where: { shopDomain: shop.shopDomain, topic: 'customers/data_request' }, select: { id: true, result: true, payload: true } })
     const ids = customerIds(row.payload)
-    const orders = new Set((row.payload?.orders_to_redact || []).map(String))
+    const orders = new Set([...(row.payload?.orders_to_redact || []).map(String), ...volumes.map(volume => volume.orderId)])
     const exportIds = exports.filter(entry => {
       const result: any = entry.result
       const payload: any = entry.payload
-      return customerIds(payload).some(id => ids.includes(id)) || (payload?.orders_requested || []).some((order: unknown) => orders.has(String(order))) || (result?.uploads || []).some((upload: any) => ids.includes(String(upload.customerId)) || orders.has(String(upload.orderId))) || (result?.commissions || []).some((fee: any) => orders.has(String(fee.orderId))) || Object.values(result?.customerPricing || {}).some((entries: any) => Array.isArray(entries) && entries.some(entry => ids.includes(String(entry.customerId || entry.shopifyCustomerId))))
+      return customerIds(payload).some(id => ids.includes(id)) || (payload?.orders_requested || []).some((order: unknown) => orders.has(String(order))) || (result?.uploads || []).some((upload: any) => ids.includes(String(upload.customerId)) || orders.has(String(upload.orderId))) || (result?.commissions || []).some((fee: any) => orders.has(String(fee.orderId))) || (result?.paidSheetVolume || []).some((volume: any) => ids.includes(String(volume.paidCustomerId)) || orders.has(String(volume.orderId))) || Object.values(result?.customerPricing || {}).some((entries: any) => Array.isArray(entries) && entries.some(entry => ids.includes(String(entry.customerId || entry.shopifyCustomerId))))
     }).map(entry => entry.id)
     if (exportIds.length) await prisma.complianceRequest.updateMany({ where: { id: { in: exportIds }, shopDomain: shop.shopDomain }, data: { result: Prisma.DbNull, payload: Prisma.DbNull, status: 'erased', completedAt: new Date(), leaseToken: null, leaseUntil: null } })
+    // Retain discovery until every linked file, assignment and export has
+    // been erased/fenced, including a retry after the Upload is already gone.
+    // Insert-only writer + owned non-redacted Upload lock forbids relinking.
+    await assertLease()
+    if (volumes.length) await prisma.paidSheetVolume.updateMany({ where: { shopId: shop.id, id: { in: volumes.map(volume => volume.id) } }, data: { paidCustomerId: null } })
     await prisma.auditLog.create({ data: { shopId: shop.id, action: 'customer_data_erased', resourceType: 'compliance', metadata: { topic: row.topic } } })
     return { erased: true, retainedFinancialRecords: 'Minimal merchant accounting, usage idempotency and refund-review records have no buyer contact fields; they remain until shop erasure.' }
   })
