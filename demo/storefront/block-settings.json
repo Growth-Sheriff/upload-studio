@@ -1,5 +1,6 @@
 {
-  "note": "Insert these settings only with the verified installed public extension UUID. This file is a non-executable source manifest.",
+  "note": "Bound only after the installed public app's block type was proven by a saved Shopify theme-editor block and read-only CLI pull of the dedicated draft. This file is a non-executable source manifest.",
+  "installedExtension": { "appHandle": "auto-gang-sheet-upload", "uuid": "01a122b4-5d9a-7c7b-bf41-7485e57ad484", "proof": "Saved native main-product-upload-app block in dedicated demo draft 189187817693; pulled canonical product.ags-variant.json outside Git." },
   "proxyPath": "/apps/customizer",
   "templates": [
     { "file": "templates/index.json", "section": "catalog", "block": "dtf-listing", "settings": { "products": ["ready-dtf-gang-sheets", "manual-dtf-gang-sheets", "dtf-uv-upload-desk", "uv-gang-sheets"], "heading": "Ready-sheet examples", "subheading": "Finished files, real sheet variants. Choose a product view to upload." } },

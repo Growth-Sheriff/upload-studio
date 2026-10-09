@@ -1,8 +1,28 @@
 {
   "sections": {
     "intro": { "type": "ags-main-page", "settings": {} },
-    "showcase": { "type": "apps", "blocks": {}, "block_order": [], "settings": { "full_width": false } },
-    "carousel": { "type": "apps", "blocks": {}, "block_order": [], "settings": { "full_width": false } }
+    "showcase": {
+      "type": "apps",
+      "blocks": {
+        "ags_showcase": {
+          "type": "shopify://apps/auto-gang-sheet-upload/blocks/showcase-bar/01a122b4-5d9a-7c7b-bf41-7485e57ad484",
+          "settings": { "collection": "ready-sheet-examples", "show_header": true, "header_tag": "READY SHEET EXAMPLES", "header_subtitle": "Explore the finished-sheet product views", "max_products": 4, "bg_color": "#faf8f3" }
+        }
+      },
+      "block_order": ["ags_showcase"],
+      "settings": { "full_width": false }
+    },
+    "carousel": {
+      "type": "apps",
+      "blocks": {
+        "ags_carousel": {
+          "type": "shopify://apps/auto-gang-sheet-upload/blocks/carousel-3d/01a122b4-5d9a-7c7b-bf41-7485e57ad484",
+          "settings": { "collection": "ready-sheet-examples", "show_header": true, "header_tag": "DEMO COLLECTION", "header_title": "Finished sheets, different views", "max_products": 4 }
+        }
+      },
+      "block_order": ["ags_carousel"],
+      "settings": { "full_width": false }
+    }
   },
   "order": ["intro", "showcase", "carousel"]
 }

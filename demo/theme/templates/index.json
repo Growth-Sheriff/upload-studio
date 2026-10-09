@@ -3,7 +3,17 @@
     "hero": { "type": "ags-hero", "settings": { "use_generated_assets": true } },
     "choices": { "type": "ags-product-choices", "settings": { "use_generated_assets": true } },
     "steps": { "type": "ags-how-it-works", "settings": {} },
-    "catalog": { "type": "apps", "blocks": {}, "block_order": [], "settings": { "full_width": false } },
+    "catalog": {
+      "type": "apps",
+      "blocks": {
+        "ags_ready_catalog": {
+          "type": "shopify://apps/auto-gang-sheet-upload/blocks/dtf-listing/01a122b4-5d9a-7c7b-bf41-7485e57ad484",
+          "settings": { "products": ["ready-dtf-gang-sheets", "manual-dtf-gang-sheets", "dtf-uv-upload-desk", "uv-gang-sheets"], "heading": "Ready-sheet examples", "subheading": "Finished files, real sheet variants. Choose a product view to upload." }
+        }
+      },
+      "block_order": ["ags_ready_catalog"],
+      "settings": { "full_width": false }
+    },
     "faq": { "type": "ags-faq", "settings": {} }
   },
   "order": ["hero", "choices", "steps", "catalog", "faq"]

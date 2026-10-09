@@ -14,7 +14,13 @@
     "font_heading": "assistant_n7",
     "font_size_base": 16,
     "border_radius": 16,
-    "blocks": {}
+    "blocks": {
+      "ags_cart_upload_display": {
+        "type": "shopify://apps/auto-gang-sheet-upload/blocks/cart-upload-display/01a122b4-5d9a-7c7b-bf41-7485e57ad484",
+        "disabled": false,
+        "settings": { "app_proxy_path": "/apps/customizer", "enabled": true }
+      }
+    }
   },
   "presets": {}
 }

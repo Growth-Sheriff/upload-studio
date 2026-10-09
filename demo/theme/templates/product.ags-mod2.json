@@ -1,7 +1,37 @@
 {
   "sections": {
     "intro": { "type": "ags-product-intro", "settings": { "compact": true, "compact_title": "Finished PNG. Measured quote.", "eyebrow": "MEASURED LENGTH · PNG DETAIL VIEW", "intro": "Upload a finished PNG sheet. The demo rate is $0.30 per billable inch, not $0.30 for a complete sheet. Final size, price, and copies are shown after upload.", "length_label": "Maximum billable length", "length_value": "240 in · no splitting" } },
-    "uploader": { "type": "apps", "blocks": {}, "block_order": [], "settings": { "full_width": true } },
+    "uploader": {
+      "type": "apps",
+      "blocks": {
+        "ags_png_upload": {
+          "type": "shopify://apps/auto-gang-sheet-upload/blocks/custom-price-upload-mod2/01a122b4-5d9a-7c7b-bf41-7485e57ad484",
+          "settings": {
+            "app_proxy_path": "/apps/customizer",
+            "show_account_desk": false,
+            "show_vendor": false,
+            "show_dtf_features": true,
+            "feature_1_text": "Finished-sheet uploads",
+            "feature_2_text": "PNG file preview",
+            "feature_3_text": "Quantity means copies",
+            "feature_4_text": "Price before checkout",
+            "show_upload_section": true,
+            "upload_button_text": "Upload finished PNG",
+            "show_pricing_table": false,
+            "accordion_1_title": "Your file is the sheet",
+            "accordion_1_content": "<p>Upload the finished sheet you prepared. Artwork is not nested, combined, or rearranged.</p>",
+            "accordion_2_title": "Measured demo pricing",
+            "accordion_2_content": "<p>$0.30 per server-confirmed billable inch, multiplied by complete copies. Maximum printable width 22.5 in; maximum length 240 in. The $0.30 catalog reference is not a complete-sheet price.</p>",
+            "accordion_3_title": "Copies and file limits",
+            "accordion_3_content": "<p>Quantity repeats the entire sheet. Genuine overflow is rejected. A file over 240 inches is not split.</p>",
+            "accordion_4_title": "Review demo only",
+            "accordion_4_content": "<p>Illustrative prices and test checkout. Nothing is physically printed or shipped. Generated illustrations are not material or durability evidence.</p>"
+          }
+        }
+      },
+      "block_order": ["ags_png_upload"],
+      "settings": { "full_width": true }
+    },
     "faq": { "type": "ags-faq", "settings": {} }
   },
   "order": ["intro", "uploader", "faq"]
