@@ -66,7 +66,10 @@ $target='root@143.198.12.234'
 $hostId=& ssh.exe @sshOptions $target 'curl --fail --silent http://169.254.169.254/metadata/v1/id'
 if($LASTEXITCODE -ne 0 -or "$hostId".Trim() -ne '607746803') { throw 'Remote target is not the NEW owned public droplet' }
 $inventory=Get-Content -LiteralPath 'C:\Users\mhmmd\Desktop\credentials-envanteri.json' -Raw | ConvertFrom-Json
-$inventory.gsb_ops.ghcr.docker_token | & ssh.exe @sshOptions $target 'docker login ghcr.io --username jesuisfatih --password-stdin >/dev/null 2>&1'
+$registryToken=$inventory.gsb_ops.github.token
+$registryIdentity=Invoke-RestMethod -Uri 'https://api.github.com/user' -Headers @{Authorization="Bearer $registryToken";'X-GitHub-Api-Version'='2022-11-28';'User-Agent'='agsu-public-release'}
+if($registryIdentity.login -ne 'jesuisfatih') { throw 'Unexpected registry account' }
+$registryToken | & ssh.exe @sshOptions $target 'docker login ghcr.io --username jesuisfatih --password-stdin >/dev/null 2>&1'
 if($LASTEXITCODE -ne 0) { throw 'Private public-image registry login failed' }
 foreach($file in @($envPath,$migrationPath,(Join-Path $secretDirectory 'pg-ca.pem'))) {
   & scp.exe @sshOptions $file ($target+':/opt/agsu-public/')
