@@ -360,3 +360,49 @@ source-context transfer when the final display correction arrived; they did not
 push an image. This successful candidate is not itself proof of deployment,
 real merchant reauthorization, checkout, billing or App Store acceptance. Those
 facts require separate runtime evidence.
+
+## Decimal self-service input correction
+
+The real merchant setup page rejected `.30` before sending its form: native
+number inputs without a step use whole-number increments. Polaris 13.9's
+`TextField.step` accepts only a number and its spinner performs arithmetic on
+that value, so casting `"any"` would not be a safe fix. Commit
+`78e82f9bfb9a199ed7f9305bc31e332a747da116` uses the existing Polaris
+`type="text" inputMode="decimal"` pattern for the missing-step per-inch rate,
+custom length, advanced inch-tier bounds and add-on price. Existing server
+validation, explicit width/tolerance steps, price math and shop data are
+unchanged. Focused tests prove `.30` and fractional-cent `.0025` reach the setup
+action unchanged; invalid text is rejected before configuration/audit writes.
+
+Fresh independent Linux verification
+[v7t238tr7x](https://depot.dev/orgs/zl650q33c5/projects/7fxkc8sd3p/builds/v7t238tr7x)
+used this exact clean application revision with the same command above, changing
+only the OCI revision label to `78e82f9bfb9a199ed7f9305bc31e332a747da116`:
+
+```text
+Test Files 63 passed (63)
+Tests      415 passed (415), zero skipped
+Typecheck, strict measurement regression, Remix build: exit 0
+Theme check: []; theme and checkout extension builds: success
+Verification process: exit 0
+```
+
+Depot then emitted `error releasing builder: internal: internal error` after
+successful verification and disposable database shutdown. The last provider
+metadata read still reported `running`; this is a provider-cleanup discrepancy,
+not a hidden test failure or a claim of final provider success.
+
+The production command above was repeated with tag `:78e82f9` and the same
+revision label. Build
+[tdnzrf15pk](https://depot.dev/orgs/zl650q33c5/projects/7fxkc8sd3p/builds/tdnzrf15pk)
+exited 0; provider metadata reports `finished`, start `2026-10-09T22:46:35Z`,
+duration 92 seconds. Independent registry and config inspections confirmed:
+
+```text
+image index: sha256:ce5458aadec86a236ed3bc1ce28bb6ed8705361c5f12adf937efbc8274e20a89
+linux/amd64: sha256:0669c269bc6afa994cdf98a97b1d4af0217ea61eca8a60c46eee0be3d2d0c8e7
+org.opencontainers.image.revision: 78e82f9bfb9a199ed7f9305bc31e332a747da116
+```
+
+The image was handed to the deployment owner; the build agent did not deploy it
+or change any Shopify product, order, billing row or production configuration.
