@@ -29,7 +29,10 @@ model Session {
   locale        String?
   collaborator  Boolean?  @default(false)
   emailVerified Boolean?  @default(false) @map("email_verified")
+  refreshToken String? @map("refresh_token")
+  refreshTokenExpires DateTime? @map("refresh_token_expires")
 
+  @@index([shop])
   @@map("sessions")
 }
 
@@ -41,7 +44,9 @@ model Shop {
   shopDomain      String @unique @map("shop_domain")
   accessToken     String @map("access_token")
   plan            String @default("free")
-  billingStatus   String @default("active") @map("billing_status")
+  billingStatus   String @default("inactive") @map("billing_status")
+  uninstalledAt   DateTime? @map("uninstalled_at")
+  erasureStartedAt DateTime? @map("erasure_started_at")
   storageProvider String @default("local") @map("storage_provider")
   storageConfig   Json?  @map("storage_config_json")
   settings        Json?  @map("settings_json")
@@ -52,18 +57,8 @@ model Shop {
   onboardingData      Json?   @map("onboarding_data_json")
 
 
-  paypalVaultId     String?   @map("paypal_vault_id")
-  paypalPayerId     String?   @map("paypal_payer_id")
-  paypalPayerEmail  String?   @map("paypal_payer_email")
-  paypalAutoCharge  Boolean   @default(false) @map("paypal_auto_charge")
-  paypalVaultedAt   DateTime? @map("paypal_vaulted_at")
 
 
-  stripeCustomerId      String?   @map("stripe_customer_id")
-  stripePaymentMethodId String?   @map("stripe_payment_method_id")
-  stripeAutoCharge      Boolean   @default(false) @map("stripe_auto_charge")
-  stripeEmail           String?   @map("stripe_email")
-  stripeSetupAt         DateTime? @map("stripe_setup_at")
 
   installedAt DateTime @default(now()) @map("installed_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
@@ -79,9 +74,12 @@ model Shop {
   apiKeys          ApiKey[]
   whiteLabelConfig WhiteLabelConfig?
   flowTriggers     FlowTrigger[]
-  visitors         Visitor[]
-  visitorSessions  VisitorSession[]
   commissions      Commission[]
+  billing          ShopBilling?
+  uploadLogs       UploadLog[]
+  billingCredits   BillingCredit[]
+  supportTickets   SupportTicket[]
+  paidSheetVolumes PaidSheetVolume[]
 
   @@map("shops")
 }
@@ -158,13 +156,13 @@ model AssetSet {
 model Upload {
   id               String    @id @default(cuid())
   shopId           String    @map("shop_id")
+  privacyRedactedAt DateTime? @map("privacy_redacted_at")
   productId        String?   @map("product_id")
   variantId        String?   @map("variant_id")
   orderId          String?   @map("order_id")
   mode             String
   status           String    @default("draft")
   customerId       String?   @map("customer_id")
-  customerEmail    String?   @map("customer_email")
   preflightSummary Json?     @map("preflight_summary_json")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
@@ -174,8 +172,6 @@ model Upload {
 
 
 
-  visitorId String? @map("visitor_id")
-  sessionId String? @map("session_id")
 
 
 
@@ -191,6 +187,11 @@ model Upload {
   sheetsNeeded      Int?    @map("sheets_needed")
   cartVariantId     String? @map("cart_variant_id")
   cartSheetLabel    String? @map("cart_sheet_label")
+  // Public checkout facts are accepted once; quantities belong to paid order lines.
+  checkoutUnitBillableInches Decimal? @map("checkout_unit_billable_inches") @db.Decimal(12, 4)
+  checkoutPricingMode String? @map("checkout_pricing_mode")
+  checkoutVariantId String? @map("checkout_variant_id")
+  checkoutQuoteAcceptedAt DateTime? @map("checkout_quote_accepted_at")
   orderName     String?   @map("order_name")
   orderPaidAt   DateTime? @map("order_paid_at")
   orderTotal    Decimal?  @map("order_total") @db.Decimal(10, 2)
@@ -200,14 +201,10 @@ model Upload {
   shop       Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
   items      UploadItem[]
   ordersLink OrderLink[]
-  visitor    Visitor?        @relation(fields: [visitorId], references: [id], onDelete: SetNull)
-  session    VisitorSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
 
   @@index([shopId, status])
   @@index([shopId, createdAt])
   @@index([shopId, cartToken])
-  @@index([visitorId])
-  @@index([sessionId])
   @@index([orderPaidAt])
   @@map("uploads")
 }
@@ -255,8 +252,28 @@ model OrderLink {
   upload Upload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
 
 
-  @@unique([orderId, uploadId], name: "orderId_uploadId")
+  @@unique([shopId, orderId, uploadId], name: "shopId_orderId_uploadId")
   @@map("orders_link")
+}
+
+// Accounting-only film facts outlive production file retention. Scalar IDs
+// are audit references, not relations that cascade with the uploaded bytes.
+model PaidSheetVolume {
+  id String @id
+  shopId String @map("shop_id")
+  orderId String @map("order_id")
+  lineItemId String @map("line_item_id")
+  uploadId String @map("upload_id")
+  paidAt DateTime @map("paid_at")
+  paidCustomerId String? @map("paid_customer_id")
+  paidQuantity Int @map("paid_quantity")
+  paidUnitBillableInches Decimal @map("paid_unit_billable_inches") @db.Decimal(12, 4)
+  paidBillableInches Decimal @map("paid_billable_inches") @db.Decimal(16, 4)
+
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  @@unique([shopId, orderId, lineItemId])
+  @@index([shopId, paidCustomerId, paidAt])
+  @@map("paid_sheet_volume")
 }
 
 
@@ -265,6 +282,7 @@ model OrderLink {
 model ExportJob {
   id          String    @id @default(cuid())
   shopId      String    @map("shop_id")
+  storageKey  String?   @map("storage_key")
   uploadIds   String[]  @map("upload_ids")
   status      String    @default("pending")
   downloadUrl String?   @map("download_url")
@@ -396,6 +414,8 @@ model FlowTrigger {
 
 model SupportTicket {
   id           String @id @default(cuid())
+  shopId       String @map("shop_id")
+  shop         Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
   ticketNumber String @unique @map("ticket_number")
 
 
@@ -429,6 +449,7 @@ model SupportTicket {
   @@index([email])
   @@index([status])
   @@index([shopDomain])
+  @@index([shopId])
   @@map("support_tickets")
 }
 
@@ -456,146 +477,6 @@ model SupportReply {
 
 
 
-model Visitor {
-  id     String @id @default(cuid())
-  shopId String @map("shop_id")
-
-
-
-
-  fingerprint    String?
-  localStorageId String  @map("local_storage_id")
-
-
-
-
-  deviceType       String? @map("device_type")
-  browser          String?
-  browserVersion   String? @map("browser_version")
-  os               String?
-  osVersion        String? @map("os_version")
-  screenResolution String? @map("screen_resolution")
-  language         String?
-  timezone         String?
-
-
-
-
-  country String?
-  region  String?
-  city    String?
-
-
-
-
-  firstSeenAt   DateTime @default(now()) @map("first_seen_at")
-  lastSeenAt    DateTime @updatedAt @map("last_seen_at")
-  totalSessions Int      @default(1) @map("total_sessions")
-  totalUploads  Int      @default(0) @map("total_uploads")
-  totalOrders   Int      @default(0) @map("total_orders")
-  totalRevenue  Decimal? @map("total_revenue") @db.Decimal(10, 2)
-
-
-
-
-  consentGiven     Boolean   @default(false) @map("consent_given")
-  consentTimestamp DateTime? @map("consent_timestamp")
-  degradedMode     Boolean   @default(false) @map("degraded_mode")
-
-
-
-
-  shopifyCustomerId String? @map("shopify_customer_id")
-  customerEmail     String? @map("customer_email")
-
-
-
-
-  shop     Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  sessions VisitorSession[]
-  uploads  Upload[]
-
-
-
-
-  @@unique([shopId, fingerprint], name: "visitor_shop_fingerprint")
-  @@unique([shopId, localStorageId], name: "visitor_shop_localStorage")
-  @@index([shopId, firstSeenAt])
-  @@index([shopId, country])
-  @@index([shopId, shopifyCustomerId])
-  @@map("visitors")
-}
-
-
-
-
-model VisitorSession {
-  id        String @id @default(cuid())
-  shopId    String @map("shop_id")
-  visitorId String @map("visitor_id")
-
-
-
-
-  sessionToken String @map("session_token")
-
-
-
-
-  utmSource   String? @map("utm_source")
-  utmMedium   String? @map("utm_medium")
-  utmCampaign String? @map("utm_campaign")
-  utmTerm     String? @map("utm_term")
-  utmContent  String? @map("utm_content")
-
-
-
-
-  gclid   String?
-  fbclid  String?
-  msclkid String?
-  ttclid  String?
-
-
-
-
-  referrer       String? @db.Text
-  referrerDomain String? @map("referrer_domain")
-  referrerType   String? @map("referrer_type")
-  landingPage    String? @map("landing_page") @db.Text
-  landingPath    String? @map("landing_path")
-
-
-
-
-  startedAt      DateTime @default(now()) @map("started_at")
-  lastActivityAt DateTime @updatedAt @map("last_activity_at")
-
-
-
-
-  pageViews        Int @default(1) @map("page_views")
-  uploadsInSession Int @default(0) @map("uploads_in_session")
-  addToCartCount   Int @default(0) @map("add_to_cart_count")
-
-
-
-
-  shop    Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  visitor Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-  uploads Upload[]
-
-
-
-
-  @@unique([shopId, sessionToken], name: "session_shop_token")
-  @@index([shopId, startedAt])
-  @@index([shopId, utmSource])
-  @@index([shopId, utmCampaign])
-  @@index([shopId, referrerType])
-  @@index([visitorId])
-  @@map("visitor_sessions")
-}
 
 
 
@@ -613,7 +494,7 @@ model Commission {
   orderCurrency String   @default("USD") @map("order_currency")
 
 
-  commissionRate Decimal @default(0.015) @map("commission_rate") @db.Decimal(5, 4)
+  commissionRate Decimal @default(0.035) @map("commission_rate") @db.Decimal(5, 4)
   commissionAmount Decimal @map("commission_amount") @db.Decimal(10, 2)
 
 
@@ -621,6 +502,18 @@ model Commission {
   paidAt          DateTime? @map("paid_at")
   paymentRef      String?  @map("payment_ref")
   paymentProvider String?  @map("payment_provider")
+  billingCurrency String @default("USD") @map("billing_currency")
+  servedAmountUsd Decimal? @map("served_amount_usd") @db.Decimal(12, 2)
+  fxRate Decimal? @map("fx_rate") @db.Decimal(20, 10)
+  fxSource String? @map("fx_source")
+  fxObservedAt DateTime? @map("fx_observed_at")
+  usageIdempotencyKey String? @unique @map("usage_idempotency_key")
+  usageLineItemId String? @map("usage_line_item_id")
+  usageSubscriptionId String? @map("usage_subscription_id")
+  usageRecordId String? @unique @map("usage_record_id")
+  usageRequestStartedAt DateTime? @map("usage_request_started_at")
+  nextBillingAttemptAt DateTime? @map("next_billing_attempt_at")
+  billingLastError String? @map("billing_last_error")
 
   // `pending` is collectible only when Shopify capture evidence exists.
   // Nullable-by-design makes pre-migration rows fail closed until a fresh
@@ -663,7 +556,7 @@ model UploadLog {
 
   uploadId  String?  @map("upload_id")
   itemId    String?  @map("item_id")
-  shopId    String?  @map("shop_id")
+  shopId    String   @map("shop_id")
 
 
   provider  String?
@@ -673,10 +566,67 @@ model UploadLog {
 
   createdAt DateTime @default(now()) @map("created_at")
 
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
   @@index([uploadId])
   @@index([shopId, createdAt])
   @@index([event, level])
   @@index([traceId])
   @@index([createdAt])
   @@map("upload_logs")
+}
+
+model ShopBilling {
+  id String @id @default(cuid())
+  shopId String @unique @map("shop_id")
+  subscriptionId String? @map("subscription_id")
+  usageLineItemId String? @map("usage_line_item_id")
+  status String @default("inactive")
+  cappedAmountUsd Decimal @default(0) @map("capped_amount_usd") @db.Decimal(12, 2)
+  balanceUsedUsd Decimal @default(0) @map("balance_used_usd") @db.Decimal(12, 2)
+  currentPeriodEnd DateTime? @map("current_period_end")
+  pendingApprovalUrl String? @map("pending_approval_url")
+  pendingCapUsd Decimal? @map("pending_cap_usd") @db.Decimal(12, 2)
+  test Boolean @default(false)
+  syncedAt DateTime? @map("synced_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  @@map("shop_billing")
+}
+
+model BillingCredit {
+  id String @id @default(cuid())
+  shopId String @map("shop_id")
+  commissionId String @map("commission_id")
+  amountUsd Decimal @map("amount_usd") @db.Decimal(12, 2)
+  status String @default("review")
+  providerRef String? @map("provider_ref")
+  idempotencyKey String @unique @map("idempotency_key")
+  requestedAt DateTime @default(now()) @map("requested_at")
+  settledAt DateTime? @map("settled_at")
+  shop Shop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  @@index([shopId, status])
+  @@map("billing_credits")
+}
+
+// Inbox is independent of Shop so a completed erasure can remain deduplicated
+// without recreating a deleted tenant or retaining the request payload.
+model ComplianceRequest {
+  id String @id @default(cuid())
+  shopDomain String @map("shop_domain")
+  topic String
+  eventId String @map("event_id")
+  payload Json?
+  status String @default("pending")
+  dueAt DateTime @default(now()) @map("due_at")
+  attempts Int @default(0)
+  lastError String? @map("last_error")
+  result Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
+  leaseUntil DateTime? @map("lease_until")
+  leaseToken String? @map("lease_token")
+  @@unique([shopDomain, topic, eventId], name: "compliance_shop_topic_event")
+  @@index([status, dueAt])
+  @@map("compliance_requests")
 }

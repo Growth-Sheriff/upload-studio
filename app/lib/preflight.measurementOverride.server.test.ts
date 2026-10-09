@@ -3,6 +3,7 @@ import fs from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { promisify } from 'util'
+import { deflateSync } from 'node:zlib'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { runPreflightChecks } from './preflight.server'
 
@@ -25,17 +26,26 @@ function chunk(type: string, data: Buffer): Buffer {
   const header = Buffer.alloc(8)
   header.writeUInt32BE(data.length, 0)
   header.write(type, 4, 4, 'ascii')
-  return Buffer.concat([header, data, Buffer.alloc(4)])
+  let crc = 0xffffffff
+  for (const byte of Buffer.concat([Buffer.from(type, 'ascii'), data])) {
+    crc ^= byte
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0)
+  }
+  const trailer = Buffer.alloc(4)
+  trailer.writeUInt32BE((crc ^ 0xffffffff) >>> 0)
+  return Buffer.concat([header, data, trailer])
 }
 
-/** Minimal PNG standing in for the downscaled raster the checks analyse. */
+/** Real decodable monochrome PNG. A header-only fake must fail preflight. */
 function buildPng(width: number, height: number): Buffer {
   const ihdr = Buffer.alloc(13)
   ihdr.writeUInt32BE(width, 0)
   ihdr.writeUInt32BE(height, 4)
-  ihdr[8] = 8
-  ihdr[9] = 6
-  return Buffer.concat([PNG_SIGNATURE, chunk('IHDR', ihdr), chunk('IEND', Buffer.alloc(0))])
+  ihdr[8] = 1
+  ihdr[9] = 0
+  // One filter byte plus packed black pixels per row, without allocating RGBA.
+  const pixels = Buffer.alloc((Math.ceil(width / 8) + 1) * height)
+  return Buffer.concat([PNG_SIGNATURE, chunk('IHDR', ihdr), chunk('IDAT', deflateSync(pixels)), chunk('IEND', Buffer.alloc(0))])
 }
 
 const config = {
