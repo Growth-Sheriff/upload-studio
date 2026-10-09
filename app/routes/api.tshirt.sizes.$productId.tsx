@@ -15,6 +15,7 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, getCorsHeaders } from "~/lib/cors.server";
 import prisma from "~/lib/prisma.server";
 import { shopifyConfig } from '~/lib/shopify.server';
+import { freshShopifyAccessToken } from '~/lib/shopifyCredential.server';
 import { authenticate } from '~/shopify.server';
 
 
@@ -125,13 +126,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     }
 
 
+    const accessToken = await freshShopifyAccessToken(shopDomain);
     const response = await fetch(
       `https://${shopDomain}/admin/api/${shopifyConfig.apiVersion}/graphql.json`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Shopify-Access-Token": shop.accessToken,
+          "X-Shopify-Access-Token": accessToken,
         },
         signal: AbortSignal.timeout(30_000),
         body: JSON.stringify({

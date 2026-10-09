@@ -39,3 +39,37 @@ These are primary-source findings, not assumptions inherited from the custom dep
 - [Admin performance](https://shopify.dev/docs/apps/build/performance/admin-installation-oauth)
 - [Storefront performance](https://shopify.dev/docs/apps/build/performance)
 - [Revenue share and processing fees](https://shopify.dev/docs/apps/launch/distribution/revenue-share)
+
+## Observed public-app token incompatibility, 10 October 2026
+
+Direct read-only `shop { id myshopifyDomain }` and `products(first:1)` queries
+using each of the three new demo installations' stored offline sessions returned
+HTTP 403, on both `2026-10` and `2026-07`. All three stored sessions had
+`expires = null`. Shopify's error identifies the cause as rejection of
+non-expiring offline access tokens, not an unsupported API version, product
+permissions or an empty product catalog. No credentials were logged or changed
+by those diagnostic reads.
+
+Current official guidance says new public apps already require expiring offline
+tokens for Admin GraphQL; existing public apps must migrate by **1 January
+2027**. Custom/merchant-created apps are exempt. The Remix SDK supports
+`future.expiringOfflineAccessTokens = true`, persists access/refresh pairs and
+refreshes an expiring offline session for server-side work.
+
+The old SDK treats a permanent session as active and does not turn this specific
+403 into a fresh token automatically. The public session adapter therefore
+refuses permanent offline sessions, allowing the normal verified-ID-token
+exchange when the merchant next opens the app. It does not invent tokens, delete
+production sessions, or weaken authentication. Background-only migration using
+an old token is a separate provider mutation and is not performed implicitly.
+
+`Shop.accessToken` was also a legacy duplicate credential. Synchronizing it on
+refresh is insufficient: a background job may run after it expires without any
+admin page visit. Every direct Admin request now resolves the current scoped
+offline session through the SDK before sending its header; supplied cached-token
+arguments are not credential authority. Billing resolves a fresh session per API
+request rather than keeping a client for an entire long-running batch. Refresh
+persistence retains the existing serializable privacy marker gate.
+
+- [Required migration, flag, observed 403 and deadline](https://shopify.dev/docs/apps/build/authentication-authorization/migrate-to-expiring-offline-access-tokens)
+- [Token lifetimes, refresh rotation and server-side refresh](https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens)

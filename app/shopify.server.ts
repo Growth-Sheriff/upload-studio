@@ -10,7 +10,7 @@ import { persistVerifiedShopInstallation } from '~/lib/publicAuthPersistence.ser
 import prisma from "~/lib/prisma.server";
 
 
-const sessionStorage = new PrismaSessionStorage(prisma);
+const sessionStorage = new PrismaSessionStorage(prisma, { requireExpiringOfflineTokens: true });
 export const apiVersion = '2026-10' as ApiVersion;
 export const PUBLIC_SCOPES = ['read_products', 'write_products', 'read_orders', 'write_draft_orders', 'write_app_proxy'];
 
@@ -35,6 +35,7 @@ const shopify = shopifyApp({
   },
   future: {
     unstable_newEmbeddedAuthStrategy: true,
+    expiringOfflineAccessTokens: true,
   },
 });
 

@@ -18,6 +18,7 @@ import {
 } from '~/lib/uploadLifecycle.server'
 import { authenticate } from '~/shopify.server'
 import { shopifyConfig } from '~/lib/shopify.server'
+import { freshShopifyAccessToken } from '~/lib/shopifyCredential.server'
 
 
 const FILE_QUERY = `
@@ -42,9 +43,10 @@ const FILE_QUERY = `
 async function resolveShopifyFileUrl(
   fileId: string,
   shopDomain: string,
-  accessToken: string
+  _cachedAccessToken: string
 ): Promise<string | null> {
   try {
+    const accessToken = await freshShopifyAccessToken(shopDomain)
     const response = await fetch(`https://${shopDomain}/admin/api/${shopifyConfig.apiVersion}/graphql.json`, {
       signal: AbortSignal.timeout(30_000),
       method: 'POST',

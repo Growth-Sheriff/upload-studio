@@ -89,6 +89,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   } catch (error) {
     console.error("Failed to fetch products:", error);
+    // An upstream authorization failure is not an empty merchant catalog.
+    throw new Response('Shopify products could not be loaded. Reopen the app in Shopify admin and retry.', { status: 502 });
   }
 
 

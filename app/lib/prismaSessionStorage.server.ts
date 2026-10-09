@@ -5,8 +5,9 @@ import { getTenantShopId, TenantIsolationError } from './tenantContext.server'
 
 /** Durable multishop SessionStorage without a Redis tenant-index limit. */
 export class PrismaSessionStorage {
-  constructor(private readonly database: PrismaClient) {}
+  constructor(private readonly database: PrismaClient, private readonly options: { requireExpiringOfflineTokens?: boolean } = {}) {}
   async storeSession(session: Session): Promise<boolean> {
+    if (this.options.requireExpiringOfflineTokens && !session.isOnline && (!session.expires || !session.refreshToken)) return false
     const online = session.onlineAccessInfo?.associated_user
     const extended = session as Session & { refreshToken?: string; refreshTokenExpires?: Date }
     const data = {
@@ -26,7 +27,7 @@ export class PrismaSessionStorage {
       if (shop) {
         // Acquire the Shop row lock until the token write commits. Privacy
         // cannot mark/delete sessions between this gate and token persistence.
-        const locked = await tx.shop.updateMany({ where: { id: shop.id, erasureStartedAt: null, billingStatus: { not: 'erasing' } }, data: { updatedAt: shop.updatedAt } })
+        const locked = await tx.shop.updateMany({ where: { id: shop.id, erasureStartedAt: null, billingStatus: { not: 'erasing' } }, data: { updatedAt: shop.updatedAt, ...(!session.isOnline && session.accessToken ? { accessToken: session.accessToken } : {}) } })
         if (locked.count !== 1) return false
       }
       await tx.session.upsert({ where: { id: session.id }, update: data, create: { id: session.id, ...data } })
@@ -36,6 +37,10 @@ export class PrismaSessionStorage {
   async loadSession(id: string): Promise<Session | undefined> {
     const row = await this.database.session.findUnique({ where: { id } })
     if (!row) return undefined
+    // New public apps cannot call Admin GraphQL with permanent offline tokens.
+    // An undefined session makes standard admin authentication exchange the
+    // current ID token; no caller should keep reusing a permanently rejected one.
+    if (this.options.requireExpiringOfflineTokens && !row.isOnline && (!row.expires || !row.refreshToken)) return undefined
     const shop = await this.database.shop.findUnique({ where: { shopDomain: row.shop }, select: { id: true, billingStatus: true, erasureStartedAt: true } })
     if ((!shop && getTenantShopId()) || shop?.erasureStartedAt || ['erasing', 'uninstalled'].includes(shop?.billingStatus || '')) return undefined
     const session = new Session({ id: row.id, shop: row.shop, state: row.state, isOnline: row.isOnline })

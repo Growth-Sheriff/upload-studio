@@ -16,6 +16,7 @@
 import { prisma } from '../app/lib/prisma.server';
 import { withTenantContext } from '../app/lib/tenantContext.server';
 import { shopifyConfig } from '../app/lib/shopify.server';
+import { freshShopifyAccessToken } from '../app/lib/shopifyCredential.server';
 
 const MAX_RETRIES = 3;
 const BATCH_SIZE = 10;
@@ -83,14 +84,14 @@ async function sendFlowTrigger(trigger: FlowTriggerRecord): Promise<boolean> {
   try {
     const handle = getFlowTriggerHandle(trigger.eventType);
     console.log(`[Flow] Sending ${trigger.eventType} (${handle}) for ${trigger.resourceId}`);
-
+    const accessToken = await freshShopifyAccessToken(trigger.shop.shopDomain);
     const response = await fetch(
       `https://${trigger.shop.shopDomain}/admin/api/${shopifyConfig.apiVersion}/graphql.json`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Shopify-Access-Token": trigger.shop.accessToken,
+          "X-Shopify-Access-Token": accessToken,
         },
         signal: AbortSignal.timeout(30_000),
         body: JSON.stringify({

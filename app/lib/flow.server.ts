@@ -13,6 +13,7 @@
 import prisma from "~/lib/prisma.server";
 import type { Prisma } from '@prisma/client';
 import { shopifyConfig } from './shopify.server';
+import { freshShopifyAccessToken } from './shopifyCredential.server';
 
 
 export const FLOW_EVENTS = {
@@ -165,7 +166,7 @@ export async function sendFlowTrigger(triggerId: string, shopId?: string): Promi
     }
 
     const handle = getFlowTriggerHandle(trigger.eventType);
-
+    const accessToken = await freshShopifyAccessToken(trigger.shop.shopDomain);
 
     const response = await fetch(
       `https://${trigger.shop.shopDomain}/admin/api/${shopifyConfig.apiVersion}/graphql.json`,
@@ -173,7 +174,7 @@ export async function sendFlowTrigger(triggerId: string, shopId?: string): Promi
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Shopify-Access-Token": trigger.shop.accessToken,
+          "X-Shopify-Access-Token": accessToken,
         },
         signal: AbortSignal.timeout(30_000),
         body: JSON.stringify({

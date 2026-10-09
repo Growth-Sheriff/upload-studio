@@ -1,17 +1,7 @@
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import crypto from "crypto";
 import prisma from "~/lib/prisma.server";
-
-
-function verifyWebhookSignature(body: string, hmac: string, secret: string): boolean {
-  const hash = crypto
-    .createHmac("sha256", secret)
-    .update(body, "utf8")
-    .digest("base64");
-
-  return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(hmac));
-}
+import { authenticate } from "~/shopify.server";
 
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -19,22 +9,9 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  const hmac = request.headers.get("X-Shopify-Hmac-Sha256");
-  const shopDomain = request.headers.get("X-Shopify-Shop-Domain");
-
-  if (!hmac || !shopDomain) {
-    return json({ error: "Missing headers" }, { status: 400 });
-  }
-
-  const body = await request.text();
-  const secret = process.env.SHOPIFY_API_SECRET || "";
-
-  if (!verifyWebhookSignature(body, hmac, secret)) {
-    return json({ error: "Invalid signature" }, { status: 401 });
-  }
+  const { shop: shopDomain, payload: product } = await authenticate.webhook(request);
 
   try {
-    const product = JSON.parse(body);
     console.log(`[Webhook] Product deleted: ${product.id} for shop: ${shopDomain}`);
 
 
@@ -51,7 +28,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const deleted = await prisma.productConfig.deleteMany({
       where: {
         shopId: shop.id,
-        productId: String(product.id),
+        productId: { in: [String(product.id), `gid://shopify/Product/${product.id}`] },
       },
     });
 

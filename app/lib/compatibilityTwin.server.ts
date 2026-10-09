@@ -13,6 +13,7 @@
 
 import prisma from '~/lib/prisma.server'
 import { shopifyConfig } from './shopify.server'
+import { freshShopifyAccessToken } from './shopifyCredential.server'
 
 export interface TwinVariantDiff {
   title: string
@@ -43,12 +44,13 @@ async function adminGraphQL<T = any>(
   query: string,
   variables: Record<string, unknown>
 ): Promise<T> {
+  const accessToken = await freshShopifyAccessToken(shop.shopDomain)
   const response = await fetch(`https://${shop.shopDomain}/admin/api/${shopifyConfig.apiVersion}/graphql.json`, {
     signal: AbortSignal.timeout(30_000),
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Shopify-Access-Token': shop.accessToken,
+      'X-Shopify-Access-Token': accessToken,
     },
     body: JSON.stringify({ query, variables }),
   })
