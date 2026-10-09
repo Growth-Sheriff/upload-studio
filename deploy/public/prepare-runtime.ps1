@@ -3,7 +3,7 @@ param([ValidateSet('Prepare','Deploy')][string]$Phase='Prepare')
 $ErrorActionPreference='Stop'
 $secretDirectory='C:\Users\mhmmd\.codex\secrets\agsu-public'
 $state=Import-Clixml -LiteralPath (Join-Path $secretDirectory 'digitalocean.clixml')
-$image='ghcr.io/growth-sheriff/auto-gang-sheet-public@sha256:9c039fc1dc6809006c604ae94b14074c255e0138f890347c813f83c398929d7c'
+$image='ghcr.io/growth-sheriff/auto-gang-sheet-public@sha256:c334036045370f564fd8b7afda8d3c01ccd5e6b36ed3ccd2851f94069b420b27'
 if ([long]$state.DropletId -ne 607746803 -or $state.PublicIp -ne '143.198.12.234') { throw 'Not the owned NEW public host' }
 function Reveal($value) { [System.Net.NetworkCredential]::new('', $value).Password }
 function Protect-File([string]$file) {
