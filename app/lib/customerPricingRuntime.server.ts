@@ -5,6 +5,7 @@
 import prisma from '~/lib/prisma.server'
 import { selectProductConfigForIdentity } from '~/lib/productConfigIdentity.server'
 import { shopifyProductIdCandidates } from '~/lib/shopifyProductIdentity'
+import { volumeLookbackStart } from './customerPricingShared'
 import {
   applyCustomerPricingDefaultsForShop,
   normalizeCustomerId,
@@ -32,8 +33,7 @@ export async function loadRecentBillableInches(
   months: number
 ): Promise<number> {
   if (!customerId) return 0
-  const now = Date.now()
-  const since = new Date(now - Math.max(1, months) * 30 * 24 * 3600 * 1000)
+  const since = volumeLookbackStart(months)
   const result = await prisma.paidSheetVolume.aggregate({
     where: {
       shopId: shop.id,

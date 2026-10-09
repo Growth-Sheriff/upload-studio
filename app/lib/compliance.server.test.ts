@@ -15,7 +15,7 @@ vi.mock('./storage.server', async importOriginal => {
 // This opt-in variable must point to the disposable local database created for
 // public-app verification; test cleanup only removes its own UUID shop prefix.
 const integrationUrl = process.env.PUBLIC_APP_TEST_DATABASE_URL
-const integration = integrationUrl && /^postgresql:\/\/[^@]+@127\.0\.0\.1:55439\/public_app_test(?:\?|$)/.test(integrationUrl)
+const integration = integrationUrl && /^postgresql:\/\/[^@]+@127\.0\.0\.1:(?:55439|55449)\/public_app_test(?:\?|$)/.test(integrationUrl)
 const describeDb = integration ? describe : describe.skip
 let compliance: typeof import('./compliance.server')
 let prisma: typeof import('./prisma.server').default
@@ -221,6 +221,59 @@ describeDb('real HMAC requests and disposable database erasure', { timeout: 1500
     await withTenantContext(active.shop.id, () => withTenantSql(owner => prisma.$executeRaw`UPDATE uploads SET privacy_redacted_at = ${past()} WHERE id = ${active.upload.id} AND shop_id = ${owner}`))
     storage.deleteFile.mockRejectedValueOnce(new Error('retention storage outage'))
     await expect(compliance.runRetentionBatch()).rejects.toThrow('retention storage outage')
+  })
+
+  it('unlinks only outside the pricing boundary and after production-file discovery is no longer needed', async () => {
+    const { shop, upload } = await fixture()
+    const now = new Date('2026-10-10T12:00:00Z')
+    const cutoff = new Date(now.getTime() - 12 * 30 * 86400000)
+    const settings = { customerPricing: { model: 'volume_tiers' }, alphaProDiscount: { enabled: true,
+      products: ['1'], tiers: [{ min_qty: 1, price_per_inch: 0.2 }], autoEligibility: { enabled: true, months: 12, minInches: 100 } } }
+    await prisma.shop.update({ where: { id: shop.id }, data: { settings } })
+    await withTenantContext(shop.id, async () => {
+      await prisma.upload.update({ where: { id: upload.id }, data: { customerId: null, orderId: null } })
+      await prisma.paidSheetVolume.updateMany({ where: { shopId: shop.id }, data: { paidAt: new Date(cutoff.getTime() - 1) } })
+      // Even disabled pricing must retain the sole buyer-to-file discovery
+      // association until actual file erasure, not merely its deadline.
+      expect(await compliance.unlinkExpiredPaidVolumeCustomers(shop.id, now)).toBe(0)
+      await prisma.upload.delete({ where: { id: upload.id } })
+      expect(await compliance.unlinkExpiredPaidVolumeCustomers(shop.id, now)).toBe(0)
+      await prisma.exportJob.deleteMany({ where: { shopId: shop.id } })
+      await prisma.paidSheetVolume.create({ data: { id: `boundary-${randomUUID()}`, shopId: shop.id, orderId: '102', lineItemId: '4', uploadId: 'expired-fixture', paidAt: cutoff, paidCustomerId: '7', paidQuantity: 1, paidUnitBillableInches: 6, paidBillableInches: 6 } })
+      expect(await compliance.unlinkExpiredPaidVolumeCustomers(shop.id, now)).toBe(1)
+      const expired = await prisma.paidSheetVolume.findFirstOrThrow({ where: { orderId: '101' } })
+      expect(expired.paidCustomerId).toBeNull(); expect(expired.paidQuantity).toBe(12); expect(Number(expired.paidBillableInches)).toBe(72)
+      expect((await prisma.paidSheetVolume.findFirstOrThrow({ where: { orderId: '102' } })).paidCustomerId).toBe('7')
+      expect(await prisma.commission.count({ where: { orderId: '101', status: 'paid' } })).toBe(1)
+    })
+    settings.alphaProDiscount.enabled = false
+    await prisma.shop.update({ where: { id: shop.id }, data: { settings } })
+    expect(await withTenantContext(shop.id, () => compliance.unlinkExpiredPaidVolumeCustomers(shop.id, now))).toBe(1)
+  })
+
+  it('reads an extended window under the Shop lock rather than using discovered stale settings', async () => {
+    const { shop, upload } = await fixture()
+    const now = new Date('2026-10-10T12:00:00Z')
+    const settings = { customerPricing: { model: 'volume_tiers' }, alphaProDiscount: { enabled: true,
+      products: ['1'], tiers: [{ min_qty: 1, price_per_inch: 0.2 }], autoEligibility: { enabled: true, months: 1, minInches: 100 } } }
+    await prisma.shop.update({ where: { id: shop.id }, data: { settings } })
+    await withTenantContext(shop.id, async () => {
+      await prisma.upload.delete({ where: { id: upload.id } })
+      await prisma.exportJob.deleteMany({ where: { shopId: shop.id } })
+      await prisma.paidSheetVolume.updateMany({ where: { shopId: shop.id }, data: { paidAt: new Date(now.getTime() - 45 * 86400000) } })
+    })
+    let extendBeforeLock = true
+    prisma.$use(async (params, next) => {
+      if (extendBeforeLock && params.action === 'queryRaw' && JSON.stringify(params.args).includes('SELECT id FROM shops')) {
+        extendBeforeLock = false
+        settings.alphaProDiscount.autoEligibility.months = 12
+        await prisma.shop.update({ where: { id: shop.id }, data: { settings } })
+      }
+      return next(params)
+    })
+    expect(await withTenantContext(shop.id, () => compliance.unlinkExpiredPaidVolumeCustomers(shop.id, now))).toBe(0)
+    expect(extendBeforeLock).toBe(false)
+    expect((await withTenantContext(shop.id, () => prisma.paidSheetVolume.findFirstOrThrow({ where: { orderId: '101' } }))).paidCustomerId).toBe('7')
   })
 
   it('a stale uninstall cannot erase a winning reinstall, while a winning erase keeps its original marker', async () => {

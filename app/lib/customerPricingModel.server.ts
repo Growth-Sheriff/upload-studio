@@ -26,6 +26,7 @@ import {
   ALPHA_PRINT_SHOP_DOMAINS,
   CUSTOMER_PRICING_MODELS,
   CUSTOMER_PRICING_TEMPLATES,
+  DEFAULT_VOLUME_LOOKBACK_MONTHS,
   DEFAULT_VOLUME_TIERS,
   isAlphaPrintShop,
   isCustomerPricingModel,
@@ -259,7 +260,11 @@ export function normalizeVolumeProgram(rawSettings: unknown, shopDomain?: string
     ),
     autoEligibility: {
       enabled: auto.enabled === true,
-      months: Math.max(1, Math.round(num(auto.months, 12))),
+      // An absent visible setting means twelve, not Number('') === 0 → one.
+      // Preserve stored legacy values; new edits validate rather than clamp.
+      months: auto.months == null
+        ? DEFAULT_VOLUME_LOOKBACK_MONTHS
+        : Math.max(1, Math.round(num(auto.months, DEFAULT_VOLUME_LOOKBACK_MONTHS))),
       minInches: Math.max(1, Math.round(num(auto.minInches, 250))),
     },
     // Legacy alpha tenants price tiers through their own Shopify discounts on a

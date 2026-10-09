@@ -1,5 +1,5 @@
 /** Bump on material changes; the server also binds acceptance to operator identity. */
-export const PUBLIC_LEGAL_DOCUMENT_VERSION = '2026-10-10'
+export const PUBLIC_LEGAL_DOCUMENT_VERSION = '2026-10-10.1'
 export interface MerchantLegalReceipt {
   legalAgreementVersion?: string | null
   legalAgreementAcceptedAt?: Date | string | null

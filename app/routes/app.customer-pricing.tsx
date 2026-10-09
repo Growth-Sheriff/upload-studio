@@ -16,7 +16,7 @@ import {
   normalizeVolumeProgram,
   resolveCustomerPricingModelState,
 } from '~/lib/customerPricingModel.server'
-import { isCustomerPricingModel, type VolumeTier } from '~/lib/customerPricingShared'
+import { isCustomerPricingModel, MAX_VOLUME_LOOKBACK_MONTHS, validateVolumeLookbackMonths, type VolumeTier } from '~/lib/customerPricingShared'
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -138,7 +138,7 @@ export async function action({ request }: ActionFunctionArgs) {
       })
       program.checkoutMode = form.get('checkoutMode') === 'standard_cart' ? 'standard_cart' : 'custom_checkout'
       program.billingBasis = form.get('billingBasis') === 'variant_length' ? 'variant_length' : 'measured_length'
-      program.autoEligibility = { enabled: form.get('autoEnabled') === 'on', months: number(form, 'months'), minInches: number(form, 'minInches') }
+      program.autoEligibility = { enabled: form.get('autoEnabled') === 'on', months: validateVolumeLookbackMonths(form.get('months')), minInches: number(form, 'minInches') }
     } else throw new Error('Unknown pricing action.')
 
     // Keep rates, product overrides, measurement policy and unrelated settings.
@@ -162,9 +162,9 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 const fieldStyle = { padding: '8px', border: '1px solid #8c9196', borderRadius: '4px', width: '100%', maxWidth: '480px' }
-function Field({ label, name, value, multiline = false }: { label: string; name: string; value?: string | number; multiline?: boolean }) {
+function Field({ label, name, value, multiline = false, max }: { label: string; name: string; value?: string | number; multiline?: boolean; max?: number }) {
   return <label style={{ display: 'block' }}><Text as="span">{label}</Text><br />
-    {multiline ? <textarea name={name} defaultValue={value} rows={4} style={fieldStyle} /> : <input name={name} defaultValue={value} style={fieldStyle} autoComplete="off" />}
+    {multiline ? <textarea name={name} defaultValue={value} rows={4} style={fieldStyle} /> : <input name={name} defaultValue={value} style={fieldStyle} autoComplete="off" type={max ? 'number' : 'text'} min={max ? 1 : undefined} max={max} step={max ? 1 : undefined} />}
   </label>
 }
 function StatusSelect({ statuses, value }: { statuses: Array<{ key: string; label: string }>; value?: string }) {
@@ -187,6 +187,7 @@ export default function CustomerPricingPage() {
           <option value="volume_tiers">Volume tiers</option><option value="both">Assigned rates and volume tiers</option>
         </select></label>
         <label>When both apply <select name="priority" defaultValue={model.priority} style={fieldStyle}><option value="status_first">Use assigned account rate</option><option value="volume_first">Use volume tier</option></select></label>
+        <Text as="p">Turning off volume pricing removes expired customer-history links after production files expire. Enabling it again cannot recover removed history.</Text>
         <Button submit disabled={busy}>Save model</Button>
       </BlockStack></Form></Card>
 
@@ -226,7 +227,8 @@ export default function CustomerPricingPage() {
         <label>Checkout <select name="checkoutMode" defaultValue={program.checkoutMode} style={fieldStyle}><option value="custom_checkout">App quotes the tier price</option><option value="standard_cart">Shopify variant/discount supplies the price</option></select></label>
         <label>Billable length <select name="billingBasis" defaultValue={program.billingBasis} style={fieldStyle}><option value="measured_length">Measured file length</option><option value="variant_length">Selected sheet variant length</option></select></label>
         <label><input type="checkbox" name="autoEnabled" defaultChecked={program.autoEligibility.enabled} /> Qualify from paid sheet volume automatically</label>
-        <Field label="Lookback months" name="months" value={program.autoEligibility.months} /><Field label="Minimum paid inches" name="minInches" value={program.autoEligibility.minInches} />
+        <Field label="Lookback months (1–12; default 12)" name="months" value={program.autoEligibility.months} max={MAX_VOLUME_LOOKBACK_MONTHS} /><Field label="Minimum paid inches" name="minInches" value={program.autoEligibility.minInches} />
+        <Text as="p">A month is 30 days. Shortening this window or disabling automatic volume pricing removes older customer-history links after production files expire (normally 90 days). Later lengthening or re-enabling cannot recover removed history. Accounting and duplicate-charge protection stay intact.</Text>
         <Text as="p">Saving these visible numbers changes future quotes. Account/status edits preserve existing product rules and volume rates.</Text>
         <Button submit disabled={busy}>Save volume program</Button>
       </BlockStack></Form></Card>

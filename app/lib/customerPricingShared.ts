@@ -12,6 +12,24 @@ export type PricingSource = 'none' | 'status_rates' | 'volume_tiers' | 'product_
 
 export const CUSTOMER_PRICING_MODELS: CustomerPricingModel[] = ['off', 'status_rates', 'volume_tiers', 'both']
 
+export const DEFAULT_VOLUME_LOOKBACK_MONTHS = 12
+export const MAX_VOLUME_LOOKBACK_MONTHS = 12
+
+/** New merchant edits are explicit whole-month choices, never silently clamped. */
+export function validateVolumeLookbackMonths(value: unknown): number {
+  const raw = String(value ?? '').trim()
+  const months = Number(raw)
+  if (!raw || !Number.isInteger(months) || months < 1 || months > MAX_VOLUME_LOOKBACK_MONTHS) {
+    throw new Error(`Lookback months must be a whole number from 1 to ${MAX_VOLUME_LOOKBACK_MONTHS}.`)
+  }
+  return months
+}
+
+/** Same 30-day months used by paid-volume pricing; the boundary is inclusive. */
+export function volumeLookbackStart(months: number, now = Date.now()): Date {
+  return new Date(now - Math.max(1, months) * 30 * 86400000)
+}
+
 /** Legacy tenants whose behaviour predates the model setting. Used only to
  *  derive defaults when `customerPricing.model` is absent. */
 export const ALPHA_PRINT_SHOP_DOMAINS = ['da49fd-8.myshopify.com', 'alphaprintcenter.myshopify.com']

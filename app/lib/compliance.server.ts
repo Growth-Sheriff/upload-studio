@@ -1,8 +1,9 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import { Prisma, type PaidSheetVolume } from '@prisma/client'
 import prisma from './prisma.server'
-import { TenantIsolationError, withTenantContext } from './tenantContext.server'
+import { TenantIsolationError, withTenantContext, withTenantSql } from './tenantContext.server'
 import { deleteFile, deleteShopStorageObjects, getStorageConfig } from './storage.server'
+import { paidVolumeLinkRetentionPolicy } from './customerPricingRetention.server'
 
 export const COMPLIANCE_TOPICS = ['customers/data_request', 'customers/redact', 'shop/redact'] as const
 type ComplianceTopic = typeof COMPLIANCE_TOPICS[number]
@@ -292,6 +293,48 @@ export async function runComplianceBatch() {
   await prisma.complianceRequest.updateMany({ where: { topic: 'customers/data_request', completedAt: { lt: new Date(Date.now() - 7 * 86400000) }, result: { not: Prisma.AnyNull } }, data: { result: Prisma.DbNull } })
 }
 
+/** Forget buyer identity, not the immutable paid quantities or replay keys.
+ * Lock the same Shop row used by settings edits before choosing a cutoff: a
+ * stale discovery snapshot must never erase a newly extended pricing window. */
+export async function unlinkExpiredPaidVolumeCustomers(shopId: string, now = new Date()): Promise<number> {
+  return withTenantSql(async owner => {
+    if (owner !== shopId) throw new TenantIsolationError('foreign paid-volume retention shop')
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await prisma.$transaction(async tx => {
+          const locked = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM shops WHERE id = ${owner} AND uninstalled_at IS NULL AND erasure_started_at IS NULL AND billing_status <> 'erasing' FOR UPDATE`
+          if (!locked.length) return 0
+          const shop = await tx.shop.findUniqueOrThrow({ where: { id: owner }, select: { shopDomain: true, settings: true } })
+          const policy = paidVolumeLinkRetentionPolicy(shop.shopDomain, shop.settings, now)
+          if (policy.kind === 'defer') {
+            // A previously saved unsupported value is an operator decision,
+            // not permission to silently reprice or destroy its history.
+            const id = `volume-retention-${createHash('sha256').update(`${owner}:${now.toISOString().slice(0, 10)}`).digest('hex').slice(0, 32)}`
+            await tx.auditLog.upsert({ where: { id }, update: {}, create: { id, shopId: owner, action: 'paid_volume_retention_deferred', resourceType: 'pricing', metadata: { reason: policy.reason } } })
+            return 0
+          }
+          // An anonymous production file may have no other buyer association.
+          // Keep its discovery link until file retention/erasure actually
+          // removes its Upload and ZIPs, including an interrupted erase retry.
+          const candidates = await tx.$queryRaw<Array<{ id: string }>>`
+            SELECT v.id FROM paid_sheet_volume v
+            WHERE v.shop_id = ${owner} AND v.paid_customer_id IS NOT NULL
+              AND (${policy.before === null} OR v.paid_at < ${policy.before || now})
+              AND NOT EXISTS (SELECT 1 FROM uploads u WHERE u.shop_id = ${owner} AND u.id = v.upload_id)
+              AND NOT EXISTS (SELECT 1 FROM export_jobs e WHERE e.shop_id = ${owner} AND e.upload_ids @> ARRAY[v.upload_id])
+            ORDER BY v.paid_at, v.id LIMIT 500 FOR UPDATE OF v`
+          if (!candidates.length) return 0
+          const result = await tx.paidSheetVolume.updateMany({ where: { shopId: owner, id: { in: candidates.map(row => row.id) }, paidCustomerId: { not: null } }, data: { paidCustomerId: null } })
+          await tx.auditLog.create({ data: { shopId: owner, action: 'paid_volume_customer_links_expired', resourceType: 'pricing', metadata: { count: result.count, before: policy.before?.toISOString() || null, retainedPaidFacts: true } } })
+          return result.count
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
+      } catch (error) {
+        if (attempt >= 2 || !(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2034') throw error
+      }
+    }
+  })
+}
+
 export async function runRetentionBatch() {
   let cursor: string | undefined
   for (;;) {
@@ -317,6 +360,7 @@ export async function runRetentionBatch() {
     await prisma.uploadLog.deleteMany({ where: { shopId: shop.id, createdAt: { lt: new Date(Date.now() - 30 * 86400000) } } })
     // Financial keys are the durable exactly-once ledger. Expiring them while
     // installed could bill a replay twice. Shop erasure removes this ledger.
+    await unlinkExpiredPaidVolumeCustomers(shop.id)
     await prisma.auditLog.deleteMany({ where: { shopId: shop.id, createdAt: { lt: new Date(Date.now() - 365 * 86400000) } } })
     }) } catch (error) {
       // Discovery is not a lease: another worker may close/delete this shop
