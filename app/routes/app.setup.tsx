@@ -93,9 +93,9 @@ export default function Setup() {
       <Text as="h2" variant="headingMd">2. Enter your printable limits and pricing</Text><input type="hidden" name="productId" value={data.selectedId} />
       <Select name="publicPricingMode" label="Pricing" value={mode} onChange={setMode} options={[{ label: 'Smallest fitting Shopify sheet variant', value: 'variant' }, { label: 'Measured length × my per-inch rate', value: 'measured_length' }]} />
       <TextField name="maxPrintableWidthIn" label="Maximum printable width (inches)" type="number" min={0.1} max={120} step={0.01} value={width} onChange={setWidth} autoComplete="off" helpText="This is the usable press width. No hidden margins are subtracted." />
-      <TextField name="maxPrintableLengthIn" label="Maximum printable length — custom pricing (inches)" type="number" min={1} max={10000} value={length} onChange={setLength} autoComplete="off" helpText="Variant pricing uses your largest sheet variant as its length ceiling instead." />
+      <TextField name="maxPrintableLengthIn" label="Maximum printable length — custom pricing (inches)" type="text" inputMode="decimal" value={length} onChange={setLength} autoComplete="off" helpText="Variant pricing uses your largest sheet variant as its length ceiling instead." />
       <TextField name="fitToleranceIn" label="Export rounding tolerance (inches)" type="number" min={0.01} max={0.03} step={0.001} value={tolerance} onChange={setTolerance} autoComplete="off" helpText="Only absorbs tiny export rounding; genuine overflow is rejected." />
-      <TextField name="pricePerInch" label="Custom price per inch (store currency)" type="number" min={0} value={rate} onChange={setRate} autoComplete="off" helpText="Required for measured-length pricing. Variant mode uses Shopify’s variant prices." />
+      <TextField name="pricePerInch" label="Custom price per inch (store currency)" type="text" inputMode="decimal" value={rate} onChange={setRate} autoComplete="off" helpText="Required for measured-length pricing. Variant mode uses Shopify’s variant prices." />
       <Text as="p">One upload is one finished sheet. Quantity prints the entire sheet again; nothing is nested or rearranged.</Text>
       <Button submit variant="primary" loading={navigation.state === 'submitting'}>Save product settings</Button>
     </BlockStack></Form></Card>}

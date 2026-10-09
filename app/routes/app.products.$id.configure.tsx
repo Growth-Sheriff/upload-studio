@@ -1091,14 +1091,16 @@ export default function ProductConfigurePage() {
                           <TextField
                             label="Min inches"
                             autoComplete="off"
-                            type="number"
+                            type="text"
+                            inputMode="decimal"
                             value={String(tier.min_qty ?? "")}
                             onChange={(value) => setAlphaProTier(index, "min_qty", value)}
                           />
                           <TextField
                             label="Max inches"
                             autoComplete="off"
-                            type="number"
+                            type="text"
+                            inputMode="decimal"
                             value={tier.max_qty == null ? "" : String(tier.max_qty)}
                             placeholder="No limit"
                             onChange={(value) => setAlphaProTier(index, "max_qty", value)}
@@ -1354,7 +1356,8 @@ export default function ProductConfigurePage() {
 
                       <TextField
                         label="Additional Price"
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         value={tshirtConfig.priceAddon.toString()}
                         onChange={(val) => setTshirtConfig(prev => ({ ...prev, priceAddon: parseFloat(val) || 0 }))}
                         prefix="$"
