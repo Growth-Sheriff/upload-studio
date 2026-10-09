@@ -17,6 +17,7 @@ import {
   getStoredMeasurementBasis,
 } from '~/lib/uploadLifecycle.server'
 import { authenticate } from '~/shopify.server'
+import { shopifyConfig } from '~/lib/shopify.server'
 
 
 const FILE_QUERY = `
@@ -44,7 +45,8 @@ async function resolveShopifyFileUrl(
   accessToken: string
 ): Promise<string | null> {
   try {
-    const response = await fetch(`https://${shopDomain}/admin/api/2025-10/graphql.json`, {
+    const response = await fetch(`https://${shopDomain}/admin/api/${shopifyConfig.apiVersion}/graphql.json`, {
+      signal: AbortSignal.timeout(30_000),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

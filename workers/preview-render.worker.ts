@@ -1,6 +1,8 @@
 import { DelayedError, Job, Worker } from 'bullmq'
 import path from 'path'
-import { generateThumbnail } from '../app/lib/preflight.server'
+import { generateThumbnail, withImageCommandBudget } from '../app/lib/preflight.server'
+import { withShopUploadJob } from './publicWorker.shared'
+import { withTenantContext } from '../app/lib/tenantContext.server'
 import { deriveUploadItemLifecycle } from '../app/lib/uploadLifecycle.server'
 import {
   buildThumbnailStorageKey,
@@ -331,7 +333,7 @@ async function mergeRenderedPreview(input: {
 
 const previewRenderWorker = new Worker<UploadPipelineJobData>(
   PREVIEW_RENDER_QUEUE_NAME,
-  async (job: Job<UploadPipelineJobData>) => {
+  (job: Job<UploadPipelineJobData>) => withShopUploadJob(connection, job, 8 * 60_000, () => withImageCommandBudget(6 * 60_000, async () => {
     const { uploadId, shopId, itemId, storageKey: queuedStorageKey } = job.data
     let storageKey = queuedStorageKey
     const jobStartedAt = Date.now()
@@ -525,7 +527,8 @@ const previewRenderWorker = new Worker<UploadPipelineJobData>(
             context.storageProvider,
             generatedThumbnailKey,
             thumbnailPath,
-            'image/webp'
+            'image/webp',
+            uploadId,
           )
           thumbnailUploaded = true
         } catch (error) {
@@ -704,14 +707,10 @@ const previewRenderWorker = new Worker<UploadPipelineJobData>(
         await cleanupTempDir(tempDir)
       }
     }
-  },
+  })),
   {
     connection,
-    concurrency: Number(process.env.PREVIEW_CONCURRENCY) || 3,
-    limiter: {
-      max: Number(process.env.PREVIEW_JOBS_PER_MINUTE) || 20,
-      duration: 60000,
-    },
+    concurrency: Number(process.env.PREVIEW_CONCURRENCY) || 1,
   }
 )
 
@@ -726,13 +725,13 @@ previewRenderWorker.on('failed', async (job, err) => {
   const exhaustedAttempts = job.attemptsMade >= configuredAttempts
   const exhaustedStalls = /stalled more than allowable limit/i.test(err.message)
   if (!exhaustedAttempts && !exhaustedStalls) return
-  await persistTerminalPreviewFailure({
+  await withTenantContext(job.data.shopId, () => persistTerminalPreviewFailure({
     itemId: job.data.itemId,
     uploadId: job.data.uploadId,
     shopId: job.data.shopId,
     storageKey: job.data.storageKey,
     error: err,
-  }).catch((persistError) =>
+  })).catch((persistError) =>
     workerLog.error('PREVIEW_JOB_TERMINAL_STATE_PERSIST_FAILED', {
       jobId: job.id,
       itemId: job.data.itemId,

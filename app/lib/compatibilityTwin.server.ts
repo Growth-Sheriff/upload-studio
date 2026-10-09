@@ -12,6 +12,7 @@
 // = page product GID, which also guards the auto-sync webhook against loops.
 
 import prisma from '~/lib/prisma.server'
+import { shopifyConfig } from './shopify.server'
 
 export interface TwinVariantDiff {
   title: string
@@ -42,7 +43,8 @@ async function adminGraphQL<T = any>(
   query: string,
   variables: Record<string, unknown>
 ): Promise<T> {
-  const response = await fetch(`https://${shop.shopDomain}/admin/api/2025-10/graphql.json`, {
+  const response = await fetch(`https://${shop.shopDomain}/admin/api/${shopifyConfig.apiVersion}/graphql.json`, {
+    signal: AbortSignal.timeout(30_000),
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

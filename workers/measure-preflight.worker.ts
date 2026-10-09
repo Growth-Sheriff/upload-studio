@@ -36,6 +36,8 @@ import {
 } from './uploadPipeline.shared'
 import { getImageDimensionsFast, withImageCommandBudget } from '../app/lib/preflight.server'
 import { startUploadPipelineReconciler } from './upload-pipeline-reconciler'
+import { withShopUploadJob } from './publicWorker.shared'
+import { withTenantContext } from '../app/lib/tenantContext.server'
 
 function normalizeStageStatus(value: unknown): 'pending' | 'ready' | 'warning' | 'error' | null {
   if (value === 'pending' || value === 'ready' || value === 'warning' || value === 'error') {
@@ -73,31 +75,10 @@ const MEASURE_JOB_HARD_TIMEOUT_MS = Number(
   process.env.MEASURE_JOB_HARD_TIMEOUT_MS || 12 * 60 * 1000
 )
 
-class MeasureJobTimeoutError extends Error {
-  constructor(ms: number) {
-    super(`Measure job exceeded its ${Math.round(ms / 1000)}s wall-clock limit`)
-    this.name = 'MeasureJobTimeoutError'
-  }
-}
-
-function withHardTimeout<T>(ms: number, run: () => Promise<T>): Promise<T> {
-  let timer: NodeJS.Timeout | undefined
-  const expiry = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new MeasureJobTimeoutError(ms)), ms)
-    timer.unref()
-  })
-  // The wedged work is not cancellable, but it no longer decides when the job
-  // ends: BullMQ marks this attempt failed and frees the concurrency slot,
-  // and the lease renewal cap releases the shared lock on its own schedule.
-  return Promise.race([run(), expiry]).finally(() => {
-    if (timer) clearTimeout(timer)
-  })
-}
-
 const measurePreflightWorker = new Worker<UploadPipelineJobData>(
   MEASURE_PREFLIGHT_QUEUE_NAME,
   (job: Job<UploadPipelineJobData>) =>
-    withHardTimeout(MEASURE_JOB_HARD_TIMEOUT_MS, () =>
+    withShopUploadJob(connection, job, MEASURE_JOB_HARD_TIMEOUT_MS, () =>
     withImageCommandBudget(MEASURE_JOB_BUDGET_MS, async () => {
     const { uploadId, shopId, itemId, storageKey: queuedStorageKey } = job.data
     let storageKey = queuedStorageKey
@@ -581,17 +562,13 @@ const measurePreflightWorker = new Worker<UploadPipelineJobData>(
     })),
   {
     connection,
-    concurrency: Number(process.env.MEASURE_CONCURRENCY) || 3,
+    concurrency: Number(process.env.MEASURE_CONCURRENCY) || 1,
     // Huge gang sheets (100+ MB PNGs) take minutes in ImageMagick. With the
     // default 30 s lock the job was marked stalled mid-measurement, re-queued
     // and run twice (2026-09-04, dtfprinthouse). Hold the lock for the whole run.
     lockDuration: 10 * 60 * 1000,
     stalledInterval: 5 * 60 * 1000,
     maxStalledCount: 2,
-    limiter: {
-      max: Number(process.env.MEASURE_JOBS_PER_MINUTE) || 20,
-      duration: 60000,
-    },
   }
 )
 
@@ -607,6 +584,7 @@ measurePreflightWorker.on('failed', async (job, err) => {
   const exhaustedAttempts = job.attemptsMade >= configuredAttempts
   const exhaustedStalls = /stalled more than allowable limit/i.test(err.message)
   if (!exhaustedAttempts && !exhaustedStalls) return
+  return withTenantContext(job.data.shopId, async () => {
 
   // A killed/OOM worker never reaches the processor catch block. When BullMQ
   // finally exhausts retries/stalls, project that terminal queue state into the
@@ -687,6 +665,7 @@ measurePreflightWorker.on('failed', async (job, err) => {
       error: persistError instanceof Error ? persistError.message : String(persistError),
     })
   }
+  })
 })
 
 // A deploy restarts this process; let in-flight measurements finish instead of

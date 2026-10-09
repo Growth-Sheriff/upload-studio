@@ -1,149 +1,21 @@
+import type { LoaderFunctionArgs } from '@remix-run/node'
+import { timingSafeEqual } from 'node:crypto'
+import { json } from '@remix-run/node'
+import Redis from 'ioredis'
+import { publicRedisUrl } from '~/lib/publicRedis.server'
+import { Queue } from 'bullmq'
+import { MEASURE_PREFLIGHT_QUEUE_NAME, PREVIEW_RENDER_QUEUE_NAME, EXPORT_QUEUE_NAME } from '~/lib/uploadQueues'
 
-
-
-
-
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import prisma from "~/lib/prisma.server";
-import Redis from "ioredis";
-import { Queue } from "bullmq";
-import {
-  MEASURE_PREFLIGHT_QUEUE_NAME,
-  PREVIEW_RENDER_QUEUE_NAME,
-} from "~/lib/uploadQueues";
-
+/** Global operational counts are restricted to the public deployment owner. */
 export async function loader({ request }: LoaderFunctionArgs) {
-  const startTime = Date.now();
-
-
-  const checks = await Promise.allSettled([
-    checkDatabase(),
-    checkRedis(),
-    checkQueues(),
-  ]);
-
-  const [dbResult, redisResult, queuesResult] = checks;
-
-  const dbHealth = dbResult.status === "fulfilled" ? dbResult.value : { status: "error", error: String(dbResult.reason) };
-  const redisHealth = redisResult.status === "fulfilled" ? redisResult.value : { status: "error", error: String(redisResult.reason) };
-  const queuesHealth = queuesResult.status === "fulfilled" ? queuesResult.value : { status: "error", error: String(queuesResult.reason) };
-
-  const allHealthy =
-    dbHealth.status === "ok" &&
-    redisHealth.status === "ok" &&
-    queuesHealth.status === "ok";
-
-  const responseTime = Date.now() - startTime;
-
-  return json({
-    status: allHealthy ? "healthy" : "degraded",
-    timestamp: new Date().toISOString(),
-    responseTimeMs: responseTime,
-    version: process.env.APP_VERSION || "1.0.0",
-    environment: process.env.NODE_ENV || "development",
-    components: {
-      database: dbHealth,
-      redis: redisHealth,
-      queues: queuesHealth,
-    },
-  }, {
-    status: allHealthy ? 200 : 503,
-    headers: {
-      "Cache-Control": "no-cache, no-store, must-revalidate",
-    },
-  });
-}
-
-async function checkDatabase() {
+  const expected = Buffer.from(process.env.PUBLIC_OPERATIONS_TOKEN || '')
+  const supplied = Buffer.from((request.headers.get('Authorization') || '').replace(/^Bearer /, ''))
+  if (!expected.length || supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return new Response('Not found', { status: 404 })
+  const redis = new Redis(publicRedisUrl(), { maxRetriesPerRequest: 1, connectTimeout: 2000, commandTimeout: 5000 })
+  const queues = [MEASURE_PREFLIGHT_QUEUE_NAME, PREVIEW_RENDER_QUEUE_NAME, EXPORT_QUEUE_NAME].map(name => new Queue(name, { connection: redis }))
   try {
-    const start = Date.now();
-    await prisma.$queryRaw`SELECT 1`;
-    const latency = Date.now() - start;
-
-    return {
-      status: "ok",
-      latencyMs: latency,
-    };
-  } catch (error) {
-    return {
-      status: "error",
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
-async function checkRedis() {
-  let redis: Redis | null = null;
-  try {
-    const start = Date.now();
-    redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379", {
-      connectTimeout: 5000,
-      maxRetriesPerRequest: 1,
-    });
-
-    await redis.ping();
-    const latency = Date.now() - start;
-
-
-    const info = await redis.info("memory");
-    const usedMemory = info.match(/used_memory_human:(\S+)/)?.[1] || "unknown";
-
-    await redis.quit();
-
-    return {
-      status: "ok",
-      latencyMs: latency,
-      stats: {
-        memoryUsed: usedMemory,
-      },
-    };
-  } catch (error) {
-    if (redis) await redis.quit().catch(() => {});
-    return {
-      status: "error",
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
-async function checkQueues() {
-  let redis: Redis | null = null;
-  try {
-    redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379", {
-      maxRetriesPerRequest: null,
-    });
-
-    const measureQueue = new Queue(MEASURE_PREFLIGHT_QUEUE_NAME, { connection: redis });
-    const previewQueue = new Queue(PREVIEW_RENDER_QUEUE_NAME, { connection: redis });
-    const exportQueue = new Queue("export", { connection: redis });
-
-    const [measureCounts, previewCounts, exportCounts] = await Promise.all([
-      measureQueue.getJobCounts("waiting", "active", "delayed", "completed", "failed"),
-      previewQueue.getJobCounts("waiting", "active", "delayed", "completed", "failed"),
-      exportQueue.getJobCounts("waiting", "active", "completed", "failed"),
-    ]);
-
-    await Promise.all([
-      measureQueue.close(),
-      previewQueue.close(),
-      exportQueue.close(),
-    ]);
-
-    await redis.quit();
-
-    return {
-      status: "ok",
-      preflight: measureCounts,
-      measurePreflight: measureCounts,
-      previewRender: previewCounts,
-      export: exportCounts,
-    };
-  } catch (error) {
-    if (redis) await redis.quit().catch(() => {});
-    return {
-      status: "error",
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+    const counts = await Promise.all(queues.map(queue => queue.getJobCounts('waiting', 'active', 'delayed', 'failed')))
+    return json({ queues: Object.fromEntries(queues.map((queue, index) => [queue.name, counts[index]])) }, { headers: { 'Cache-Control': 'no-store' } })
+  } catch { return json({ status: 'unavailable' }, { status: 503 }) }
+  finally { await Promise.allSettled(queues.map(queue => queue.close())); redis.disconnect() }
 }

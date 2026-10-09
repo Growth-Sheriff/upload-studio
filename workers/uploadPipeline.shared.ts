@@ -1,12 +1,18 @@
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
-import { PrismaClient } from '@prisma/client'
+import { prisma } from '../app/lib/prisma.server'
+import { withTenantSql, requireTenantShopId } from '../app/lib/tenantContext.server'
+import { downloadObjectBounded } from '../app/lib/boundedObjectDownload.server'
+import { runImageCommand } from '../app/lib/imageProcess.server'
+import { currentJobSignal } from '../app/lib/jobBudget.server'
+import { publicRedisUrl } from '../app/lib/publicRedis.server'
+import { assertUploadsProcessable } from '../app/lib/publicProcessing.server'
 import { randomUUID } from 'crypto'
-import { createWriteStream } from 'fs'
+import { createReadStream } from 'fs'
 import fs from 'fs/promises'
 import Redis from 'ioredis'
 import os from 'os'
 import path from 'path'
-import { pipeline } from 'stream/promises'
+import { Readable } from 'node:stream'
 import {
   convertEpsToPng,
   convertPdfToPng,
@@ -88,7 +94,7 @@ export { updateUploadAggregateStatus } from '../app/lib/uploadAggregateStatus.se
 type ActualStorageProvider = 'local' | 'bunny' | 'r2'
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
-const LARGE_IMAGE_LOCK_KEY = 'upload-pipeline:large-image'
+const LARGE_IMAGE_LOCK_KEY = 'auto-gang-sheet:large-image'
 const LARGE_IMAGE_LOCK_TTL_MS = 2 * 60 * 1000
 export const LARGE_IMAGE_RETRY_DELAY_MS = 15_000
 /** Longest one job may hold the single large-image slot. Generous next to the
@@ -106,9 +112,9 @@ export class LargeImageSlotBusyError extends Error {
   }
 }
 
-export const prisma = new PrismaClient()
+export { prisma }
 
-export const connection = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+export const connection = new Redis(publicRedisUrl(), {
   maxRetriesPerRequest: null,
 })
 
@@ -459,18 +465,19 @@ export async function compareAndSwapUploadItemResult(input: {
 }): Promise<boolean> {
   const expectedJson = JSON.stringify(input.expectedResult ?? null)
   const nextJson = JSON.stringify(input.nextResult)
-  const updated = await prisma.$executeRaw`
+  const updated = await withTenantSql((shopId) => prisma.$executeRaw`
     update upload_items
     set preflight_status = ${input.nextStatus},
         preflight_result_json = ${nextJson}::jsonb,
         thumbnail_key = ${input.thumbnailKey},
         preview_key = ${input.previewKey}
     where id = ${input.itemId}
+      and upload_id in (select id from uploads where shop_id = ${shopId} and privacy_redacted_at is null)
       and preflight_status = ${input.expectedStatus}
       and coalesce(preflight_result_json, 'null'::jsonb) = ${expectedJson}::jsonb
       and thumbnail_key is not distinct from ${input.expectedThumbnailKey}
       and preview_key is not distinct from ${input.expectedPreviewKey}
-  `
+  `)
   return updated === 1
 }
 
@@ -496,13 +503,9 @@ export async function createPlaceholderThumbnail(
   size: number = 400
 ): Promise<boolean> {
   try {
-    const { exec } = await import('child_process')
-    const { promisify } = await import('util')
-    const execAsync = promisify(exec)
-
     const cmd = `convert -size ${size}x${size} xc:"#f3f4f6" -gravity center -pointsize 64 -fill "#6b7280" -font "DejaVu-Sans-Bold" -annotate 0 "${fileType}" -quality 85 "${outputPath}"`
 
-    await execAsync(cmd, { timeout: 10000 })
+    await runImageCommand(cmd, { timeout: 10000 })
 
     const stats = await fs.stat(outputPath).catch(() => null)
     if (stats && stats.size > 100) {
@@ -714,7 +717,7 @@ async function downloadLocalFile(storageKey: string, localPath: string): Promise
   }
 
   const sourcePath = path.join(dir, matchingFile)
-  await fs.copyFile(sourcePath, localPath)
+  await downloadObjectBounded(localPath, async () => ({ body: createReadStream(sourcePath), contentLength: (await fs.stat(sourcePath)).size }))
 }
 
 async function uploadLocalFile(storageKey: string, localPath: string): Promise<void> {
@@ -725,8 +728,6 @@ async function uploadLocalFile(storageKey: string, localPath: string): Promise<v
   await fs.mkdir(path.dirname(destinationPath), { recursive: true })
   await fs.copyFile(localPath, destinationPath)
 }
-
-const BUNNY_DOWNLOAD_TIMEOUT_MS = 10 * 60 * 1000
 
 async function downloadFromBunny(storageKey: string, localPath: string): Promise<void> {
   const cdnUrl = process.env.BUNNY_CDN_URL || 'https://customizerappdev.b-cdn.net'
@@ -747,16 +748,8 @@ async function downloadFromBunny(storageKey: string, localPath: string): Promise
     url: safeLocationForLog(url).substring(0, 100),
   })
 
-  const controller = new AbortController()
-  let timedOut = false
-  const timeout = setTimeout(() => {
-    timedOut = true
-    controller.abort()
-  }, BUNNY_DOWNLOAD_TIMEOUT_MS)
-  timeout.unref()
-
-  try {
-    const response = await fetch(url, { signal: controller.signal })
+  await downloadObjectBounded(localPath, async signal => {
+    const response = await fetch(url, { signal })
     if (!response.ok) {
       const durationMs = Date.now() - startTime
       workerLog.error('DOWNLOAD_FAILED', {
@@ -772,38 +765,16 @@ async function downloadFromBunny(storageKey: string, localPath: string): Promise
     if (!response.body) {
       throw new Error('Failed to download from Bunny: empty response body')
     }
-    await pipeline(response.body as any, createWriteStream(localPath))
-    const stats = await fs.stat(localPath)
-
-    workerLog.info('DOWNLOAD_SUCCESS', {
-      provider: 'bunny',
-      durationMs: Date.now() - startTime,
-      fileSize: stats.size,
-    })
-  } catch (error) {
-    await fs.rm(localPath, { force: true }).catch(() => undefined)
-    if (timedOut) {
-      workerLog.error('DOWNLOAD_FAILED', {
-        provider: 'bunny',
-        durationMs: Date.now() - startTime,
-        storageKey: safeLocationForLog(storageKey).substring(0, 100),
-        reason: 'timeout',
-      })
-      throw new Error(
-        `Bunny download timed out after ${BUNNY_DOWNLOAD_TIMEOUT_MS}ms`,
-        { cause: error }
-      )
-    }
-    throw error
-  } finally {
-    clearTimeout(timeout)
-  }
+    return { body: Readable.fromWeb(response.body as any), contentLength: response.headers.has('content-length') ? Number(response.headers.get('content-length')) : undefined }
+  })
+  const stats = await fs.stat(localPath)
+  workerLog.info('DOWNLOAD_SUCCESS', { provider: 'bunny', durationMs: Date.now() - startTime, fileSize: stats.size })
 }
 
 async function uploadToBunny(
   storageKey: string,
   localPath: string,
-  contentType: string
+  contentType: string,
 ): Promise<void> {
   const zone = process.env.BUNNY_STORAGE_ZONE || 'customizerappdev'
   const apiKey = process.env.BUNNY_API_KEY || ''
@@ -851,18 +822,11 @@ function isBunnyStorage(storageKey: string): boolean {
 
 async function downloadFile(client: S3Client, key: string, localPath: string): Promise<void> {
   const bucket = process.env.R2_BUCKET_NAME || process.env.S3_BUCKET_NAME || 'product-3d-customizer'
-  const response = await client.send(
-    new GetObjectCommand({
-      Bucket: bucket,
-      Key: key,
-    })
-  )
-
-  if (!response.Body) {
-    throw new Error('Empty response body')
-  }
-
-  await pipeline(response.Body as NodeJS.ReadableStream, createWriteStream(localPath))
+  await downloadObjectBounded(localPath, async (signal) => {
+    const response = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }), { abortSignal: signal })
+    if (!response.Body) throw new Error('Empty response body')
+    return { body: response.Body as import('node:stream').Readable, contentLength: response.ContentLength }
+  })
 }
 
 async function uploadFile(
@@ -872,15 +836,16 @@ async function uploadFile(
   contentType: string
 ): Promise<void> {
   const bucket = process.env.R2_BUCKET_NAME || process.env.S3_BUCKET_NAME || 'product-3d-customizer'
-  const content = await fs.readFile(localPath)
+  const stats = await fs.stat(localPath)
 
   await client.send(
     new PutObjectCommand({
       Bucket: bucket,
       Key: key,
-      Body: content,
+      Body: createReadStream(localPath),
+      ContentLength: stats.size,
       ContentType: contentType,
-    })
+    }), { abortSignal: currentJobSignal() }
   )
 }
 
@@ -888,9 +853,13 @@ export async function uploadGeneratedAsset(
   storageProvider: ActualStorageProvider,
   storageKey: string,
   localPath: string,
-  contentType: string
+  contentType: string,
+  uploadId: string,
 ): Promise<void> {
   const uploadPath = stripStoragePrefix(storageKey)
+  const shop = await prisma.shop.findUnique({ where: { id: requireTenantShopId() }, select: { billingStatus: true, erasureStartedAt: true } })
+  if (!shop || shop.erasureStartedAt || ['erasing', 'uninstalled'].includes(shop.billingStatus)) throw new Error('Shop no longer accepts generated assets')
+  await assertUploadsProcessable([uploadId])
 
   if (storageProvider === 'bunny' || storageKey.startsWith('bunny:')) {
     await uploadToBunny(uploadPath, localPath, contentType)
@@ -915,6 +884,7 @@ export async function prepareUploadJobContext(
   tempPrefix: string
 ): Promise<PreparedUploadJobContext> {
   const { uploadId, shopId, itemId, storageKey: queuedStorageKey } = jobData
+  await assertUploadsProcessable([uploadId])
   // Unique per run: a stalled re-run of the same item must never share (and
   // delete) the directory of a run that is still working.
   const tempDir = path.join(

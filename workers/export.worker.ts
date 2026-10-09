@@ -11,16 +11,23 @@
 
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import { PrismaClient } from '@prisma/client'
+import { prisma } from '../app/lib/prisma.server'
+import { withTenantContext } from '../app/lib/tenantContext.server'
+import { downloadObjectBounded } from '../app/lib/boundedObjectDownload.server'
+import { withShopUploadJob } from './publicWorker.shared'
+import { publicRedisUrl } from '../app/lib/publicRedis.server'
+import { assertUploadsProcessable } from '../app/lib/publicProcessing.server'
+import { assertJobActive, currentJobSignal } from '../app/lib/jobBudget.server'
 import archiver from 'archiver'
-import { Job, Queue, Worker } from 'bullmq'
+import { Job, Queue, Worker, type ConnectionOptions } from 'bullmq'
 import { createObjectCsvStringifier } from 'csv-writer'
 import { randomUUID } from 'crypto'
 import { createReadStream, createWriteStream, mkdirSync } from 'fs'
 import fs from 'fs/promises'
 import Redis from 'ioredis'
 import { join } from 'path'
-import { pipeline } from 'stream/promises'
+import { tmpdir } from 'node:os'
+import { Readable } from 'node:stream'
 import {
   getEmptyExportUploadIds,
   getExportItemFileName,
@@ -35,12 +42,8 @@ import {
   type ExportJobData,
 } from '../app/lib/uploadQueues'
 
-const prisma = new PrismaClient()
 
-const BUNNY_DOWNLOAD_TIMEOUT_MS = 10 * 60 * 1000
-
-
-const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+const connection = new Redis(publicRedisUrl(), {
   maxRetriesPerRequest: null,
 })
 
@@ -97,34 +100,15 @@ async function downloadFromBunny(storageKey: string, localPath: string): Promise
 
   console.log(`[Export Worker] Downloading from Bunny CDN: ${url}`)
 
-  const controller = new AbortController()
-  let timedOut = false
-  const timeout = setTimeout(() => {
-    timedOut = true
-    controller.abort()
-  }, BUNNY_DOWNLOAD_TIMEOUT_MS)
-  timeout.unref()
-
-  try {
-    const response = await fetch(url, { signal: controller.signal })
+  await downloadObjectBounded(localPath, async signal => {
+    const response = await fetch(url, { signal })
     if (!response.ok) {
       throw new Error(`Failed to download from Bunny: ${response.status} ${response.statusText}`)
     }
 
     if (!response.body) throw new Error('Empty Bunny response body')
-    await pipeline(response.body as any, createWriteStream(localPath))
-  } catch (error) {
-    await fs.rm(localPath, { force: true }).catch(() => undefined)
-    if (timedOut) {
-      throw new Error(
-        `Bunny download timed out after ${BUNNY_DOWNLOAD_TIMEOUT_MS}ms`,
-        { cause: error }
-      )
-    }
-    throw error
-  } finally {
-    clearTimeout(timeout)
-  }
+    return { body: Readable.fromWeb(response.body as any), contentLength: response.headers.has('content-length') ? Number(response.headers.get('content-length')) : undefined }
+  })
 }
 
 
@@ -133,7 +117,7 @@ async function downloadFromLocal(storageKey: string, localPath: string): Promise
 
   const cleanKey = storageKey.startsWith('local:') ? storageKey.replace('local:', '') : storageKey
   const sourcePath = join(uploadsDir, cleanKey)
-  await fs.copyFile(sourcePath, localPath)
+  await downloadObjectBounded(localPath, async () => ({ body: createReadStream(sourcePath), contentLength: (await fs.stat(sourcePath)).size }))
 }
 
 
@@ -158,18 +142,11 @@ async function downloadFileFromStorage(
   const client = getStorageClient()
   const bucket = getBucketName()
 
-  const response = await client.send(
-    new GetObjectCommand({
-      Bucket: bucket,
-      Key: key.startsWith('r2:') ? key.slice('r2:'.length) : key,
-    })
-  )
-
-  if (!response.Body) {
-    throw new Error('Empty response body')
-  }
-
-  await pipeline(response.Body as any, createWriteStream(localPath))
+  await downloadObjectBounded(localPath, async signal => {
+    const response = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key.startsWith('r2:') ? key.slice(3) : key }), { abortSignal: signal })
+    if (!response.Body) throw new Error('Empty response body')
+    return { body: response.Body as import('node:stream').Readable, contentLength: response.ContentLength }
+  })
 }
 
 
@@ -180,13 +157,15 @@ async function uploadFileToStorage(
 ): Promise<void> {
   const client = getStorageClient()
   const bucket = getBucketName()
+  const stats = await fs.stat(localPath)
   await client.send(
     new PutObjectCommand({
       Bucket: bucket,
       Key: key,
       Body: createReadStream(localPath),
+      ContentLength: stats.size,
       ContentType: contentType,
-    })
+    }), { abortSignal: currentJobSignal() }
   )
 }
 
@@ -303,8 +282,7 @@ async function processExportJob(job: Job<ExportJobData>) {
 
 
     tempDir = join(
-      process.cwd(),
-      'temp',
+      tmpdir(),
       `export_${exportId}_${process.pid}_${randomUUID()}`
     )
     mkdirSync(tempDir, { recursive: true })
@@ -325,6 +303,10 @@ async function processExportJob(job: Job<ExportJobData>) {
     }
 
     await new Promise<void>((resolve, reject) => {
+      const signal = currentJobSignal()
+      const abort = () => { archive.abort(); output.destroy(); reject(signal?.reason ?? new Error('Export cancelled')) }
+      signal?.addEventListener('abort', abort, { once: true })
+      output.once('close', () => signal?.removeEventListener('abort', abort))
       output.on('close', resolve)
       output.on('error', reject)
       archive.on('error', reject)
@@ -333,6 +315,8 @@ async function processExportJob(job: Job<ExportJobData>) {
       // Process each upload
       ;(async () => {
         for (const upload of uploads) {
+          assertJobActive()
+          await assertUploadsProcessable([upload.id])
           const orderId = upload.ordersLink[0]?.orderId || upload.orderId || 'no_order'
           const orderFolder = getExportUploadFolder(
             orderId,
@@ -346,7 +330,6 @@ async function processExportJob(job: Job<ExportJobData>) {
             orderId,
             mode: upload.mode,
             customerId: upload.customerId,
-            customerEmail: upload.customerEmail,
             status: upload.status,
             createdAt: upload.createdAt.toISOString(),
             approvedAt: upload.approvedAt?.toISOString() || null,
@@ -438,7 +421,14 @@ async function processExportJob(job: Job<ExportJobData>) {
     }
 
 
-    const zipStorageKey = `${shop.shopDomain}/exports/${zipFileName}`
+    const zipStorageKey = `${shop.shopDomain.replace(/[^a-zA-Z0-9-]/g, '_')}/exports/${zipFileName}`
+
+    await assertUploadsProcessable(exportJob.uploadIds)
+    const currentShop = await prisma.shop.findUnique({ where: { id: shopId }, select: { billingStatus: true, erasureStartedAt: true } })
+    if (!currentShop || currentShop.erasureStartedAt || ['erasing', 'uninstalled'].includes(currentShop.billingStatus)) throw new Error('Shop no longer accepts generated assets')
+    // Persist before PUT so retryable privacy cleanup can find an object even
+    // if a process dies after storage accepts it but before completion.
+    await prisma.exportJob.update({ where: { id: exportId }, data: { storageKey: zipStorageKey } })
 
     await uploadFileToStorage(zipStorageKey, zipPath, 'application/zip')
 
@@ -484,21 +474,23 @@ async function processExportJob(job: Job<ExportJobData>) {
   }
 }
 
-function startPendingExportReconciler(redisConnection: { host: string; port: number; db?: number }) {
+function startPendingExportReconciler(redisConnection: ConnectionOptions) {
   const queue = new Queue<ExportJobData>(EXPORT_QUEUE_NAME, {
     connection: redisConnection,
     defaultJobOptions: EXPORT_JOB_OPTIONS,
   })
   let running = false
+  let shopCursor: string | undefined
   const reconcile = async () => {
     if (running) return
     running = true
     try {
+      const shops = await prisma.shop.findMany({ where: { billingStatus: { notIn: ['uninstalled', 'erasing'] }, erasureStartedAt: null }, select: { id: true }, orderBy: { id: 'asc' }, take: 50, ...(shopCursor ? { cursor: { id: shopCursor }, skip: 1 } : {}) })
+      shopCursor = shops.length === 50 ? shops[shops.length - 1].id : undefined
+      for (const shop of shops) await withTenantContext(shop.id, async () => {
       const pending = await prisma.exportJob.findMany({
-        where: { status: 'pending' },
-        select: { id: true, shopId: true },
-        orderBy: { createdAt: 'asc' },
-        take: 100,
+        where: { shopId: shop.id, status: 'pending' }, select: { id: true, shopId: true },
+        orderBy: { createdAt: 'asc' }, take: 20,
       })
       for (const exportJob of pending) {
         const options = getExportJobOptions(exportJob.id)
@@ -511,6 +503,7 @@ function startPendingExportReconciler(redisConnection: { host: string; port: num
           )
         }
       }
+      })
     } catch (error) {
       console.error('[Export Worker] Pending export reconciliation failed:', error)
     } finally {
@@ -524,14 +517,10 @@ function startPendingExportReconciler(redisConnection: { host: string; port: num
 }
 
 
-export function createExportWorker(redisConnection: { host: string; port: number }) {
-  const worker = new Worker<ExportJobData>(EXPORT_QUEUE_NAME, processExportJob, {
+export function createExportWorker(redisConnection: ConnectionOptions = connection) {
+  const worker = new Worker<ExportJobData>(EXPORT_QUEUE_NAME, job => withShopUploadJob(connection, job, 15 * 60_000, () => processExportJob(job)), {
     connection: redisConnection,
-    concurrency: 2,
-    limiter: {
-      max: 5,
-      duration: 60000, // 5 jobs per minute
-    },
+    concurrency: 1,
   })
 
   worker.on('completed', (job, result) => {
@@ -547,7 +536,7 @@ export function createExportWorker(redisConnection: { host: string; port: number
     const exhaustedStalls = /stalled more than allowable limit/i.test(error.message)
     if (!exhaustedAttempts && !exhaustedStalls) return
 
-    try {
+    return withTenantContext(job.data.shopId, async () => { try {
       await prisma.exportJob.updateMany({
         where: {
           id: job.data.exportId,
@@ -561,7 +550,7 @@ export function createExportWorker(redisConnection: { host: string; port: number
         `[Export Worker] Could not persist terminal failure for ${job.data.exportId}:`,
         persistError
       )
-    }
+    } })
   })
 
   worker.on('progress', (job, progress) => {
@@ -575,13 +564,6 @@ export function createExportWorker(redisConnection: { host: string; port: number
 
 
 if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('export.worker.ts')) {
-  const redisUrl = new URL(process.env.REDIS_URL || 'redis://localhost:6379')
-  const redisConnection = {
-    host: redisUrl.hostname,
-    port: parseInt(redisUrl.port || '6379'),
-    db: parseInt(redisUrl.pathname?.slice(1) || '0'),
-  }
-
-  const worker = createExportWorker(redisConnection)
+  const worker = createExportWorker()
   console.log('[Export Worker] Started and waiting for jobs...')
 }

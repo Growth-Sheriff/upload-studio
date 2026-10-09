@@ -1,4 +1,5 @@
 import { Queue } from 'bullmq'
+import { withTenantContext, requireTenantShopId } from '../app/lib/tenantContext.server'
 import {
   buildMeasurementFailureProjection,
   deriveDurablePreviewEvidence,
@@ -28,7 +29,8 @@ import {
 
 const RECONCILE_INTERVAL_MS = 60_000
 const RECONCILE_BATCH_SIZE = 100
-let reconciliationCursor: string | undefined
+const reconciliationCursors = new Map<string, string>()
+let shopCursor: string | undefined
 
 async function ensureQueueJob(
   queue: Queue<UploadPipelineJobData>,
@@ -299,15 +301,19 @@ async function persistReconciledPreviewState(input: {
   throw new Error(`Preview terminal state kept changing for item ${input.itemId}`)
 }
 
-export async function reconcileUploadPipelineQueues(): Promise<{
+async function reconcileShopUploadPipelineQueues(): Promise<{
   inspected: number
   measureEnqueued: number
   previewEnqueued: number
   measureTerminalized: number
   previewTerminalized: number
 }> {
+  const shopId = requireTenantShopId()
+  const reconciliationCursor = reconciliationCursors.get(shopId)
   const uploads = await prisma.upload.findMany({
     where: {
+      shopId,
+      privacyRedactedAt: null,
       status: { in: ['uploaded', 'processing', 'ready', 'pending_approval'] },
       items: {
         some: {
@@ -341,9 +347,9 @@ export async function reconcileUploadPipelineQueues(): Promise<{
   })
 
   if (uploads.length < RECONCILE_BATCH_SIZE) {
-    reconciliationCursor = undefined
+    reconciliationCursors.delete(shopId)
   } else {
-    reconciliationCursor = uploads[uploads.length - 1]?.id
+    reconciliationCursors.set(shopId, uploads[uploads.length - 1].id)
   }
 
   if (uploads.length === 0) {
@@ -444,6 +450,25 @@ export async function reconcileUploadPipelineQueues(): Promise<{
     measureTerminalized,
     previewTerminalized,
   }
+}
+
+/** Round-robin bounded control-plane discovery; all upload work executes
+ * inside a shop context. No cross-shop data query bypass is necessary. */
+export async function reconcileUploadPipelineQueues() {
+  const shops = await prisma.shop.findMany({
+    where: { billingStatus: { notIn: ['uninstalled', 'erasing'] }, erasureStartedAt: null },
+    select: { id: true }, orderBy: { id: 'asc' }, take: 50,
+    ...(shopCursor ? { cursor: { id: shopCursor }, skip: 1 } : {}),
+  })
+  shopCursor = shops.length === 50 ? shops[shops.length - 1].id : undefined
+  const totals = { inspected: 0, measureEnqueued: 0, previewEnqueued: 0, measureTerminalized: 0, previewTerminalized: 0 }
+  for (const shop of shops) {
+    try {
+      const result = await withTenantContext(shop.id, reconcileShopUploadPipelineQueues)
+      for (const key of Object.keys(totals) as Array<keyof typeof totals>) totals[key] += result[key]
+    } catch (error) { workerLog.error('SHOP_RECONCILE_FAILED', { shopId: shop.id, error: String(error) }) }
+  }
+  return totals
 }
 
 export function startUploadPipelineReconciler(): NodeJS.Timeout {

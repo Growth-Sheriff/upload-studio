@@ -9,8 +9,11 @@
 
 
 import Redis from "ioredis";
+import { createHmac } from 'node:crypto';
+import { getTenantShopId } from './tenantContext.server';
+import { publicRedisUrl } from './publicRedis.server';
 
-const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
+const redis = new Redis(publicRedisUrl(), { maxRetriesPerRequest: 1, commandTimeout: 3000 });
 
 interface RateLimitConfig {
   windowMs: number;
@@ -57,7 +60,7 @@ export async function checkRateLimit(
   identifier: string,
   config: RateLimitConfig
 ): Promise<RateLimitResult> {
-  const key = `${config.keyPrefix}${identifier}`;
+  const key = `auto-gang-sheet:${getTenantShopId() || 'public'}:${config.keyPrefix}${identifier}`;
   const now = Date.now();
   const windowStart = now - config.windowMs;
 
@@ -171,21 +174,10 @@ export function getIdentifier(request: Request, type: "customer" | "shop"): stri
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0] ||
                request.headers.get("x-real-ip") ||
                "unknown";
-    const ua = request.headers.get("user-agent") || "";
-    return `${ip}:${hashString(ua).slice(0, 8)}`;
+    // Short-lived abuse protection; no device signature or raw IP stored.
+    return createHmac('sha256', process.env.SECRET_KEY || process.env.SHOPIFY_API_SECRET || 'local-rate-limit').update(ip.trim()).digest('hex');
   }
 
 
   return "shop";
 }
-
-function hashString(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash).toString(16);
-}
-

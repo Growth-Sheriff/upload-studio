@@ -14,6 +14,8 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { handleCorsOptions, getCorsHeaders } from "~/lib/cors.server";
 import prisma from "~/lib/prisma.server";
+import { shopifyConfig } from '~/lib/shopify.server';
+import { authenticate } from '~/shopify.server';
 
 
 const DEFAULT_SIZES = [
@@ -64,6 +66,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (request.method === "OPTIONS") {
     return handleCorsOptions(request);
   }
+  await authenticate.public.appProxy(request);
 
   const productId = params.productId;
   const url = new URL(request.url);
@@ -123,13 +126,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
 
     const response = await fetch(
-      `https://${shopDomain}/admin/api/2025-10/graphql.json`,
+      `https://${shopDomain}/admin/api/${shopifyConfig.apiVersion}/graphql.json`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Shopify-Access-Token": shop.accessToken,
         },
+        signal: AbortSignal.timeout(30_000),
         body: JSON.stringify({
           query: `
             query GetProductSizes($id: ID!) {

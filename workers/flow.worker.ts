@@ -13,9 +13,9 @@
 
 
 
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prisma } from '../app/lib/prisma.server';
+import { withTenantContext } from '../app/lib/tenantContext.server';
+import { shopifyConfig } from '../app/lib/shopify.server';
 
 const MAX_RETRIES = 3;
 const BATCH_SIZE = 10;
@@ -85,13 +85,14 @@ async function sendFlowTrigger(trigger: FlowTriggerRecord): Promise<boolean> {
     console.log(`[Flow] Sending ${trigger.eventType} (${handle}) for ${trigger.resourceId}`);
 
     const response = await fetch(
-      `https://${trigger.shop.shopDomain}/admin/api/2025-10/graphql.json`,
+      `https://${trigger.shop.shopDomain}/admin/api/${shopifyConfig.apiVersion}/graphql.json`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Shopify-Access-Token": trigger.shop.accessToken,
         },
+        signal: AbortSignal.timeout(30_000),
         body: JSON.stringify({
           query: `
             mutation flowTriggerReceive($handle: String!, $payload: JSON!) {
@@ -186,7 +187,7 @@ async function skipPendingTriggers(reason: string): Promise<number> {
 
 
 
-async function processPendingTriggers(): Promise<{ sent: number; failed: number }> {
+async function processShopPendingTriggers(): Promise<{ sent: number; failed: number }> {
   const results = { sent: 0, failed: 0 };
 
   if (!isShopifyFlowTriggersEnabled()) {
@@ -236,12 +237,27 @@ async function processPendingTriggers(): Promise<{ sent: number; failed: number 
   return results;
 }
 
+let shopCursor: string | undefined;
+async function processPendingTriggers(): Promise<{ sent: number; failed: number }> {
+  const shops = await prisma.shop.findMany({ where: { billingStatus: { notIn: ['uninstalled', 'erasing'] }, erasureStartedAt: null }, select: { id: true }, orderBy: { id: 'asc' }, take: 50, ...(shopCursor ? { cursor: { id: shopCursor }, skip: 1 } : {}) });
+  shopCursor = shops.length === 50 ? shops[shops.length - 1].id : undefined;
+  const totals = { sent: 0, failed: 0 };
+  for (const shop of shops) {
+    const result = await withTenantContext(shop.id, processShopPendingTriggers);
+    totals.sent += result.sent; totals.failed += result.failed;
+  }
+  return totals;
+}
+
 
 
 
 async function cleanupOldTriggers(): Promise<number> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
+  const shops = await prisma.shop.findMany({ select: { id: true } });
+  let count = 0;
+  for (const shop of shops) count += await withTenantContext(shop.id, async () => {
   const result = await prisma.flowTrigger.deleteMany({
     where: {
       status: { in: ["sent", "failed", "skipped"] },
@@ -249,29 +265,30 @@ async function cleanupOldTriggers(): Promise<number> {
     },
   });
 
-  if (result.count > 0) {
-    console.log(`[Flow] Cleaned up ${result.count} old triggers`);
-  }
-
   return result.count;
+  });
+  return count;
 }
 
 
 
 
 async function getStats(): Promise<{ pending: number; sent: number; failed: number; skipped: number }> {
+  const shops = await prisma.shop.findMany({ select: { id: true } });
+  const result = { pending: 0, sent: 0, failed: 0, skipped: 0 };
+  for (const shop of shops) await withTenantContext(shop.id, async () => {
   const stats = await prisma.flowTrigger.groupBy({
     by: ["status"],
     _count: true,
   });
 
-  const result = { pending: 0, sent: 0, failed: 0, skipped: 0 };
   for (const stat of stats) {
-    if (stat.status === "pending") result.pending = stat._count;
-    else if (stat.status === "sent") result.sent = stat._count;
-    else if (stat.status === "failed") result.failed = stat._count;
-    else if (stat.status === "skipped") result.skipped = stat._count;
+    if (stat.status === "pending") result.pending += stat._count;
+    else if (stat.status === "sent") result.sent += stat._count;
+    else if (stat.status === "failed") result.failed += stat._count;
+    else if (stat.status === "skipped") result.skipped += stat._count;
   }
+  });
 
   return result;
 }

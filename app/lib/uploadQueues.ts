@@ -1,8 +1,8 @@
 import type { DefaultJobOptions, JobsOptions } from 'bullmq'
 
-export const MEASURE_PREFLIGHT_QUEUE_NAME = 'measure-preflight'
-export const PREVIEW_RENDER_QUEUE_NAME = 'preview-render'
-export const EXPORT_QUEUE_NAME = 'export'
+export const MEASURE_PREFLIGHT_QUEUE_NAME = 'auto-gang-sheet-measure-preflight'
+export const PREVIEW_RENDER_QUEUE_NAME = 'auto-gang-sheet-preview-render'
+export const EXPORT_QUEUE_NAME = 'auto-gang-sheet-export'
 export const LARGE_IMAGE_PIXEL_THRESHOLD = 300_000_000
 export const LARGE_UPLOAD_PRELOCK_BYTES = 50 * 1024 * 1024
 // Vector pages are small on disk however large they render, so the byte

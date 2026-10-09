@@ -1,9 +1,8 @@
 
 import { AsyncLocalStorage } from 'async_hooks'
-import { exec } from 'child_process'
 import fs from 'fs/promises'
 import path from 'path'
-import { promisify } from 'util'
+import { runImageCommand } from './imageProcess.server'
 import { inflateSync } from 'zlib'
 import {
   computeSheetAnchoredInches,
@@ -20,12 +19,6 @@ const MAX_EMBEDDED_TEXT_BYTES = 4 * 1024 * 1024
 /** Ghostscript renders one band per thread. Four keeps a single large sheet
  * off one core without starving the other jobs on an 8-core worker. */
 const GS_RENDERING_THREADS = Number(process.env.GS_RENDERING_THREADS || 4)
-
-const execRaw = promisify(exec)
-
-/** Shortest a tool is ever given, so a nearly-spent budget still lets a cheap
- * metadata read finish instead of failing on arrival. */
-const MIN_IMAGE_COMMAND_TIMEOUT_MS = 30 * 1000
 
 /**
  * Wall-clock budget for one pipeline job. Per-command timeouts alone are not
@@ -60,14 +53,14 @@ async function execAsync(
 ): Promise<{ stdout: string; stderr: string }> {
   const requested = options.timeout ?? IMAGE_COMMAND_TIMEOUT_MS
   const deadline = jobDeadlineStore.getStore()
+  if (deadline && deadline <= Date.now()) throw new Error('Image command job budget exhausted')
   const timeout = deadline
-    ? Math.max(MIN_IMAGE_COMMAND_TIMEOUT_MS, Math.min(requested, deadline - Date.now()))
+    ? Math.max(1, Math.min(requested, deadline - Date.now()))
     : requested
-  const { stdout, stderr } = await execRaw(command, {
+  const { stdout, stderr } = await runImageCommand(command, {
     maxBuffer: 16 * 1024 * 1024,
     ...options,
     timeout,
-    killSignal: 'SIGKILL',
   })
   return { stdout: String(stdout), stderr: String(stderr) }
 }
