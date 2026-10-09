@@ -486,3 +486,53 @@ org.opencontainers.image.revision: 21ccab9012e78d21989bc9321e7b0af28eb7d7d5
 The immutable index digest was handed to the deployment owner. This build
 agent did not deploy, apply migrations to the hosted database, publish Shopify
 extensions, push Git refs, or change any existing tenant infrastructure.
+
+## Support delivery fallback: final server-only follow-up
+
+Read-only inspection of the real hosted support bundle found that its
+client-side environment check compiled to an empty object. Merchants always
+saw an instruction to configure the operator's server key, regardless of
+server configuration. Support-only commit
+`9c4b466fc92ec7d155f48e7873c8ff606a78c81d` now returns a configuration boolean
+from the authenticated loader, keeps the key server-only, offers
+`info@actualscope.com`, and distinguishes a saved reply from a successfully
+sent email. No product, measurement, pricing, fee, queue or storage behavior
+changed. One focused test and the complete typecheck passed before commit.
+
+The same two explicit build commands above were run sequentially with revision
+label `9c4b466fc92ec7d155f48e7873c8ff606a78c81d` and production tag `:9c4b466`.
+Root's subsequent documentation-only commit and dirty root documentation,
+deployment-helper and scratch/evidence files were excluded from the application
+build context. No source edits occurred during either build.
+
+[CI qwqvfs6w8j](https://depot.dev/orgs/zl650q33c5/projects/7fxkc8sd3p/builds/qwqvfs6w8j)
+command exit **0**, provider terminal **`finished`**, start
+`2026-10-09T23:09:40Z`, duration **62 seconds**:
+
+```text
+8 migrations successfully applied to fresh disposable PostgreSQL
+Test Files 66 passed (66)
+Tests      425 passed (425), zero skipped
+Complete typecheck, strict measurement regression, Remix build: exit 0
+Theme check: []; theme + checkout extension builds: success
+Disposable database shutdown and provider cleanup: successful
+```
+
+Only after checking that terminal success was
+[production build 7p77lwvp97](https://depot.dev/orgs/zl650q33c5/projects/7fxkc8sd3p/builds/7p77lwvp97)
+started. It exited **0**, provider terminal **`finished`**, start
+`2026-10-09T23:10:54Z`, duration **70 seconds**. Independent GHCR manifest and
+config inspection confirmed:
+
+```text
+package/tag: ghcr.io/growth-sheriff/auto-gang-sheet-public:9c4b466
+image index: sha256:37f10d8b6dbc87385ce9de0270b14231fbfd6023b8b6235cd940d33526e1c6fd
+linux/amd64: sha256:3fc30b6011c7aa1a6cf1386ea3269b9ee2f91d62fc121dd34f33bc244f32fb55
+org.opencontainers.image.revision: 9c4b466fc92ec7d155f48e7873c8ff606a78c81d
+```
+
+The immutable image was handed to the deployment owner. No deployment, Git
+push, production mutation or new email credential was performed by this build
+agent. The previous Shopify extension release remains applicable because this
+follow-up changes only the server/admin support surface; real hosted UI and
+email delivery are separate evidence, not inferred from the build.
