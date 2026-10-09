@@ -44,7 +44,11 @@ The owner now authorizes independent provisioning, provider CI, public deploymen
 
 Provider credentials remain outside Git and are consumed only for their authorized service. No raw credential inventory is committed. A mistaken inventory output exposed several API credentials in tool history; their values are not repeated or copied into evidence, and rotation is a separate owner-security action because existing services may use them.
 
-### Executed release progress — 9 October, 22:22 UTC
+### Latest executed progress — after 9 October, 22:51 UTC
+
+The historical22:22 snapshot below is retained as history. The permanent-token403 is now resolved on all three real installations; the demo's six real product configurations were saved in Polaris. Source78e82f9 is deployed only to the new host; the narrower advanced-widget revert910da79 and truthful unit-rate displayf519d22 await a clean final image. Actual Shopify UI confirms Manual pricing (legacy), so no managed-plan migration is necessary. Versioned Actual Scope merchant Terms/DPA are deployed but have not been accepted without action-time owner confirmation. No real subscription/order/usage, Lighthouse result, review video or App Store submission is claimed. See verification.md and open-questions.md for remaining concrete gates.
+
+### Historical executed progress — 9 October, 22:22 UTC
 
 - Correct Actual Scope organization239354566 owns app433768202241. Version1161809625089 is released with API2026-10 and its own two extension identities. All three new development shops installed this app. Level1 order-data development purposes were saved without buyer contact fields; this is not an App Store approval.
 - A new private repository, Growth-Sheriff/auto-gang-sheet-public, contains only public-app as its default branch. Isolated Depot builds/tests passed; automatic repository triggering is still being configured. The organization installation screen requests broader organization permissions than the approved repository access, so those permissions have not been granted.

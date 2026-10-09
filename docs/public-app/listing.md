@@ -2,6 +2,16 @@
 
 Not submitted. Contact/support: info@actualscope.com. Register only under the verified Actualscope account, never the existing Growth Sheriff Shopify organization.
 
+## Actual saved draft — 10 October, before commerce proof
+
+English is the primary listing. The real Pricing screen confirms **Manual pricing (legacy)**, not an enabled Shopify App Pricing migration. One public manual listing plan, handle`finished-sheet-usage`, is saved as Free with additional charges; its English display name is`Per paid order`. This is listing metadata, not a merchant subscription or a usage record.
+
+The saved120-character charge field reads: “3.5% of paid app-served items after discounts, max US$6/order. Tax/shipping excluded. Merchant-approved usage limit.” Further pricing links to the hosted Terms. The app's actual billing approval separately discloses the ECB reference-rate snapshot for non-USD amounts. US$50/200/500/1,000 are usage permissions, not monthly plan prices. No external-billing exception is checked.
+
+The saved draft now reports four missing listing elements: app icon, feature media, screenshots and screencast URL. Three duplicate feature entries and three extra empty screenshot slots were removed; the final three features and eight concise reviewer steps were saved. This validation state is not permission to submit before real commerce, privacy/security and performance gates pass. Evidence:`evidence/listing-usage-pricing-saved.jpg` and`evidence/pricing-manual-confirmed.jpg`.
+
+All six real demo product settings have since been saved through Polaris, and all three installed shops render the embedded app. Earlier setup403 statements below are historical. Merchant agreement acceptance and provider billing consent remain separate outstanding actions; no assumed receipt or direct configuration write was used.
+
 ## Listing copy
 
 Subtitle: Measure ready-to-print gang sheets and match your sheet prices.

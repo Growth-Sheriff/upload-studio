@@ -2,7 +2,18 @@
 
 Work performed 9–10 October 2026 (Europe/Istanbul), exclusively in the managed public worktree. Main baseline: `76113c193d7da789df9b2d3ea1ad7947af48b334`. The original custom checkout is unchanged and clean. A new public review app is now registered, hosted and installed in three development shops; no App Store submission or approval is claimed. Historical sections below retain their own executed revisions and limitations.
 
-## Hosted release execution update — 9 October, 22:25 UTC
+## Latest real setup evidence — after 9 October, 22:51 UTC
+
+- Only the NEW public deployment607746803 was refreshed to source78e82f9, digest`sha256:ce5458aadec86a236ed3bc1ce28bb6ed8705361c5f12adf937efbc8274e20a89`. All six new services started22:51:32UTC, OOMfalse/restart0; external `/health` returnedhealthy. Seven migrations were present with none pending.
+- Both old hosts were sampled before/after this deploy using the exact28 existing tenant container names plus old Caddy. Every StartedAt/OOM/restart string matched byte-for-byte. No old service was restarted or deployed.
+- All three genuine Shopify installations now render the embedded app. The demo loads six real products, not a synthetic catalog. This resolves the historical permanent-token403 below; it does not establish real three-store commerce or an expired background refresh.
+- A NEW607 read-only Prisma transaction at22:57:59.814UTC confirmed exactly three genuine offline sessions, correct active-shop ownership, and access/refresh credentials present without printing them. Access expiries were23:43:07.382/23:44:51.106/23:44:52.882UTC; refresh expiries were7January2027. All were unexpired. No expiry was altered and no refresh/API write was induced.
+- All six demo products were saved through actual Polaris controls, never direct database writes: Ready DTF, Pick Your Size, DTF+UV Desk and UV use variant mode; Studio and PNG Detail use measured_length at0.30. Each uses22.5 printable width,240 custom-length ceiling and0.02 tolerance. `demo-setup-decimal-rate-saved.jpg` and `demo-mod2-configured.jpg` show successful saves after the original fractional-input rejection.
+- Shopify's actual Pricing screen explicitly showed **Manual pricing (legacy)**. The previous inference from a default private plan was not authoritative. Evidence:`pricing-manual-confirmed.jpg`. One manual listing plan`finished-sheet-usage`, Free with additional charges, English name`Per paid order`, was saved with the explicit3.5%/USD6/tax-shipping exclusion/merchant usage-limit description. This is listing metadata, not a paid merchant subscription. Saved review instructions reduced missing listing fields to icon, feature media, screenshots and screencast URL; see`listing-usage-pricing-saved.jpg`.
+- Extensions version`agsu-review-6544477`/1161829351425 was successfully released using pinned CLI3.88.1 and explicit public config. Later source corrections910da79/f519d22 still require the final tested image/extension release; older results are not relabeled.
+- Candidate CI v7t238tr7x ran415tests without skips and all verification commands exited0, but Depot canceled the build after a builder-release error. This is not a terminal green CI claim. A clean final run is required; see ci.md.
+
+## Historical hosted execution — 9 October, 22:25 UTC
 
 Current hosted evidence does not silently relabel older local results:
 
@@ -13,7 +24,7 @@ Current hosted evidence does not silently relabel older local results:
 | Hosted isolation | New droplet607746803, deployed digest9c039fc1…;24 assertions/three simultaneous synthetic shops passed; exact3 fixture shops and uploads removed; no order/commission rows. See hosted-isolation.md |
 | New private R2 | Bucket-only runtime credential; private r2.dev disabled; tests below; exact test object deleted and HEAD404 verified |
 | Demo | Six published test products/media, three supporting pages and nine actual app block bindings in unpublished theme189187817693; no physical fulfillment claim |
-| Real merchant onboarding | NOT passed: Shopify rejects stored non-expiring offline tokens; setup/product403 reproduced on all3shops. products/update tenant binding defect also discovered. Fixes underway |
+| Real merchant onboarding at22:25 | Historical failure: setup/product403 on all3shops and missing products/update binding. Resolved by later deployment; see latest evidence above |
 | Commerce/review | Real test billing/order/usage/cap, Lighthouse and App Store submission are still outstanding |
 | Hosted privacy, subsequent22:29 UTC proof | All three actual signed HTTP topics/replays, worker export/redaction and real R2 erasure passed on three exact synthetic fixtures, cleaned afterward. See hosted-compliance.md; simulated62-minute fixture clock is not elapsed SLA proof |
 
@@ -42,7 +53,7 @@ Desktop visual evidence: evidence/demo-home-original-theme.jpg is an actual scre
 | Required gate | Executed evidence | Release status |
 | --- | --- | --- |
 | 1. Independent branch | public-app starts at origin/main; protected remote refs unchanged; public boundary CI/PR warnings | Proven locally; never merge back |
-| 2. Existing infrastructure untouched | Both hosts inspected read-only twice; all 14 web + 14 worker StartedAt values unchanged, restart0/OOMfalse | Proven for this run; no deployment occurred |
+| 2. Existing infrastructure untouched | Both hosts inspected read-only before/after independent public deployments; all14web+14worker and oldCaddy StartedAt values unchanged, restart0/OOMfalse | Old infrastructure untouched; ONLY new public services deployed |
 | 3. One app, three stores | Three new Shopify installations; real hosted three-shop synthetic isolation and distributed Redis leases | Hosted isolation proven; real three-shop commerce still missing |
 | 4. Three privacy topics | Actual hosted raw-body HMAC HTTP requests, invalid401, replay, worker exports/redaction and real private R2 erasure with exact cleanup | Synthetic hosted proof passed; Shopify-origin delivery and elapsed SLA not claimed |
 | 5. Tracking removed | Source/compiled JS scans, removal guards, Visitor/VisitorSession absent, DROP migration | Local proof; live storefront Network capture missing |
