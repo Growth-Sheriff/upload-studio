@@ -1,0 +1,84 @@
+# Review-demo storefront
+
+This is an isolated demonstration, not a new production printing business. Prices are illustrative, orders use the demo shop's test payment flow, and nothing is physically fulfilled. Existing merchant shops and themes are outside this work.
+
+## What this store sells
+
+A finished gang sheet is one production file. The customer has already arranged the artwork. The app measures the page, checks the configured press limit, and either selects a listed sheet length or quotes measured length. Quantity prints the complete uploaded file that many times. There is no nesting, layout service, or invented production instruction.
+
+Every demo product explicitly uses maximum printable width **22.5 in** and export tolerance **0.02 in**. Measured products also explicitly use maximum length **240 in** and **$0.30/in**. Variant products use the actual listed variant length and price; a 22.3 × 78 file selects the 22 × 80 variant. The least-film orientation policy is unchanged. DTF variants cost $0.50 per listed inch; UV variants use an illustrative $0.65 per listed inch. No hidden discount or account rate is added.
+
+The inventory in `demo/storefront/inventory.json` is a source manifest, not an importer. It contains no credential, shop ID, or command that can modify a store. Shopify's mandatory single default variant on a measured product is not a sheet-size ladder or an inch carrier. Its catalog reference is the per-inch rate; the server-generated custom checkout supplies the actual measured sheet price. Generic catalog blocks intentionally exclude these measured products so a $0.30 rate cannot masquerade as a full-sheet price.
+
+## Native block map
+
+Public source contains **nine** blocks. The formerly tenth block was visitor tracking and was deleted; it must not be reintroduced for a demo.
+
+| Native file / editor label | Purpose | Demo destination |
+| --- | --- | --- |
+| `main-product-upload-app` / Variant Gang Sheet Upload | Automatic smallest-fitting variant, finished-sheet upload | `/products/ready-dtf-gang-sheets`, `product.ags-variant` |
+| `main-product-upload-pro` / Custom Price Sheet Upload | Measured-length checkout; multi-format Studio view | `/products/measured-dtf-gang-sheets`, `product.ags-measured` |
+| `custom-price-upload-mod2` / Custom Price Upload Mod 2 | PNG-only full product page and measured quote | `/products/measured-dtf-png-sheets`, `product.ags-mod2`; sole product UI, no duplicate native buy buttons |
+| `dtf-transfer` / Main Product Upload | Customer manually picks a variant; server verifies exact selected sheet | `/products/manual-dtf-gang-sheets`, `product.ags-manual`; `tshirtEnabled=false` |
+| `dtf-uv-gang-sheet-upload` / DTF + UV Gang Sheets | Two product handles, separate pricing/ownership per file | `/products/dtf-uv-upload-desk` and `/products/uv-gang-sheets`, `product.ags-dual`; one desk, no material combining |
+| `dtf-listing` / DTF Product Listing | Link cards, not an uploader | Home catalog; product-picker contains the four variant products |
+| `showcase-bar` / Product Showcase | Collection-backed link cards, not an uploader | `/pages/block-gallery`; `ready-sheet-examples` collection |
+| `carousel-3d` / 3D Product Listing | Collection-backed scrollable cards; “3D” is CSS presentation, not a product designer | `/pages/block-gallery`; same real collection |
+| `cart-upload-display` / Cart Upload Display | Body app embed, not a product section | Enabled globally; inspect upload identity/preview on the real cart |
+
+The six product records deliberately demonstrate presentation choices rather than pretend to be six different film grades. The two measured product descriptions say they are alternative views of the same finished-sheet service. The dual desk's page product is a real DTF variant product; its UV tab points to a separate UV product. No dummy hub product is sold.
+
+## Store story and design
+
+Light warm background, near-black ink, restrained teal and coral accents, generous space, and close-up sheet imagery. Do not use fake ratings, reviews, customer logos, countdowns, sales counters, turnaround promises, wash guarantees, or a design-builder mockup. The isolated native theme is in `demo/theme`; FAL-generated photographs are explicitly described as demo illustrations, not physical sample tests. The Sites presentation-design guide influenced the narrative progression and accessibility; Shopify, not Sites hosting, remains the target.
+
+Home progression:
+
+1. Thin permanent demo notice: “Review demo — test orders only. Nothing is printed or shipped.”
+2. Hero: **“Your sheet. Exactly as you made it.”** Supporting line: “Upload a finished gang sheet. See its size and price. Choose how many complete copies you need.” Primary action opens the automatic-variant product; secondary action opens measured pricing.
+3. Plain product-choice cards: “Pick a sheet size” versus “Pay by measured length,” then a smaller manual-variant and DTF + UV option. Rates must include `/in`; full-sheet variant prices say “from.”
+4. Three steps: “Upload your finished file” → “Review size and price” → “Choose copies and checkout.”
+5. Native DTF Product Listing of real variant products; no empty placeholders.
+6. Short file guide and FAQ, then support and demo disclosure.
+
+Product pages show the app uploader as the only buying UI. A brief theme-owned introduction explains pricing mode and limits. Variant pages may show normal product imagery/details above the uploader; Mod 2 already supplies its own full page and gets no duplicate title/image/form. The cart retains Shopify's normal checkout and the three app properties: Print Ready, Sheet Identity, DPI.
+
+## Concise FAQ / file guide
+
+**Do you arrange my logos?** No. Upload the finished production sheet you prepared. Artwork is not nested, combined, or rearranged.
+
+**What does quantity mean?** Complete printed copies of that same uploaded sheet. Three copies means the entire file is printed three times.
+
+**Why is the variant called 22 inches if the limit is 22.5?** The variant name describes the commercial sheet size. This demo's explicitly configured printable press limit is 22.5 inches. The app still checks your file's real dimensions.
+
+**How is the price calculated?** Variant pricing uses the smallest listed length that covers the file. Measured pricing uses the server-confirmed billable length times the displayed per-inch rate and number of copies. Review the quote before checkout.
+
+**What happens if a file is too large?** Genuine width overflow is rejected with the measured width and configured limit. Variant files longer than every listed sheet are rejected. Measured files longer than 240 inches are rejected, not split.
+
+**Which file should I upload?** Start with a ready PNG with the intended page size and embedded resolution. The Studio/variant uploader also lists its supported formats; the detailed PNG presentation accepts PNG only. A transparent background is retained; the app does not add or remove artwork for you.
+
+**What if my file has no resolution metadata?** Review the measured dimensions carefully. Depending on the source, the inherited Adobe-resolution or printable-width fallback can apply. Do not promise that every file is silently treated as 300 DPI.
+
+**Why can a preview take longer?** PNG/JPEG dimensions are validated from stored headers. Large images and other formats may need a server-rendered preview. A waiting thumbnail does not authorize an unverified file for checkout.
+
+**Will this demo ship an order?** No. It is a review environment with illustrative prices and test checkout. No physical fulfillment, shipping guarantee, or material durability claim is made.
+
+## Honest block settings
+
+Mod 2: account desk off for guests, vendor off, pricing table off for measured mode, upload label “Upload finished PNG.” Override its feature grid with “Finished-sheet uploads,” “PNG file preview,” “Quantity means copies,” and “Price before checkout.” Accordion text uses the guide above, not generic shipping/returns or wash claims.
+
+Showcase: header “READY SHEET EXAMPLES,” subtitle “Explore the finished-sheet product views,” no compare-at prices. Carousel: header “DEMO COLLECTION,” title “Finished sheets, different views,” no limited-time claim. Existing hardcoded `4D` badges and inert wishlist buttons are not genuine capabilities: the demo theme must omit those decorations, and must not market them as implemented functionality. Mod 2's hardcoded “Works with Any Design” and stock wording need honest theme presentation; decorative omissions must not change pricing or suppress an error.
+
+All upload blocks and the cart embed use the same visible signed app-proxy path (`/apps/customizer` unless the verified demo app is configured otherwise). Never invent a `shopify://apps/...` UUID: take the installed public theme extension identity from the verified app/theme state.
+
+## External safety boundary
+
+Only after parent verifies the Actualscope-owned development shop: obtain a read-only theme backup, select an isolated unpublished demo theme, then apply these native files/templates and demo products. Preserve the backup. No existing production theme, merchant product, tenant config, or infrastructure is a target. Screenshots and a real test checkout come after app installation, proxy configuration, product config, test payment, and published extension identity are actually known.
+
+Confirmed dedicated target: **auto-gang-sheet-demo.myshopify.com**, newly created under Actual Scope organization 239354566. The pending-review Gang Sheet Editor store is deliberately not reused. A read-only CLI list returned Horizon theme **189187457245**; CLI pull completed into `C:\Users\mhmmd\.codex\demo-theme-backups\auto-gang-sheet-demo`. That backup remains outside Git and untouched. Fresh theme templates currently contain empty app slots; `demo/storefront/block-settings.json` maps the settings to apply when the installed extension UUID is actually known. No fake ID is substituted.
+
+The new isolated **Auto Gang Sheet Demo** theme **189187817693** was uploaded **unpublished** with explicit shop/path and strict theme validation. No `--live`, `--publish`, or `--allow-live` flag was used; Horizon remained live. [Preview](https://auto-gang-sheet-demo.myshopify.com?preview_theme_id=189187817693) currently reaches the development-store password page. This proves only upload, not a successful visual or uploader check. Storefront-password access and installed app identity are the remaining dependencies; protection is not disabled to obtain a screenshot.
+
+Local verification: pinned Shopify CLI 3.88.1 `theme check --path demo/theme --fail-level error --output json` returned `[]` (zero errors or warnings). A read-only source check confirmed settings in `block-settings.json` exactly match each of the nine native schemas and all collection handles exist in the six-product inventory. The source manifest is not a statement that those Shopify products or app blocks have already been installed.
+
+Architecture sources checked for this theme: [Shopify theme structure](https://shopify.dev/docs/storefronts/themes/architecture), [app-block wrapper requirements](https://shopify.dev/docs/storefronts/themes/architecture/blocks/app-blocks), and [the installed app-block type format](https://shopify.dev/docs/apps/build/online-store/theme-app-extensions/configuration). This is a focused review-demo theme, not a Shopify Theme Store submission; it intentionally supplies no alternate native product purchase form that bypasses the uploader's price authority.

@@ -1,0 +1,18 @@
+<div class="ags-demo-notice"><span>APP REVIEW DEMO</span> Test orders only · Nothing is printed or shipped.</div>
+<header class="ags-header">
+  <a class="ags-logo" href="{{ routes.root_url }}" aria-label="Auto Gang Sheet Upload demo home"><span class="ags-logo-mark" aria-hidden="true">G<span>↗</span></span><span>Gang Sheet<span class="ags-logo-sub">UPLOAD DEMO</span></span></a>
+  <nav class="ags-desktop-nav" aria-label="Main navigation">
+    <a href="/products/ready-dtf-gang-sheets">Ready sheets</a>
+    <a href="/products/measured-dtf-gang-sheets">Measured pricing</a>
+    <a href="/pages/file-guide">File guide</a>
+    <a href="/pages/block-gallery">All views</a>
+  </nav>
+  <div class="ags-header-actions">
+    <a class="ags-cart-link" href="{{ routes.cart_url }}" aria-label="Cart, {{ cart.item_count }} items"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 7h14l1 14H4L5 7Z"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/></svg><span>{{ cart.item_count }}</span></a>
+    <details class="ags-mobile-nav">
+      <summary>Menu <span aria-hidden="true">+</span></summary>
+      <nav aria-label="Mobile navigation"><a href="/products/ready-dtf-gang-sheets">Ready sheets</a><a href="/products/measured-dtf-gang-sheets">Measured pricing</a><a href="/pages/file-guide">File guide</a><a href="/pages/block-gallery">All views</a><a href="/pages/contact">Support</a></nav>
+    </details>
+  </div>
+</header>
+{% schema %}{"name":"Demo header","settings":[]}{% endschema %}

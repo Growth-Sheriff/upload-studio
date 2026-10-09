@@ -1,0 +1,22 @@
+{
+  "pages": [
+    {
+      "handle": "file-guide",
+      "title": "Your finished-sheet file guide",
+      "templateSuffix": "",
+      "bodyHtml": "<p>Your uploaded file is the complete production sheet. Prepare and arrange your artwork in your own software before uploading. The app measures and prices it; there is no layout service.</p><h2>Prepare a ready file</h2><ul><li>Start with a finished PNG at the intended page size, with embedded resolution.</li><li>Keep the transparent background if that is what you intend to print.</li><li>The Studio and variant uploaders list additional supported formats. The detailed PNG view accepts PNG only.</li><li>Review the measured dimensions before checkout, especially when DPI metadata is missing.</li></ul><h2>Know the limits</h2><p>This demo explicitly uses a 22.5-inch maximum printable width with 0.02-inch export-rounding tolerance. The 22-inch name on a variant is not the press limit. A genuine overflow is rejected, not squeezed or silently priced.</p><p>Variant pricing selects the smallest listed sheet length that covers the finished file. A 22.3 × 78-inch file selects the 22 × 80 variant in this demo. Files longer than every listed length are rejected.</p><p>Measured pricing uses server-confirmed billable length at the demo rate of $0.30 per inch. Its maximum length is 240 inches; longer files are rejected, not split. Orientation is selected internally to use the least film that fits. Nobody receives an extra instruction to rearrange your artwork.</p><h2>Copies are copies</h2><p>Quantity means complete printed copies of the same sheet. Three copies means the entire file is printed three times. Logos are not nested or combined onto a larger sheet.</p><h2>Check resolution and the preview</h2><p>Embedded resolution helps preserve the size you intended. A source with no usable DPI can use the inherited Adobe-resolution or printable-width fallback; do not assume every file is treated as 300 DPI. Check the actual width and length shown by the app.</p><p>PNG/JPEG measurements are validated from the stored file header. Large images and other file types may need a server-rendered preview. A missing or invalid file is not orderable just because a preview placeholder appears.</p><h2>Review demo, not physical fulfillment</h2><p>The prices here are illustrative and checkout is for test orders. Nothing is physically printed or shipped. The generated product illustrations are not evidence of a material or durability test.</p><p><a href='/products/ready-dtf-gang-sheets'>Try the automatic sheet uploader</a> or <a href='/products/measured-dtf-gang-sheets'>try measured pricing</a>.</p>"
+    },
+    {
+      "handle": "block-gallery",
+      "title": "Different views. One finished-sheet model.",
+      "templateSuffix": "ags-gallery",
+      "bodyHtml": "<p>The uploader is the product experience; the blocks below are catalog views linking to real demo products. They do not measure a file or arrange artwork.</p><p>Explore <a href='/products/ready-dtf-gang-sheets'>automatic variant selection</a>, <a href='/products/measured-dtf-gang-sheets'>measured Studio pricing</a>, <a href='/products/measured-dtf-png-sheets'>the PNG detail page</a>, <a href='/products/manual-dtf-gang-sheets'>manual sheet selection</a>, and <a href='/products/dtf-uv-upload-desk'>the DTF + UV desk</a>.</p><p>Each uploaded file remains a finished sheet. Quantity means copies. Demo catalog prices below refer to complete variant sheets; per-inch products are kept out of these generic catalog cards so the units cannot be confused.</p>"
+    },
+    {
+      "handle": "contact",
+      "title": "Demo support",
+      "templateSuffix": "contact",
+      "bodyHtml": "<p>Contact info@actualscope.com for Auto Gang Sheet Upload demo support. Include the file format, measured size, product view, and sheet identity. Do not send payment-card information.</p><p>Test orders are not physically printed or shipped.</p>"
+    }
+  ]
+}

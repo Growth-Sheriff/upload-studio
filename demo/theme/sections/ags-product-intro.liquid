@@ -1,0 +1,13 @@
+<section class="ags-wrap ags-product-intro">
+  <nav class="ags-breadcrumbs" aria-label="Breadcrumb"><a href="{{ routes.root_url }}">Home</a><span aria-hidden="true">/</span><a href="{{ routes.collections_url }}/ready-sheet-examples">Sheet examples</a><span aria-hidden="true">/</span><span>{{ product.title | escape }}</span></nav>
+  <div class="ags-product-intro-grid{% if section.settings.compact %} ags-product-intro-grid--compact{% endif %}">
+    {% unless section.settings.compact %}<div class="ags-product-visual">{% if product.featured_image %}{{ product.featured_image | image_url: width: 900 | image_tag: widths: '320,480,700,900', sizes: '(min-width: 900px) 34vw, 90vw', loading: 'eager', alt: product.title }}{% else %}{% render 'ags-film-art', kind: 'product' %}{% endif %}</div>{% endunless %}
+    <div><span class="ags-kicker">{{ section.settings.eyebrow | escape }}</span>{% unless section.settings.compact %}<h1>{{ product.title | escape }}</h1>{% else %}<h1 class="ags-product-compact-title">{{ section.settings.compact_title | escape }}</h1>{% endunless %}<p class="ags-product-copy">{{ section.settings.intro | escape }}</p>
+      <dl class="ags-product-limits"><div><dt>Printable width</dt><dd>Up to 22.5 in</dd></div><div><dt>{{ section.settings.length_label | escape }}</dt><dd>{{ section.settings.length_value | escape }}</dd></div><div><dt>Quantity</dt><dd>Whole-sheet copies</dd></div></dl>
+      <p class="ags-product-note">Review demo · Illustrative prices · Test checkout only · No physical fulfillment.</p>
+    </div>
+  </div>
+</section>
+{% schema %}
+{"name":"Sheet introduction","settings":[{"type":"text","id":"eyebrow","label":"Eyebrow","default":"YOUR FILE IS THE SHEET"},{"type":"text","id":"intro","label":"Pricing explanation","default":"Upload your finished production file. Review the server-confirmed size and selected sheet before checkout."},{"type":"text","id":"length_label","label":"Length label","default":"Listed sheet lengths"},{"type":"text","id":"length_value","label":"Length explanation","default":"12–240 in"},{"type":"checkbox","id":"compact","label":"Compact introduction for a full-page app block","default":false},{"type":"text","id":"compact_title","label":"Compact title","default":"Measured sheet. Clear quote."}],"presets":[{"name":"Sheet introduction"}]}
+{% endschema %}

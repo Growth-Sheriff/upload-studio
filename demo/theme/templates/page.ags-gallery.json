@@ -1,0 +1,8 @@
+{
+  "sections": {
+    "intro": { "type": "ags-main-page", "settings": {} },
+    "showcase": { "type": "apps", "blocks": {}, "block_order": [], "settings": { "full_width": false } },
+    "carousel": { "type": "apps", "blocks": {}, "block_order": [], "settings": { "full_width": false } }
+  },
+  "order": ["intro", "showcase", "carousel"]
+}

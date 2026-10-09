@@ -1,0 +1,154 @@
+{
+  "name": "Auto Gang Sheet Upload review storefront",
+  "scope": "demo shop only; never import into an existing merchant shop",
+  "requiresVerifiedShopIdentity": true,
+  "currency": "USD",
+  "vendor": "Auto Gang Sheet Upload · Demo",
+  "physicalProductDefaults": { "requiresShipping": true, "taxable": true, "inventoryTracked": false, "demoFulfillmentOnly": true },
+  "demoNotice": "Review demo — illustrative prices, test orders only, no physical fulfillment.",
+  "collection": {
+    "handle": "ready-sheet-examples",
+    "title": "Ready-sheet examples",
+    "productHandles": ["ready-dtf-gang-sheets", "manual-dtf-gang-sheets", "dtf-uv-upload-desk", "uv-gang-sheets"]
+  },
+  "products": [
+    {
+      "handle": "ready-dtf-gang-sheets",
+      "title": "Ready DTF Gang Sheets",
+      "templateSuffix": "ags-variant",
+      "block": "main-product-upload-app",
+      "imageAsset": "variant-ready-sheet.jpg",
+      "imageAlt": "AI-generated demo illustration of a finished DTF gang sheet on film",
+      "kind": "DTF finished gang sheet",
+      "cardLabel": "Automatic sheet selection",
+      "descriptionHtml": "<p>Your file is your finished sheet. Upload an already-arranged gang sheet, review its measured size, then choose how many complete copies to print.</p><p>This example selects the smallest listed length that covers your file. Maximum printable width is 22.5 inches. The 22-inch variant name is not the press limit.</p><p><strong>Review demo:</strong> prices are illustrative. Test orders are not physically printed or shipped.</p>",
+      "optionName": "Sheet size",
+      "variants": [
+        { "title": "22 x 12", "price": "6.00", "sku": "DEMO-DTF-12" },
+        { "title": "22 x 24", "price": "12.00", "sku": "DEMO-DTF-24" },
+        { "title": "22 x 36", "price": "18.00", "sku": "DEMO-DTF-36" },
+        { "title": "22 x 60", "price": "30.00", "sku": "DEMO-DTF-60" },
+        { "title": "22 x 80", "price": "40.00", "sku": "DEMO-DTF-80" },
+        { "title": "22 x 120", "price": "60.00", "sku": "DEMO-DTF-120" },
+        { "title": "22 x 240", "price": "120.00", "sku": "DEMO-DTF-240" }
+      ],
+      "appConfig": {
+        "mode": "dtf", "enabled": true, "uploadEnabled": true, "tshirtEnabled": false,
+        "builderConfig": { "publicPricingMode": "variant", "maxPrintableWidthIn": 22.5, "maxPrintableLengthIn": 240, "fitToleranceIn": 0.02, "sheetOptionName": "Sheet size" }
+      }
+    },
+    {
+      "handle": "measured-dtf-gang-sheets",
+      "title": "Measured DTF Sheets · Studio",
+      "templateSuffix": "ags-measured",
+      "block": "main-product-upload-pro",
+      "imageAsset": "measured-length-sheet.jpg",
+      "imageAlt": "AI-generated demo illustration of a long finished DTF gang sheet",
+      "kind": "DTF finished gang sheet",
+      "cardLabel": "$0.30 per measured inch",
+      "descriptionHtml": "<p>Upload a finished DTF gang sheet and pay by its billable length at the demo rate of $0.30 per inch. Nothing is nested, combined, or rearranged.</p><p>Maximum printable width: 22.5 inches. Maximum billable length: 240 inches. Quantity is the number of complete copies of the same file.</p><p>The final quote appears after upload. This Studio presentation supports the file types shown by the uploader.</p><p><strong>Review demo:</strong> illustrative prices, test orders only, no physical fulfillment.</p>",
+      "defaultVariantPrice": "0.30",
+      "defaultVariantPriceMeaning": "Catalog reference for the per-inch rate only; not the final sheet price. Server-priced custom checkout is required.",
+      "sku": "DEMO-DTF-MEASURED-STUDIO",
+      "appConfig": {
+        "mode": "dtf", "enabled": true, "uploadEnabled": true, "tshirtEnabled": false,
+        "builderConfig": { "publicPricingMode": "measured_length", "pricePerInch": 0.3, "maxPrintableWidthIn": 22.5, "maxPrintableLengthIn": 240, "fitToleranceIn": 0.02 }
+      }
+    },
+    {
+      "handle": "measured-dtf-png-sheets",
+      "title": "Measured DTF Sheets · PNG Detail",
+      "templateSuffix": "ags-mod2",
+      "block": "custom-price-upload-mod2",
+      "imageAsset": "measured-length-sheet.jpg",
+      "imageAlt": "AI-generated demo illustration of a finished DTF sheet for measured pricing",
+      "kind": "DTF finished gang sheet",
+      "cardLabel": "$0.30 per measured inch · PNG",
+      "descriptionHtml": "<p>The same finished-sheet service in a detailed product-page presentation. Upload a ready PNG gang sheet, review the measured quote and ruler preview, then choose the number of complete copies.</p><p>Demo rate: $0.30 per billable inch. Maximum printable width: 22.5 inches. Maximum billable length: 240 inches. Your artwork is not rearranged.</p><p>The final sheet total appears after upload; the catalog reference is the per-inch rate.</p><p><strong>Review demo:</strong> illustrative prices, test orders only, no physical fulfillment.</p>",
+      "defaultVariantPrice": "0.30",
+      "defaultVariantPriceMeaning": "Per-inch catalog reference only; never a full-sheet quote.",
+      "sku": "DEMO-DTF-MEASURED-PNG",
+      "appConfig": {
+        "mode": "dtf", "enabled": true, "uploadEnabled": true, "tshirtEnabled": false,
+        "builderConfig": { "publicPricingMode": "measured_length", "pricePerInch": 0.3, "maxPrintableWidthIn": 22.5, "maxPrintableLengthIn": 240, "fitToleranceIn": 0.02 }
+      }
+    },
+    {
+      "handle": "manual-dtf-gang-sheets",
+      "title": "DTF Sheets · Pick Your Size",
+      "templateSuffix": "ags-manual",
+      "block": "dtf-transfer",
+      "imageAsset": "manual-sheet-detail.jpg",
+      "imageAlt": "AI-generated demo illustration showing the edge of a ready DTF sheet",
+      "kind": "DTF finished gang sheet",
+      "cardLabel": "You select the sheet variant",
+      "descriptionHtml": "<p>Already know which sheet you want? Upload your finished production file and select a listed sheet size yourself. The server checks that the file fits that exact choice before it can enter the cart.</p><p>Maximum printable width is 22.5 inches. Quantity means complete copies of your uploaded sheet, not individual logos.</p><p>This is a manual-choice uploader example, not a design builder. The optional garment designer is not enabled.</p><p><strong>Review demo:</strong> illustrative prices, test orders only, no physical fulfillment.</p>",
+      "optionName": "Sheet size",
+      "variants": [
+        { "title": "22 x 12", "price": "6.00", "sku": "DEMO-MANUAL-12" },
+        { "title": "22 x 24", "price": "12.00", "sku": "DEMO-MANUAL-24" },
+        { "title": "22 x 36", "price": "18.00", "sku": "DEMO-MANUAL-36" },
+        { "title": "22 x 60", "price": "30.00", "sku": "DEMO-MANUAL-60" },
+        { "title": "22 x 80", "price": "40.00", "sku": "DEMO-MANUAL-80" },
+        { "title": "22 x 120", "price": "60.00", "sku": "DEMO-MANUAL-120" },
+        { "title": "22 x 240", "price": "120.00", "sku": "DEMO-MANUAL-240" }
+      ],
+      "appConfig": {
+        "mode": "dtf", "enabled": true, "uploadEnabled": true, "tshirtEnabled": false,
+        "builderConfig": { "publicPricingMode": "variant", "maxPrintableWidthIn": 22.5, "maxPrintableLengthIn": 240, "fitToleranceIn": 0.02, "sheetOptionName": "Sheet size" }
+      }
+    },
+    {
+      "handle": "dtf-uv-upload-desk",
+      "title": "DTF Sheets · DTF + UV Desk",
+      "templateSuffix": "ags-dual",
+      "block": "dtf-uv-gang-sheet-upload",
+      "imageAsset": "variant-ready-sheet.jpg",
+      "imageAlt": "AI-generated demo illustration of the finished DTF sheet product",
+      "kind": "DTF finished gang sheet",
+      "cardLabel": "DTF + UV, one upload desk",
+      "descriptionHtml": "<p>Upload finished sheets for two different products from one desk. Choose DTF for the DTF sheet product, or UV for the separate UV transfer sheet product. Each file keeps its selected product and price.</p><p>DTF and UV uploads are not combined on one sheet. Quantity means complete copies. Review each measured size and selected sheet before checkout.</p><p><strong>Review demo:</strong> the products and rates demonstrate the app; no test order is physically fulfilled.</p>",
+      "optionName": "Sheet size",
+      "variants": [
+        { "title": "22 x 12", "price": "6.00", "sku": "DEMO-DUAL-DTF-12" },
+        { "title": "22 x 24", "price": "12.00", "sku": "DEMO-DUAL-DTF-24" },
+        { "title": "22 x 36", "price": "18.00", "sku": "DEMO-DUAL-DTF-36" },
+        { "title": "22 x 60", "price": "30.00", "sku": "DEMO-DUAL-DTF-60" },
+        { "title": "22 x 80", "price": "40.00", "sku": "DEMO-DUAL-DTF-80" },
+        { "title": "22 x 120", "price": "60.00", "sku": "DEMO-DUAL-DTF-120" },
+        { "title": "22 x 240", "price": "120.00", "sku": "DEMO-DUAL-DTF-240" }
+      ],
+      "appConfig": {
+        "mode": "dtf", "enabled": true, "uploadEnabled": true, "tshirtEnabled": false,
+        "builderConfig": { "publicPricingMode": "variant", "maxPrintableWidthIn": 22.5, "maxPrintableLengthIn": 240, "fitToleranceIn": 0.02, "sheetOptionName": "Sheet size" }
+      },
+      "blockSettings": { "dtf_handle": "dtf-uv-upload-desk", "dtf_label": "DTF sheets", "uv_handle": "uv-gang-sheets", "uv_label": "UV transfer sheets", "heading": "Upload finished DTF + UV sheets", "enable_checkout_button": true }
+    },
+    {
+      "handle": "uv-gang-sheets",
+      "title": "UV Transfer Gang Sheets",
+      "templateSuffix": "ags-dual",
+      "block": "dtf-uv-gang-sheet-upload",
+      "imageAsset": "uv-transfer-film.jpg",
+      "imageAlt": "AI-generated demo illustration of glossy UV transfer film, not a physical sample test",
+      "kind": "UV finished transfer sheet",
+      "cardLabel": "Separate UV product and price",
+      "descriptionHtml": "<p>Upload a finished UV transfer sheet through the UV tab. The uploaded file remains a complete sheet and is priced against the UV product's own listed variants.</p><p>This demo explicitly configures a 22.5-inch printable limit; real merchants must enter their own press limit. No substrate-compatibility or durability claim is made by this demo.</p><p><strong>Review demo:</strong> illustrative prices, test orders only, no physical fulfillment.</p>",
+      "optionName": "Sheet size",
+      "variants": [
+        { "title": "22 x 12", "price": "7.80", "sku": "DEMO-UV-12" },
+        { "title": "22 x 24", "price": "15.60", "sku": "DEMO-UV-24" },
+        { "title": "22 x 36", "price": "23.40", "sku": "DEMO-UV-36" },
+        { "title": "22 x 60", "price": "39.00", "sku": "DEMO-UV-60" },
+        { "title": "22 x 80", "price": "52.00", "sku": "DEMO-UV-80" },
+        { "title": "22 x 120", "price": "78.00", "sku": "DEMO-UV-120" },
+        { "title": "22 x 240", "price": "156.00", "sku": "DEMO-UV-240" }
+      ],
+      "appConfig": {
+        "mode": "dtf", "enabled": true, "uploadEnabled": true, "tshirtEnabled": false,
+        "builderConfig": { "publicPricingMode": "variant", "maxPrintableWidthIn": 22.5, "maxPrintableLengthIn": 240, "fitToleranceIn": 0.02, "sheetOptionName": "Sheet size" }
+      },
+      "blockSettings": { "dtf_handle": "dtf-uv-upload-desk", "dtf_label": "DTF sheets", "uv_handle": "uv-gang-sheets", "uv_label": "UV transfer sheets", "heading": "Upload finished DTF + UV sheets", "enable_checkout_button": true }
+    }
+  ]
+}

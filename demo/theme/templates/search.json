@@ -1,0 +1,1 @@
+{ "sections": { "search": { "type": "ags-main-search", "settings": {} } }, "order": ["search"] }

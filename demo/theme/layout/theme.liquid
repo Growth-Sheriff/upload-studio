@@ -1,0 +1,25 @@
+<!doctype html>
+<html class="no-js" lang="{{ request.locale.iso_code }}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="theme-color" content="{{ settings.color_primary | default: '#1b625b' }}">
+    <link rel="canonical" href="{{ canonical_url }}">
+    <title>{{ page_title | escape }}{% unless page_title contains shop.name %} · {{ shop.name | escape }}{% endunless %}</title>
+    {% if page_description %}<meta name="description" content="{{ page_description | escape }}">{% endif %}
+    {{ content_for_header }}
+    {{ 'ags-demo.css' | asset_url | stylesheet_tag }}
+    <style>
+      {{ settings.font_body | font_face: font_display: 'swap' }}
+      {{ settings.font_heading | font_face: font_display: 'swap' }}
+      :root{--ags-body:{{ settings.font_body.family | default: 'Arial' }},sans-serif;--ags-heading:{{ settings.font_heading.family | default: 'Arial' }},sans-serif;--ags-accent:{{ settings.color_primary | default: '#1b625b' }};--ags-ink:{{ settings.color_secondary | default: '#172420' }};--ags-paper:{{ settings.color_background | default: '#faf8f3' }}}
+    </style>
+  </head>
+  <body class="ags-demo-shop template-{{ request.page_type | handle }}">
+    <a class="ags-skip-link" href="#MainContent">Skip to content</a>
+    {% section 'ags-header' %}
+    <main id="MainContent" tabindex="-1">{{ content_for_layout }}</main>
+    {% section 'ags-footer' %}
+    <script>document.documentElement.classList.remove('no-js');</script>
+  </body>
+</html>

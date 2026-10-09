@@ -1,0 +1,8 @@
+{
+  "sections": {
+    "intro": { "type": "ags-product-intro", "settings": {} },
+    "uploader": { "type": "apps", "blocks": {}, "block_order": [], "settings": { "full_width": true } },
+    "faq": { "type": "ags-faq", "settings": {} }
+  },
+  "order": ["intro", "uploader", "faq"]
+}

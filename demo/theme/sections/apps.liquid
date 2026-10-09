@@ -1,0 +1,5 @@
+<section class="ags-app-section ags-wrap{% if section.settings.full_width %} ags-app-section--wide{% endif %}">
+  {% for block in section.blocks %}{% render block %}{% endfor %}
+  {% if section.blocks.size == 0 and request.design_mode %}<div class="ags-editor-notice"><strong>Add the matching Auto Gang Sheet Upload app block.</strong><p>This section deliberately has no invented app-extension ID. Use the installed public app block, then save this demo template.</p></div>{% endif %}
+</section>
+{% schema %}{"name":"Apps","settings":[{"type":"checkbox","id":"full_width","label":"Wide uploader area","default":true}],"blocks":[{"type":"@app"}],"presets":[{"name":"Apps"}]}{% endschema %}

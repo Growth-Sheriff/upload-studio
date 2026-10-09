@@ -1,0 +1,4 @@
+{
+  "general": { "accessibility": { "skip_to_content": "Skip to content" } },
+  "cart": { "title": "Your cart", "copies": "Copies", "checkout": "Test checkout" }
+}

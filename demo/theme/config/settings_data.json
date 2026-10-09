@@ -1,0 +1,20 @@
+{
+  "current": {
+    "color_primary": "#1b625b",
+    "color_secondary": "#172420",
+    "color_background": "#faf8f3",
+    "color_text": "#26342e",
+    "color_link": "#1b625b",
+    "color_price": "#172420",
+    "color_success": "#28684c",
+    "color_error": "#aa302f",
+    "color_warning": "#8e5b12",
+    "color_border": "#d9ded7",
+    "font_body": "assistant_n4",
+    "font_heading": "assistant_n7",
+    "font_size_base": 16,
+    "border_radius": 16,
+    "blocks": {}
+  },
+  "presets": {}
+}

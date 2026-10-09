@@ -1,0 +1,20 @@
+<section class="ags-hero ags-wrap">
+  <div class="ags-hero-copy">
+    <span class="ags-kicker"><span class="ags-small-dot" aria-hidden="true"></span> MADE FOR READY-TO-PRINT FILES</span>
+    <h1>Your sheet.<br>Exactly as<br><em>you made it.</em></h1>
+    <p class="ags-lead">Upload a finished gang sheet. See its size and price. Choose how many complete copies you need.</p>
+    <div class="ags-hero-actions"><a class="ags-button" href="/products/ready-dtf-gang-sheets">Upload your sheet <span aria-hidden="true">↗</span></a><a class="ags-text-link" href="/products/measured-dtf-gang-sheets">Explore measured pricing <span aria-hidden="true">→</span></a></div>
+    <p class="ags-hero-caption">You arrange the artwork. The app measures and prices the finished file.</p>
+  </div>
+  <div class="ags-hero-visual">
+    {% if section.settings.use_generated_assets %}
+      <img class="ags-hero-image" src="{{ 'hero-ready-film.jpg' | asset_url }}" alt="AI-generated demo illustration of an already-arranged gang sheet on film" width="1376" height="768" fetchpriority="high" loading="eager">
+    {% else %}
+      {% render 'ags-film-art', kind: 'hero' %}
+    {% endif %}
+    <div class="ags-hero-label"><span class="ags-small-dot" aria-hidden="true"></span><span>ONE FILE. ONE FINISHED SHEET.</span></div>
+    <div class="ags-hero-card"><span class="ags-kicker">A CLEARER CHECKOUT</span><strong>Size. Sheet. Price.</strong><span>Review the facts before you order.</span></div>
+  </div>
+</section>
+<div class="ags-proof-line ags-wrap"><span>Finished-sheet uploads</span><span>Server-confirmed price</span><span>Quantity means copies</span><span>No layout service</span></div>
+{% schema %}{"name":"Ready-sheet hero","settings":[{"type":"checkbox","id":"use_generated_assets","label":"Use prepared demo illustration","default":true,"info":"Uses hero-ready-film.jpg packaged with this isolated demo theme."}],"presets":[{"name":"Ready-sheet hero"}]}{% endschema %}

@@ -1,0 +1,8 @@
+{
+  "sections": {
+    "intro": { "type": "ags-product-intro", "settings": { "eyebrow": "MANUAL VARIANT · YOU PICK THE SHEET", "intro": "Upload your finished file and select a sheet size yourself. The server checks that the file fits your exact choice before adding it to the cart. No artwork layout or garment designer is enabled.", "length_label": "Choose a listed sheet", "length_value": "12–240 in" } },
+    "uploader": { "type": "apps", "blocks": {}, "block_order": [], "settings": { "full_width": true } },
+    "faq": { "type": "ags-faq", "settings": {} }
+  },
+  "order": ["intro", "uploader", "faq"]
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Colors",
+    "settings": [
+      { "type": "color", "id": "color_primary", "label": "Primary / buttons", "default": "#1b625b" },
+      { "type": "color", "id": "color_secondary", "label": "Heading / ink", "default": "#172420" },
+      { "type": "color", "id": "color_background", "label": "Warm background", "default": "#faf8f3" },
+      { "type": "color", "id": "color_text", "label": "Body text", "default": "#26342e" },
+      { "type": "color", "id": "color_link", "label": "Links", "default": "#1b625b" },
+      { "type": "color", "id": "color_price", "label": "Prices", "default": "#172420" },
+      { "type": "color", "id": "color_success", "label": "Success", "default": "#28684c" },
+      { "type": "color", "id": "color_error", "label": "Errors", "default": "#aa302f" },
+      { "type": "color", "id": "color_warning", "label": "Warnings", "default": "#8e5b12" },
+      { "type": "color", "id": "color_border", "label": "Borders", "default": "#d9ded7" }
+    ]
+  },
+  {
+    "name": "Typography",
+    "settings": [
+      { "type": "font_picker", "id": "font_body", "label": "Body font", "default": "assistant_n4" },
+      { "type": "font_picker", "id": "font_heading", "label": "Heading font", "default": "assistant_n7" },
+      { "type": "range", "id": "font_size_base", "label": "Body size", "min": 14, "max": 20, "step": 1, "unit": "px", "default": 16 },
+      { "type": "range", "id": "border_radius", "label": "Corner radius", "min": 0, "max": 24, "step": 1, "unit": "px", "default": 16 }
+    ]
+  }
+]

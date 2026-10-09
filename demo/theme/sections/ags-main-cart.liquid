@@ -1,0 +1,29 @@
+<section class="ags-wrap ags-cart">
+  <span class="ags-kicker">COMPLETE SHEETS, COMPLETE COPIES</span><h1>Your cart.</h1>
+  {% if cart.item_count > 0 %}
+    <form action="{{ routes.cart_url }}" method="post" id="cart" class="ags-cart-form">
+      <div class="ags-cart-items">
+        {% for item in cart.items %}
+          <article class="ags-cart-item cart-item" id="CartItem-{{ forloop.index }}" data-key="{{ item.key | escape }}">
+            <div class="ags-cart-item-image">{% if item.image %}{{ item.image | image_url: width: 200 | image_tag: loading: 'lazy', alt: item.product.title }}{% endif %}</div>
+            <div class="ags-cart-item-copy"><a class="ags-cart-item-title" href="{{ item.url }}">{{ item.product.title | escape }}</a>{% unless item.product.has_only_default_variant %}<p>{{ item.variant.title | escape }}</p>{% endunless %}
+              <dl class="ags-cart-properties">
+                {% for property in item.properties %}{% assign first_character = property.first | slice: 0 %}{% unless property.last == blank or first_character == '_' %}
+                  <div><dt>{{ property.first | escape }}</dt><dd>{% assign https_prefix = property.last | slice: 0, 8 %}{% assign app_prefix = property.last | slice: 0, 6 %}{% if https_prefix == 'https://' or app_prefix == '/apps/' %}<a href="{{ property.last | escape }}" target="_blank" rel="noopener">{% if property.first == 'Print Ready' %}Production file{% elsif property.first == 'Sheet Identity' %}Sheet identity{% else %}Open file{% endif %}</a>{% else %}{{ property.last | escape }}{% endif %}</dd></div>
+                {% endunless %}{% endfor %}
+              </dl>
+              <a class="ags-cart-remove" href="{{ item.url_to_remove }}">Remove</a>
+            </div>
+            <div class="ags-cart-item-quantity"><label for="Quantity-{{ forloop.index }}">Copies</label><input id="Quantity-{{ forloop.index }}" type="number" name="updates[]" value="{{ item.quantity }}" min="0" inputmode="numeric" aria-label="Copies of {{ item.product.title | escape }}"></div>
+            <div class="ags-cart-item-price"><strong>{{ item.final_line_price | money }}</strong><span>{{ item.final_price | money }} per copy</span></div>
+          </article>
+        {% endfor %}
+        <button class="ags-text-link ags-cart-update" type="submit" name="update">Update copies <span aria-hidden="true">↻</span></button>
+      </div>
+      <aside class="ags-cart-summary"><span class="ags-kicker">ORDER SUMMARY</span><div class="ags-cart-subtotal"><span>Subtotal</span><strong>{{ cart.total_price | money }}</strong></div>{% if cart.cart_level_discount_applications.size > 0 %}{% for discount in cart.cart_level_discount_applications %}<p>{{ discount.title | escape }}: −{{ discount.total_allocated_amount | money }}</p>{% endfor %}{% endif %}<p>Taxes and shipping, if any, are calculated by Shopify at checkout.</p><button class="ags-button" type="submit" name="checkout">Test checkout <span aria-hidden="true">↗</span></button><p class="ags-cart-demo">Review demo only.<br>No physical printing or shipping.</p><a href="/products/ready-dtf-gang-sheets">Upload another sheet</a></aside>
+    </form>
+  {% else %}
+    <div class="ags-empty"><h2>A ready sheet starts here.</h2><p>Your cart is empty. Upload a finished file and review the size and price first.</p><a class="ags-button" href="/products/ready-dtf-gang-sheets">Upload your sheet <span aria-hidden="true">↗</span></a></div>
+  {% endif %}
+</section>
+{% schema %}{"name":"Finished-sheet cart","settings":[]}{% endschema %}

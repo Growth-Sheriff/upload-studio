@@ -1,0 +1,1 @@
+{ "sections": { "cart": { "type": "ags-main-cart", "settings": {} } }, "order": ["cart"] }
