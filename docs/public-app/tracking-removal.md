@@ -69,6 +69,36 @@ still bills 80 inches. At a 10-inch limit the 22×6 file bills 22 inches. This i
 explicit approved public-branch correction, not an unnoticed price difference.
 No orientation chooser, embedded-DPI rule or deployed custom app is changed.
 
+## Direct file-write capabilities and retired external services
+
+Local/Bunny upload URLs use a short-lived v2 signature covering shop ID,
+provider, exact object key, byte size and expiry. Direct requests bind the signed
+tenant before any guarded query, verify the object's canonical prefix against
+the persisted shop domain, and refuse an erasing shop or a redacted/non-draft
+upload. A caller cannot select a different shop using URL/body parameters or
+change a token's shop ID. Public deployment starts fresh, so legacy unscoped
+upload tokens are deliberately not accepted.
+
+Repository-wide caller search found no storefront or admin caller for the old
+`api.remove-bg` endpoint. It accepted arbitrary image URLs and spent a global
+paid-provider credential without authentication. The orphan endpoint is removed
+from the public app; finished-sheet uploads are printed as supplied and do not
+require background removal.
+
+The orphan `api.mockup.generate`/`api.mockup.callback` routes are also removed.
+No shipped UI calls them. Their queue targeted a separately deployed legacy
+`us-mockup-worker` using a custom Redis namespace, not the public worker runtime;
+its callback supplied no authentication or persisted owner identity. We do not
+silently connect the new public app to that legacy service. The standalone legacy
+worker sources and client-side garment previews remain untouched. Reintroducing
+server garment compositing would require a public-owned queue, tenant-bound
+job authorization, authenticated callbacks and storage-retention coverage.
+
+Static scan of the freshly compiled `build/client` found no collector globals,
+tracking endpoint paths, `sendBeacon`, browser replay/tracing hooks or IP
+geolocation call. This is compiled-source evidence, not a claim of a live
+storefront Network-panel verification.
+
 ## Permitted search matches
 
 Reproduce with:

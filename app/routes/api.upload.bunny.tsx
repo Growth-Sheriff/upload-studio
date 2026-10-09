@@ -3,8 +3,8 @@ import prisma from '~/lib/prisma.server'
 import {
   getStorageConfig,
   proxyUploadToBunny,
-  validateUploadCapabilityToken,
 } from '~/lib/storage.server'
+import { authorizeUploadStorageCapability } from '~/lib/uploadStorageCapability.server'
 
 function capabilityCorsHeaders(request: Request): Headers {
   const headers = new Headers({
@@ -42,7 +42,7 @@ export async function action({ request }: ActionFunctionArgs) {
     !key ||
     !Number.isSafeInteger(expectedSize) ||
     expectedSize <= 0 ||
-    !validateUploadCapabilityToken('bunny', key, expectedSize, token)
+    !await authorizeUploadStorageCapability('bunny', key, expectedSize, token)
   ) {
     return capabilityJson({ error: 'Invalid or expired upload capability' }, request, 401)
   }
@@ -54,7 +54,7 @@ export async function action({ request }: ActionFunctionArgs) {
     where: {
       storageKey: `bunny:${key}`,
       fileSize: expectedSize,
-      upload: { status: 'draft' },
+      upload: { status: 'draft', privacyRedactedAt: null },
     },
     select: {
       mimeType: true,

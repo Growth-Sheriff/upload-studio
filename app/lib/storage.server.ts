@@ -2,7 +2,11 @@ import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
+  DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
+  ListObjectsV2Command,
+  ListMultipartUploadsCommand,
   ListPartsCommand,
   PutObjectCommand,
   S3Client,
@@ -15,6 +19,7 @@ import { mkdir, open, readFile, rename, unlink, writeFile } from 'fs/promises'
 import { dirname, join, resolve, sep } from 'path'
 import { Readable, Transform } from 'stream'
 import { pipeline } from 'stream/promises'
+import { enterTenantContext, requireTenantShopId } from './tenantContext.server'
 
 
 
@@ -293,11 +298,12 @@ export function validateLocalFileToken(key: string, token: string): boolean {
 }
 
 function uploadCapabilitySubject(
+  shopId: string,
   provider: StorageProvider,
   key: string,
   expectedSize: number
 ): string {
-  return `upload:${provider}:${expectedSize}:${key}`
+  return `upload:v2:${shopId}:${provider}:${expectedSize}:${key}`
 }
 
 export function generateUploadCapabilityToken(
@@ -306,7 +312,23 @@ export function generateUploadCapabilityToken(
   expectedSize: number,
   expiresAt: number
 ): string {
-  return generateLocalFileToken(uploadCapabilitySubject(provider, key, expectedSize), expiresAt)
+  const shopId = requireTenantShopId()
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(shopId)) throw new Error('Invalid upload capability shop identity')
+  return `v2.${shopId}.${generateLocalFileToken(uploadCapabilitySubject(shopId, provider, key, expectedSize), expiresAt)}`
+}
+
+function verifiedUploadCapabilityShop(
+  provider: StorageProvider,
+  key: string,
+  expectedSize: number,
+  token: string
+): string | null {
+  if (!token || token.length > 1024 || !Number.isSafeInteger(expectedSize) || expectedSize <= 0) return null
+  const [version, shopId, expiry, signature, extra] = token.split('.')
+  if (version !== 'v2' || !/^[A-Za-z0-9_-]{8,64}$/.test(shopId || '') ||
+      !/^\d{10,16}$/.test(expiry || '') || !/^[a-f0-9]{64}$/.test(signature || '') || extra) return null
+  return validateLocalFileToken(uploadCapabilitySubject(shopId, provider, key, expectedSize), `${expiry}.${signature}`)
+    ? shopId : null
 }
 
 export function validateUploadCapabilityToken(
@@ -315,7 +337,23 @@ export function validateUploadCapabilityToken(
   expectedSize: number,
   token: string
 ): boolean {
-  return validateLocalFileToken(uploadCapabilitySubject(provider, key, expectedSize), token)
+  return verifiedUploadCapabilityShop(provider, key, expectedSize, token) !== null
+}
+
+/** Direct storage uploads do not carry Shopify proxy authentication. Their
+ * short-lived capability binds the tenant before any guarded owner query. */
+export function bindUploadCapabilityToken(
+  provider: StorageProvider,
+  key: string,
+  expectedSize: number,
+  token: string
+): string | null {
+  const shopId = verifiedUploadCapabilityShop(provider, key, expectedSize, token)
+  if (!shopId) return null
+  try {
+    enterTenantContext(shopId)
+    return shopId
+  } catch { return null }
 }
 
 
@@ -414,6 +452,7 @@ async function getR2UploadUrl(
   const client = getR2Client()
 
   if (!client) {
+    if (process.env.NODE_ENV === 'production') throw new Error('Public R2 storage is not configured; no local fallback is permitted')
     console.warn('[Storage] R2 not configured, using local')
     return getLocalUploadUrl(config, key, contentLength)
   }
@@ -451,6 +490,7 @@ async function getR2UploadUrl(
     }
   } catch (error) {
     console.error('[Storage] R2 presigned URL error:', error)
+    if (process.env.NODE_ENV === 'production') throw error
     return getLocalUploadUrl(config, key, contentLength)
   }
 }
@@ -944,20 +984,28 @@ export async function deleteLocalFile(key: string): Promise<void> {
   try {
     await unlink(filePath)
   } catch (e) {
-    // File may not exist, ignore
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
   }
 }
 
 export async function deleteFile(config: StorageConfig, key: string): Promise<void> {
-  const effectiveProvider = getEffectiveStorageProvider(config)
+  const target = storedObjectProvider(config, key)
+  const effectiveProvider = target.provider
 
   switch (effectiveProvider) {
     case 'bunny':
       await deleteBunnyFile(config, key)
       break
+    case 'r2': {
+      const client = getR2Client(config)
+      const bucket = config.r2BucketName || R2_BUCKET_NAME
+      if (!client || !bucket) throw new Error('R2 deletion requires configured storage')
+      await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: target.key }), { abortSignal: AbortSignal.timeout(30_000) })
+      break
+    }
     case 'local':
     default:
-      await deleteLocalFile(key)
+      await deleteLocalFile(target.key)
   }
 }
 
@@ -971,11 +1019,45 @@ async function deleteBunnyFile(config: StorageConfig, key: string): Promise<void
       },
     })
     if (!response.ok) {
-      console.warn(`[Bunny] Failed to delete file: ${key}`)
+      if (response.status !== 404) throw new Error(`Bunny deletion failed (${response.status})`)
     }
   } catch (e) {
-    console.error('[Bunny] Delete error:', e)
+    throw e
   }
+}
+
+/** Prefix deletion includes derived/orphaned objects, not just rows that still
+ * exist. The public deployment requires its own bucket and credentials. */
+export async function deleteShopStorageObjects(config: StorageConfig, shopDomain: string): Promise<number> {
+  if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shopDomain)) throw new Error('Invalid storage owner')
+  if (config.provider !== 'r2') throw new Error('Public shop erasure requires R2 storage')
+  const client = getR2Client(config)
+  const bucket = config.r2BucketName || R2_BUCKET_NAME
+  if (!client || !bucket) throw new Error('R2 erasure storage unavailable')
+  const prefix = `${shopDomain.replace(/[^a-zA-Z0-9-]/g, '_')}/`
+  let count = 0
+  let continuation: string | undefined
+  do {
+    const page = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: continuation }), { abortSignal: AbortSignal.timeout(30_000) })
+    const keys = (page.Contents || []).map(object => object.Key).filter((key): key is string => Boolean(key?.startsWith(prefix)))
+    if (keys.length) {
+      const result = await client.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys.map(Key => ({ Key })), Quiet: true } }), { abortSignal: AbortSignal.timeout(30_000) })
+      if (result.Errors?.length) throw new Error('R2 reported incomplete shop erasure')
+      count += keys.length
+    }
+    continuation = page.IsTruncated ? page.NextContinuationToken : undefined
+  } while (continuation)
+  let keyMarker: string | undefined
+  let uploadIdMarker: string | undefined
+  do {
+    const page = await client.send(new ListMultipartUploadsCommand({ Bucket: bucket, Prefix: prefix, KeyMarker: keyMarker, UploadIdMarker: uploadIdMarker }), { abortSignal: AbortSignal.timeout(30_000) })
+    for (const upload of page.Uploads || []) if (upload.Key?.startsWith(prefix) && upload.UploadId) {
+      await client.send(new AbortMultipartUploadCommand({ Bucket: bucket, Key: upload.Key, UploadId: upload.UploadId }), { abortSignal: AbortSignal.timeout(30_000) })
+    }
+    keyMarker = page.IsTruncated ? page.NextKeyMarker : undefined
+    uploadIdMarker = page.IsTruncated ? page.NextUploadIdMarker : undefined
+  } while (keyMarker)
+  return count
 }
 
 
