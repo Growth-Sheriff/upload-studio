@@ -149,17 +149,49 @@ async function redactCustomerSettings(shopId: string, payload: any) {
   }
 }
 
-async function processRequest(row: { shopDomain: string; topic: string; payload: any; createdAt: Date }, assertLease: AssertLease) {
+/** Reinstallation and erasure compete on the same Shop row. A stale worker
+ * may not overwrite a reinstall that already cleared the original uninstall;
+ * once erasure wins, its marker is immutable and every retry continues it. */
+export async function claimShopErasureStart(snapshot: { id: string; uninstalledAt: Date | null; erasureStartedAt: Date | null }, originalUninstalledAt?: string | null, lease?: { id: string; token: string }): Promise<{ startedAt: Date | null; reason?: 'reinstalled' | 'superseded_uninstall' | 'no_stored_shop' }> {
+  if (!snapshot.erasureStartedAt && originalUninstalledAt && snapshot.uninstalledAt?.toISOString() !== originalUninstalledAt) return { startedAt: null, reason: snapshot.uninstalledAt ? 'superseded_uninstall' : 'reinstalled' }
+  return prisma.$transaction(async tx => {
+    let startedAt = snapshot.erasureStartedAt
+    if (!startedAt) {
+      startedAt = new Date()
+      const claimed = await tx.shop.updateMany({
+        where: { id: snapshot.id, uninstalledAt: snapshot.uninstalledAt, erasureStartedAt: null },
+        data: { billingStatus: 'erasing', accessToken: '', erasureStartedAt: startedAt },
+      })
+      if (!claimed.count) {
+        const current = await tx.shop.findUnique({ where: { id: snapshot.id }, select: { uninstalledAt: true, erasureStartedAt: true } })
+        if (!current) return { startedAt: null, reason: 'no_stored_shop' as const }
+        if (!current.erasureStartedAt) return { startedAt: null, reason: current.uninstalledAt ? 'superseded_uninstall' as const : 'reinstalled' as const }
+        startedAt = current.erasureStartedAt
+      }
+    }
+    if (lease) {
+      // Same lock order as installation: Shop first, then inbox. If reinstall
+      // revoked an already-claimed request, this transaction rolls back its
+      // marker instead of letting the old worker begin irreversible erasure.
+      const owned = await tx.complianceRequest.updateMany({ where: { id: lease.id, status: 'processing', leaseToken: lease.token, leaseUntil: { gt: new Date() } }, data: { leaseUntil: new Date(Date.now() + 120_000) } })
+      if (!owned.count) throw new Error('Compliance lease lost before erasure start')
+    }
+    return { startedAt }
+  })
+}
+
+async function processRequest(row: { shopDomain: string; topic: string; payload: any; createdAt: Date }, assertLease: AssertLease, lease: { id: string; token: string }) {
   const shop = await prisma.shop.findUnique({ where: { shopDomain: row.shopDomain } })
   if (!shop) return { noStoredShop: true }
   return withTenantContext(shop.id, async () => {
     await assertLease()
-    if (row.topic === 'uninstall/erase' && !shop.uninstalledAt) return { reinstalled: true }
+    if (row.topic === 'uninstall/erase' && !shop.uninstalledAt && !shop.erasureStartedAt) return { reinstalled: true }
     if (row.topic === 'shop/redact' || row.topic === 'uninstall/erase') {
       // Prevent new processing before deleting objects. Delete the database
       // only after object deletion succeeds, so errors remain retryable.
-      const startedAt = shop.erasureStartedAt || new Date()
-      await prisma.shop.update({ where: { id: shop.id }, data: { billingStatus: 'erasing', accessToken: '', erasureStartedAt: startedAt } })
+      const claim = await claimShopErasureStart(shop, row.topic === 'uninstall/erase' ? row.payload?.uninstalledAt : undefined, lease)
+      if (!claim.startedAt) return { skipped: claim.reason }
+      const startedAt = claim.startedAt
       await prisma.session.deleteMany({ where: { shop: shop.shopDomain } })
       // Previously issued direct PUT/multipart URLs live for one hour. A
       // completed erasure must not be followed by a late upload of an orphan.
@@ -226,7 +258,7 @@ export async function runComplianceBatch() {
       const assertLease = async () => {
         if (!await prisma.complianceRequest.findFirst({ where: { id: row.id, status: 'processing', leaseToken: token, leaseUntil: { gt: new Date() } }, select: { id: true } })) throw new Error('Compliance lease lost')
       }
-      const result = await processRequest(row, assertLease)
+      const result = await processRequest(row, assertLease, { id: row.id, token })
       await prisma.complianceRequest.updateMany({ where: { id: row.id, leaseToken: token }, data: { status: 'completed', completedAt: new Date(), payload: Prisma.DbNull, result: result as any, lastError: null, leaseToken: null, leaseUntil: null } })
     } catch (error) {
       await prisma.complianceRequest.updateMany({ where: { id: row.id, leaseToken: token }, data: { status: 'pending', dueAt: error instanceof ErasureWaiting ? error.dueAt : new Date(Date.now() + Math.min(3_600_000, 30_000 * 2 ** Math.min(row.attempts, 7))), lastError: error instanceof Error ? error.message : 'Processing failed', leaseToken: null, leaseUntil: null } })
@@ -238,7 +270,7 @@ export async function runComplianceBatch() {
 export async function runRetentionBatch() {
   let cursor: string | undefined
   for (;;) {
-    const shops = await prisma.shop.findMany({ where: { uninstalledAt: null, billingStatus: { not: 'erasing' } }, select: { id: true, shopDomain: true, storageProvider: true, storageConfig: true }, orderBy: { id: 'asc' }, take: 100, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}) })
+    const shops = await prisma.shop.findMany({ where: { uninstalledAt: null, erasureStartedAt: null, billingStatus: { not: 'erasing' } }, select: { id: true, shopDomain: true, storageProvider: true, storageConfig: true }, orderBy: { id: 'asc' }, take: 100, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}) })
     if (!shops.length) break
     for (const shop of shops) await withTenantContext(shop.id, async () => {
     const expiredWhere = { shopId: shop.id, OR: [{ orderId: null, createdAt: { lt: new Date(Date.now() - 7 * 86400000) } }, { orderId: { not: null }, createdAt: { lt: new Date(Date.now() - 90 * 86400000) } }] }

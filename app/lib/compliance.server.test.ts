@@ -92,7 +92,7 @@ describe('privacy payload authentication and minimization', () => {
   })
 })
 
-describeDb('real HMAC requests and disposable database erasure', () => {
+describeDb('real HMAC requests and disposable database erasure', { timeout: 15000 }, () => {
   it('rejects invalid HMAC, deduplicates, exports finance and actually erases customer files/rows on retry', async () => {
     const { shop, upload, key, archiveKey } = await fixture()
     const data = { customer: { id: 7, email: 'never-persist@example.com', phone: 'never-persist' }, orders_requested: [101] }
@@ -148,7 +148,7 @@ describeDb('real HMAC requests and disposable database erasure', () => {
 
   it('does not cascade shop rows until object sweep succeeds, then deletes the entire shop', async () => {
     const { shop, key } = await fixture()
-    await prisma.shop.update({ where: { id: shop.id }, data: { erasureStartedAt: past() } })
+    await prisma.shop.update({ where: { id: shop.id }, data: { erasureStartedAt: past(), billingStatus: 'erasing' } })
     await compliance.receiveComplianceRequest(request('shop/redact', shop.shopDomain, 'shop-erase'))
     storage.deleteShopStorageObjects.mockRejectedValueOnce(new Error('simulated sweep failure'))
     await compliance.runComplianceBatch()
@@ -191,5 +191,35 @@ describeDb('real HMAC requests and disposable database erasure', () => {
     await expect(readFile(join(directory, key))).rejects.toThrow()
     await expect(readFile(join(directory, archiveKey))).rejects.toThrow()
     expect(await withTenantContext(shop.id, () => prisma.upload.count({ where: { id: upload.id } }))).toBe(0)
+  })
+
+  it('a stale uninstall cannot erase a winning reinstall, while a winning erase keeps its original marker', async () => {
+    const { shop } = await fixture()
+    const originalUninstall = past()
+    await prisma.shop.update({ where: { id: shop.id }, data: { billingStatus: 'uninstalled', uninstalledAt: originalUninstall, accessToken: '' } })
+    const stale = await prisma.shop.findUniqueOrThrow({ where: { id: shop.id } })
+    // Deterministically pause at the race boundary: reinstall commits after
+    // the worker read its Shop snapshot but before its erasure CAS.
+    await prisma.shop.update({ where: { id: shop.id }, data: { billingStatus: 'inactive', uninstalledAt: null, accessToken: 'new-install-token' } })
+    expect(await withTenantContext(shop.id, () => compliance.claimShopErasureStart(stale, originalUninstall.toISOString()))).toEqual({ startedAt: null, reason: 'reinstalled' })
+    const reinstalled = await prisma.shop.findUniqueOrThrow({ where: { id: shop.id } })
+    expect(reinstalled.erasureStartedAt).toBeNull(); expect(reinstalled.accessToken).toBe('new-install-token')
+
+    const newerUninstall = new Date()
+    await prisma.shop.update({ where: { id: shop.id }, data: { billingStatus: 'uninstalled', uninstalledAt: newerUninstall, accessToken: '' } })
+    const newer = await prisma.shop.findUniqueOrThrow({ where: { id: shop.id } })
+    expect(await withTenantContext(shop.id, () => compliance.claimShopErasureStart(newer, originalUninstall.toISOString()))).toEqual({ startedAt: null, reason: 'superseded_uninstall' })
+    const revoked = await prisma.complianceRequest.create({ data: { shopDomain: shop.shopDomain, topic: 'uninstall/erase', eventId: `revoked-${randomUUID()}`, status: 'cancelled', leaseToken: null } })
+    await expect(withTenantContext(shop.id, () => compliance.claimShopErasureStart(newer, newerUninstall.toISOString(), { id: revoked.id, token: 'stale-worker' }))).rejects.toThrow('lease lost')
+    expect((await prisma.shop.findUniqueOrThrow({ where: { id: shop.id } })).erasureStartedAt).toBeNull()
+    const won = await withTenantContext(shop.id, () => compliance.claimShopErasureStart(newer, newerUninstall.toISOString()))
+    expect(won.startedAt).not.toBeNull()
+    const attemptReinstall = await prisma.shop.updateMany({ where: { id: shop.id, erasureStartedAt: null }, data: { billingStatus: 'inactive', uninstalledAt: null, accessToken: 'must-not-restore' } })
+    expect(attemptReinstall.count).toBe(0)
+    // Even a second worker holding the pre-erasure snapshot cannot reset the
+    // capability drain clock or reinterpret a begun erase as a reinstall.
+    expect(await withTenantContext(shop.id, () => compliance.claimShopErasureStart(newer, newerUninstall.toISOString()))).toEqual({ startedAt: won.startedAt })
+    const final = await prisma.shop.findUniqueOrThrow({ where: { id: shop.id } })
+    expect(final.billingStatus).toBe('erasing'); expect(final.accessToken).toBe(''); expect(final.erasureStartedAt).toEqual(won.startedAt)
   })
 })
