@@ -1,0 +1,95 @@
+Public-only release proof, observed 2026-10-09 23:07-23:09 UTC
+Deployed application source: 21ccab9012e78d21989bc9321e7b0af28eb7d7d5
+CI: n8mzfd0mdp, provider finished, 76s, command exit0,65files/424tests/0skipped
+Image build: bht6fgfpzr, provider finished,67s, command exit0
+Immutable image: ghcr.io/growth-sheriff/auto-gang-sheet-public@sha256:ca685ad2549e7c1d44651a7f4eb054d551d360dbc83817e6a1d7cd07f944c483
+New host only: droplet607746803,143.198.12.234
+Deploy command: pwsh -NoProfile -File deploy/public/prepare-runtime.ps1 -Phase Deploy
+Deployment exit0. All8 migrations present;20261010230000_public_manual_receipt_unique applied before service startup.
+All6 new services started2026-10-09T23:07:24Z,running,OOMfalse,restart0,matching immutable image.
+HTTPS GET https://auto-gang-sheet.actualscope.com/health: {"status":"healthy"}
+
+Pinned Shopify CLI3.88.1 command:
+npx shopify app deploy --config auto-gang-sheet-upload --version agsu-review-21ccab9 --message 'Show the exact per-inch rate used for sheet totals; preserve finished-sheet sizing, three cart properties and Shopify usage terms.' --force --no-color
+Command exit0. ActualScope org239354566,app433768202241.
+Released version1161844129793,agsu-review-21ccab9.
+Real Dev Dashboard confirmed Active,correct HTTPS URL/API2026-10,11ordinary+3compliance topics,theme and checkout extension identities.
+https://dev.shopify.com/dashboard/239354566/apps/433768202241/versions/1161844129793
+This is extension release,NOT App Store submission or approval.
+
+Legacy host checks, read-only, exact container names:
+ssh -o BatchMode=yes upload-studio 'docker inspect --format="{{.Name}}|{{.State.StartedAt}}|{{.State.OOMKilled}}|{{.RestartCount}}" us-legendtransfers us-fastdtftransfer us-chillitransfers us-localdtf us-gangsheet us-eagledtfprint us-dtftransferohio us-dtfprintarizona us-alphaprint us-dtfprinthouse us-everydaycustomprint us-dtfnash us-dtfprintdepot us-customprintaz us-caddy'
+
+old_web BEFORE:
+/us-legendtransfers|2026-10-05T18:08:50.364678569Z|false|0
+/us-fastdtftransfer|2026-10-05T18:08:50.364689355Z|false|0
+/us-chillitransfers|2026-10-05T18:08:50.368565192Z|false|0
+/us-localdtf|2026-10-05T18:08:50.356370645Z|false|0
+/us-gangsheet|2026-10-05T18:08:50.373353622Z|false|0
+/us-eagledtfprint|2026-10-05T18:08:50.371438079Z|false|0
+/us-dtftransferohio|2026-10-05T18:08:50.366169509Z|false|0
+/us-dtfprintarizona|2026-10-05T18:08:50.377417742Z|false|0
+/us-alphaprint|2026-10-05T18:08:50.365715375Z|false|0
+/us-dtfprinthouse|2026-10-05T18:08:50.371457604Z|false|0
+/us-everydaycustomprint|2026-10-05T18:08:50.358853206Z|false|0
+/us-dtfnash|2026-10-05T18:08:50.351965835Z|false|0
+/us-dtfprintdepot|2026-10-05T18:08:50.3646726Z|false|0
+/us-customprintaz|2026-10-05T18:08:50.364826591Z|false|0
+/us-caddy|2026-09-04T05:49:29.638786799Z|false|0
+
+old_web AFTER:
+/us-legendtransfers|2026-10-05T18:08:50.364678569Z|false|0
+/us-fastdtftransfer|2026-10-05T18:08:50.364689355Z|false|0
+/us-chillitransfers|2026-10-05T18:08:50.368565192Z|false|0
+/us-localdtf|2026-10-05T18:08:50.356370645Z|false|0
+/us-gangsheet|2026-10-05T18:08:50.373353622Z|false|0
+/us-eagledtfprint|2026-10-05T18:08:50.371438079Z|false|0
+/us-dtftransferohio|2026-10-05T18:08:50.366169509Z|false|0
+/us-dtfprintarizona|2026-10-05T18:08:50.377417742Z|false|0
+/us-alphaprint|2026-10-05T18:08:50.365715375Z|false|0
+/us-dtfprinthouse|2026-10-05T18:08:50.371457604Z|false|0
+/us-everydaycustomprint|2026-10-05T18:08:50.358853206Z|false|0
+/us-dtfnash|2026-10-05T18:08:50.351965835Z|false|0
+/us-dtfprintdepot|2026-10-05T18:08:50.3646726Z|false|0
+/us-customprintaz|2026-10-05T18:08:50.364826591Z|false|0
+/us-caddy|2026-09-04T05:49:29.638786799Z|false|0
+
+Byte-for-byte equal: true
+
+ssh -o BatchMode=yes upload-studio-worker 'docker inspect --format="{{.Name}}|{{.State.StartedAt}}|{{.State.OOMKilled}}|{{.RestartCount}}" usw-legendtransfers usw-everydaycustomprint usw-gangsheet usw-eagledtfprint usw-chillitransfers usw-fastdtftransfer usw-dtfprinthouse usw-dtfprintarizona usw-localdtf usw-alphaprint usw-dtfnash usw-dtftransferohio usw-dtfprintdepot usw-customprintaz'
+
+old_worker BEFORE:
+/usw-legendtransfers|2026-10-05T18:11:35.268554271Z|false|0
+/usw-everydaycustomprint|2026-10-05T18:11:36.889521757Z|false|0
+/usw-gangsheet|2026-10-05T18:11:34.973834624Z|false|0
+/usw-eagledtfprint|2026-10-05T18:11:36.558363621Z|false|0
+/usw-chillitransfers|2026-10-05T18:11:35.118934298Z|false|0
+/usw-fastdtftransfer|2026-10-05T18:11:35.594231948Z|false|0
+/usw-dtfprinthouse|2026-10-05T18:11:35.431811072Z|false|0
+/usw-dtfprintarizona|2026-10-05T18:11:37.709103827Z|false|0
+/usw-localdtf|2026-10-05T18:11:36.179808695Z|false|0
+/usw-alphaprint|2026-10-05T18:11:38.056030335Z|false|0
+/usw-dtfnash|2026-10-05T18:11:37.249226776Z|false|0
+/usw-dtftransferohio|2026-10-05T18:11:38.483911629Z|false|0
+/usw-dtfprintdepot|2026-10-05T18:11:35.755179724Z|false|0
+/usw-customprintaz|2026-10-05T18:11:35.955514273Z|false|0
+
+old_worker AFTER:
+/usw-legendtransfers|2026-10-05T18:11:35.268554271Z|false|0
+/usw-everydaycustomprint|2026-10-05T18:11:36.889521757Z|false|0
+/usw-gangsheet|2026-10-05T18:11:34.973834624Z|false|0
+/usw-eagledtfprint|2026-10-05T18:11:36.558363621Z|false|0
+/usw-chillitransfers|2026-10-05T18:11:35.118934298Z|false|0
+/usw-fastdtftransfer|2026-10-05T18:11:35.594231948Z|false|0
+/usw-dtfprinthouse|2026-10-05T18:11:35.431811072Z|false|0
+/usw-dtfprintarizona|2026-10-05T18:11:37.709103827Z|false|0
+/usw-localdtf|2026-10-05T18:11:36.179808695Z|false|0
+/usw-alphaprint|2026-10-05T18:11:38.056030335Z|false|0
+/usw-dtfnash|2026-10-05T18:11:37.249226776Z|false|0
+/usw-dtftransferohio|2026-10-05T18:11:38.483911629Z|false|0
+/usw-dtfprintdepot|2026-10-05T18:11:35.755179724Z|false|0
+/usw-customprintaz|2026-10-05T18:11:35.955514273Z|false|0
+
+Byte-for-byte equal: true
+
+No old host/container/Caddy/config/data/queue/billing changes.

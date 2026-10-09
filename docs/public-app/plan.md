@@ -44,7 +44,11 @@ The owner now authorizes independent provisioning, provider CI, public deploymen
 
 Provider credentials remain outside Git and are consumed only for their authorized service. No raw credential inventory is committed. A mistaken inventory output exposed several API credentials in tool history; their values are not repeated or copied into evidence, and rotation is a separate owner-security action because existing services may use them.
 
-### Latest executed progress — after 9 October, 22:51 UTC
+### Latest executed progress — 9 October, 23:07 UTC
+
+Clean Depot CI n8mzfd0mdp passed65files/424tests/zero skips and all chained gates on exact21ccab9; sequential production build bht6fgfpzr finished successfully. Root deployed immutable imageca685ad2 only to607746803,applying migration8 before startup. Six new services are healthy,OOMfalse/restart0; all28old tenant container strings plus oldCaddy are identical before/after. Explicit-config pinned CLI released both extensions as Active version1161844129793. Exact per-inch display,scoped Setup fix and provider-confirmed relief bookkeeping are included. No actual financial credit/refund was issued. Contract acceptance,real commerce/cap,privacy self-assessment,live performance/media and App Store submission remain open; no completed-publication claim.
+
+### Historical executed progress — after 9 October, 22:51 UTC
 
 The historical22:22 snapshot below is retained as history. The permanent-token403 is now resolved on all three real installations; the demo's six real product configurations were saved in Polaris. Source78e82f9 is deployed only to the new host; the narrower advanced-widget revert910da79 and truthful unit-rate displayf519d22 await a clean final image. Actual Shopify UI confirms Manual pricing (legacy), so no managed-plan migration is necessary. Versioned Actual Scope merchant Terms/DPA are deployed but have not been accepted without action-time owner confirmation. No real subscription/order/usage, Lighthouse result, review video or App Store submission is claimed. See verification.md and open-questions.md for remaining concrete gates.
 

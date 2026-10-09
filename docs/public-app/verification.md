@@ -2,7 +2,16 @@
 
 Work performed 9–10 October 2026 (Europe/Istanbul), exclusively in the managed public worktree. Main baseline: `76113c193d7da789df9b2d3ea1ad7947af48b334`. The original custom checkout is unchanged and clean. A new public review app is now registered, hosted and installed in three development shops; no App Store submission or approval is claimed. Historical sections below retain their own executed revisions and limitations.
 
-## Latest real setup evidence — after 9 October, 22:51 UTC
+## Latest public-only release — 9 October, 23:07 UTC
+
+- Frozen application source`21ccab9012e78d21989bc9321e7b0af28eb7d7d5` passed clean Depot CI`n8mzfd0mdp`:65 files,424 tests,zero skips,full typecheck,strict measurement regression,Remix build,theme check[] and both extension builds. Provider terminal status was`finished`,76seconds. Sequential production build`bht6fgfpzr` also finished successfully,67seconds. See ci.md for reproducible commands and source-label verification.
+- Only NEW droplet607746803 was deployed to immutable index`sha256:ca685ad2549e7c1d44651a7f4eb054d551d360dbc83817e6a1d7cd07f944c483`. All eight migrations were present;20261010230000_public_manual_receipt_unique applied before startup. All six public services started23:07:24UTC,running,OOMfalse/restart0. External HTTPS health returned`{"status":"healthy"}`.
+- Both old hosts were sampled before and after. Every exact StartedAt/OOM/restart string for14web+14worker and oldCaddy matched byte-for-byte. Full command/output proof: evidence/public-release-21ccab9.txt. No protected branch or old deployment was changed.
+- Pinned CLI3.88.1 released`agsu-review-21ccab9`,version1161844129793,with explicit`--config auto-gang-sheet-upload`. The actual Dev Dashboard confirms Active,correct app433768202241,API2026-10,11 ordinary webhook topics,all three privacy topics,and both extension identities. Evidence:evidence/shopify-release-21ccab9.jpg. The exact-rate display and scoped advanced-widget revert are now deployed. This is an app-version/extension release,not an App Store submission.
+- The new manual relief recorder is installed but has not issued a financial credit/refund or invented a hosted receipt. Its real disposable-database replay/cross-shop tests passed in CI. Actual owner/provider relief rehearsal remains unexecuted.
+- The remaining real commerce,contract,provider-data,media/performance and App Store gates below remain open. Clean CI/startup do not prove them.
+
+## Historical real setup evidence — after 9 October, 22:51 UTC
 
 - Only the NEW public deployment607746803 was refreshed to source78e82f9, digest`sha256:ce5458aadec86a236ed3bc1ce28bb6ed8705361c5f12adf937efbc8274e20a89`. All six new services started22:51:32UTC, OOMfalse/restart0; external `/health` returnedhealthy. Seven migrations were present with none pending.
 - Both old hosts were sampled before/after this deploy using the exact28 existing tenant container names plus old Caddy. Every StartedAt/OOM/restart string matched byte-for-byte. No old service was restarted or deployed.
