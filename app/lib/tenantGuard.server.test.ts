@@ -41,6 +41,7 @@ describe('public tenant isolation', () => {
   it('prevents nested item reassignment and unreviewed raw SQL', async () => withTenantContext('shop_one', async () => {
     await expect(validateTenantRelations({} as any, { model: 'Upload', action: 'update', args: { data: { items: { connect: { id: 'foreign' } } } } })).rejects.toThrow('reassignment')
     expect(() => scopeTenantOperation({ action: 'queryRaw', args: { query: 'SELECT * FROM uploads' } })).toThrow('raw SQL')
+    for (const relation of ['teamMembers', 'apiKeys', 'whiteLabelConfig', 'flowTriggers', 'supportTickets']) expect(() => scopeTenantOperation({ model: 'Shop', action: 'update', args: { where: { id: 'shop_one' }, data: { [relation]: { connect: { id: 'foreign' } } } } })).toThrow('nested tenant mutation')
   }))
   it('signed public identity token binds one shop and rejects a changed upload', () => {
     vi.stubEnv('SECRET_KEY', 'unit-test-signing-secret')

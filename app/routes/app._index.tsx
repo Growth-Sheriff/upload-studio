@@ -22,7 +22,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request);
   const shopDomain = session.shop;
 
-  let shop = await prisma.shop.findUnique({
+  const shop = await prisma.shop.findUnique({
     where: { shopDomain },
     include: {
       productsConfig: { where: { enabled: true }, take: 1 },
@@ -31,21 +31,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 
   if (!shop) {
-    shop = await prisma.shop.create({
-      data: {
-        shopDomain,
-        accessToken: session.accessToken || "",
-        plan: "commission",
-        billingStatus: "active",
-        storageProvider: "r2",
-        onboardingCompleted: false,
-        onboardingStep: 0,
-        settings: {},
-      },
-      include: {
-        productsConfig: { where: { enabled: true }, take: 1 },
-      },
-    });
+    throw new Response('Shop installation not found. Reinstall the app to continue.', { status: 404 });
   }
 
 

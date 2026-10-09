@@ -35,7 +35,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     console.warn("[Branding] Could not fetch shop info from Shopify");
   }
 
-  let shop = await prisma.shop.findUnique({
+  const shop = await prisma.shop.findUnique({
     where: { shopDomain },
     include: {
       whiteLabelConfig: true,
@@ -43,19 +43,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
 
   if (!shop) {
-    shop = await prisma.shop.create({
-      data: {
-        shopDomain,
-        accessToken: session.accessToken || "",
-        plan: "commission",
-        billingStatus: "active",
-        storageProvider: "r2",
-        settings: {},
-      },
-      include: {
-        whiteLabelConfig: true,
-      },
-    });
+    throw new Response('Shop installation not found. Reinstall the app to continue.', { status: 404 });
   }
 
   const settings = (shop.settings as Record<string, unknown>) || {};

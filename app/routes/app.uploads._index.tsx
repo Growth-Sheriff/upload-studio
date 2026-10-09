@@ -26,18 +26,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request)
   const shopDomain = session.shop
 
-  let shop = await prisma.shop.findUnique({ where: { shopDomain } })
+  const shop = await prisma.shop.findUnique({ where: { shopDomain } })
   if (!shop) {
-    shop = await prisma.shop.create({
-      data: {
-        shopDomain,
-        accessToken: session.accessToken || '',
-        plan: 'commission',
-        billingStatus: 'active',
-        storageProvider: 'r2',
-        settings: {},
-      },
-    })
+    throw new Response('Shop installation not found. Reinstall the app to continue.', { status: 404 })
   }
 
   const url = new URL(request.url)

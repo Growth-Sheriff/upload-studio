@@ -56,7 +56,7 @@ export function scopeTenantOperation(params: TenantOperation): void {
       const values = [params.args?.data, params.args?.create, params.args?.update]
       for (const value of values) if (value) {
         if (['update', 'updateMany', 'upsert'].includes(action) && Object.prototype.hasOwnProperty.call(value, 'erasureStartedAt') && value.erasureStartedAt === null) throw new TenantIsolationError('erasure marker cannot be cleared')
-        for (const key of ['uploads', 'productsConfig', 'assetSets', 'ordersLink', 'commissions', 'exportJobs', 'auditLogs', 'uploadLogs', 'billing', 'billingCredits']) if (value[key]) throw new TenantIsolationError('Shop nested tenant mutation is forbidden')
+        for (const key of ['uploads', 'productsConfig', 'assetSets', 'ordersLink', 'commissions', 'exportJobs', 'auditLogs', 'uploadLogs', 'billing', 'billingCredits', 'teamMembers', 'apiKeys', 'whiteLabelConfig', 'flowTriggers', 'supportTickets']) if (value[key]) throw new TenantIsolationError('Shop nested tenant mutation is forbidden')
       }
     }
     return
