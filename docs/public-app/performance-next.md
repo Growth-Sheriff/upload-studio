@@ -6,6 +6,118 @@ configuration, storefront protection or provider state is changed. The
 authenticated Actual Scope Chrome profile, its cookies and debugging
 connection are not inputs to this work.
 
+## Executed genuine mobile comparison — current result
+
+The ordinary password was subsequently copied through the owned shop's
+normal Preferences UI into an ACL-restricted temporary file. It was neither
+changed nor printed. The parent synced **only** the baseline CSS; this audit's
+independent read-only pull at **02:44:36.475 UTC** verified SHA256
+`F53910E7DD2F0FA34CE2DEC834E294D68D71CD33A85BA0DF72508ADED9173AC2`, matching
+the enabled draft. Combined with the full pair comparison below, only the
+three intended enablement flags differ. Neither draft was published.
+
+An ordinary `POST /password` returned a valid shop-scoped 302 at
+**02:46:42.843 UTC**. The actual audits ran **02:46:45.226–02:49:31.937 UTC**;
+the summary finished **02:49:39.313 UTC**, exit **0**, **18 valid runs, 0
+failures**. Every run independently verified the real page pathname, runtime
+`Shopify.theme.id`, main-document HTTP 200 and absence of a password form.
+
+| Page | Baseline runs → median | App-enabled runs → median | Median change |
+| --- | --- | --- | ---: |
+| Home | 71, 81, 78 → **78** | 84, 83, 86 → **84** | +6 |
+| Product | 90, 92, 94 → **92** | 87, 88, 83 → **87** | −5 |
+| Collection | 87, 84, 86 → **86** | 81, 83, 84 → **83** | −3 |
+| Weighted, 17% / 40% / 43% | **87.04** | **84.77** | **−2.27** |
+
+Other independently medianed metrics, baseline → app enabled:
+
+| Page | LCP seconds | TBT milliseconds | Automated accessibility | Transferred bytes |
+| --- | ---: | ---: | ---: | ---: |
+| Home | 3.991 → 3.839 | 488.5 → 125 | 95 → 95 | 1,618,794 → 1,781,768 |
+| Product | 1.928 → 2.107 | 310.5 → 427.5 | 95 → 96 | 1,384,957 → 1,360,812 |
+| Collection | 3.389 → 3.710 | 256.5 → 272 | 100 → 100 | 1,607,349 → 1,617,524 |
+
+Median CLS is zero for all six groups; the highest individual CLS was
+0.036. This lab comparison is within Shopify's documented
+[10-point storefront-impact budget](https://shopify.dev/docs/apps/build/performance).
+The [app-specific methodology](https://shopify.dev/docs/apps/build/performance/storefront)
+uses the same page weights. The positive home delta is **not** a claim that
+the app speeds up merchants' stores: CPU/CDN/Shopify variability is visible
+in the individual runs, and changed page content can change the LCP element.
+The product's observed additional 117 ms TBT is worth watching.
+
+This is a paired **custom review-demo theme**, not an official clean Horizon
+benchmark, all-nine-block benchmark, desktop result, real-user Web Vitals
+assessment or guarantee of App Store acceptance. No INP is inferred from TBT.
+Automated contrast failures remain on home/product; the enabled product also
+reports a visible-label/accessibility-name mismatch. A 95/96 automated score
+does not mean those failures or manual keyboard/accessibility checks passed.
+
+### Actual page-load network proof
+
+Across the 18 fresh audit sessions, the observer recorded 4,127 initiated
+request events, including Lighthouse's audit/frame activity. There were
+**zero** requests for the removed `ul-visitor.js`, `ul-analytics.js`,
+`ul-upload-telemetry.js`, visitor/session or upload-telemetry endpoints.
+Shopify's own `otlp-http-production.shopifysvc.com` generated 261 recorded
+requests; these are platform instrumentation, not this app's removed tracking
+layer. No request count is represented as a server-received count.
+
+The live CDN version `agsu-review-21ccab9` actually supplied the variant
+uploader CSS/JS, multipart uploader, header probe and cart display. The only
+observed app-proxy paths were:
+
+```text
+GET /apps/customizer/api/vip/context
+GET /apps/customizer/api/product-config/15425159135453
+```
+
+Home also loaded `dtf-listing.css`. This proves live script/request behavior
+for these three initial page loads, **not** every later upload, cart,
+checkout, gallery or optional 3D interaction. Request records contain only
+method, host, pathname and resource type; main-document status was separately
+checked. Cookies, headers, bodies and capability query strings were not saved.
+
+### Reproduction and cleanup
+
+The native helper `scripts/public/storefront-performance.mjs` accepts only
+credential/result/module paths; its shop, two draft IDs and three page paths
+are fixed. It uses the official Lighthouse supplied-new-page API, never an
+existing browser/debugging port. Each run gets a **new** Chrome profile and
+domain-scoped cookie jar; no global Cookie extra-header is used. It clears
+cache storage normally, alternates pair order, caps Lighthouse at 150 seconds,
+disables Lighthouse error reporting and stops on password/rate-limit/wrong
+target results. It does not upload/delete themes or publicly upload reports.
+
+Actual invocation (path arguments are not credential values):
+
+```powershell
+node scripts/public/storefront-performance.mjs --password-file C:/Users/mhmmd/AppData/Local/Temp/agsu-review-access-20261010/storefront-password.txt --output-dir C:/Users/mhmmd/AppData/Local/Temp/agsu-review-access-20261010/lighthouse-20261010-0249 --module-root C:/Users/mhmmd/AppData/Local/npm-cache/_npx/90f1a9672dae1ca4/node_modules
+```
+
+Toolchain: Lighthouse **13.5.0**, puppeteer-core **25.13.0**, Node **24.19.0**,
+headless Chrome **154.0.0.0** (installed binary 154.0.8037.57). Default mobile
+emulation: **412×823**, scale 1.75, simulated Slow 4G (150 ms RTT,
+1,638.4 Kbps throughput), **4× CPU** slowdown. No installed extension or
+operator profile participates. One pre-login startup failed because the
+Puppeteer 25 module path changed; it was corrected before the successful
+login/run and produced no page score.
+
+Eighteen redacted per-run JSON records and `summary.json` remain under the
+protected result directory above. Summary SHA256:
+`abca9818966554e7d380975a92d88502dfd5a8c324c739a46c4353f7637f9958`.
+Executed helper SHA256:
+`56b63e9cf2a9b44551c32b48cc9fa85e02288d49d1600f6a68ba24cab1bf4684`.
+Every dedicated browser closed; an independent post-run directory check found
+**zero remaining `profile-*` folders**. A post-run scan of all 19 JSON files
+found no password value, private-header fields or query strings in recorded
+request paths. The original temporary password file
+is parent-owned and was flagged for prompt deletion, not committed or copied
+to reports. No application runtime source, deployed image, billing or
+Shopify configuration was changed by this audit.
+
+## Earlier prerequisite investigation — historical evidence
+
 ## Actual findings
 
 At 02:24 UTC the pinned Shopify CLI 3.88.1 read-only theme list returned:
@@ -174,5 +286,6 @@ Shopify's normal preview-bar link action. Neither credential is invented.
   and [theme profile](https://shopify.dev/docs/api/shopify-cli/theme/theme-profile)
   document their different jobs and authentication inputs.
 
-**Current gate:** no genuine Lighthouse page score, before/after delta or
-live no-tracking network proof is claimed by the access checks above.
+The earlier access checks alone did not establish performance or live
+no-tracking behavior. The successful, explicitly bounded fresh-session proof
+is recorded at the top; remaining scope limitations are not silently waived.
