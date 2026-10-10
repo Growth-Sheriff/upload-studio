@@ -44,6 +44,20 @@ app files contain app/runtime credentials, not the ordinary storefront
 password. Unrelated Shopify account credentials were not used. Passwords,
 cookies, account tokens and raw authentication headers were not printed.
 
+A bounded follow-up ruled out an API/CLI retrieval shortcut. At
+02:38:34.659 UTC, official `shopify store info --store
+auto-gang-sheet-demo.myshopify.com --json --no-input` verified `type=dev`
+and returned no `accessUrl`, `saveUrl` or password field. At
+02:39:01.909 UTC, a read-only Admin API **2026-10** introspection query through
+the existing authorized Store CLI verified the exact demo domain and
+returned `OnlineStorePasswordProtection.fields=[enabled]`; the only
+password/preview-related `OnlineStore` field was `passwordProtection`.
+This matches the [official schema](https://shopify.dev/docs/api/admin-graphql/2026-10/objects/OnlineStorePasswordProtection).
+The API does not expose the ordinary password. A scoped check of 491
+task-generated theme/config/backup text files found no
+storefront/shop/store-password assignment. No broad desktop secret search,
+private endpoint or account-credential substitution was attempted.
+
 ## Pair integrity was checked against both remote drafts
 
 At 02:29:12.682 UTC, independent read-only full theme pulls into
@@ -71,6 +85,17 @@ would currently be false. A one-file CSS sync to the **baseline draft only**
 would restore that strict pairing. This audit did not push it. The existing
 three-file overlay test proves source enablement flags, not remote asset
 identity after subsequent theme changes.
+
+The separately owned, **not executed by this audit**, one-file sync is:
+
+```powershell
+pnpm.cmd exec shopify theme push --store auto-gang-sheet-demo.myshopify.com --theme 189188636893 --path C:/Users/mhmmd/.codex/worktrees/auto-gang-sheet-public/customizer-app-new/demo/theme --only assets/ags-demo.css --nodelete --strict --json
+```
+
+First verify that exact baseline is still unpublished. This uploads only
+its CSS; the three baseline JSON disablement flags, enabled draft and live
+theme remain untouched. Read-only pull/hash afterward must match the enabled
+CSS hash above before claiming strict pairing.
 
 ## Supported execution route
 
