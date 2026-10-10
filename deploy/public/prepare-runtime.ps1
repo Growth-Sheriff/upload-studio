@@ -74,13 +74,13 @@ $registryIdentity=Invoke-RestMethod -Uri 'https://api.github.com/user' -Headers 
 if($registryIdentity.login -ne 'jesuisfatih') { throw 'Unexpected registry account' }
 $registryToken | & ssh.exe @sshOptions $target 'docker login ghcr.io --username jesuisfatih --password-stdin >/dev/null 2>&1'
 if($LASTEXITCODE -ne 0) { throw 'Private public-image registry login failed' }
-foreach($file in @($envPath,$migrationPath,(Join-Path $secretDirectory 'pg-ca.pem'))) {
-  & scp.exe @sshOptions $file ($target+':/opt/agsu-public/')
-  if($LASTEXITCODE -ne 0) { throw 'New-host private configuration transfer failed' }
-}
-& scp.exe @sshOptions (Join-Path $PSScriptRoot 'compose.yml') ($target+':/opt/agsu-public/compose.yml')
-if($LASTEXITCODE -ne 0) { throw 'New-host compose transfer failed' }
 try {
+  foreach($file in @($envPath,$migrationPath,(Join-Path $secretDirectory 'pg-ca.pem'))) {
+    & scp.exe @sshOptions $file ($target+':/opt/agsu-public/')
+    if($LASTEXITCODE -ne 0) { throw 'New-host private configuration transfer failed' }
+  }
+  & scp.exe @sshOptions (Join-Path $PSScriptRoot 'compose.yml') ($target+':/opt/agsu-public/compose.yml')
+  if($LASTEXITCODE -ne 0) { throw 'New-host compose transfer failed' }
   & ssh.exe @sshOptions $target "chmod 600 /opt/agsu-public/public.env /opt/agsu-public/migration.env; chmod 644 /opt/agsu-public/pg-ca.pem; docker pull $image"
   if($LASTEXITCODE -ne 0) { throw 'Public image pull failed' }
 } finally {
