@@ -6,6 +6,47 @@ Updated: 2026-10-10 (Europe/Istanbul).
 
 The numbered historical inventory below records the earlier pre-access state, not today's resource availability. Actual Scope organization239354566 and public app433768202241 are verified and the released extensions are installed in all three new development shops. The independent host, managed data services, private R2 credential, DNS and publicly trusted TLS are live. New private repository and Depot builds exist. Real R2 validation and24 hosted three-shop isolation assertions passed with exact fixture cleanup. See plan.md, registration.md, ci.md and hosted-isolation.md for current identities/evidence. No App Store submission or approval is claimed.
 
+
+## Embedded navigation session drop — diagnosed and fixed 2026-10-10
+
+The "earlier stale-page Support navigation" noted below is explained. Polaris
+`Navigation` items are already Remix links (the SDK's `AppProvider` forces
+`linkComponent: RemixPolarisLink`), but **before React hydrates a Remix `<Link>`
+is still a plain `<a href>`**. A click that lands in that window leaves as a
+full document navigation to `https://auto-gang-sheet.actualscope.com/app/<page>`
+with no `id_token`, `host` or `embedded` parameter, so `authenticate.admin()`
+cannot authenticate it and the merchant reaches
+`/auth/login?returnTo=…` — the "Shopify could not authenticate this request"
+card. It is intermittent, most reproducible on the first click after opening the
+app from the admin's app-settings page, and does not affect Shopify's own
+sidebar links, which App Bridge intercepts.
+
+Reproduced on the hosted app on 2026-10-10 by clicking **Products** in the app's
+own navigation: the page became the recovery card instead of the product list.
+The same page reached from Shopify's sidebar rendered all six configured
+products, so this was never missing configuration.
+
+Fixed in `d7e686f`: `auth.login` now reopens the requested path inside Shopify
+by itself once App Bridge reports the shop, showing a spinner instead of an
+error. One attempt per requested path; a second failure falls through to the
+existing manual button rather than bouncing between Shopify and the app. The
+`/app` layout clears those markers when it renders, so the automatic retry is
+available again for a later race. With `sessionStorage` unavailable the manual
+button is shown unchanged.
+
+Deployed as `ghcr.io/growth-sheriff/auto-gang-sheet-public@sha256:83ecedd22879a9e02a7355881e04a77955750242a92a6c8d0f9be45516f0594b`
+(Depot build `m8kbrs5brj`, revision label independently confirmed as
+`d7e686f71e6059d27f81d9f1edd3c682960fb1dc`). All six containers restarted on
+droplet `607746803` only; external HTTPS `/health` returned 200. After the
+deploy, Products opened from the app's own navigation and rendered
+"6 of 6 products configured for upload".
+
+**What this does not prove.** The failure was intermittent before the change, so
+one passing navigation cannot distinguish "the race did not happen" from "it
+happened and recovery worked". A deliberate pre-hydration click, the
+second-failure fallback and the blocked-storage path still need their own
+observations.
+
 ## Current unresolved gates — updated 10 October,05:18:58 UTC rollout
 
 - Registration, permanent-token403 and initial product loading are resolved; all three installed shops render the app and six demo configurations were saved through Polaris. Frozen source `7c072fd1a81081007e2da2312ce2b0d29f59ef40` passed fresh CI `hd0qj81n11`:69 files/440 tests,zero skips,eight migrations,full typecheck,zero release-blocking measurement regressions and all build/theme/extension gates. Sequential production `qmnklsgprn` produced index `sha256:e05e8990f9321a03464eda8bde3b415874ebdce6e062f3589de1cd96662e9121`;both commands exited0/provider `finished`,and registry source identity matched. The release owner confirmed this image deployed only on NEW607746803 at05:18:58 UTC:web healthy,five workers running,all restart0/OOMfalse;old hosts'17+14 inspect rows byte-identical before/after. Explicit public CLI released `agsu-review-7c072fd`,version1161996697601,in the correct Actual Scope app. ExternalHTTPS `/health` and post-release native UI checks remain pending,not inferred from container health. Live expired-background-token refresh and idle-session return-path regression still need actual observation;earlier stale-page Support navigation is not a proven universal failure.
