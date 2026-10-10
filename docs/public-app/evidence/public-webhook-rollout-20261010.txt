@@ -1,0 +1,140 @@
+PUBLIC APP: ISOLATED ORDER-WEBHOOK RELEASE AND DEMO CART UPDATE
+Recorded: 2026-10-10T02:13:02Z
+Branch: public-app only. App Store submission is not complete.
+
+SCOPE AND BUSINESS REASON
+The finished-sheet demo cart already displays Print Ready, Sheet Identity and DPI.
+Commit 02f5c4d hides only the duplicate ready-file CUSTOM card in demo CSS.
+Processing, error and missing-file warnings remain. The embed/status request is
+not deleted; quantities, pricing, properties and links are unchanged.
+
+Pinned Shopify CLI 3.88.1 pulled draft 189187817693 into:
+C:\Users\mhmmd\.codex\demo-theme-backups\cart-ready-card-20261010
+The pre-change local/remote CSS matched:
+01863FF94D75556ACAEE6D43B9393BE4F5A67790485591C0C0BBAAB0AE98F115
+Only assets/ags-demo.css was pushed to that same unpublished draft:
+npx shopify theme push --store auto-gang-sheet-demo.myshopify.com --theme 189187817693 --path demo/theme --only assets/ags-demo.css --nodelete --strict --json --no-color
+CLI returned role unpublished, theme 189187817693.
+Read-only post-pull CSS SHA256 exactly matches local:
+F53910E7DD2F0FA34CE2DEC834E294D68D71CD33A85BA0DF72508ADED9173AC2
+Two existing theme-binding tests passed; theme check output [].
+Live Horizon 189187457245 was not targeted or published.
+
+WEBHOOK CORRECTION
+Actual prior logs and fresh CI are in public-release-02f5c4d.txt.
+Six HMAC-verified order/refund routes now bind the persisted owning shop before
+reconciliation. Strict tenant isolation remains enforced; no price or fee
+eligibility rule was changed.
+
+DEPLOYMENT (ROOT, AFTER GREEN CI)
+pwsh -NoProfile -File deploy/public/prepare-runtime.ps1 -Phase Deploy
+Exit 0. The helper independently fences droplet ID 607746803 / 143.198.12.234,
+app client ID, bucket, database roles and TLS. No legacy deploy script was run.
+Image:
+ghcr.io/growth-sheriff/auto-gang-sheet-public@sha256:d856fbc48eb3954a26618d3e5955b1cf3a0c4e0c50c81c0ce8e1262909ac1d08
+OCI source revision: 02f5c4dfba12e244e92398dd05047b49f168f2da
+8 migrations present; no pending migration.
+Only six NEW public services recreated:
+privacy 2026-10-10T02:10:51.121524209Z
+web     2026-10-10T02:10:51.166784256Z
+measure 2026-10-10T02:10:51.139208287Z
+export  2026-10-10T02:10:51.159485470Z
+preview 2026-10-10T02:10:51.149560255Z
+billing 2026-10-10T02:10:51.162629895Z
+All running, RestartCount=0, OOMKilled=false.
+Independent HTTPS /health returned {"status":"healthy"}.
+
+OLD INFRASTRUCTURE SAFETY
+Read-only before and after, on BOTH old hosts:
+ssh <host> 'docker ps --format "{{.Names}}" | xargs docker inspect --format "{{.Name}}|{{.State.StartedAt}}|{{.RestartCount}}|{{.State.OOMKilled}}"'
+Captured outputs compare exactly byte-for-byte unchanged.
+upload-studio (17 rows, including infrastructure):
+/us-legendtransfers|2026-10-05T18:08:50.364678569Z|0|false
+/us-fastdtftransfer|2026-10-05T18:08:50.364689355Z|0|false
+/us-chillitransfers|2026-10-05T18:08:50.368565192Z|0|false
+/us-localdtf|2026-10-05T18:08:50.356370645Z|0|false
+/us-gangsheet|2026-10-05T18:08:50.373353622Z|0|false
+/us-eagledtfprint|2026-10-05T18:08:50.371438079Z|0|false
+/us-dtftransferohio|2026-10-05T18:08:50.366169509Z|0|false
+/us-dtfprintarizona|2026-10-05T18:08:50.377417742Z|0|false
+/us-alphaprint|2026-10-05T18:08:50.365715375Z|0|false
+/us-dtfprinthouse|2026-10-05T18:08:50.371457604Z|0|false
+/us-everydaycustomprint|2026-10-05T18:08:50.358853206Z|0|false
+/us-dtfnash|2026-10-05T18:08:50.351965835Z|0|false
+/us-dtfprintdepot|2026-10-05T18:08:50.3646726Z|0|false
+/us-customprintaz|2026-10-05T18:08:50.364826591Z|0|false
+/us-redis-bridge|2026-09-18T21:53:51.404279883Z|0|false
+/us-caddy|2026-09-04T05:49:29.638786799Z|0|false
+/redis|2026-08-26T22:55:45.087366279Z|0|false
+upload-studio-worker (14 rows):
+/usw-legendtransfers|2026-10-05T18:11:35.268554271Z|0|false
+/usw-everydaycustomprint|2026-10-05T18:11:36.889521757Z|0|false
+/usw-gangsheet|2026-10-05T18:11:34.973834624Z|0|false
+/usw-eagledtfprint|2026-10-05T18:11:36.558363621Z|0|false
+/usw-chillitransfers|2026-10-05T18:11:35.118934298Z|0|false
+/usw-fastdtftransfer|2026-10-05T18:11:35.594231948Z|0|false
+/usw-dtfprinthouse|2026-10-05T18:11:35.431811072Z|0|false
+/usw-dtfprintarizona|2026-10-05T18:11:37.709103827Z|0|false
+/usw-localdtf|2026-10-05T18:11:36.179808695Z|0|false
+/usw-alphaprint|2026-10-05T18:11:38.056030335Z|0|false
+/usw-dtfnash|2026-10-05T18:11:37.249226776Z|0|false
+/usw-dtftransferohio|2026-10-05T18:11:38.483911629Z|0|false
+/usw-dtfprintdepot|2026-10-05T18:11:35.755179724Z|0|false
+/usw-customprintaz|2026-10-05T18:11:35.955514273Z|0|false
+No old container/droplet/Caddy/env/TOML/data/billing/queue mutation was made.
+
+Protected remote refs independently read with git ls-remote:
+origin/main: 76113c193d7da789df9b2d3ea1ad7947af48b334
+origin/custom-container-upload-studio-app: d8470f5bca9ab182ca1b9d6b635d89ee7c7a5075
+Original checkout remains clean. All new commits are public-app only.
+
+GENUINE POST-FIX CUSTOMER FLOW
+Chrome used only for the actual buyer checkout, not software diagnosis.
+Measured upload hhVLFBMcIjVW: confirmed 22.30 x 78 in, 100 DPI.
+Product quote: 78 x USD0.30 = USD23.40, one complete copy.
+Native Shopify test gateway payment: product USD23.40 + shipping USD8 = USD31.40.
+Order #1002 / gid://shopify/Order/18946639954141, test=true, PAID.
+Exactly three cart properties are retained: Print Ready, Sheet Identity, DPI.
+
+Actual NEW web container log:
+2026-10-10T02:11:31.939569174Z [Reconcile] Upload hhVLFBMcIjVW <- order 18946639954141 (source=identity_url, topic=orders/updated, status=needs_review)
+2026-10-10T02:11:31.975114547Z [Reconcile] Commission order=18946639954141 action=await_payment status=awaiting_payment financial=authorized amount=$0.00
+2026-10-10T02:11:33.051704532Z [Reconcile] Upload hhVLFBMcIjVW <- order 18946639954141 (source=identity_url, topic=orders/updated, status=approved)
+2026-10-10T02:11:33.142023283Z [Reconcile] Commission order=18946639954141 action=make_collectible status=pending financial=paid amount=$0.82
+2026-10-10T02:11:33.472866709Z [Reconcile] order 18946639954141 topic=orders/paid: linked=1 ghosts=0 foreignSkipped=0 paidNew=false
+2026-10-10T02:11:33.763379095Z [Reconcile] order 18946639954141 topic=orders/create: linked=1 ghosts=0 foreignSkipped=0 paidNew=false
+
+Read-only guarded Prisma + Shopify Admin GraphQL at 02:11:48.604Z:
+upload hhVLFBMcIjVW approved, orderId18946639954141, orderName#1002,
+orderPaidAt02:11:32.746Z; one order link / line50810958348509.
+One commission: pending, amountUSD0.82, collectibleAt02:11:31Z.
+Shipping is excluded: 23.40 x 3.5% = 0.819 => 0.82, not 31.40 x 3.5%.
+No actual money collected. No row was seeded/repaired/replayed by an operator.
+
+LIMIT AT THIS TIMESTAMP
+Provider usageRecords was empty at 02:11:48Z; ordinary billing runs every five
+minutes. That is pending evidence, not an asserted success or a local timer fix.
+Pre-fix paid test order #1001 / 18946622095581 remained unlinked at that read.
+Shopify's ordinary retry is awaited; no manual replay or collector invocation.
+Cap exhaustion, deliberate duplicate webhook replay, remaining storefront
+flows, Lighthouse, review media and App Store submission remain unproven.
+
+POST-CUTOFF: GENUINE PROVIDER USAGE OBSERVED, NOT MANUALLY TRIGGERED
+Read-only guarded Prisma + Shopify Admin API 2026-10 query at
+2026-10-10T02:15:11.028Z confirmed the normal five-minute worker settled #1002:
+Commission.status: paid
+Commission.commissionAmount: USD0.82
+Commission.usageRecordId: gid://shopify/AppUsageRecord/534379430109
+Provider usage record: same ID, createdAt2026-10-10T02:15:05Z, priceUSD0.82
+Idempotency key in BOTH local row and provider:
+agsu-order-97e09bd487f75a81a4fc4f39fd363e32c2f049fcf89a1416830ca0dcd3c4bd2a
+Exactly one Commission row and one provider usage node were observed despite
+ordinary orders/updated, orders/paid and orders/create notifications.
+Subscription remains ACTIVE/test=true. No real money was charged.
+Local balanceUsedUsd was still 0 at this read; that snapshot is not asserted
+to be an immediately synchronized provider balance or proof of cap handling.
+The first pre-fix test order #1001 remained unlinked at this final read.
+It still awaits a genuine Shopify retry; no operator replay/repair was done.
+Cap exhaustion, an explicit identical-event replay, variant-order recovery,
+remaining native blocks, Lighthouse, review media and App Store submission
+remain open. The measured upload-to-usage path is now genuinely proven.
