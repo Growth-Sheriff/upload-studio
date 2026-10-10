@@ -11,7 +11,7 @@ import adminStyles from "~/styles/admin.css?url";
 import prisma from "~/lib/prisma.server";
 import { useAppBridgeNavigation } from "~/hooks/useAppBridgeNavigation";
 import { billingCapState } from "~/lib/billingPolicy";
-import { createElement } from 'react';
+import { createElement, useEffect } from 'react';
 import { Banner, Button, BlockStack } from '@shopify/polaris';
 
 export const links = () => [
@@ -85,6 +85,19 @@ export default function AppLayout() {
 
 
   useAppBridgeNavigation();
+
+  // The app is authenticated and rendering, so any earlier failed navigation is
+  // resolved: let auth.login auto-reopen again if a later click races hydration.
+  useEffect(() => {
+    try {
+      for (let i = sessionStorage.length - 1; i >= 0; i -= 1) {
+        const key = sessionStorage.key(i);
+        if (key?.startsWith('agsu:reopen:')) sessionStorage.removeItem(key);
+      }
+    } catch {
+      // Storage blocked: auth.login already falls back to its manual button.
+    }
+  }, []);
 
   return (
     <AppProvider isEmbeddedApp apiKey={apiKey}>
