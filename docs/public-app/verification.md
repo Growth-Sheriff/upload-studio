@@ -2,7 +2,44 @@
 
 Work performed 9–10 October 2026 (Europe/Istanbul), exclusively in the managed public worktree. Main baseline: `76113c193d7da789df9b2d3ea1ad7947af48b334`. The original custom checkout is unchanged and clean. A new public review app is now registered, hosted and installed in three development shops; no App Store submission or approval is claimed. Historical sections below retain their own executed revisions and limitations.
 
-## Current verified Shopify usage settlement — 10 October,02:15:11.028UTC
+## Current evidence — 10 October,05:18:58 UTC rollout
+
+This current summary supersedes earlier pending-state interpretations,not their timestamped historical observations. New source `7c072fd1a81081007e2da2312ce2b0d29f59ef40` is built,registry-verified and subsequently deployed **only on NEW607746803**. The release owner confirmed all six services started05:18:58 UTC:web healthy,five workers running,all restart0/OOMfalse;old hosts'17+14 inspect rows were byte-identical before/after. Explicit public CLI released `agsu-review-7c072fd`,version1161996697601,in the correct Actual Scope app. ExternalHTTPS `/health` and post-release native UI checks remain pending at this update;container health is not substituted for them. No App Store submission or approval is claimed.
+
+### Two actual TEST orders, genuine retry and provider replay
+
+[Order recovery audit](order-recovery-audit.md) records the real delayed Shopify delivery of original variant order#1001 at02:29UTC and normal scheduled settlement at02:30UTC. The order itself was unchanged;no manual order repair,collector or forged webhook was used.
+
+| Order | App-served merchandise | Exactly one recorded provider usage | Fee basis |
+| --- | ---: | --- | --- |
+| #1001,variant,5 complete copies | USD200 | `534381297885`,USD6 | min(200×3.5%,6)=6 |
+| #1002,measured length | USD23.40 | `534379430109`,USD0.82 | round(23.40×3.5%,2)=0.82;USD8 shipping excluded |
+
+At the02:38UTC audit,provider and local balance both equalled USD6.82,with precisely those two usage nodes. Two separately authorized byte-identical replays of the **already-recorded**#1002 key at02:43:55–56UTC,including a deliberately unread first response body,returned the original record without adding a fee or changing the paid Commission. This proves known-recorded provider idempotency,**not** first-submission lost-response/unknown-row recovery or identical original webhook-event replay. [Actual provider-cap evidence](billing-live-gaps.md) separately records a TEST USD50.01 request rejected against USD50 with no usage/balance change;application exhaustion and merchant-approved increase remain unproved. All transactions are TEST,not real merchant invoices or physical fulfillment.
+
+### Genuine paired mobile performance and page-load tracking check
+
+[Lighthouse13.5 evidence](performance-next.md) records18 valid/0failed fresh-profile mobile runs on the two exact existing demo drafts,three repeats per page. Actual page,theme ID and HTTP200 were checked on every run. Medians:home78→84,product92→87,collection86→83;weighted17%/40%/43% **87.04→84.77,−2.27 points**. Across4,127 initiated request events,no removed app visitor/session/telemetry asset or endpoint was observed. These are three initial page-load checks,not every upload/cart interaction or a server-received request count.
+
+The themes were paired after the independently hash-verified CSS sync,with only three app-enable flags differing. This is a custom-demo comparison,not a clean official Horizon/all-nine-block benchmark,real-user Web Vitals or complete accessibility pass. Contrast/name warnings and manual checks remain;TBT is not INP. Dedicated profiles were removed,and no cookie/header/body/capability query string was saved in redacted reports.
+
+### Saved drafts and fresh isolated release artifact
+
+The correct listing has its icon,feature image and two actual1600×900 screenshots saved with alt text;the third screenshot and English review screencast remain **pending**. The actual protected-data questionnaire shows **9/9 completed,still Draft**,not approval;only Store management/App functionality purposes are selected,and buyer name,email,phone/address fields remain unselected. See [listing](listing.md) and [saved questionnaire](protected-customer-data.md). App Store submission remains **pending**.
+
+| Frozen7c072fd build fact | Executed result |
+| --- | --- |
+| Fresh CI `hd0qj81n11` | Start2026-10-10T05:12:11Z,66s,CLI0,independent provider terminal `finished` |
+| Full gates | 8 migrations applied to fresh disposable PostgreSQL;69 test files/440 tests passed,zero skipped;full typecheck;measurement integrity PASS/0 release-blocking regressions;Remix build;theme check[];both extension builds;disposable database stopped |
+| Sequential PROD `qmnklsgprn` | Started only after terminal-green CI,2026-10-10T05:13:47Z,80s,CLI0/provider `finished` |
+| Public package/tag | `ghcr.io/growth-sheriff/auto-gang-sheet-public:7c072fd` |
+| Registry index | `sha256:e05e8990f9321a03464eda8bde3b415874ebdce6e062f3589de1cd96662e9121` |
+| linux/amd64 manifest/config | `sha256:402ca9f1d291ef3a5e38f78bd61247eab65fe6e8d891132ecd52da24faa31a66` / `sha256:321f2ba392b33c75103c3a120b4f8460d4e8b017f203f48475ff3e95a6afdbde` |
+| Independent config readback | OCI revision exactly `7c072fd1a81081007e2da2312ce2b0d29f59ef40`;copied inputs unchanged between/after builds |
+
+Full CI/production output and provider/registry readbacks are retained in the ACL-restricted local directory `C:/Users/mhmmd/AppData/Local/Temp/agsu-public-build-7c072fd-20261010-final`. CI log SHA256 `bd46655c4c9ebe07a37caaea588b6e93f75917e832ad3a5abd8f1d9f065b5696`;production log SHA256 `1d53c3e3aaa102f1a6f3f169cae3e9a87d755d501dcca6cfca7a729ba053d0ac`. Build commands match the explicit project/Dockerfile workflow in [CI](ci.md),with historical `PUBLIC_REVIEW_SHA=2ff3faf9a856bc8d67be620f0591fc215fc2598e` and the distinct actual OCI revision above. No tenant config,credentials,scratch page or root documentation was included in application inputs. This build task did not deploy,push Git,release Shopify extensions or change hosted data/queues/billing.
+
+## Historical verified Shopify usage settlement — 10 October,02:15:11.028UTC
 
 Guarded read-only Prisma and real Shopify Admin GraphQL2026-10 observations at2026-10-10T02:15:11.028Z confirm that the normal five-minute billing worker settled measured test order `#1002`. No collector,manual replay or financial write was invoked to obtain this evidence.
 
@@ -55,7 +92,7 @@ The redundant blue CUSTOM ready-file card was removed **visually only in the dem
 
 Measured checkout payment,post-fix order processing/usage/replay,provider cap proof,remaining block/customer flows,portable official preview,mobile Lighthouse comparison,live no-tracking Network capture,review media and App Store submission remain open. Historical observations below are not relabeled as later success.
 
-## Current merchant agreement and test billing — 10 October 2026
+## Historical merchant agreement and initial zero-usage snapshot — 10 October,01:53UTC
 
 The owner-approved, ordinary Shopify administrator UI flow has now accepted Actual Scope Terms/DPA version `2026-10-10.1:c769892b1216b191ec6f93d2` in all three new development shops. These are separate merchant agreements, not inferred OAuth or billing consent; no receipt was backfilled.
 
@@ -140,13 +177,13 @@ Desktop visual evidence: evidence/demo-home-original-theme.jpg is an actual scre
 | 2. Existing infrastructure untouched | Both hosts inspected read-only before/after independent public deployments; all14web+14worker and oldCaddy StartedAt values unchanged, restart0/OOMfalse | Old infrastructure untouched; ONLY new public services deployed |
 | 3. One app, three stores | Three new Shopify installations; real hosted three-shop synthetic isolation and distributed Redis leases | Hosted isolation proven; real three-shop commerce still missing |
 | 4. Three privacy topics | Actual hosted raw-body HMAC HTTP requests, invalid401, replay, worker exports/redaction and real private R2 erasure with exact cleanup | Synthetic hosted proof passed; Shopify-origin delivery and elapsed SLA not claimed |
-| 5. Tracking removed | Source/compiled JS scans, removal guards, Visitor/VisitorSession absent, DROP migration | Local proof; live storefront Network capture missing |
-| 6. Shopify usage fees exactly once | Three real ACTIVE test subscriptions; PAID test orders#1001/#1002; measured#1002 automatically linked and settled by normal worker: exactly one paid USD0.82 Commission and one matching Shopify usage record534379430109; ordinary repeated order topics produced no duplicates | Real measured order→usage proven at02:15:11.028UTC; deliberate identical-event/lost-response replay and pre-fix variant#1001 recovery remain unproven |
-| 7. Cap behavior | Confirmed rejection/exhaustion tests and merchant-confirmed pending cap state | Real provider cap test missing |
-| 8. Full tests | Final commands/results recorded below | Local suite only; no invented live proof |
-| 9. Typecheck | Complete public tsconfig no-emit run | Final command below |
+| 5. Tracking removed | Source/compiled JS/removal/migration guards;18 genuine live page-load audits with0 removed tracking requests | Proven for those initial loads;later interactions not covered |
+| 6. Shopify usage fees exactly once | Real#1001USD6/#1002USD0.82 usage receipts;genuine original-order retry recovery;known-recorded same-key provider replay added nothing | Two demo order→usage paths proven;first-submission response loss and identical original webhook-event replay unproved |
+| 7. Cap behavior | Actual#1001 per-orderUSD6 cap;TEST provider50.01USD-against50USD rejection with0 new charge | Application interval exhaustion/merchant-approved increase/next-period recovery still unproved |
+| 8. Full tests | Fresh DepotCI hd0qj81n11,69 files/440 tests,0 skips,eight disposable migrations | Exact7c072fd,CLI0/providerfinished;not proof of unrelated live flows |
+| 9. Typecheck | Complete public tsconfig check in the same fresh CI | Exit0,no diagnostics |
 | 10. Extensions | Pinned CLI3.88.1, theme check[], both extension bundles released; nine real theme-block bindings in new draft | Theme surfaces bound/rendered; actual checkout extension checkout proof still missing |
-| 11. Performance/accessibility | Removed runtime CSS compiler/blocking includes; real raw/gzip sizes; paired three-page app-free draft baseline | Mobile Lighthouse before/after and keyboard evidence incomplete;28-day field data is optional Built for Shopify, not ordinary App Store prerequisite |
+| 11. Performance/accessibility |18 genuine paired mobile runs,weighted87.04→84.77 (−2.27);live initial-load tracking check | Custom-demo scope,not clean official Horizon/all-blocks/RUM;contrast/name/manual accessibility checks remain;28-day field data is optional Built for Shopify |
 
 ### Honest price and performance presentation
 
@@ -154,7 +191,7 @@ Mod2 no longer server-renders its product unit rate as an unexplained whole-shee
 
 Scoped checks after this display-only correction: publicStorefrontProxy/theme-bindings/performance-baseline —3 files,6 tests passed; node --check custom-price-upload-mod2.js exit0; pinned Shopify theme check extensions/theme-extension returned[]; scoped git diff --check passed. The new assertion executes the actual headline functions for pending unit rate, stale quote, ready total and unavailable pricing. These are source checks, not a live order or storefront performance result.
 
-The ordinary [App Store storefront test](https://shopify.dev/docs/apps/build/performance/storefront) is the mobile before/after Lighthouse score impact, home17%/product40%/collection43%, no more than10 points degradation. A clean supported theme with typical app features is the review benchmark; the existing identical-content demo baseline is an additional reproducible comparison, not a claimed pass. The28-day Web Vitals targets belong to [Built for Shopify](https://shopify.dev/docs/apps/launch/built-for-shopify/requirements), so they do not impose a28-day wait for ordinary listing submission.
+The ordinary [App Store storefront test](https://shopify.dev/docs/apps/build/performance/storefront) is the mobile before/after Lighthouse score impact, home17%/product40%/collection43%, no more than10 points degradation. A clean supported theme with typical app features is the review benchmark;the executed paired custom-demo result−2.27 is an additional reproducible comparison,not guaranteed review acceptance. The28-day Web Vitals targets belong to [Built for Shopify](https://shopify.dev/docs/apps/launch/built-for-shopify/requirements), so they do not impose a28-day wait for ordinary listing submission.
 
 ## Branch and live boundary
 
@@ -273,7 +310,7 @@ Executed `rg -n -i 'visitor|fingerprint|utm_|gclid|telemetry|analytics' app exte
 - Legal copy discloses the removal; one proxy-config comment contrasts shop currency with a Markets visitor's currency.
 - The tracking-removal migration names the retired columns/tables to DROP them; it does not create profiling tables.
 
-Full matching paths and earlier compiled-asset scan are in tracking-removal.md. No live storefront Network proof is claimed.
+Full matching paths and earlier compiled-asset scan are in tracking-removal.md. That historical source scan alone claimed no live Network proof;the subsequent bounded18-run initial-page-load capture is recorded above and in performance-next.md.
 
 ### Local cleanup
 
@@ -319,4 +356,4 @@ Final cleanup inspected and removed the three exact local agsu-public containers
 
 `theme-performance.md` records executed source/gzip sizes (Mod2 JS212,587/40,689 bytes; main uploader161,849/38,168; native scoped CSS23,843/3,885). These are transfer estimates, not browser timings. Linux process-group cancellation test: a200ms deadline returned in210ms and left no running child. Neither proves peak memory under a475MP decode, fair-load latency or live Web Vitals.
 
-Finish the blocked gates with fresh Actualscope identity/credentials and three demo stores, following listing.md, deployment.md and open-questions.md. Never substitute a custom tenant app or claim publication from local builds.
+Actual Scope identity,the three installed demo stores,two order/usage paths,the bounded18-run Lighthouse/network proof and new7c072fd rollout are now available as recorded above. Finish the remaining gates in listing.md,deployment.md and open-questions.md;external health/post-release native checks,third screenshot,screencast and submission are still pending at this update. Never substitute a custom tenant app or claim publication from builds/saved drafts.

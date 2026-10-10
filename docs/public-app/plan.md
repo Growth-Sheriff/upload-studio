@@ -17,7 +17,7 @@ Each workstream owns disjoint source files where practical. Source edits use exp
 
 ## Release boundary
 
-App Store approval and protected-data approval cannot be inferred from local tests. Ordinary storefront review still needs the mobile Lighthouse before/after comparison;28-day field data belongs to optional Built for Shopify,not an ordinary submission waiting period. Current evidence gaps are in `open-questions.md`; earlier account/infrastructure shortages below are history,not today's release state.
+App Store approval and protected-data approval cannot be inferred from local tests. The mobile Lighthouse before/after comparison now has18 genuine paired custom-demo runs; this is not a clean official Horizon/all-blocks benchmark or field Web Vitals. The28-day field-data criterion belongs to optional Built for Shopify,not an ordinary submission waiting period. Current evidence gaps are in `open-questions.md`; earlier account/infrastructure shortages below are history,not today's release state.
 
 ## Historical implementation progress — initial source handoff
 
@@ -44,7 +44,17 @@ The owner authorized independent provisioning,provider CI,public deployment,demo
 
 Provider credentials remain outside Git and are consumed only for their authorized service. No raw credential inventory is committed. A mistaken inventory output exposed several API credentials in tool history; their values are not repeated or copied into evidence, and rotation is a separate owner-security action because existing services may use them.
 
-### Latest executed progress — 10 October, 02:15:11.028 UTC
+### Latest executed progress — 10 October, rollout05:18:58 UTC
+
+Frozen source `7c072fd1a81081007e2da2312ce2b0d29f59ef40` passed fresh Depot CI `hd0qj81n11`:69 files,440 tests,zero skips,all eight migrations,full typecheck,zero release-blocking measurement regressions,Remix build,theme check[] and both extension builds. CLI exit0 and provider terminal `finished` were independently checked before sequential production build `qmnklsgprn`,also CLI0/`finished`. Registry readback confirmed immutable public image index `sha256:e05e8990f9321a03464eda8bde3b415874ebdce6e062f3589de1cd96662e9121` and exact frozen OCI revision. The release owner subsequently confirmed deployment **only to NEW607746803** at05:18:58 UTC:web healthy,five workers running,all restart0/OOMfalse;old hosts'17+14 inspect rows were byte-identical before/after. Explicit public CLI also released `agsu-review-7c072fd`,version1161996697601,in the correct Actual Scope app. This later rollout evidence is separate from the build task. ExternalHTTPS `/health` and post-release native UI checks are still pending at this update.
+
+Both genuine paid TEST orders now have exactly one recorded fee each: native variant#1001 recovered through genuine delayed Shopify delivery and settled USD6; measured#1002 settled USD0.82 excluding USD8 shipping. Provider/local usage total was USD6.82. Two separately authorized same-key replays of the already-recorded#1002 request,including one deliberately unread response body,added no charge or record. Actual USD50.01-against-USD50 TEST-provider rejection also added none. [Order/replay audit](order-recovery-audit.md) and [cap evidence](billing-live-gaps.md) preserve the limits: no first-submission lost-response recovery,identical original webhook-event replay,application interval exhaustion/approved increase,CAD order or real merchant invoice is implied.
+
+The CLI Lighthouse13.5 proof completed18 valid fresh-profile mobile runs: home78→84,product92→87,collection86→83,weighted87.04→84.77 (**−2.27 points**). No removed app-tracking request was observed in those initial page loads; accessibility contrast/label warnings and untested interactions remain. [Method and exact scope](performance-next.md) record the paired custom-demo themes,not an all-blocks/clean Horizon/field-data certification.
+
+The actual App Store draft now has its icon,feature image and two native1600×900 screenshots saved with alt text. The real protected-data form shows **9/9 answers completed,still Draft**; protected buyer name,email,phone and address fields remain unselected. [Listing](listing.md) and [protected-data proof](protected-customer-data.md) distinguish saved drafts from approval. External health/post-release native checks,third screenshot,English review screencast and App Store submission remain pending. No protected branch,existing tenant infrastructure or existing paid record was changed by these documentation/build tasks.
+
+### Historical executed progress — 10 October, 02:15:11.028 UTC
 
 Frozen runtime `02f5c4d`, including verified-shop order handling `b1c7d6d`, is deployed only to NEW host607746803 at image index `sha256:d856fbc48eb3954a26618d3e5955b1cf3a0c4e0c50c81c0ce8e1262909ac1d08`. Six new services started at02:10:51 UTC, healthy, restart0, OOMfalse. Old hosts'17+14 Docker inspect rows, including infrastructure, were byte-identical before/after. [CI proof](evidence/public-release-02f5c4d.txt) records69 files/436 tests passed, zero skips, zero release-blocking measurement regressions, full typecheck, eight migrations and app/extension builds. Commit `35c5425` and earlier public work were pushed to both public-app branches; neither protected branch was changed. This later documentation consolidation is not implicitly claimed pushed.
 
