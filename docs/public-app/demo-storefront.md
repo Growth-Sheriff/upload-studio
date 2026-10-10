@@ -2,7 +2,7 @@
 
 This is an isolated demonstration, not a new production printing business. Prices are illustrative, orders use the demo shop's test payment flow, and nothing is physically fulfilled. Existing merchant shops and themes are outside this work.
 
-## Latest executed state — 10 October,02:11:48UTC
+## Latest executed state — 10 October,02:15:11.028UTC
 
 The historical provisioning steps below retain their own observations. All six real demo product configurations have now been loaded and saved through actual Polaris UI: four variant products,two measured-length products at0.30/in,width22.5,length240,tolerance0.02. They were not imported through a database writer. Real fractional-input rejection was reproduced and fixed; successful saves are shown in evidence/demo-setup-decimal-rate-saved.jpg and demo-mod2-configured.jpg. All three installed development shops render the embedded app. The nine canonical block bindings remain in unpublished theme189187817693; Horizon189187457245 remains live.
 
@@ -14,11 +14,15 @@ The same fixture in measured-length upload `hhVLFBMcIjVW` received [USD23.40](ev
 
 The earlier actual container `TenantIsolationError` is preserved in verification.md as a pre-fix observation. Source `02f5c4d`,including narrow verified-shop correction `b1c7d6d`,is now deployed only to NEW607746803 (`143.198.12.234`),immutable index `sha256:d856fbc48eb3954a26618d3e5955b1cf3a0c4e0c50c81c0ce8e1262909ac1d08`. Six new services started02:10:51UTC,healthy,restart0,OOMfalse. Both old hosts'17+14 inspect rows,including infrastructure,matched byte-for-byte before/after. [Fresh CI proof](evidence/public-release-02f5c4d.txt),commit9354a78,records436passing tests,zero skips and zero release-blocking measurement regressions.
 
-Real orders/updated,paid/create automatically approved upload `hhVLFBMcIjVW` and linked order line `50810958348509`. Actual CLI logs at02:11:31.975UTC show authorized→awaiting_payment with USD0 commission;02:11:33.142UTC shows paid→pending,collectible USD0.82,excluding shipping. Repeated ordinary order topics left exactly one actual Commission row. At02:11:48UTC no Shopify usage record had yet been created; the normal five-minute billing cycle was awaited,not manually invoked. Earlier pre-fix variant order#1001 remains unlinked and awaits normal Shopify retry; no manual replay was performed. Software diagnosis uses CLI/container evidence; Chrome is for native customer flow and submission only.
+Real orders/updated,paid/create automatically approved upload `hhVLFBMcIjVW` and linked order line `50810958348509`. Actual CLI logs at02:11:31.975UTC show authorized→awaiting_payment with USD0 commission;02:11:33.142UTC shows paid→pending,collectible USD0.82,excluding shipping. The02:11:48UTC observation had no Shopify usage record yet; that earlier cutoff is preserved as history,not the current settlement result.
+
+At2026-10-10T02:15:11.028Z,guarded read-only Prisma and real Shopify Admin GraphQL2026-10 confirmed normal five-minute worker settlement: exactly one Commission,status `paid`,USD0.82,and exactly one matching provider node `gid://shopify/AppUsageRecord/534379430109`,USD0.82,created02:15:05UTC. The recorded settlement key is `agsu-order-97e09bd487f75a81a4fc4f39fd363e32c2f049fcf89a1416830ca0dcd3c4bd2a`. Ordinary repeated orders/updated,orders/paid and orders/create produced neither fee nor usage duplicates. The subscription remains ACTIVE,test=true; no actual-money collection is claimed. The local `balanceUsedUsd` still held its earlier0 snapshot,so no live cap-balance refresh or cap result is inferred.
+
+Earlier pre-fix variant order#1001 was still unlinked at02:15:11UTC and awaits normal Shopify retry; no manual replay was performed. Software diagnosis uses CLI/container evidence; Chrome is for native customer flow and submission only. These observations prove one genuine measured-order→usage path,not a deliberate same-event/lost-response retry experiment or every billing case.
 
 At the owner's request, `02f5c4d` visually suppresses only the redundant blue CUSTOM ready-file card in the demo CSS,keeping the native three properties,links,DPI,prices and processing/error/missing-file warnings. Pinned CLI pushed only unpublished draft `189187817693`; read-only pull verified identical local/remote CSS SHA256 `F53910E7DD2F0FA34CE2DEC834E294D68D71CD33A85BA0DF72508ADED9173AC2`. Two focused tests passed and theme check returned[]. The embed still exists and can fetch status; no extension/runtime or live Horizon `189187457245` change is claimed.
 
-Remaining block/customer flows,provider usage/replay/cap proof,normal retry of pre-fix order#1001,portable official theme preview,Lighthouse comparison,live no-tracking capture,review media and App Store submission remain open. Two successful Shopify test payments and one eligible Commission row are not completion of those other gates.
+Remaining block/customer flows,deliberate replay/lost-response proof,USD6 per-order cap and provider cap exhaustion/increase,normal recovery of pre-fix variant order#1001,portable official theme preview,Lighthouse comparison,live no-tracking capture,review media and App Store submission remain open. Two successful Shopify test payments and one actual measured-order usage settlement do not complete those other gates.
 
 ## What this store sells
 
