@@ -62,6 +62,10 @@ import {
 
 const STATUS_OPTIONS = QUEUE_STATUSES.map((s) => ({ label: s.label, value: s.value }))
 
+export function queueOrderLabel(upload: { orderName?: string | null; orderId?: string | null }): string {
+  return upload.orderName?.trim() || (upload.orderId ? `Order ID ${upload.orderId}` : '—')
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request)
   const shopDomain = session.shop
@@ -105,6 +109,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       { customerId: { contains: search } },
       { id: { contains: search } },
       { orderId: { contains: search } },
+      { orderName: { contains: search } },
     ]
   }
 
@@ -177,6 +182,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
         mode: u.mode,
         status: u.status,
         orderId: u.orderId,
+        orderName: u.orderName,
         orderPaidAt: u.orderPaidAt?.toISOString() || null,
         cartAddedAt: u.cartAddedAt?.toISOString() || null,
         customerId: u.customerId,
@@ -522,15 +528,9 @@ export default function ProductionQueuePage() {
         </Text>
       </BlockStack>
     </InlineStack>,
-    upload.orderId ? (
-      <Text as="span" variant="bodySm">
-        #{upload.orderId.slice(-6)}
-      </Text>
-    ) : (
-      <Text as="span" tone="subdued">
-        —
-      </Text>
-    ),
+    <Text as="span" variant="bodySm" tone={upload.orderName || upload.orderId ? undefined : 'subdued'}>
+      {queueOrderLabel(upload)}
+    </Text>,
     <BlockStack key={`print-${upload.id}`} gap="050">
       {upload.printableWidthIn > 0 && upload.measuredSheetLengthIn > 0 ? (
         <Text as="span" variant="bodySm">

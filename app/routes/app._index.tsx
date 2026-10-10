@@ -1,4 +1,5 @@
 import { json, type LoaderFunctionArgs } from '@remix-run/node'
+import { Prisma } from '@prisma/client'
 import { useLoaderData, useNavigate } from '@remix-run/react'
 import { Page, Card, Text, BlockStack, DataTable, Badge, Button, InlineStack, Box, InlineGrid, Divider } from '@shopify/polaris'
 import { OrderIcon, ProductIcon, ClockIcon, CartIcon } from '@shopify/polaris-icons'
@@ -6,6 +7,15 @@ import { authenticate } from '~/shopify.server'
 import prisma from '~/lib/prisma.server'
 import { StatCard } from '~/components/StatCard'
 import { describeUploadStatus, preflightLabel, preflightTone } from '~/lib/uploadStatus'
+
+// Missing JSON paths evaluate to SQL NULL, so NOT alone drops real uploads.
+// Only the explicit missing-file operational placeholder is a ghost.
+export const dashboardNonGhostUploads: Prisma.UploadWhereInput = {
+  OR: [
+    { preflightSummary: { path: ['errorType'], equals: Prisma.AnyNull } },
+    { NOT: { preflightSummary: { path: ['errorType'], equals: 'missing_upload' } } },
+  ],
+}
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request)
@@ -15,19 +25,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const startOfMonth = new Date()
   startOfMonth.setDate(1)
   startOfMonth.setHours(0, 0, 0, 0)
-  // A missing-file operational warning is not an app-served order or upload.
-  const notGhost = { NOT: { preflightSummary: { path: ['errorType'], equals: 'missing_upload' } } } as const
   const [uploads, monthlyUploads, productsConfigured, pendingQueue, monthlyOrders] = await Promise.all([
     prisma.upload.findMany({
-      where: { shopId: shop.id, ...notGhost },
+      where: { shopId: shop.id, ...dashboardNonGhostUploads },
       include: { items: { select: { preflightStatus: true } } },
       orderBy: { createdAt: 'desc' }, take: 5,
     }),
-    prisma.upload.count({ where: { shopId: shop.id, createdAt: { gte: startOfMonth }, ...notGhost } }),
+    prisma.upload.count({ where: { shopId: shop.id, createdAt: { gte: startOfMonth }, ...dashboardNonGhostUploads } }),
     prisma.productConfig.count({ where: { shopId: shop.id, enabled: true } }),
-    prisma.upload.count({ where: { shopId: shop.id, status: 'needs_review', ...notGhost } }),
+    prisma.upload.count({ where: { shopId: shop.id, status: 'needs_review', ...dashboardNonGhostUploads } }),
     prisma.upload.findMany({
-      where: { shopId: shop.id, orderId: { not: null }, createdAt: { gte: startOfMonth }, ...notGhost },
+      where: { shopId: shop.id, orderId: { not: null }, createdAt: { gte: startOfMonth }, ...dashboardNonGhostUploads },
       select: { orderId: true }, distinct: ['orderId'],
     }).then(rows => rows.length),
   ])

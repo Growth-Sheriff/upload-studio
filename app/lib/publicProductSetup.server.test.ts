@@ -20,6 +20,13 @@ describe('self-service decimal pricing inputs', () => {
     mocks.graphql.mockResolvedValue(new Response(JSON.stringify({ data: { product: { id: 'gid://shopify/Product/123' } } })))
   })
 
+  it('describes the existing least-film orientation policy rather than always billing the longer side', () => {
+    const configure = readFileSync('app/routes/app.products.$id.configure.tsx', 'utf8')
+    expect(configure).toContain('fits the press width and uses the least film')
+    expect(configure).toContain('billable length in the chosen printable orientation')
+    expect(configure).not.toContain('longer side is the billable length')
+  })
+
   it('does not impose an implicit whole-number step on setup rate or length', () => {
     const setup = readFileSync('app/routes/app.setup.tsx', 'utf8')
     for (const attribute of ['name="pricePerInch"', 'name="maxPrintableLengthIn"']) {

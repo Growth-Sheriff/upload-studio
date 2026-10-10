@@ -900,9 +900,9 @@ export default function ProductConfigurePage() {
               <BlockStack gap="400">
                 <Text as="h2" variant="headingMd">Finished sheet measurement</Text>
                 <Text as="p">
-                  The uploaded file is the production sheet. Its shorter side is checked against the
-                  press width and its longer side is the billable length. The app never nests or
-                  rearranges copies.
+                  The uploaded file is the production sheet. The app chooses the orientation that
+                  fits the press width and uses the least film; the side running along the roll is
+                  the billable length. The app never nests or rearranges copies.
                 </Text>
 
                 <TextField
@@ -957,7 +957,7 @@ export default function ProductConfigurePage() {
                 <Text as="h3" variant="headingSm">Variant size mapping</Text>
                 <Text as="p" tone="subdued">
                   Variant sizes are read as width × length. The app chooses the shortest variant whose
-                  second number covers the uploaded sheet's normalized length.
+                  second number covers the billable length in the chosen printable orientation.
                 </Text>
 
                 <FormLayout>
