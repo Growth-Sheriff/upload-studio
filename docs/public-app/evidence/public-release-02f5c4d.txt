@@ -1,0 +1,84 @@
+PUBLIC APP: FRESH CI AND IMMUTABLE RUNTIME BUILD
+Recorded: 2026-10-10T02:11:08Z
+Scope: isolated public-app branch; build and registry push only, not deployment.
+
+BUSINESS REASON
+The real development-store order exposed missing tenant binding after manual
+HMAC authentication. The upload remained unlinked and no commission was created
+because the strict database guard correctly refused unbound reconciliation.
+Read-only SSH confirmed these actual prior 29c8756 container log lines:
+2026-10-10T02:02:01.904978507Z [Webhook] Error processing orders/updated: TenantIsolationError: Tenant isolation violation: authenticated shop context is required
+2026-10-10T02:02:02.910773873Z [Webhook] Error processing order: TenantIsolationError: Tenant isolation violation: authenticated shop context is required
+2026-10-10T02:02:03.088316042Z [Webhook] Error processing orders/paid: TenantIsolationError: Tenant isolation violation: authenticated shop context is required
+
+Commit b1c7d6d032051ef5f3dbdce7c692eedd061a7b4c binds the existing persisted
+shop only after valid HMAC in all six order/refund adapters. Existing fee rules,
+idempotency and provider snapshot failure quarantine are unchanged. The narrow
+tests use the actual routes, reconciler and production Prisma tenant guard;
+only final database transport and provider snapshot are replaced. Invalid HMAC
+does not bind/query; unbound and foreign-owner queries still fail. The focused
+34 tests and complete typecheck passed before that source commit.
+
+SOURCE AND INPUT ISOLATION
+Frozen application revision: 02f5c4dfba12e244e92398dd05047b49f168f2da
+Historical regression baseline: 2ff3faf9a856bc8d67be620f0591fc215fc2598e
+Explicit Depot project: 7fxkc8sd3p
+Platform: linux/amd64
+Reviewed: deploy/public/Dockerfile.ci, deploy/public/verify.sh,
+deploy/public/Dockerfile and .dockerignore allowlists.
+No application build input changed during the sequential builds. The separate
+demo CSS change is not a runtime Dockerfile input. Later documentation-only
+commit 2bbed74 and the deployment-helper image pin do not change copied inputs.
+No tenant TOML, tenant deploy script, env, credential or host worktree Git
+metadata is copied into either image. CI fetches only public historical source.
+
+FRESH CI
+Command (PowerShell, dedicated public worktree):
+depot build --project 7fxkc8sd3p --platform linux/amd64 --file deploy/public/Dockerfile.ci --build-arg PUBLIC_REVIEW_SHA=2ff3faf9a856bc8d67be620f0591fc215fc2598e --label org.opencontainers.image.revision=02f5c4dfba12e244e92398dd05047b49f168f2da --no-cache-filter verify --progress plain .
+Build ID: xv0hwmm8mq
+https://depot.dev/orgs/zl650q33c5/projects/7fxkc8sd3p/builds/xv0hwmm8mq
+Start: 2026-10-10T02:07:02Z
+Provider duration: 64 seconds
+CLI exit: 0
+Provider terminal status: finished (independently queried before runtime build)
+8 migrations successfully applied to fresh disposable PostgreSQL
+Test Files: 69 passed (69)
+Tests: 436 passed (436), zero skipped
+Complete typecheck: exit 0
+Measurement regression: Comparison integrity PASS; release-blocking regressions 0 (none)
+Resolver source-sha256: aae156f274214008, unchanged
+Remix client and server builds: successful
+Theme check output: []
+Pinned Shopify CLI 3.88.1 theme and checkout extension builds: successful
+Disposable PostgreSQL and Redis shutdown: successful
+Test services are CI-only 127.0.0.1 PostgreSQL:55439 and Redis:56389,
+guarded by verify.sh exact URL checks. No hosted database was used for tests.
+
+IMMUTABLE RUNTIME BUILD (AFTER TERMINAL GREEN CI)
+Command:
+depot build --project 7fxkc8sd3p --platform linux/amd64 --file deploy/public/Dockerfile --tag ghcr.io/growth-sheriff/auto-gang-sheet-public:02f5c4d --label org.opencontainers.image.revision=02f5c4dfba12e244e92398dd05047b49f168f2da --push --progress plain .
+Build ID: 637fntmdfh
+https://depot.dev/orgs/zl650q33c5/projects/7fxkc8sd3p/builds/637fntmdfh
+Start: 2026-10-10T02:08:17Z
+Provider duration: 69 seconds
+CLI exit: 0
+Provider terminal status: finished
+Pushed tag (new public app only): ghcr.io/growth-sheriff/auto-gang-sheet-public:02f5c4d
+Image index: sha256:d856fbc48eb3954a26618d3e5955b1cf3a0c4e0c50c81c0ce8e1262909ac1d08
+linux/amd64 manifest: sha256:c622690bb1d70788e5c098a7452825b6c22bbdb4ab763042aba96e8efb264107
+Config: sha256:cb18b4097f9fa208c1520a6a9ec4569b308fe35987e4486dc0d6039c84e8d9d2
+org.opencontainers.image.revision: 02f5c4dfba12e244e92398dd05047b49f168f2da
+
+Independent checks:
+depot list builds --project 7fxkc8sd3p --output json
+docker buildx imagetools inspect ghcr.io/growth-sheriff/auto-gang-sheet-public:02f5c4d
+docker buildx imagetools inspect ghcr.io/growth-sheriff/auto-gang-sheet-public:02f5c4d --format '{{ index .Image.Config.Labels "org.opencontainers.image.revision" }}'
+
+HANDOFF LIMIT
+At this evidence timestamp the new image had not yet been deployed by this
+build workstream. The deployment owner received the immutable index digest
+and owns runtime pinning, rollout and its separate evidence. This workstream
+did not push Git, deploy, replay webhooks, run a collector, or mutate hosted
+orders, billing, object storage, queues or existing tenant infrastructure.
+Actual hosted order linking, commission and usage-record success must be
+observed separately after deployment; passing tests are not proof of these.
