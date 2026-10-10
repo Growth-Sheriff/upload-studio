@@ -7,6 +7,7 @@ import {
 import { PrismaSessionStorage } from '~/lib/prismaSessionStorage.server';
 import { enterTenantContext } from '~/lib/tenantContext.server';
 import { persistVerifiedShopInstallation } from '~/lib/publicAuthPersistence.server';
+import { isMissingAdminTokenXHR, recoveryAppPath, recoveryShopDomain } from '~/lib/embeddedAuthRecovery';
 import prisma from "~/lib/prisma.server";
 
 
@@ -50,9 +51,29 @@ async function bindVerifiedShop(domain: string) {
 export const authenticate = {
   ...shopify.authenticate,
   admin: async (...args: Parameters<typeof shopify.authenticate.admin>) => {
-    const result = await shopify.authenticate.admin(...args);
-    await bindVerifiedShop(result.session.shop);
-    return result;
+    const request = args[0];
+    // App Bridge can send an XHR without a token when its host connection fails.
+    // Keep it unauthenticated, but allow its documented single fresh-token retry
+    // instead of treating this fetch as a document and losing its destination.
+    if (isMissingAdminTokenXHR(request)) throw new Response('Shopify authentication required', {
+      status: 401, headers: { 'X-Shopify-Retry-Invalid-Session-Request': '1' },
+    });
+    try {
+      const result = await shopify.authenticate.admin(...args);
+      await bindVerifiedShop(result.session.shop);
+      return result;
+    } catch (error) {
+      if (error instanceof Response && error.status >= 300 && error.status < 400 && error.headers.get('Location') === '/auth/login') {
+        const url = new URL(request.url);
+        const query = new URLSearchParams({ returnTo: recoveryAppPath(url.pathname) });
+        const shop = recoveryShopDomain(url.searchParams.get('shop'));
+        if (shop) query.set('recoveryShop', shop);
+        const headers = new Headers(error.headers);
+        headers.set('Location', `/auth/login?${query}`);
+        throw new Response(error.body, { status: error.status, statusText: error.statusText, headers });
+      }
+      throw error;
+    }
   },
   webhook: async (...args: Parameters<typeof shopify.authenticate.webhook>) => {
     const result = await shopify.authenticate.webhook(...args);

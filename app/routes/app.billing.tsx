@@ -9,6 +9,7 @@ import { BILLING_CAP_TIERS, BILLING_TERMS, billingCapState, billingReviewLabel, 
 import { buildUsageIdempotencyKey } from '~/lib/billing.server'
 import { requestShopifyBillingApproval, syncShopifyBilling } from '~/lib/shopifyBilling.server'
 import { merchantLegalAgreementSatisfied } from '~/lib/publicLegal.server'
+import { shopifyAdminReopenUrl } from '~/lib/embeddedAuthRecovery'
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { session, admin } = await authenticate.admin(request)
@@ -33,13 +34,9 @@ export async function action({ request }: ActionFunctionArgs) {
   const action = String(form.get('_action') || '')
   if (action === 'approve_billing') {
     try {
-      const appUrl = process.env.SHOPIFY_APP_URL
-      if (!appUrl) throw new Error('Public app URL not configured')
-      const returnUrl = new URL('/app/billing', appUrl)
-      returnUrl.searchParams.set('shop', session.shop)
-      const host = new URL(request.url).searchParams.get('host')
-      if (host) returnUrl.searchParams.set('host', host)
-      const approvalUrl = await requestShopifyBillingApproval(shop.id, admin, Number(form.get('capUsd')), returnUrl.toString())
+      const returnUrl = shopifyAdminReopenUrl(session.shop, process.env.SHOPIFY_API_KEY, '/app/billing')
+      if (!returnUrl) throw new Error('Shopify app return URL not configured')
+      const approvalUrl = await requestShopifyBillingApproval(shop.id, admin, Number(form.get('capUsd')), returnUrl)
       return json({ approvalUrl, error: null })
     } catch (error) { return json({ approvalUrl: null, error: error instanceof Error ? error.message : String(error) }, { status: 400 }) }
   }

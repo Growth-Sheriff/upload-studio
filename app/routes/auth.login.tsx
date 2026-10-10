@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { Form, useActionData, useLoaderData } from "@remix-run/react";
 import {
@@ -12,14 +12,17 @@ import {
 } from "@shopify/polaris";
 import polarisTranslations from "@shopify/polaris/locales/en.json";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
+import { LoginErrorType } from "@shopify/shopify-app-remix/server";
 
 import { login } from "~/shopify.server";
+import { recoveryAppPath, recoveryShopDomain, shopifyAdminReopenUrl } from "~/lib/embeddedAuthRecovery";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const errors = loginErrorMessage(await login(request));
-  return { errors, polarisTranslations };
+  const url = new URL(request.url);
+  return { errors, polarisTranslations, apiKey: process.env.SHOPIFY_API_KEY || "", recoveryShop: recoveryShopDomain(url.searchParams.get('recoveryShop')), returnTo: recoveryAppPath(url.searchParams.get('returnTo')) };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -27,10 +30,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   return { errors };
 };
 
-function loginErrorMessage(loginErrors: any): { shop?: string } {
-  if (loginErrors?.shop === "MissingShop") {
+function loginErrorMessage(loginErrors: { shop?: string }): { shop?: string } {
+  if (loginErrors?.shop === LoginErrorType.MissingShop) {
     return { shop: "Please enter your shop domain to log in" };
-  } else if (loginErrors?.shop === "InvalidShop") {
+  } else if (loginErrors?.shop === LoginErrorType.InvalidShop) {
     return { shop: "Please enter a valid shop domain to log in" };
   }
   return {};
@@ -40,37 +43,36 @@ export default function Auth() {
   const loaderData = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [shop, setShop] = useState("");
+  const [embedded, setEmbedded] = useState(false);
+  const [recoveryShop, setRecoveryShop] = useState(loaderData.recoveryShop);
   const { errors } = actionData || loaderData;
+  useEffect(() => {
+    setEmbedded(window.top !== window.self);
+    const bridge = window as Window & { shopify?: { config?: { shop?: string } } };
+    setRecoveryShop(loaderData.recoveryShop || recoveryShopDomain(bridge.shopify?.config?.shop));
+  }, [loaderData.recoveryShop]);
+  const recoveryUrl = shopifyAdminReopenUrl(recoveryShop, loaderData.apiKey, loaderData.returnTo);
 
-
-
-  if (typeof window !== "undefined" && window.top !== window.self) {
+  if (embedded || recoveryUrl) {
     return (
       <PolarisAppProvider i18n={loaderData.polarisTranslations}>
         <Page>
           <Card>
              <div style={{ padding: "2rem", textAlign: "center" }}>
-                <Text variant="headingMd" as="h2">Session Expired</Text>
+                <Text variant="headingMd" as="h2">Reconnect to Shopify</Text>
                 <div style={{ margin: "1rem 0" }}>
-                  <Text as="p">Your session has expired or the connection was lost.</Text>
+                  <Text as="p">Shopify could not authenticate this request. Reopen the app from Shopify to restore the connection.</Text>
                 </div>
                 <Button
                    variant="primary"
-                   onClick={() => {
-
-
-                        try {
-                            if (window.top) window.top.location.reload();
-                        } catch (e) {
-
-                        }
-                   }}
+                   url={recoveryUrl || 'https://admin.shopify.com'}
+                   target="_top"
                 >
-                   Reload App
+                   {recoveryUrl ? 'Reopen app in Shopify' : 'Open Shopify admin'}
                 </Button>
                 <div style={{ marginTop: "1rem" }}>
                     <Text variant="bodySm" as="p" tone="subdued">
-                        If the button doesn't work, <a href="/auth/login" target="_blank">open in new tab</a> to log in.
+                        {recoveryUrl ? 'Your requested page will reopen inside Shopify.' : 'In Shopify, open Apps and select Auto Gang Sheet Upload.'}
                     </Text>
                 </div>
              </div>
