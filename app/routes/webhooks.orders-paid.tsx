@@ -2,6 +2,7 @@ import type { ActionFunctionArgs } from '@remix-run/node'
 import { json } from '@remix-run/node'
 import prisma from '~/lib/prisma.server'
 import { reconcileOrder, verifyShopifyWebhookHmac } from '~/lib/orderReconciler.server'
+import { withTenantContext } from '~/lib/tenantContext.server'
 
 // Thin adapter: verify -> parse -> reconcile. The paid facts
 // (financial_status) live in the payload, so the reconciler applies
@@ -34,7 +35,7 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ success: true })
     }
 
-    const summary = await reconcileOrder(shop, order, 'orders/paid')
+    const summary = await withTenantContext(shop.id, () => reconcileOrder(shop, order, 'orders/paid'))
 
     return json({ success: true, designsLinked: summary.linked.length })
   } catch (error) {

@@ -2,6 +2,7 @@ import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import prisma from "~/lib/prisma.server";
 import { reconcileOrder, verifyShopifyWebhookHmac } from "~/lib/orderReconciler.server";
+import { withTenantContext } from "~/lib/tenantContext.server";
 
 // Thin adapter: verify -> parse -> reconcile. cancelled_at in the payload
 // drives the archived transition (archived/shipped stay protected) inside
@@ -37,22 +38,24 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ received: true });
     }
 
-    const summary = await reconcileOrder(shop, payload, "orders/cancelled");
+    return await withTenantContext(shop.id, async () => {
+      const summary = await reconcileOrder(shop, payload, "orders/cancelled");
 
-    await prisma.auditLog.create({
-      data: {
-        shopId: shop.id,
-        action: "order_cancelled",
-        resourceType: "order",
-        resourceId: orderId,
-        metadata: {
-          affectedUploads: summary.affectedUploadIds,
-          cancelReason: payload.cancel_reason || "unknown",
+      await prisma.auditLog.create({
+        data: {
+          shopId: shop.id,
+          action: "order_cancelled",
+          resourceType: "order",
+          resourceId: orderId,
+          metadata: {
+            affectedUploads: summary.affectedUploadIds,
+            cancelReason: payload.cancel_reason || "unknown",
+          },
         },
-      },
-    });
+      });
 
-    return json({ received: true, processed: summary.affectedUploadIds.length });
+      return json({ received: true, processed: summary.affectedUploadIds.length });
+    });
   } catch (error) {
     console.error("[Webhook] Error processing orders/cancelled:", error);
     return json({ error: "Processing failed" }, { status: 500 });

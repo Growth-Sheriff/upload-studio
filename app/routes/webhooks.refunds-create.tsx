@@ -7,6 +7,7 @@ import {
   verifyShopifyWebhookHmac,
 } from '~/lib/orderReconciler.server'
 import { fetchShopifyOrderSnapshot } from '~/lib/shopifyOrderSnapshot.server'
+import { withTenantContext } from '~/lib/tenantContext.server'
 
 /**
  * refunds/create does not contain a full order. Verify the notification, read
@@ -38,48 +39,50 @@ export async function action({ request }: ActionFunctionArgs) {
     const shop = await prisma.shop.findUnique({ where: { shopDomain } })
     if (!shop) return json({ received: true })
 
-    let order: any
-    try {
-      order = await fetchShopifyOrderSnapshot(shopDomain, shop.accessToken, orderId)
-    } catch (snapshotError) {
-      const snapshotErrorMessage =
-        snapshotError instanceof Error ? snapshotError.message : String(snapshotError)
-      const quarantine = await quarantineCommissionForVerifiedRefundSnapshotFailure({
-        shopId: shop.id,
-        orderId,
-        refundId: refund.id ? String(refund.id) : null,
-        snapshotError: snapshotErrorMessage,
-      })
-      // Retry only when a retry can change the outcome. With no fee row there is
-      // nothing to reconcile, and a 404 is permanent (e.g. an order older than
-      // the read_orders window) — the fee, if any, is already quarantined for
-      // review. Answering 500 there made Shopify redeliver the same refund
-      // indefinitely, and Shopify drops subscriptions that keep failing.
-      const permanent = !quarantine.commissionFound || /HTTP 404\b/.test(snapshotErrorMessage)
-      console.error(
-        `[Webhook] refunds/create order snapshot failed for ${shopDomain}/${orderId}; ` +
-          `commissionFound=${quarantine.commissionFound} reviewFlagAdded=${quarantine.reviewFlagAdded} ` +
-          `retry=${!permanent}:`,
-        snapshotError
-      )
-      if (permanent) {
-        return json({ received: true, skipped: 'order_snapshot_unavailable' })
+    return await withTenantContext(shop.id, async () => {
+      let order: any
+      try {
+        order = await fetchShopifyOrderSnapshot(shopDomain, shop.accessToken, orderId)
+      } catch (snapshotError) {
+        const snapshotErrorMessage =
+          snapshotError instanceof Error ? snapshotError.message : String(snapshotError)
+        const quarantine = await quarantineCommissionForVerifiedRefundSnapshotFailure({
+          shopId: shop.id,
+          orderId,
+          refundId: refund.id ? String(refund.id) : null,
+          snapshotError: snapshotErrorMessage,
+        })
+        // Retry only when a retry can change the outcome. With no fee row there is
+        // nothing to reconcile, and a 404 is permanent (e.g. an order older than
+        // the read_orders window) — the fee, if any, is already quarantined for
+        // review. Answering 500 there made Shopify redeliver the same refund
+        // indefinitely, and Shopify drops subscriptions that keep failing.
+        const permanent = !quarantine.commissionFound || /HTTP 404\b/.test(snapshotErrorMessage)
+        console.error(
+          `[Webhook] refunds/create order snapshot failed for ${shopDomain}/${orderId}; ` +
+            `commissionFound=${quarantine.commissionFound} reviewFlagAdded=${quarantine.reviewFlagAdded} ` +
+            `retry=${!permanent}:`,
+          snapshotError
+        )
+        if (permanent) {
+          return json({ received: true, skipped: 'order_snapshot_unavailable' })
+        }
+        return json({ error: 'Processing failed' }, { status: 500 })
       }
-      return json({ error: 'Processing failed' }, { status: 500 })
-    }
-    // Do not depend on read-after-write timing in the order endpoint. Carry
-    // the verified webhook refund into the snapshot when Shopify's order read
-    // has not exposed it yet; the fact classifier can then quarantine/void the
-    // fee immediately instead of briefly making it collectible again.
-    const currentRefunds = Array.isArray(order.refunds) ? order.refunds : []
-    if (!currentRefunds.some((entry: any) => String(entry?.id || '') === String(refund.id || ''))) {
-      order.refunds = [...currentRefunds, refund]
-    }
-    const summary = await reconcileOrder(shop, order, 'refunds/create')
-    return json({
-      received: true,
-      refundId: refund.id ? String(refund.id) : null,
-      processed: summary.affectedUploadIds.length,
+      // Do not depend on read-after-write timing in the order endpoint. Carry
+      // the verified webhook refund into the snapshot when Shopify's order read
+      // has not exposed it yet; the fact classifier can then quarantine/void the
+      // fee immediately instead of briefly making it collectible again.
+      const currentRefunds = Array.isArray(order.refunds) ? order.refunds : []
+      if (!currentRefunds.some((entry: any) => String(entry?.id || '') === String(refund.id || ''))) {
+        order.refunds = [...currentRefunds, refund]
+      }
+      const summary = await reconcileOrder(shop, order, 'refunds/create')
+      return json({
+        received: true,
+        refundId: refund.id ? String(refund.id) : null,
+        processed: summary.affectedUploadIds.length,
+      })
     })
   } catch (error) {
     console.error('[Webhook] Error processing refunds/create:', error)

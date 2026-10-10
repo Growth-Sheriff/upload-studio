@@ -2,6 +2,7 @@ import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import prisma from "~/lib/prisma.server";
 import { reconcileOrder, verifyShopifyWebhookHmac } from "~/lib/orderReconciler.server";
+import { withTenantContext } from "~/lib/tenantContext.server";
 
 // Thin adapter: verify -> parse -> reconcile. fulfillment_status in the
 // payload drives the printed -> shipped transition inside the convergent
@@ -37,23 +38,25 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ received: true });
     }
 
-    const summary = await reconcileOrder(shop, payload, "orders/fulfilled");
+    return await withTenantContext(shop.id, async () => {
+      const summary = await reconcileOrder(shop, payload, "orders/fulfilled");
 
-    await prisma.auditLog.create({
-      data: {
-        shopId: shop.id,
-        action: "order_fulfilled",
-        resourceType: "order",
-        resourceId: orderId,
-        metadata: {
-          affectedUploads: summary.affectedUploadIds,
-          fulfillmentStatus: payload.fulfillment_status || "fulfilled",
-          trackingNumbers: payload.fulfillments?.map((f: any) => f.tracking_number).filter(Boolean) || [],
+      await prisma.auditLog.create({
+        data: {
+          shopId: shop.id,
+          action: "order_fulfilled",
+          resourceType: "order",
+          resourceId: orderId,
+          metadata: {
+            affectedUploads: summary.affectedUploadIds,
+            fulfillmentStatus: payload.fulfillment_status || "fulfilled",
+            trackingNumbers: payload.fulfillments?.map((f: any) => f.tracking_number).filter(Boolean) || [],
+          },
         },
-      },
-    });
+      });
 
-    return json({ received: true, processed: summary.affectedUploadIds.length });
+      return json({ received: true, processed: summary.affectedUploadIds.length });
+    });
   } catch (error) {
     console.error("[Webhook] Error processing orders/fulfilled:", error);
     return json({ error: "Processing failed" }, { status: 500 });
