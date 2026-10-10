@@ -1,14 +1,12 @@
 import { useEffect, useState } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
-import { Form, useActionData, useLoaderData } from "@remix-run/react";
+import { useLoaderData } from "@remix-run/react";
 import {
   AppProvider as PolarisAppProvider,
   Button,
   Card,
-  FormLayout,
   Page,
   Text,
-  TextField,
 } from "@shopify/polaris";
 import polarisTranslations from "@shopify/polaris/locales/en.json";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
@@ -41,69 +39,35 @@ function loginErrorMessage(loginErrors: { shop?: string }): { shop?: string } {
 
 export default function Auth() {
   const loaderData = useLoaderData<typeof loader>();
-  const actionData = useActionData<typeof action>();
-  const [shop, setShop] = useState("");
-  const [embedded, setEmbedded] = useState(false);
   const [recoveryShop, setRecoveryShop] = useState(loaderData.recoveryShop);
-  const { errors } = actionData || loaderData;
   useEffect(() => {
-    setEmbedded(window.top !== window.self);
     const bridge = window as Window & { shopify?: { config?: { shop?: string } } };
     setRecoveryShop(loaderData.recoveryShop || recoveryShopDomain(bridge.shopify?.config?.shop));
   }, [loaderData.recoveryShop]);
   const recoveryUrl = shopifyAdminReopenUrl(recoveryShop, loaderData.apiKey, loaderData.returnTo);
 
-  if (embedded || recoveryUrl) {
-    return (
-      <PolarisAppProvider i18n={loaderData.polarisTranslations}>
-        <Page>
-          <Card>
-             <div style={{ padding: "2rem", textAlign: "center" }}>
-                <Text variant="headingMd" as="h2">Reconnect to Shopify</Text>
-                <div style={{ margin: "1rem 0" }}>
-                  <Text as="p">Shopify could not authenticate this request. Reopen the app from Shopify to restore the connection.</Text>
-                </div>
-                <Button
-                   variant="primary"
-                   url={recoveryUrl || 'https://admin.shopify.com'}
-                   target="_top"
-                >
-                   {recoveryUrl ? 'Reopen app in Shopify' : 'Open Shopify admin'}
-                </Button>
-                <div style={{ marginTop: "1rem" }}>
-                    <Text variant="bodySm" as="p" tone="subdued">
-                        {recoveryUrl ? 'Your requested page will reopen inside Shopify.' : 'In Shopify, open Apps and select Auto Gang Sheet Upload.'}
-                    </Text>
-                </div>
-             </div>
-          </Card>
-        </Page>
-      </PolarisAppProvider>
-    );
-  }
-
   return (
     <PolarisAppProvider i18n={loaderData.polarisTranslations}>
       <Page>
         <Card>
-          <Form method="post">
-            <FormLayout>
-              <Text variant="headingMd" as="h2">
-                Log in
+          <div style={{ padding: "2rem", textAlign: "center" }}>
+            <Text variant="headingMd" as="h2">Reconnect to Shopify</Text>
+            <div style={{ margin: "1rem 0" }}>
+              <Text as="p">Shopify could not authenticate this request. Reopen the app from Shopify to restore the connection.</Text>
+            </div>
+            <Button
+              variant="primary"
+              url={recoveryUrl || 'https://admin.shopify.com'}
+              target="_top"
+            >
+              {recoveryUrl ? 'Reopen app in Shopify' : 'Open Shopify admin'}
+            </Button>
+            <div style={{ marginTop: "1rem" }}>
+              <Text variant="bodySm" as="p" tone="subdued">
+                {recoveryUrl ? 'Your requested page will reopen inside Shopify.' : 'In Shopify, open Apps and select Auto Gang Sheet Upload.'}
               </Text>
-              <TextField
-                type="text"
-                name="shop"
-                label="Shop domain"
-                helpText="example.myshopify.com"
-                value={shop}
-                onChange={setShop}
-                autoComplete="on"
-                error={errors?.shop}
-              />
-              <Button submit>Log in</Button>
-            </FormLayout>
-          </Form>
+            </div>
+          </div>
         </Card>
       </Page>
     </PolarisAppProvider>

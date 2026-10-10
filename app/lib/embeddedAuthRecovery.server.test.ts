@@ -76,6 +76,9 @@ describe('embedded authentication recovery', () => {
     expect(source).toContain('Reconnect to Shopify')
     expect(source).not.toContain('Session Expired')
     expect(source).not.toContain('top.location.reload')
+    expect(source).not.toMatch(/<(?:Form|form|TextField|input)\b/)
+    expect(source).not.toContain('if (embedded || recoveryUrl)')
+    expect(source).toContain("url={recoveryUrl || 'https://admin.shopify.com'}")
   })
 
   it('returns billing approval to Shopify admin even when a SPA request has no host or an attacker supplies one', async () => {
