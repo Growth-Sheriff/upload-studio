@@ -1,11 +1,11 @@
 import type { LoaderFunctionArgs, HeadersFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useLoaderData, useRouteError } from "@remix-run/react";
+import { useLoaderData, useMatches, useRouteError, type ShouldRevalidateFunction } from "@remix-run/react";
 import { AppProvider } from "@shopify/shopify-app-remix/react";
 import { boundary } from "@shopify/shopify-app-remix/server";
 import { authenticate } from "~/shopify.server";
 import { AppFrame } from "~/components/AppFrame";
-import { PaymentSetupBanner } from "~/components/PaymentSetupBanner";
+import { PaymentSetupBanner, billingBannerForRender, revalidateAfterBilling } from "~/components/PaymentSetupBanner";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import adminStyles from "~/styles/admin.css?url";
 import prisma from "~/lib/prisma.server";
@@ -74,9 +74,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
 }
 
+export const shouldRevalidate: ShouldRevalidateFunction = ({ currentUrl, nextUrl, defaultShouldRevalidate }) =>
+  revalidateAfterBilling(currentUrl.pathname, nextUrl.pathname, defaultShouldRevalidate);
+
 export default function AppLayout() {
   const { apiKey, shop, pendingUploads, pendingQueue, billingBanner, needsSetup } =
     useLoaderData<typeof loader>();
+  const matches = useMatches();
+  const visibleBillingBanner = billingBannerForRender(billingBanner, matches.find(match => match.id === 'routes/app.billing')?.data);
 
 
   useAppBridgeNavigation();
@@ -98,11 +103,11 @@ export default function AppLayout() {
         notice={
           <BlockStack gap="300">
           {needsSetup && <Banner title="Choose your product and printable limits"><p>Finish setup before adding your upload block.</p><Button url="/app/setup">Start setup</Button></Banner>}
-          {billingBanner ? (
+          {visibleBillingBanner ? (
             <PaymentSetupBanner
-              status={billingBanner.status}
-              capUsd={billingBanner.capUsd}
-              usedUsd={billingBanner.usedUsd}
+              status={visibleBillingBanner.status}
+              capUsd={visibleBillingBanner.capUsd}
+              usedUsd={visibleBillingBanner.usedUsd}
             />
           ) : null}
           </BlockStack>

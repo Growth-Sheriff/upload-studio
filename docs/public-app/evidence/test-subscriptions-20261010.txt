@@ -1,0 +1,47 @@
+Auto Gang Sheet Upload — actual test subscription evidence
+Observed at: 2026-10-10T01:53:53.316Z
+
+Scope and method
+- Only the NEW public host 607746803 (143.198.12.234); protected SSH state was checked against that exact ID/IP before connection. Existing tenant hosts were not queried or changed.
+- Runtime guards checked PUBLIC_APP_RUNTIME=true, the public app client ID, https://auto-gang-sheet.actualscope.com, and the dedicated public PostgreSQL host/database/runtime user.
+- Local database queries ran in a transaction with SET TRANSACTION READ ONLY and an explicit allowlist of the three demo shop domains below.
+- Shopify Admin GraphQL API 2026-10 was queried using each already-stored valid token in memory. No SDK token refresh, subscription sync/write, subscription creation, usage record, financial mutation, or queue operation was invoked by this evidence collection.
+- Tokens, approval URLs, database secrets and buyer contacts are excluded. Local and provider reads are sequential observations, not one distributed transaction.
+
+Provider query
+query PublicReadOnlySubscriptionEvidence {
+  shop { myshopifyDomain currencyCode plan { partnerDevelopment } }
+  currentAppInstallation {
+    activeSubscriptions {
+      id status test currentPeriodEnd
+      lineItems {
+        id
+        plan {
+          pricingDetails {
+            __typename
+            ... on AppUsagePricing {
+              cappedAmount { amount currencyCode }
+              balanceUsed { amount currencyCode }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+Exact nonsecret observations
+{"shop":"auto-gang-sheet-demo.myshopify.com","shopCurrency":"USD","partnerDevelopment":true,"local":{"billingStatus":"active","legalVersion":"2026-10-10.1:c769892b1216b191ec6f93d2","legalAcceptedAt":"2026-10-10T01:45:36.218Z","billing":{"subscriptionId":"gid://shopify/AppSubscription/33025884381","usageLineItemId":"gid://shopify/AppSubscriptionLineItem/33025884381?v=1&index=0","status":"active","cappedAmountUsd":"50","balanceUsedUsd":"0","test":true,"pendingCapUsd":null,"syncedAt":"2026-10-10T01:50:04.835Z"},"latestSubscriptionWebhook":{"createdAt":"2026-10-10T01:48:39.435Z","metadata":{"topic":"APP_SUBSCRIPTIONS_UPDATE","eventId":"a32d70d2-e06a-4b6b-8c9a-a6fc36ec4fff"}}},"provider":{"id":"gid://shopify/AppSubscription/33025884381","status":"ACTIVE","test":true,"currentPeriodEnd":"2026-11-09T01:48:37Z","lineItems":[{"id":"gid://shopify/AppSubscriptionLineItem/33025884381?v=1&index=0","plan":{"pricingDetails":{"__typename":"AppUsagePricing","cappedAmount":{"amount":"50.0","currencyCode":"USD"},"balanceUsed":{"amount":"0.0","currencyCode":"USD"}}}}]}}
+{"shop":"auto-gang-sheet-isolation-two.myshopify.com","shopCurrency":"USD","partnerDevelopment":true,"local":{"billingStatus":"active","legalVersion":"2026-10-10.1:c769892b1216b191ec6f93d2","legalAcceptedAt":"2026-10-10T01:45:55.900Z","billing":{"subscriptionId":"gid://shopify/AppSubscription/75855822915","usageLineItemId":"gid://shopify/AppSubscriptionLineItem/75855822915?v=1&index=0","status":"active","cappedAmountUsd":"50","balanceUsedUsd":"0","test":true,"pendingCapUsd":null,"syncedAt":"2026-10-10T01:52:09.163Z"},"latestSubscriptionWebhook":{"createdAt":"2026-10-10T01:51:18.529Z","metadata":{"topic":"APP_SUBSCRIPTIONS_UPDATE","eventId":"78de8890-4886-41ef-9f58-e95792b42f34"}}},"provider":{"id":"gid://shopify/AppSubscription/75855822915","status":"ACTIVE","test":true,"currentPeriodEnd":"2026-11-09T01:51:16Z","lineItems":[{"id":"gid://shopify/AppSubscriptionLineItem/75855822915?v=1&index=0","plan":{"pricingDetails":{"__typename":"AppUsagePricing","cappedAmount":{"amount":"50.0","currencyCode":"USD"},"balanceUsed":{"amount":"0.0","currencyCode":"USD"}}}}]}}
+{"shop":"auto-gang-sheet-isolation-three.myshopify.com","shopCurrency":"CAD","partnerDevelopment":true,"local":{"billingStatus":"active","legalVersion":"2026-10-10.1:c769892b1216b191ec6f93d2","legalAcceptedAt":"2026-10-10T01:45:57.112Z","billing":{"subscriptionId":"gid://shopify/AppSubscription/32567918771","usageLineItemId":"gid://shopify/AppSubscriptionLineItem/32567918771?v=1&index=0","status":"active","cappedAmountUsd":"50","balanceUsedUsd":"0","test":true,"pendingCapUsd":null,"syncedAt":"2026-10-10T01:52:09.943Z"},"latestSubscriptionWebhook":{"createdAt":"2026-10-10T01:51:18.839Z","metadata":{"topic":"APP_SUBSCRIPTIONS_UPDATE","eventId":"96ab2fd1-b9cb-46c7-8b72-9ef3281a8cd8"}}},"provider":{"id":"gid://shopify/AppSubscription/32567918771","status":"ACTIVE","test":true,"currentPeriodEnd":"2026-11-09T01:51:17Z","lineItems":[{"id":"gid://shopify/AppSubscriptionLineItem/32567918771?v=1&index=0","plan":{"pricingDetails":{"__typename":"AppUsagePricing","cappedAmount":{"amount":"50.0","currencyCode":"USD"},"balanceUsed":{"amount":"0.0","currencyCode":"USD"}}}}]}}
+
+What this proves
+- All three development stores have one active TEST usage subscription, the exact provider subscription/line matches local state, and the cap is US$50 with US$0 recorded usage.
+- All three local records contain merchant Terms/DPA acceptance for version 2026-10-10.1:c769892b1216b191ec6f93d2, performed separately through the UI by the operator.
+- All three have actual Shopify-origin APP_SUBSCRIPTIONS_UPDATE audit receipts. Billing-page reconciliation has brought local state into agreement with the provider.
+- The third store's order currency is CAD; its app usage subscription is still USD. This does not prove FX calculation on an order.
+
+What this does NOT prove
+- No order, appUsageRecordCreate, replay/idempotency at the real provider, cap exhaustion, cap approval increase, real money collection, credit or refund is demonstrated here. Usage remains zero in all three subscriptions.
+- PUBLIC_SHOPIFY_BILLING_TEST was absent from both public.env and the running container during the preceding read-only check. The implementation does not use that flag: provider shop.plan.partnerDevelopment determines test mode. The provider's explicit test:true above is the decisive evidence.
+- The parent-layout banner correction accompanying this evidence is local source only at capture time; it is not claimed deployed by this file.
