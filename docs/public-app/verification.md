@@ -2,7 +2,21 @@
 
 Work performed 9–10 October 2026 (Europe/Istanbul), exclusively in the managed public worktree. Main baseline: `76113c193d7da789df9b2d3ea1ad7947af48b334`. The original custom checkout is unchanged and clean. A new public review app is now registered, hosted and installed in three development shops; no App Store submission or approval is claimed. Historical sections below retain their own executed revisions and limitations.
 
-## Latest public-only release — 9 October,23:13UTC
+## Current merchant agreement and test billing — 10 October 2026
+
+The owner-approved, ordinary Shopify administrator UI flow has now accepted Actual Scope Terms/DPA version `2026-10-10.1:c769892b1216b191ec6f93d2` in all three new development shops. These are separate merchant agreements, not inferred OAuth or billing consent; no receipt was backfilled.
+
+| New development shop | Actual accepted-terms screen | Shopify test subscription |
+| --- | --- | --- |
+| `auto-gang-sheet-demo.myshopify.com` | [Demo acceptance](evidence/demo-processing-terms-accepted.jpg) | ACTIVE, test=true, USD50 cap, used USD0 |
+| `auto-gang-sheet-isolation-two.myshopify.com` | [Isolation two acceptance](evidence/isolation-two-processing-terms-accepted.jpg) | ACTIVE, test=true, USD50 cap, used USD0 |
+| `auto-gang-sheet-isolation-three.myshopify.com` | [Isolation three acceptance](evidence/isolation-three-processing-terms-accepted.jpg) | ACTIVE, test=true, USD50 cap, used USD0 |
+
+Each test subscription was separately approved by the owner. The [guarded read-only provider/database evidence](evidence/test-subscriptions-20261010.txt), observed at2026-10-10T01:53:53.316Z, confirms all three ACTIVE test subscriptions, exact matching local references and actual APP_SUBSCRIPTIONS_UPDATE audit receipts. It also records the three UI acceptance timestamps. Isolation three's shop currency is CAD, while its usage subscription is USD; no order FX calculation is proven. An ACTIVE test subscription with zero usage proves neither a paid order nor a usage charge, duplicate-delivery handling, cap exhaustion/increase or paid merchant invoicing.
+
+The initial10October supported file-chooser attempt failed while Chrome's ChatGPT extension lacked **Allow access to file URLs**. That permission blocker is now resolved: after the owner changed the extension setting and Chrome reconnected,the supported chooser succeeded and a real ready-DTF PNG upload started. Its browser header reports22.30×78in at100DPI. No unsupported browser bypass was used. This is an actual upload start,not proof of server completion,preview,cart,order or usage. Native and custom-price checkout,order/webhook/usage/replay/cap proof,portable official theme preview,mobile Lighthouse comparison,live no-tracking Network capture,review media and final App Store submission remain unfinished. Historical unchecked screens and dated pending statements below retain their original meaning; this update supersedes their current-status interpretation. No publication,approval or perfect-readiness claim is made.
+
+## Historical public-only release — 9 October,23:13UTC
 
 The support-only follow-up source`9c4b466fc92ec7d155f48e7873c8ff606a78c81d` passed clean Depot CI`qwqvfs6w8j`:66files,425tests,zero skips,all8migrations and the same full chained gates. Provider terminal`finished`,62seconds. Sequential production build`7p77lwvp97` finished successfully,70seconds; OCI revision was independently verified. Only NEW607746803 was deployed to immutable index`sha256:37f10d8b6dbc87385ce9de0270b14231fbfd6023b8b6235cd940d33526e1c6fd`. All six new services started23:13:23UTC,running,OOMfalse/restart0;8migrations had none pending;external HTTPS health returnedhealthy. Exact old28containers+oldCaddy strings still match before/after. See evidence/public-release-9c4b466.txt.
 
@@ -74,7 +88,7 @@ Desktop visual evidence: evidence/demo-home-original-theme.jpg is an actual scre
 | 3. One app, three stores | Three new Shopify installations; real hosted three-shop synthetic isolation and distributed Redis leases | Hosted isolation proven; real three-shop commerce still missing |
 | 4. Three privacy topics | Actual hosted raw-body HMAC HTTP requests, invalid401, replay, worker exports/redaction and real private R2 erasure with exact cleanup | Synthetic hosted proof passed; Shopify-origin delivery and elapsed SLA not claimed |
 | 5. Tracking removed | Source/compiled JS scans, removal guards, Visitor/VisitorSession absent, DROP migration | Local proof; live storefront Network capture missing |
-| 6. Shopify usage fees exactly once | SQL concurrent claims, frozen shop/order key and line/amount, unpaid/cancelled exclusion, lost-response retry, 3.5%/USD6 unit assertions | Simulated provider transport; real consent/order/usage missing |
+| 6. Shopify usage fees exactly once | SQL concurrent claims, frozen shop/order key and line/amount, unpaid/cancelled exclusion, lost-response retry, 3.5%/USD6 unit assertions; all three real test subscriptions owner-approved and provider ACTIVE, USD50 cap, used0 | Real subscription consent proven; paid order/usage/replay still missing |
 | 7. Cap behavior | Confirmed rejection/exhaustion tests and merchant-confirmed pending cap state | Real provider cap test missing |
 | 8. Full tests | Final commands/results recorded below | Local suite only; no invented live proof |
 | 9. Typecheck | Complete public tsconfig no-emit run | Final command below |

@@ -1,12 +1,14 @@
 # Protected customer data: what is true, not just implemented
 
-Audit:10October2026 (UTC observations below occurred9October). Public application only. This is an engineering evidence record, not legal advice or an assertion that Shopify approved this app. No questionnaire answers were submitted by this audit.
+Audit:10October2026 (historical deployment observations occurred9October; actual merchant acceptance occurred10October). Public application only. This is an engineering evidence record, not legal advice or an assertion that Shopify approved this app. No questionnaire answers were submitted by this audit.
 
-## Deployment delta — 9 October,23:13UTC
+## Current deployment and merchant acceptance — 10 October 2026
 
 The implementation-handoff table below is historical,not today's deployment inventory. Version2026-10-10.1 Terms/Privacy/DPA and bounded paid-volume customer-link retention are now deployed on independent607746803,source9c4b466. Real Polaris product setup works on all three installed shops; the demo's six settings were saved normally. Clean final CI passed425tests with zero skips. Actual hosted signed HTTP export/redaction/R2 erasure already passed on three exact disposable fixtures; see hosted-compliance.md for cleanup and simulated-clock limitations.
 
-The merchant acceptance checkbox remains unchecked; no receipt was backfilled and the nine Shopify data-protection answers remain unsubmitted. Final real Shopify commerce,provider cap,traffic review,pre-cutover credential rotation and backup/erasure operational proof are still outstanding. Deployed policy and synthetic privacy proof do not establish merchant acceptance,Shopify approval or the elapsed retention SLA.
+All three new development shops actually accepted Actual Scope Terms/DPA version `2026-10-10.1:c769892b1216b191ec6f93d2` through the ordinary Shopify administrator UI on2026-10-10 after separate owner approval. Screenshots: [demo](evidence/demo-processing-terms-accepted.jpg), [isolation two](evidence/isolation-two-processing-terms-accepted.jpg), [isolation three](evidence/isolation-three-processing-terms-accepted.jpg). No receipt was backfilled. Their separately approved Shopify test subscriptions are provider ACTIVE, test=true, USD50 cap, used USD0; that is billing consent, not an order or usage charge.
+
+The nine Shopify data-protection answers remain unsubmitted. Real Shopify commerce,provider cap,traffic review,pre-cutover credential rotation and backup/erasure operational proof are still outstanding. The initial10October Chrome extension file-permission blocker is resolved; supported selection has started a real ready-DTF PNG upload,but completion/order/usage are not yet proven. Actual demo-shop acceptance and synthetic privacy proof establish neither Shopify approval,universal legal compliance nor the elapsed retention SLA. The earlier audit table retains its historical observations rather than being relabeled as a new questionnaire submission.
 
 ## Operator and agreement ground truth
 
@@ -24,11 +26,11 @@ The new local code adds:
 - Fail-closed upload-intent, first usage-charge and Shopify subscription-request gates. Previously sent unknown charge outcomes still reconcile against their original provider reference; missing legal acceptance never authorizes a new charge.
 - `PUBLIC_LEGAL_ENTITY_NAME=Actual Scope`, optional authentic `PUBLIC_LEGAL_ENTITY_ADDRESS`, and `PUBLIC_LEGAL_REVIEW_APPROVED=false` by default. Setting the latter true makes this document version available for explicit acceptance; it does **not** certify provider agreements, statutory compliance or App Store approval. Name/address/material document changes invalidate prior receipts.
 
-Migration:`20261010003000_public_merchant_processing_agreement`. Source:`app/lib/publicLegal.server.ts`, `publicLegalPolicy.ts`, `app/routes/app.setup.tsx`, `app/components/PublicLegalContent.tsx`, billing gates. Subsequent deployment applied this migration and exposed version2026-10-10.1 under Actual Scope on the real demo Setup page. The control is unchecked and no receipt exists yet; owner action-time approval for these separate merchant agreements is pending. Deployed disclosure is not accepted disclosure.
+Migration:`20261010003000_public_merchant_processing_agreement`. Source:`app/lib/publicLegal.server.ts`, `publicLegalPolicy.ts`, `app/routes/app.setup.tsx`, `app/components/PublicLegalContent.tsx`, billing gates. Subsequent deployment applied this migration and exposed version2026-10-10.1 under Actual Scope on the real Setup page. It was originally unchecked,as preserved in the earlier evidence. All three new shops have since completed actual UI acceptance of version `2026-10-10.1:c769892b1216b191ec6f93d2` on2026-10-10 with owner approval; see the three screens above. Disclosure and acceptance are independently evidenced,not inferred from deployment alone.
 
-For a genuine development-store demo, each authorized Shopify administrator must now accept the deployed terms normally before approving Shopify's test subscription and uploading. No whitelist, fake receipt, assumed agreement or database backfill is necessary or permitted. This operational demo does not settle the launch gaps below. The audit table below retains its earlier source-handoff observations; current deployment facts are in verification.md, not retroactive claims about that older image.
+Each authorized Shopify administrator must accept the deployed terms normally before approving Shopify's test subscription and uploading. These separate agreement and test-subscription steps are now completed for all three new development shops. No whitelist, fake receipt, assumed agreement or database backfill is necessary or permitted. New real merchants still need their own valid acceptance. This operational demo does not settle the launch gaps below. The audit table below retains its earlier source-handoff observations; current deployment facts are in verification.md,not retroactive claims about that older image.
 
-## Nine review answers
+## Historical nine-answer source audit — before deployment and merchant acceptance
 
 Question labels follow [Shopify's Level1 requirements](https://shopify.dev/docs/apps/launch/protected-customer-data). “N/A” is a limited factual applicability explanation, not a blanket exemption. The table separates source capability from executed merchant/provider agreements and deployed proof.
 
@@ -82,10 +84,10 @@ The human owner explicitly authorized using the existing DigitalOcean and Cloudf
 ## Remaining launch evidence
 
 1. Confirm jurisdiction-specific operator identity and any legally required address/representative. Actual Scope and the existing provider-account use are owner-supplied/authorized facts; do not invent a registered company or impose a nonexistent signed-PDF prerequisite.
-2. Owner/legal review of the drafted merchant DPA and actual processing/transfer/confidentiality duties. Capture real per-store acceptance after deployment. Shopify scopes and billing approval remain separate; applicable provider DPAs are incorporated under their service contracts.
-3. Deploy and observe the bounded paid-volume **customer-link** retention correction separately from immutable monetary replay facts. Show visible1–12-month settings and irreversible shortening/disable warning. The older image still lacks this bound; a source test is not a deployed retention claim.
+2. Owner/legal review of the drafted merchant DPA and actual processing/transfer/confidentiality duties. Real post-deployment acceptance is now captured for the three new development shops; every future merchant still requires its own valid receipt. Shopify scopes and billing approval remain separate; applicable provider DPAs are incorporated under their service contracts.
+3. The bounded paid-volume **customer-link** correction is now deployed separately from immutable monetary replay facts. Visible1–12-month settings and irreversible shortening/disable warning exist; actual timed live cleanup,alarms and restored-backup erasure replay still need operational proof. Deployment and local tests are not an elapsed retention SLA claim.
 4. Rotate credentials that existed on the pre-cutover OS disk, verify no remaining sensitive root persistence, and document restore/erasure replay and operational alerts. Encrypted current paths do not retroactively encrypt old physical blocks.
-5. Run the actual three-store demo, real HMAC/R2 deletion/export and real Shopify test billing/cap workflows; record their observed outputs independently. Disposable fixtures do not prove provider publication, account agreements or production deletion.
+5. Complete the actual three-store upload/commerce and Shopify usage/replay/cap workflows. All three merchant agreements and ACTIVE test subscriptions are now evidenced; hosted synthetic HMAC/R2 export/erasure already passed in hosted-compliance.md. Those disposable proofs do not establish Shopify-origin privacy delivery,elapsed deletion SLA,paid-order usage or App Store approval.
 
 ## Tests at this source handoff
 

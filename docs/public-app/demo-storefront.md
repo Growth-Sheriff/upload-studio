@@ -2,11 +2,13 @@
 
 This is an isolated demonstration, not a new production printing business. Prices are illustrative, orders use the demo shop's test payment flow, and nothing is physically fulfilled. Existing merchant shops and themes are outside this work.
 
-## Latest executed state — 9 October,23:13UTC
+## Latest executed state — 10 October 2026
 
 The historical provisioning steps below retain their own observations. All six real demo product configurations have now been loaded and saved through actual Polaris UI: four variant products,two measured-length products at0.30/in,width22.5,length240,tolerance0.02. They were not imported through a database writer. Real fractional-input rejection was reproduced and fixed; successful saves are shown in evidence/demo-setup-decimal-rate-saved.jpg and demo-mod2-configured.jpg. All three installed development shops render the embedded app. The nine canonical block bindings remain in unpublished theme189187817693; Horizon189187457245 remains live.
 
-Actual375px home and variant-product checks showed no horizontal overflow; keyboard menu navigation worked. Those snapshots are not a full accessibility or Lighthouse pass. Source9c4b466 is hosted in the independent public deployment,and both extensions remain Active version1161844129793 (server-only support follow-up). Merchant processing-terms acceptance is still unchecked/pending action-time owner approval. Browser file-upload access and a portable official theme-preview URL are pending owner handoff. Consequently no real buyer upload/cart/order/usage/cap or review-video proof is claimed. Do not turn the source manifest or product publication into a claim that those flows ran.
+Actual375px home and variant-product checks showed no horizontal overflow; keyboard menu navigation worked. Those snapshots are not a full accessibility or Lighthouse pass. Source9c4b466 is hosted in the independent public deployment,and both extensions remain Active version1161844129793 (server-only support follow-up). All three new shops actually accepted Actual Scope Terms/DPA version `2026-10-10.1:c769892b1216b191ec6f93d2` through the ordinary UI on2026-10-10; see the [three acceptance screens](verification.md#current-merchant-agreement-and-test-billing--10-october-2026). Each separately owner-approved Shopify test subscription is provider ACTIVE, test=true, USD50 cap, used USD0. This proves agreement/subscription consent, not a paid order or usage charge.
+
+The initial10October supported file-chooser failure is resolved after the owner enabled Chrome's ChatGPT extension file access and Chrome reconnected. Supported file selection succeeded and a real ready-DTF PNG upload started; the browser header shows22.30×78in/100DPI. Authoritative upload completion and the cart/order/usage/cap sequence are not yet proven. A portable official theme-preview URL is also pending. No completed Lighthouse comparison,review-video proof or App Store submission is claimed. Do not turn the source manifest,product publication,upload start or ACTIVE zero-usage subscriptions into a claim that those flows completed.
 
 ## What this store sells
 
