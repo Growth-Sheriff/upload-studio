@@ -536,3 +536,86 @@ push, production mutation or new email credential was performed by this build
 agent. The previous Shopify extension release remains applicable because this
 follow-up changes only the server/admin support surface; real hosted UI and
 email delivery are separate evidence, not inferred from the build.
+
+## Embedded billing return and truthful approval banner: clean final builds
+
+Application revision `29c8756ea661c05665c47c01aa1020b452737339` includes the
+embedded return recovery in `230aef2` and the parent-layout billing banner
+correction in `29c8756`. The Billing child loader's already-reconciled provider
+result now takes precedence over the parent's parallel earlier database read;
+ordinary navigation does not gain another provider query. The later `a8b7ba8`
+commit changes documentation only and does not change either build's inputs.
+
+Both public Dockerfiles, their context allowlists and `deploy/public/verify.sh`
+were read before building. Application/build inputs had no changes from the
+frozen revision before CI, between CI and production, or after production.
+Excluded scratch HTML, documentation, credentials and evidence images were not
+sent as application inputs. No application source edits occurred during these
+sequential builds.
+
+```text
+depot build --project 7fxkc8sd3p --platform linux/amd64 \
+  --file deploy/public/Dockerfile.ci \
+  --build-arg PUBLIC_REVIEW_SHA=2ff3faf9a856bc8d67be620f0591fc215fc2598e \
+  --label org.opencontainers.image.revision=29c8756ea661c05665c47c01aa1020b452737339 \
+  --no-cache-filter verify --progress plain .
+```
+
+[CI bt0mqwfq4d](https://depot.dev/orgs/zl650q33c5/projects/7fxkc8sd3p/builds/bt0mqwfq4d)
+command exited **0**. Read-only provider metadata independently confirmed
+terminal **`finished`**, start `2026-10-10T01:56:26Z`, duration **68 seconds**.
+Actual console results:
+
+```text
+8 migrations successfully applied to fresh disposable PostgreSQL
+Test Files 68 passed (68)
+Tests      432 passed (432), zero skipped
+Complete typecheck: exit 0
+Measurement regression: comparison integrity PASS; release-blocking regressions 0
+  current resolver source-sha256: aae156f274214008
+  historical price differences remain explicitly approved/classified
+Remix client and server production build: success
+Theme check: []
+Pinned Shopify CLI 3.88.1 theme and checkout extension builds: success
+Disposable PostgreSQL/Redis shutdown: successful
+```
+
+The expected failure-path diagnostics from trim timeout, transaction conflict,
+cross-shop record rejection and unique receipt rejection were assertions in
+passing tests, not failures of the suite. The suite's database and Redis were
+disposable CI services, not hosted application services. Passing SDK/mock and
+database tests do not establish real Shopify order/usage/cap behavior.
+
+Only after checking CI's provider terminal success was production started:
+
+```text
+depot build --project 7fxkc8sd3p --platform linux/amd64 \
+  --file deploy/public/Dockerfile \
+  --tag ghcr.io/growth-sheriff/auto-gang-sheet-public:29c8756 \
+  --label org.opencontainers.image.revision=29c8756ea661c05665c47c01aa1020b452737339 \
+  --push --progress plain .
+docker buildx imagetools inspect ghcr.io/growth-sheriff/auto-gang-sheet-public:29c8756
+docker buildx imagetools inspect ghcr.io/growth-sheriff/auto-gang-sheet-public:29c8756 \
+  --format '{{ index .Image.Config.Labels "org.opencontainers.image.revision" }}'
+```
+
+[Production rj2h2hcl08](https://depot.dev/orgs/zl650q33c5/projects/7fxkc8sd3p/builds/rj2h2hcl08)
+command exited **0**; provider terminal **`finished`**, start
+`2026-10-10T01:57:42Z`, duration **79 seconds**. Independent registry inspection
+confirmed:
+
+```text
+package/tag: ghcr.io/growth-sheriff/auto-gang-sheet-public:29c8756
+image index: sha256:69ce74b63fa20c1c3553bb26669ce3216908ea0cb9257faa4a86c062a424a851
+linux/amd64: sha256:7ea9be3cc4b5b4b6635795f130514014fe73eb2525d619a60294093c9f7fdf71
+config: sha256:9e9e339c3320388b1766f098f185fbabb029ee4b131c1a81eb60d31b5413cef9
+org.opencontainers.image.revision: 29c8756ea661c05665c47c01aa1020b452737339
+```
+
+Only the new public GHCR tag was pushed. The immutable digest was handed to the
+deployment owner; this build task did not deploy, push Git refs, modify provider
+permissions, publish Shopify extensions, call billing mutations, or change any
+existing tenant container, database, queue, droplet or configuration. The actual
+three-store TEST subscription consent/status proof is separate in
+[test-subscriptions-20261010.txt](evidence/test-subscriptions-20261010.txt); its
+US$0 usage does not claim completed order/usage/cap proof.
