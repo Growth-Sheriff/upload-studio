@@ -369,6 +369,7 @@
       selectedVariantId: '',
       copies: 1,
       status: 'idle',
+      errorMessage: '',
       items: [],
       activeItemId: '',
       batchToken: 0
@@ -2485,7 +2486,10 @@
           ? 'Uploading and validating the stored header...'
           : 'Uploading and measuring...');
     } else if (this.state.status === 'error') {
-      fileMetaText = 'Upload failed. You can try again or pick a different file.';
+      // A measurement rejection ("23.91 in wide, maximum is 22.5 in") is not a
+      // transient failure. Keep the server's reason rather than inviting a
+      // retry that can never succeed for this file.
+      fileMetaText = this.state.errorMessage || 'Upload failed. You can try again or pick a different file.';
     }
     this.fileMeta.textContent = fileMetaText;
 
@@ -2778,6 +2782,7 @@
     this.state.batchToken = batchToken || this.state.batchToken || 0;
     var currentToken = this.token;
     this.state.uploadStartTime = Date.now();
+    this.state.errorMessage = '';
     this.setError('');
     this.setProgress(8);
     this.setStage('upload');
@@ -2954,6 +2959,7 @@
       if (/file too large/i.test(msg) && !/maximum size is \d+/i.test(msg)) msg = 'File too large for this storage tier. Try a smaller file or compress.';
       else if (/unsupported file type/i.test(msg)) msg = 'Unsupported file type. PNG, JPG, WEBP, TIFF, PSD, PDF, AI, EPS and SVG are accepted.';
       else if (/network/i.test(msg)) msg = 'Network issue while uploading. Check your connection and try again.';
+      this.state.errorMessage = msg;
       this.setError(msg);
       this.render();
     }
