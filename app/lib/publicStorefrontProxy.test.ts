@@ -78,4 +78,30 @@ describe('merchant storefront proxy configuration', () => {
       expect(money(0.285, 'USD'), file).toBe(new Intl.NumberFormat(locale, { style: 'currency', currency: 'USD' }).format(0.285))
     }
   })
+
+  it('renders the Pro preview hooks required by the shared finished-sheet renderer', () => {
+    const source = readFileSync('extensions/theme-extension/assets/main-product-upload-pro.js', 'utf8')
+    const escape = source.match(/  function escapeAttr[\s\S]*?\n  }\n/)?.[0]
+    const markup = source.match(/  function ensureMarkup[\s\S]*?\n  }\n/)?.[0]
+    expect(escape).toBeTruthy()
+    expect(markup).toBeTruthy()
+    const render = vm.runInNewContext(`${escape}\n${markup}\nensureMarkup`) as (root: unknown) => void
+    const attributes = new Map<string, string>()
+    const root = {
+      innerHTML: '',
+      getAttribute: (name: string) => attributes.get(name) ?? null,
+      setAttribute: (name: string, value: string) => attributes.set(name, value),
+    }
+    render(root)
+    const variant = readFileSync('extensions/theme-extension/blocks/main-product-upload-app.liquid', 'utf8')
+    for (const hook of ['sheet-plane', 'art', 'art-label', 'art-dim-w', 'art-dim-h', 'sheet-cut']) {
+      expect(root.innerHTML, `Pro data-ump-${hook}`).toContain(`data-ump-${hook}`)
+      expect(variant, `variant data-ump-${hook}`).toContain(`data-ump-${hook}`)
+    }
+    // The shared stylesheet hides this placeholder only once a tile is drawn.
+    expect(root.innerHTML).toContain('class="ump__art-empty" data-ump-art-label')
+    expect(root.innerHTML).toContain('data-ump-art-dim-w hidden')
+    expect(root.innerHTML).toContain('data-ump-art-dim-h hidden')
+    expect(root.innerHTML).toContain('data-ump-sheet-cut hidden')
+  })
 })
