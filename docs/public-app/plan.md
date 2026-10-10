@@ -17,9 +17,9 @@ Each workstream owns disjoint source files where practical. Source edits use exp
 
 ## Release boundary
 
-App Store approval, protected-data approval and measured 28-day Web Vitals cannot be inferred from local tests. Missing authenticated accounts, independent hosting credentials or demo store access are documented in `open-questions.md`. Those gaps block a claim of publication, not independent implementation.
+App Store approval and protected-data approval cannot be inferred from local tests. Ordinary storefront review still needs the mobile Lighthouse before/after comparison;28-day field data belongs to optional Built for Shopify,not an ordinary submission waiting period. Current evidence gaps are in `open-questions.md`; earlier account/infrastructure shortages below are history,not today's release state.
 
-## Progress
+## Historical implementation progress — initial source handoff
 
 - Dedicated managed worktree created from origin/main; `public-app` branch created. Original checkout untouched.
 - Official documentation read for stable version/deprecation, usage billing, privacy, access tokens, proxy, extensions, webhook duplication and performance.
@@ -34,7 +34,7 @@ App Store approval, protected-data approval and measured 28-day Web Vitals canno
 
 ## Authorized release work — 2026-10-10
 
-The owner now authorizes independent provisioning, provider CI, public deployment, demo-store content and App Store submission. The existing tenant/app/droplet exclusions remain absolute. Chrome's Actual Scope profile is connected; the existing development shop is accessible, but the app organization must still be verified before registration.
+The owner authorized independent provisioning,provider CI,public deployment,demo-store content and App Store submission. The existing tenant/app/droplet exclusions remain absolute. Actual Scope organization239354566 and its new app433768202241 are now independently verified; all three new development shops are installed. The numbered sequence below is the authorized work order,not a claim that every external gate is complete.
 
 1. Verify Actualscope Shopify organization and create only Auto Gang Sheet Upload; keep pinned CLI3.88.1 and explicit public config.
 2. Use a new Depot project for public builds/tests, independent of the GitHub Actions billing lock. Never reuse the existing Upload Studio or gang-sheet-editor projects.
@@ -44,7 +44,17 @@ The owner now authorizes independent provisioning, provider CI, public deploymen
 
 Provider credentials remain outside Git and are consumed only for their authorized service. No raw credential inventory is committed. A mistaken inventory output exposed several API credentials in tool history; their values are not repeated or copied into evidence, and rotation is a separate owner-security action because existing services may use them.
 
-### Latest executed progress — 10 October 2026, real agreements and test subscriptions
+### Latest executed progress — 10 October, 02:15:11.028 UTC
+
+Frozen runtime `02f5c4d`, including verified-shop order handling `b1c7d6d`, is deployed only to NEW host607746803 at image index `sha256:d856fbc48eb3954a26618d3e5955b1cf3a0c4e0c50c81c0ce8e1262909ac1d08`. Six new services started at02:10:51 UTC, healthy, restart0, OOMfalse. Old hosts'17+14 Docker inspect rows, including infrastructure, were byte-identical before/after. [CI proof](evidence/public-release-02f5c4d.txt) records69 files/436 tests passed, zero skips, zero release-blocking measurement regressions, full typecheck, eight migrations and app/extension builds. Commit `35c5425` and earlier public work were pushed to both public-app branches; neither protected branch was changed. This later documentation consolidation is not implicitly claimed pushed.
+
+The finished-sheet fixture22.30×78 in/100 DPI reached Ready in3.2 seconds, selected22×80/USD40, and native quantity5 produced paid Shopify test order#1001/USD200. That pre-fix order still awaited normal Shopify retry at02:15:11 and was not manually replayed. The measured path quoted78×USD0.30=USD23.40 and completed test order#1002 with USD8 shipping. Real order deliveries automatically linked the upload; normal five-minute billing then produced exactly one paid USD0.82 Commission and one matching provider usage record534379430109, created02:15:05 UTC. Ordinary repeated order topics produced no fee or usage duplicates. [Rollout/customer/billing evidence](evidence/public-webhook-rollout-20261010.txt) and verification.md separate these observations from earlier failures. All payments/subscriptions are test mode; no actual-money collection or fulfillment is claimed.
+
+All three actual merchant Terms/DPA acceptances and ACTIVE test subscriptions are proved. Their01:53 zero-usage readings are dated snapshots; the later local balance0 is stale, not evidence of a live cap balance after settlement. Six real product configurations were saved through Polaris. The supported chooser permission issue is resolved. Demo-only CSS hides the redundant ready-file card in unpublished theme189187817693 while keeping native properties/warnings; live Horizon is unchanged. The app icon has now actually been uploaded to Shopify's CDN, as confirmed by the release owner.
+
+Next gates are deliberate replay/lost-response and USD6/provider-cap proof, normal recovery of#1001, remaining native block/staff/checkout-extension flows, official portable preview and Lighthouse/live no-tracking capture, final processing/security answers, review media and App Store submission. `media-plan.md` lists the uploaded icon,two fresh native1600×900 variant/cart candidates,non-publishable older evidence,and the remaining third screenshot/English walkthrough; no candidate upload is claimed. CLI/container tools diagnose software; Chrome is only for real customer/submission flows. No App Store publication, approval or full-capacity claim is made.
+
+### Historical executed progress — 10 October,before customer-order/usage proof
 
 All three NEW development shops accepted Actual Scope Terms/DPA version `2026-10-10.1:c769892b1216b191ec6f93d2` in the real administrator UI on2026-10-10, following separate owner approval; no receipt was inferred or backfilled. Actual screens: [demo](evidence/demo-processing-terms-accepted.jpg), [isolation two](evidence/isolation-two-processing-terms-accepted.jpg), [isolation three](evidence/isolation-three-processing-terms-accepted.jpg). Each shop also has a separately owner-approved Shopify test subscription confirmed ACTIVE, test=true, USD50 cap, used USD0; [exact read-only provider/local evidence](evidence/test-subscriptions-20261010.txt) was captured2026-10-10T01:53:53.316Z, including actual subscription-update audit receipts. Consent is proven, but zero usage does not prove an order or charge.
 
