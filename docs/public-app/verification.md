@@ -2,7 +2,26 @@
 
 Work performed 9–10 October 2026 (Europe/Istanbul), exclusively in the managed public worktree. Main baseline: `76113c193d7da789df9b2d3ea1ad7947af48b334`. The original custom checkout is unchanged and clean. A new public review app is now registered, hosted and installed in three development shops; no App Store submission or approval is claimed. Historical sections below retain their own executed revisions and limitations.
 
-## Current real customer-flow evidence — 10 October 2026
+## Current released runtime and measured test order — 10 October,02:11:48UTC
+
+Application source `02f5c4d`,including the verified-shop order-webhook correction `b1c7d6d`,is now deployed **only** to NEW host607746803 (`143.198.12.234`) at immutable index `sha256:d856fbc48eb3954a26618d3e5955b1cf3a0c4e0c50c81c0ce8e1262909ac1d08`. All six new services started2026-10-10T02:10:51Z and were healthy,restart0,OOMfalse. Exact Docker inspect names/StartedAt/restart/OOM rows from both old hosts matched byte-for-byte before/after:17+14 rows including infrastructure. Existing tenants and old Caddy were not restarted or changed.
+
+Fresh CI evidence is committed in `9354a78`: [public-release-02f5c4d.txt](evidence/public-release-02f5c4d.txt) records69files/436tests passed,zero skips,complete typecheck,eight migrations,zero release-blocking measurement regressions,theme check[] and both extension builds. That file's build-workstream handoff deliberately does not claim deployment; the later runtime observations above are separate evidence.
+
+The measured-length customer flow then completed Shopify **test** order `#1002`, `gid://shopify/Order/18946639954141`,PAID,test=true,at2026-10-10T02:11:31Z. Merchandise was USD23.40 (78 billable inches×USD0.30),shipping USD8,total USD31.40. [Fresh cropped order confirmation](evidence/measured-test-order-confirmed.jpg) excludes UI capability URLs. No actual money or physical fulfillment is claimed.
+
+Actual CLI/container observations show upload `hhVLFBMcIjVW` approved and automatically linked to order line `50810958348509` through real orders/updated,paid/create deliveries:
+
+```text
+2026-10-10T02:11:31.975Z authorized -> awaiting_payment; commission USD0
+2026-10-10T02:11:33.142Z paid -> pending, collectible; commission USD0.82
+```
+
+The fee uses the USD23.40 merchandise,not USD31.40 including shipping. Repeated ordinary order topics produced **one actual Commission row**,not duplicates. This is observed order reconciliation/fee eligibility,not a completed Shopify usage charge. At02:11:48UTC no provider usage record had yet been created; normal five-minute billing was awaited,not manually invoked. Provider exactly-once usage/retry,cap exhaustion/increase and final app-fee collection remain unproven.
+
+Earlier native variant test order `#1001` is still unlinked after its pre-fix failure; normal Shopify retry is awaited,no manual replay was performed. Remaining block/customer flows,checkout-extension behavior,official portable preview,Lighthouse/live no-tracking evidence,review media and App Store submission remain open. Software diagnosis stays in CLI/container tools; Chrome is only for native customer flow and submission.
+
+## Historical pre-fix customer-flow evidence — 10 October,before02:10:51UTC
 
 The native variant path has now reached a genuine Shopify **test** order in `auto-gang-sheet-demo.myshopify.com`,using Shopify's test gateway; no actual money was collected and no physical fulfillment is claimed.
 
@@ -32,7 +51,7 @@ The owner-approved, ordinary Shopify administrator UI flow has now accepted Actu
 
 Each test subscription was separately approved by the owner. The [guarded read-only provider/database evidence](evidence/test-subscriptions-20261010.txt), observed at2026-10-10T01:53:53.316Z, confirms all three ACTIVE test subscriptions, exact matching local references and actual APP_SUBSCRIPTIONS_UPDATE audit receipts. It also records the three UI acceptance timestamps. Isolation three's shop currency is CAD, while its usage subscription is USD; no order FX calculation is proven. An ACTIVE test subscription with zero usage proves neither a paid order nor a usage charge, duplicate-delivery handling, cap exhaustion/increase or paid merchant invoicing.
 
-The initial10October supported file-chooser attempt failed while Chrome's ChatGPT extension lacked **Allow access to file URLs**. That permission blocker was resolved after the owner changed the extension setting and Chrome reconnected; supported file selection started the ready-DTF PNG upload. No unsupported browser bypass was used. Subsequent authoritative readiness,cart and native test payment are now recorded separately above; measured checkout payment and order-webhook/usage/replay/cap proof remain unfinished. Historical unchecked screens and dated pending statements below retain their original meaning; the current sections supersede their current-status interpretation. No publication,approval or perfect-readiness claim is made.
+The initial10October supported file-chooser attempt failed while Chrome's ChatGPT extension lacked **Allow access to file URLs**. That permission blocker was resolved after the owner changed the extension setting and Chrome reconnected; supported file selection started the ready-DTF PNG upload. No unsupported browser bypass was used. Subsequent authoritative readiness,cart,both test payments and the measured order's automatic linking/eligible Commission are recorded above. Provider usage/replay/cap proof remains unfinished. Historical unchecked screens and dated pending statements retain their original meaning; the current section supersedes their current-status interpretation. No publication,approval or perfect-readiness claim is made.
 
 ## Historical public-only release — 9 October,23:13UTC
 
@@ -106,7 +125,7 @@ Desktop visual evidence: evidence/demo-home-original-theme.jpg is an actual scre
 | 3. One app, three stores | Three new Shopify installations; real hosted three-shop synthetic isolation and distributed Redis leases | Hosted isolation proven; real three-shop commerce still missing |
 | 4. Three privacy topics | Actual hosted raw-body HMAC HTTP requests, invalid401, replay, worker exports/redaction and real private R2 erasure with exact cleanup | Synthetic hosted proof passed; Shopify-origin delivery and elapsed SLA not claimed |
 | 5. Tracking removed | Source/compiled JS scans, removal guards, Visitor/VisitorSession absent, DROP migration | Local proof; live storefront Network capture missing |
-| 6. Shopify usage fees exactly once | SQL concurrent claims,frozen shop/order key and line/amount,unpaid/cancelled exclusion,lost-response retry,3.5%/USD6 unit assertions; three real ACTIVE test subscriptions and native PAID test order#1001 | Native test order proven; actual order webhook hit TenantIsolationError. Fixb1c7d6d awaits CI/release; usage/replay still unproven |
+| 6. Shopify usage fees exactly once | Three real ACTIVE test subscriptions; PAID test orders#1001/#1002; released fixb1c7d6d; measured order automatically linked and repeated ordinary topics produced one collectible USD0.82 Commission,shipping excluded | Provider usage record absent at02:11:48UTC; normal five-minute billing awaited. Provider usage/replay still unproven; pre-fix#1001 awaits normal retry |
 | 7. Cap behavior | Confirmed rejection/exhaustion tests and merchant-confirmed pending cap state | Real provider cap test missing |
 | 8. Full tests | Final commands/results recorded below | Local suite only; no invented live proof |
 | 9. Typecheck | Complete public tsconfig no-emit run | Final command below |
